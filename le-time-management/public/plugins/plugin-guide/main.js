@@ -20,18 +20,47 @@
   };
   function esc(s){return String(s||"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
   function platformText(p){const out=[];if(p.windows!=="unavailable")out.push("Windows");if(p.android!=="unavailable")out.push("Android");if(p.miniprogram&&p.miniprogram!=="unavailable")out.push("小程序");return out.join(" · ")||"暂不可用";}
-  function button(label,fn,primary){const b=document.createElement("button");b.textContent=label;b.style.cssText=`border:1px solid var(--border,#E4DFD6);background:${primary?"var(--accent,#2F7C83)":"var(--card,#fff)"};color:${primary?"#fff":"var(--ink,#22303A)"};border-radius:10px;padding:8px 11px;cursor:pointer;font-size:12px`;b.onclick=fn;return b;}
+  // 统一打开外链：权限缺失 / 地址为空 / 打开失败都给出可见反馈，而不是静默无反应
+  function safeOpen(url){
+    if(!url){tide.notify("该链接暂未配置");return;}
+    try{
+      const r=tide.util.openUrl(url);
+      if(r&&typeof r.catch==="function")r.catch(e=>tide.notify("打开失败："+(e&&e.message||e)));
+    }catch(e){tide.notify("打开失败："+(e&&e.message||e));}
+  }
+  function ensureStyle(){
+    if(document.getElementById("pg-guide-style"))return;
+    const st=document.createElement("style");st.id="pg-guide-style";
+    st.textContent=`.pg-btn{transition:transform .12s ease,box-shadow .15s ease,filter .15s ease}
+.pg-btn:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(34,48,58,.14);filter:brightness(1.04)}
+.pg-btn:active{transform:translateY(0) scale(.97);box-shadow:none}`;
+    document.head.append(st);
+  }
+  function button(label,fn,primary){const b=document.createElement("button");b.className="pg-btn";b.textContent=label;b.style.cssText=`border:1px solid var(--border,#E4DFD6);background:${primary?"var(--accent,#2F7C83)":"var(--card,#fff)"};color:${primary?"#fff":"var(--ink,#22303A)"};border-radius:10px;padding:8px 11px;cursor:pointer;font-size:12px`;b.onclick=fn;return b;}
   async function downloadDevDoc(){
-    try{const text=await tide.assets.text("plugin-development.md");const blob=new Blob([text],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="Le时间管理-插件开发文档.md";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);tide.notify("开发文档已下载");}
+    try{
+      const text=await tide.assets.text("plugin-development.md");
+      try{
+        const blob=new Blob([text],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="Le时间管理-插件开发文档.md";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      }catch{/* 下载通道不可用时走剪贴板兜底 */}
+      let copied=false;
+      try{await navigator.clipboard.writeText(text);copied=true;}catch{}
+      tide.notify(copied?"开发文档已开始下载；若未弹出保存框，全文已复制到剪贴板":"开发文档已开始下载");
+    }
     catch(e){tide.notify("下载失败："+(e&&e.message||e));}
   }
   function render(root){
+    ensureStyle();
     const links=tide.app&&tide.app.links?tide.app.links:{};
     const all=(tide.plugins&&tide.plugins.list?tide.plugins.list():[]).filter(x=>x.id!=="plugin-guide");
     const byId=Object.fromEntries(all.map(x=>[x.id,x]));
     root.innerHTML=`<div style="max-width:1100px;margin:0 auto;padding:24px"><div style="margin-bottom:18px"><h2 style="margin:0 0 7px;font-size:25px">插件使用说明</h2><div style="color:var(--muted,#7E8B94);font-size:13px;line-height:1.7">按场景分类查看。插件名称、说明和平台能力直接读取主程序插件目录，避免文档与实际清单分叉。</div></div><div id="guide-resources" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px"></div><div id="guide-groups"></div><div style="margin-top:10px;padding:13px 15px;border:1px solid var(--border,#E4DFD6);border-radius:12px;color:var(--muted,#687780);font-size:12px;line-height:1.7">安全提示：当前外部 ZIP 插件仍属于受信任扩展模型。只安装来源可信、你已审核过的插件。</div></div>`;
     const r=root.querySelector("#guide-resources");
-    r.append(button("官方网站",()=>links.website?tide.util.openUrl(links.website):tide.notify("请先在 src/projectLinks.js 配置官网地址"),true),button("项目仓库",()=>tide.util.openUrl(links.repository||"https://github.com/momoqiqi-qwq/tidebalance")),button("下载插件开发文档",downloadDevDoc));
+    r.append(
+      button("官方网站",()=>safeOpen(links.website),true),
+      button("项目仓库",()=>safeOpen(links.repository||"https://github.com/momoqiqi-qwq/le-time-management")),
+      button("下载插件开发文档",downloadDevDoc),
+    );
     const host=root.querySelector("#guide-groups");
     groups.forEach(g=>{const sec=document.createElement("section");sec.style.cssText="margin:0 0 26px";sec.innerHTML=`<h3 style="font-size:16px;margin:0 0 12px">${esc(g.name)}</h3><div class="guide-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px"></div>`;const grid=sec.querySelector(".guide-grid");g.ids.forEach(id=>{const p=byId[id]||{id,name:id,description:"插件清单中暂未找到此项。",platforms:{}};const steps=docs[id]||["打开插件","按页面提示完成配置","保存后即可使用"];const card=document.createElement("article");card.style.cssText="background:var(--card,#fff);border:1px solid var(--border,#E4DFD6);border-radius:15px;padding:16px;box-shadow:0 2px 8px rgba(34,48,58,.04)";card.innerHTML=`<div style="display:flex;justify-content:space-between;gap:10px;align-items:start"><strong style="font-size:15px">${esc(p.name)}</strong><span style="font-size:10px;padding:3px 7px;border-radius:10px;background:var(--soft,#F4F1EB);color:var(--muted,#7E8B94)">${esc(platformText(p.platforms||{}))}</span></div><p style="font-size:12px;line-height:1.65;color:var(--muted,#687780);margin:9px 0 10px">${esc(p.description)}</p><ol style="padding-left:19px;margin:0;font-size:12px;line-height:1.8">${steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`;grid.append(card);});host.append(sec);});
   }

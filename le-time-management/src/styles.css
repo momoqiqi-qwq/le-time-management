@@ -1062,6 +1062,17 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   background:color-mix(in srgb, var(--panel) var(--custom-panel-alpha,94%), transparent);
   backdrop-filter:blur(var(--custom-panel-blur,8px)); -webkit-backdrop-filter:blur(var(--custom-panel-blur,8px));
 }
+/* 组件透明度：让侧栏 / 顶栏 / 任务卡 / 迷你卡 / 设置面板透出自定义背景 */
+:root[data-custom-background="on"] .rail,
+:root[data-custom-background="on"] .topbar,
+:root[data-custom-background="on"] .tkc,
+:root[data-custom-background="on"] .mcard,
+:root[data-custom-background="on"] .settings-modal {
+  background:color-mix(in srgb, var(--panel) var(--custom-comp-alpha,100%), transparent);
+}
+:root[data-custom-background="on"] .topbar {
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+}
 :root[data-custom-background="on"][data-bg-text-shadow="on"] #app { text-shadow:0 1px 2px rgba(0,0,0,.2); }
 :root[data-custom-background="on"][data-bg-text-shadow="on"] button,
 :root[data-custom-background="on"][data-bg-text-shadow="on"] input,
@@ -1392,27 +1403,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   color: var(--ink-2);
 }
 
-.settings-hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--deep) 7%, var(--panel)), color-mix(in srgb, var(--panel) 88%, var(--paper)));
-}
-.settings-hero-copy h2 { margin: 0 0 6px; font-size: 18px; }
-.settings-hero-copy .desc { margin: 0; max-width: 52em; }
-.settings-hero-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-.settings-hero-tag {
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--deep) 20%, var(--line));
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  color: var(--deep);
-  font-size: 11px;
-  font-weight: 650;
-}
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(220px, 248px) minmax(0, 1fr);
@@ -1513,12 +1503,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .topbar-action-card .pill { margin-left: auto; }
   .quick-dock {
     width: min(156px, calc(100vw - 24px));
-  }
-  .settings-hero {
-    flex-direction: column;
-  }
-  .settings-hero-tags {
-    justify-content: flex-start;
   }
 }
 
@@ -2144,7 +2128,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .settings-modal {
   position: fixed;
-  inset: 14px;
+  inset: 36px;
   z-index: 1901;
   display: flex;
   flex-direction: column;

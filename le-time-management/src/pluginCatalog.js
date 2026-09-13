@@ -269,13 +269,14 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "plugin-guide",
     "name": "插件使用说明",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Le时间管理内置",
     "icon": "circle-question",
     "faIcon": "circle-question",
     "description": "按学习、效率、信息、生活与工具分类，用卡片快速查看每个内置插件的用途、使用步骤、平台支持和注意事项。",
     "permissions": [
-      "ui"
+      "ui",
+      "openUrl"
     ],
     "entry": "main.js",
     "order": 99,

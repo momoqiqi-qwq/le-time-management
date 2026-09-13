@@ -16,6 +16,7 @@ export const DEFAULT_BACKGROUND = {
   overlayOpacity: 0,
   panelOpacity: 94,
   panelBlur: 8,
+  componentOpacity: 100,
   textShadow: false,
 };
 
@@ -28,6 +29,7 @@ export function normalizeBackground(raw = {}) {
   x.overlayOpacity = clamp(x.overlayOpacity, 0, 90);
   x.panelOpacity = clamp(x.panelOpacity, 45, 100);
   x.panelBlur = clamp(x.panelBlur, 0, 30);
+  x.componentOpacity = clamp(x.componentOpacity ?? 100, 30, 100);
   if (!["cover", "contain", "100% 100%", "auto"].includes(x.fit)) x.fit = "cover";
   if (!["no-repeat", "repeat", "repeat-x", "repeat-y"].includes(x.repeat)) x.repeat = "no-repeat";
   if (!["fixed", "scroll"].includes(x.attachment)) x.attachment = "fixed";
@@ -57,6 +59,7 @@ export function applyBackground(raw = null) {
   root.style.setProperty("--custom-bg-overlay", `rgba(${hexRgb(cfg.overlayColor)},${cfg.overlayOpacity / 100})`);
   root.style.setProperty("--custom-panel-alpha", `${cfg.panelOpacity}%`);
   root.style.setProperty("--custom-panel-blur", `${cfg.panelBlur}px`);
+  root.style.setProperty("--custom-comp-alpha", `${cfg.componentOpacity}%`);
   root.dataset.bgTextShadow = cfg.textShadow ? "on" : "off";
   return cfg;
 }

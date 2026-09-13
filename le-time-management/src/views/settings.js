@@ -331,20 +331,10 @@ export function renderSettings(container) {
       entry.node.id = `settings-${entry.id}`;
     }
     const settingsNavigator = createSettingsNavigator(settingEntries, settingsNavState);
-    const hero = el("div", { class: "card settings-hero" },
-      el("div", { class: "settings-hero-copy" },
-        el("h2", {}, "设置中心"),
-        el("p", { class: "desc" }, "左侧选择一个分类，右侧只显示该分类的独立设置页；不会再把全部设置堆在同一长页面里。"),
-      ),
-      el("div", { class: "settings-hero-tags" },
-        el("span", { class: "settings-hero-tag" }, "分类导航"),
-        el("span", { class: "settings-hero-tag" }, "快速搜索"),
-        el("span", { class: "settings-hero-tag" }, "单页独立显示"),
-      ),
-    );
     const content = el("div", { class: "settings-content" }, ...settingEntries.map((x) => x.node));
     const layout = el("div", { class: "settings-layout" }, settingsNavigator.node, content);
-    wrap.replaceChildren(hero, layout);
+    // 设置中心头卡已移除：纯展示内容占掉首屏空间，左侧分类导航本身已承担引导职责。
+    wrap.replaceChildren(layout);
     settingsNavigator.apply();
   };
   render();

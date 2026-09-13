@@ -167,10 +167,10 @@ export function createBackgroundCard({ rerender = () => {} } = {}) {
   const bg = settings.background;
   const bgCard = el("div", { class: "card set-card" },
     el("h2", {}, "自定义背景"),
-    el("p", { class: "desc" }, "支持图片/纯色、填充方式、九宫格位置、平铺、透明度、模糊、亮度、饱和度、遮罩、卡片透明度与毛玻璃。窄屏会自动关闭 fixed 背景，避免 Android WebView 滚动抖动。"),
+    el("p", { class: "desc" }, "支持图片（PNG / JPG / WebP / GIF / BMP / SVG / AVIF / ICO）/ 纯色、填充方式、九宫格位置、平铺、透明度、模糊、亮度、饱和度、遮罩、卡片与组件透明度、毛玻璃——调低「组件透明度」可让侧栏、顶栏和任务卡透出背景。窄屏会自动关闭 fixed 背景，避免 Android WebView 滚动抖动。"),
   );
   const bgEnabled = el("input", { type: "checkbox", checked: bg.enabled ? true : null });
-  const bgImage = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif", style: "display:none" });
+  const bgImage = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/avif,image/x-icon,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif,.ico", style: "display:none" });
   const bgColor = el("input", { type: "color", value: bg.baseColor || DEFAULT_BACKGROUND.baseColor });
   const fit = el("select", {},
     el("option", { value: "cover" }, "覆盖（推荐）"), el("option", { value: "contain" }, "完整显示"),
@@ -193,6 +193,7 @@ export function createBackgroundCard({ rerender = () => {} } = {}) {
     mkRange("背景亮度", "brightness", 40, 180), mkRange("背景饱和度", "saturation", 0, 220),
     mkRange("遮罩强度", "overlayOpacity", 0, 90), mkRange("卡片不透明度", "panelOpacity", 45, 100),
     mkRange("卡片毛玻璃", "panelBlur", 0, 30, "px"),
+    mkRange("组件透明度", "componentOpacity", 30, 100),
   ];
   const patchFromControls = () => ({
     enabled:bgEnabled.checked, baseColor:bgColor.value, fit:fit.value, position:position.value, repeat:repeat.value,
