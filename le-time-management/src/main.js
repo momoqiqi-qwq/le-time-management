@@ -1,10 +1,16 @@
-import { initCare } from "./care.js";
 import { initStore, todayStr, getState } from "./store.js";
 import { renderShell } from "./shell.js";
 import { initPluginHost } from "./pluginHost.js";
 import { initCapture } from "./capture.js";
 import { api } from "./api.js";
 import { initTheme } from "./theme.js";
+import { initBackground } from "./background.js";
+import { initUiPreferences } from "./uiPreferences.js";
+import { initTaskReminders } from "./taskReminder.js";
+import { initCommandPalette } from "./commandPalette.js";
+import { initGlobalShortcuts } from "./globalShortcuts.js";
+import { initAutomation } from "./automation.js";
+import { initMotionInteractions } from "./motion.js";
 
 // 首次启动的种子数据（Tauri 端由 Rust seed_data() 生成；浏览器调试用这份）
 function seed() {
@@ -34,9 +40,15 @@ function seed() {
 async function boot() {
   await initStore(seed());
   initTheme();
+  initBackground();
+  initUiPreferences();
+  initMotionInteractions();
   renderShell(document.getElementById("app"));
   initCapture();
-  initCare();
+  initTaskReminders();
+  initCommandPalette();
+  initGlobalShortcuts().catch((e) => console.warn("全局快捷键不可用:", e));
+  api.appInfo().then((x) => initAutomation(x?.version || "")).catch(() => initAutomation(""));
   // 手机端（局域网）指令 → 应用统一数据层
   if (api.isTauri) {
     const { listen } = await import("@tauri-apps/api/event");

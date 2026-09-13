@@ -1,10 +1,22 @@
 {
   "id": "cn-holiday",
   "name": "中国节假日",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Le时间管理内置 · 数据源 NateScarlet/holiday-cn",
-  "icon": "假",
-  "description": "查询中国法定节假日、调休上班日和下次休息日；内置 2024–2026 离线数据，缺失年份可联网更新并缓存。",
-  "permissions": ["ui", "storage", "notify", "http"],
-  "entry": "main.js"
+  "icon": "calendar-day",
+  "description": "中国法定节假日、调休上班日和下次休息日；内置 2024–2026 离线数据，首屏不再探测未公布年份，缺失年份按需联网并缓存。",
+  "permissions": [
+    "ui",
+    "storage",
+    "notify",
+    "http"
+  ],
+  "entry": "main.js",
+  "order": 11,
+  "platforms": {
+    "windows": "full",
+    "android": "full",
+    "miniprogram": "native"
+  },
+  "faIcon": "calendar-day"
 }

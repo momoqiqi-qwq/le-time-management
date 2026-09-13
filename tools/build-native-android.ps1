@@ -11,8 +11,6 @@ foreach ($name in @('tauri-android','tauri-plugin-opener')) {
     if (-not $sources[$name] -or -not (Test-Path $sources[$name])) { throw "Missing generated Tauri Android source: $name" }
 }
 if (-not (Test-Path "$generated/app/src/main/jniLibs/arm64-v8a/libletime_lib.so")) { throw 'Build the Le arm64 Rust library first.' }
-& node (Join-Path $repo 'tools/sync-android-care.js')
-if ($LASTEXITCODE -ne 0) { throw 'Android source synchronization failed.' }
 Push-Location (Join-Path $repo 'vendor/shiguangschedule')
 try {
     & ./gradlew.bat ":leAndroid:assemble$Configuration" '-PleAndroid=true' '-Pkotlin.incremental=false' '-Pandroid.overridePathCheck=true' "-PtauriAndroidSource=$($sources['tauri-android'])" "-PtauriOpenerSource=$($sources['tauri-plugin-opener'])" --console=plain

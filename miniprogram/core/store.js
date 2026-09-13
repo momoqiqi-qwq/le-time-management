@@ -3,7 +3,7 @@
 // 差异只在持久化层 —— 桌面端写 JSON 文件，小程序写在 wx 本地存储，
 // 因此「导出备份」的 JSON 可以在桌面端与小程序之间互相导入恢复。
 
-const LS_KEY = "letime-data";
+const LS_KEY = "tidebalance-data";
 
 let state = null;
 const subs = new Set();

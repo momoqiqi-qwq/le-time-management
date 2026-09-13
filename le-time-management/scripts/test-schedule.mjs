@@ -18,3 +18,19 @@ vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
+const eduBase=M.empty('2026-09-07');eduBase.config.semesterStartDate='2026-09-07';eduBase.config.semesterTotalWeeks=20;
+const eduTsv=[
+  '课程名称\t任课教师\t上课地点\t星期\t周次\t节次',
+  '高等数学\t张老师\tA101\t星期一\t1-16周\t1-2节',
+  '大学英语\t李老师\tB203\t周三\t1-16单周\t3-4节',
+].join('\n');
+const edu1=M.parseAcademicText(eduTsv,eduBase);
+assert.equal(edu1.table.courses.length,2);assert.deepEqual(Array.from(edu1.table.courses[0].weeks),Array.from({length:16},(_,i)=>i+1));assert.deepEqual(Array.from(edu1.table.courses[1].weeks),[1,3,5,7,9,11,13,15]);
+const eduCombined='课程,教师,地点,上课时间\n计算机网络,王老师,C305,星期二 1-16周 第5-6节\n体育,赵老师,操场,周五 第7-8节 2-18双周';
+const edu2=M.parseAcademicText(eduCombined,eduBase);
+assert.equal(edu2.table.courses[0].day,2);assert.equal(edu2.table.courses[0].startSection,5);assert.equal(edu2.table.courses[0].endSection,6);assert.equal(edu2.table.courses[0].weeks.length,16);
+assert.equal(edu2.table.courses[1].day,5);assert.deepEqual(Array.from(edu2.table.courses[1].weeks),[2,4,6,8,10,12,14,16,18]);assert.equal(edu2.table.courses[1].startSection,7);
+const eduTime='课程名称\t星期\t周次\t开始时间\t结束时间\n晚间讲座\t星期四\t2-4周\t18:30\t20:00';
+const edu3=M.parseAcademicText(eduTime,eduBase);assert.equal(edu3.table.courses[0].isCustomTime,true);assert.equal(edu3.table.courses[0].customStartTime,'18:30');
+const merged=M.mergeTables(edu1.table,edu1.table);assert.equal(merged.courses.length,2);
+console.log('PASS: academic-system TSV/CSV imports, combined weekday/week/section cells, odd/even weeks, custom time and dedup merge');

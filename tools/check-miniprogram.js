@@ -60,5 +60,13 @@ walk(ROOT, (p) => {
   }
 });
 
+
+// 5. 小程序版本必须与桌面 package.json 一致
+try {
+  const desktopPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "..", "le-time-management", "package.json"), "utf8"));
+  const appMeta = require(path.join(ROOT, "core", "appMeta.js"));
+  if (appMeta.version !== desktopPkg.version) bad("小程序版本与桌面 package.json 不一致: " + appMeta.version + " != " + desktopPkg.version);
+} catch (e) { bad("版本一致性校验失败: " + e.message); }
+
 console.log(err ? "发现 " + err + " 个问题" : "✓ 静态校验全部通过");
 process.exit(err ? 1 : 0);

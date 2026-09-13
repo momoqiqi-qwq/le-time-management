@@ -2,7 +2,7 @@
  * ⚠ 这个文件是构建产物，不要直接改。改 src/main.template.js，然后跑 tools/build.mjs。
  *
  * 数据来源：exam-collector 采集的官方公告（每条带 confirmed 与 source.url）
- * 宿主契约：见 https://momoqiqi-qwq.github.io/le-time-management/ 与源码 le-time-management/src/pluginHost.js
+ * 宿主契约：见 https://momoqiqi-qwq.github.io/tidebalance/ 与源码 tidebalance/src/pluginHost.js
  */
 (function () {
   "use strict";
@@ -1118,7 +1118,18 @@
   const STYLE_ID = "exam-calendar-style";
   const TICK_MS = 10 * 60 * 1000; // 10 分钟一次，克制轮询
   const REMIND_DAYS = [7, 3, 1, 0]; // 考前 N 天提醒（0=当天）
-  const DEFAULTS = { leadDays: 7, onlyConfirmed: false };
+  const DEFAULTS = { leadDays: 7, onlyConfirmed: false, examFilter: "all" };
+  const EXAM_FILTERS = [
+    { id: "all", label: "全部考试" },
+    { id: "cet4", label: "大学英语四级（CET4）" },
+    { id: "cet6", label: "大学英语六级（CET6）" },
+    { id: "ncre", label: "全国计算机等级考试（NCRE）" },
+    { id: "ntce", label: "中小学教师资格考试（NTCE）" },
+    { id: "kaoyan", label: "全国硕士研究生招生考试" },
+    { id: "tem4", label: "英语专业四级（TEM4）" },
+    { id: "tem8", label: "英语专业八级（TEM8）" },
+  ];
+  const CET_SIGNUP_URL = "https://cet-bm.neea.edu.cn/";
 
   const WEEKDAY = "日一二三四五六";
 
@@ -1151,12 +1162,36 @@
       return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
     });
   }
+  function examFamilyIds(id) {
+    if (id === "cet4") return ["cet4", "cet-set4"];
+    if (id === "cet6") return ["cet6", "cet-set6"];
+    return [id];
+  }
+  function eventBelongsToExam(e, id) {
+    if (!id || id === "all") return true;
+    const ids = examFamilyIds(id);
+    if (ids.indexOf(e.examId) >= 0) return true;
+    const merged = Array.isArray(e.mergedFrom) ? e.mergedFrom : [];
+    return merged.some(function (x) { return ids.indexOf(x) >= 0; });
+  }
+  function filterLabel(id) {
+    const hit = EXAM_FILTERS.find(function (x) { return x.id === id; });
+    return hit ? hit.label : id;
+  }
   function upcoming(today, opts) {
     return allEvents().filter(function (e) {
       const last = e.endDate || e.date;
       if (last < today) return false;
       if (opts && opts.onlyConfirmed && !e.confirmed) return false;
+      if (opts && opts.examFilter && !eventBelongsToExam(e, opts.examFilter)) return false;
       return true;
+    });
+  }
+  function registrationEvents(examId, today) {
+    return allEvents().filter(function (e) {
+      if (!eventBelongsToExam(e, examId)) return false;
+      if (e.type !== "registration" && e.type !== "pre-registration") return false;
+      return (e.endDate || e.date) >= today;
     });
   }
   function nextExam(today) {
@@ -1171,6 +1206,7 @@
     return {
       leadDays: typeof s.leadDays === "number" ? s.leadDays : DEFAULTS.leadDays,
       onlyConfirmed: !!s.onlyConfirmed,
+      examFilter: typeof s.examFilter === "string" && EXAM_FILTERS.some(function (x) { return x.id === s.examFilter; }) ? s.examFilter : DEFAULTS.examFilter,
     };
   }
   async function saveSettings(s) {
@@ -1197,7 +1233,12 @@
       ".ecal-btn{font-size:12px;padding:3px 8px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit;cursor:pointer}" +
       ".ecal-link{font-size:12px;opacity:.75;cursor:pointer;text-decoration:underline;background:none;border:none;color:inherit;padding:0}" +
       ".ecal-empty{opacity:.7;padding:12px 0}" +
-      ".ecal-foot{margin-top:12px;font-size:12px;opacity:.6;line-height:1.7}";
+      ".ecal-foot{margin-top:12px;font-size:12px;opacity:.6;line-height:1.7}" +
+      ".ecal-select{font-size:12px;padding:4px 26px 4px 8px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit}" +
+      ".ecal-flow{margin:10px 0 12px;padding:12px;border:1px solid rgba(128,128,128,.28);border-radius:12px;background:rgba(128,128,128,.04)}" +
+      ".ecal-flow-title{font-weight:700;margin-bottom:7px}" +
+      ".ecal-flow-line{font-size:12px;line-height:1.75;opacity:.85}" +
+      ".ecal-warn{margin-top:8px;padding:8px 10px;border-left:3px solid currentColor;font-size:12px;line-height:1.75;opacity:.8}";
     document.head.append(st);
   }
 
@@ -1271,6 +1312,23 @@
     cb.append(box, document.createTextNode(" 只看官方已确认"));
     head.append(cb);
 
+    const examSelect = document.createElement("select");
+    examSelect.className = "ecal-select";
+    EXAM_FILTERS.forEach(function (x) {
+      const op = document.createElement("option");
+      op.value = x.id;
+      op.textContent = x.id === "all" ? "全部考试" : "只看 · " + x.label;
+      op.selected = settings.examFilter === x.id;
+      examSelect.append(op);
+    });
+    examSelect.addEventListener("change", async function () {
+      const st = await loadSettings();
+      st.examFilter = examSelect.value;
+      await saveSettings(st);
+      await render(el);
+    });
+    head.append(examSelect);
+
     const count = document.createElement("span");
     const official = list.filter(function (e) { return e.confirmed; }).length;
     count.textContent = "共 " + list.length + " 场（官方 " + official + " / 预计 " + (list.length - official) + "）";
@@ -1284,6 +1342,40 @@
       head.append(jump);
     }
     el.append(head);
+
+    if (settings.examFilter !== "all") {
+      const flow = document.createElement("div");
+      flow.className = "ecal-flow";
+      const ft = document.createElement("div");
+      ft.className = "ecal-flow-title";
+      ft.textContent = filterLabel(settings.examFilter) + " · 全流程";
+      flow.append(ft);
+
+      const regs = registrationEvents(settings.examFilter, today);
+      const regLine = document.createElement("div");
+      regLine.className = "ecal-flow-line";
+      if (regs.length) {
+        regLine.textContent = "已收录报名时间：" + regs.map(function (r) {
+          return (r.type === "pre-registration" ? "预报名 " : "报名 ") + r.date + ((r.endDate && r.endDate !== r.date) ? " ～ " + r.endDate : "") + (r.confirmed ? "（官方）" : "（预计）");
+        }).join("；");
+      } else {
+        regLine.textContent = "报名时间：当前离线数据尚未收录可用的全国统一报名起止时间，请以考试官网及所在学校/考点通知为准。";
+      }
+      flow.append(regLine);
+
+      if (settings.examFilter === "cet4" || settings.examFilter === "cet6") {
+        const warn = document.createElement("div");
+        warn.className = "ecal-warn";
+        warn.textContent = "CET 报名时间可能因省份、学校或考点不同而不同。请考生按所在学校规定时间登录 CET 全国网上报名系统（cet-bm.neea.edu.cn），完成资格审核、笔试报名缴费及口试报名缴费。";
+        flow.append(warn);
+        const signup = document.createElement("button");
+        signup.className = "ecal-btn";
+        signup.textContent = "打开 CET 报名系统";
+        signup.addEventListener("click", function () { tide.util.openUrl(CET_SIGNUP_URL); });
+        flow.append(signup);
+      }
+      el.append(flow);
+    }
 
     if (!list.length) {
       const empty = document.createElement("div");
@@ -1337,6 +1429,23 @@
         row.append(link);
       }
 
+      const flowBtn = document.createElement("button");
+      flowBtn.className = "ecal-btn";
+      flowBtn.textContent = "看全流程";
+      flowBtn.addEventListener("click", async function () {
+        const st = await loadSettings();
+        let target = ev.examId;
+        if (target === "cet-set4") target = "cet4";
+        if (target === "cet-set6") target = "cet6";
+        if (!EXAM_FILTERS.some(function (x) { return x.id === target; })) {
+          tide.notify("该项目暂不支持独立全流程筛选");
+          return;
+        }
+        st.examFilter = target;
+        await saveSettings(st);
+        await render(el);
+      });
+
       const btn = document.createElement("button");
       btn.className = "ecal-btn";
       btn.textContent = "排进日程";
@@ -1344,7 +1453,7 @@
         btn.disabled = true;
         void addToSchedule(ev).then(function () { btn.disabled = false; });
       });
-      row.append(cd, btn);
+      row.append(cd, flowBtn, btn);
 
       el.append(row);
     });
@@ -1354,7 +1463,7 @@
     foot.textContent =
       "数据来自官方公告采集，生成于 " + (DATA.generatedAt || "未知") + "；" +
       "标注「预计」的日期由历史规律推算，可能整周偏差，仅用于倒计时。" +
-      "报名、缴费、准考证一律以官方公告与考点通知为准。";
+      "报名、缴费、准考证一律以官方公告与考点通知为准。CET 各考点报名时间可能不同，请按所在学校通知登录 cet-bm.neea.edu.cn 完成报名缴费。";
     el.append(foot);
   }
 
@@ -1398,6 +1507,7 @@
       keep.push(key);
       const when = d === 0 ? "就是今天" : "还有 " + d + " 天";
       tide.notify(ev.name + "（" + ev.typeName + "）" + when + "：" + fmtDate(ev.date) + (ev.confirmed ? "" : " · 预计"), { ms: 6000 });
+      if (tide.inbox && typeof tide.inbox.create === "function") tide.inbox.create({ sourceKey: `exam:${ev.examId}:${ev.type}:${ev.date}`, title: ev.name + " · " + ev.typeName, when: ev.date, note: when + (ev.confirmed ? " · 官方已确认" : " · 预计日期，请以官方公告为准"), suggestion: "create-task" });
       tide.events.emit("exam-calendar:reminder", { examId: ev.examId, date: ev.date, days: d, confirmed: ev.confirmed });
     }
     // 只保留今天的键 + 未过期的"提前提醒"键，避免存储无限增长
@@ -1415,7 +1525,7 @@
   tide.ui.registerView({
     id: "exam-calendar",
     title: "考试日历",
-    icon: "考",
+    icon: 'calendar-check',
     render: render,
   });
 

@@ -2,7 +2,7 @@
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..');
-const dir=path.join(root,'01-windows','app','public','plugins','shiguang-schedule');
+const dir=path.join(root,'le-time-management','public','plugins','shiguang-schedule');
 let model=fs.readFileSync(path.join(dir,'model.js'),'utf8');
 model=model.replace(/\}\)\(typeof module!==['"]undefined['"]\?module\.exports:globalThis\);\s*$/, '})(modelScope);');
 const ui=fs.readFileSync(path.join(dir,'ui.js'),'utf8');

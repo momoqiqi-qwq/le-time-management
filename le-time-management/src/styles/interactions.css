@@ -1,0 +1,188 @@
+:root {
+  --motion-fast: 120ms;
+  --motion-normal: 180ms;
+  --motion-layer: 220ms;
+  --motion-out: cubic-bezier(.22, .8, .22, 1);
+  --motion-in: cubic-bezier(.4, 0, 1, 1);
+  --motion-spring: cubic-bezier(.2, .9, .25, 1.18);
+}
+
+/* 按钮反馈：悬停抬起，按下回落；不改变业务组件尺寸。 */
+button:not([data-motion="off"]),
+[role="button"]:not([data-motion="off"]) {
+  transform-origin: center;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform var(--motion-fast) var(--motion-out),
+    box-shadow var(--motion-normal) ease,
+    border-color var(--motion-normal) ease,
+    background-color var(--motion-normal) ease,
+    color var(--motion-normal) ease,
+    opacity var(--motion-normal) ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  button:not([data-motion="off"]):not(:disabled):not([aria-disabled="true"]):hover,
+  [role="button"]:not([data-motion="off"]):not(:disabled):not([aria-disabled="true"]):hover {
+    transform: translateY(-1px);
+  }
+}
+
+button.motion-pressing:not(:disabled),
+[role="button"].motion-pressing:not(:disabled),
+button:not([data-motion="off"]):active:not(:disabled),
+[role="button"]:not([data-motion="off"]):active:not(:disabled) {
+  transform: translateY(1px) scale(.965);
+  transition-duration: 70ms;
+}
+
+button:not([data-motion="off"]):disabled,
+[role="button"]:not([data-motion="off"])[aria-disabled="true"] {
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 背景遮罩与主要弹层共享同一节奏。 */
+:where(.drawer-mask, .cmd-mask, .cap-mask) {
+  animation: motion-mask-in var(--motion-normal) ease-out both;
+}
+
+.drawer {
+  animation: motion-drawer-in var(--motion-layer) var(--motion-out) both;
+  will-change: transform, opacity;
+}
+
+:where(.cmd-palette, .quick-cap) {
+  animation: motion-top-layer-in var(--motion-layer) var(--motion-spring) both;
+  will-change: transform, opacity;
+}
+
+:where(.cap-modal, .ai-rule-editor) {
+  animation: motion-center-layer-in var(--motion-layer) var(--motion-spring) both;
+  will-change: transform, opacity;
+}
+
+:where(.settings-modal, .wc-web-panel) {
+  animation: motion-full-layer-in var(--motion-layer) var(--motion-out) both;
+  will-change: transform, opacity;
+}
+
+.popmenu {
+  animation: motion-menu-in 160ms var(--motion-spring) both;
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+.toast {
+  animation: motion-toast-in 240ms var(--motion-spring) both;
+  will-change: transform, opacity;
+}
+
+.drag-overlay {
+  animation: motion-float-in var(--motion-layer) var(--motion-out) both;
+}
+
+:where(.drawer-mask, .cmd-mask, .cap-mask).motion-closing {
+  pointer-events: none;
+  animation: motion-mask-out var(--motion-normal) ease-in both;
+}
+
+.drawer.motion-closing {
+  pointer-events: none;
+  animation: motion-drawer-out var(--motion-layer) var(--motion-in) both;
+}
+
+:where(.cmd-palette, .quick-cap).motion-closing {
+  pointer-events: none;
+  animation: motion-top-layer-out var(--motion-normal) var(--motion-in) both;
+}
+
+:where(.cap-modal, .ai-rule-editor).motion-closing {
+  pointer-events: none;
+  animation: motion-center-layer-out var(--motion-normal) var(--motion-in) both;
+}
+
+:where(.settings-modal, .wc-web-panel).motion-closing {
+  pointer-events: none;
+  animation: motion-full-layer-out var(--motion-normal) var(--motion-in) both;
+}
+
+:where(.popmenu, .toast, .drag-overlay).motion-closing {
+  pointer-events: none;
+  animation: motion-float-out var(--motion-normal) var(--motion-in) both;
+}
+
+@keyframes motion-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes motion-mask-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes motion-drawer-in {
+  from { opacity: 0; transform: scale(.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes motion-drawer-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(.985); }
+}
+@keyframes motion-top-layer-in {
+  from { opacity: 0; transform: translate3d(-50%, -8px, 0) scale(.975); }
+  to { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
+}
+@keyframes motion-top-layer-out {
+  from { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(-50%, -5px, 0) scale(.985); }
+}
+@keyframes motion-center-layer-in {
+  from { opacity: 0; transform: translate3d(-50%, calc(-50% + 10px), 0) scale(.975); }
+  to { opacity: 1; transform: translate3d(-50%, -50%, 0) scale(1); }
+}
+@keyframes motion-center-layer-out {
+  from { opacity: 1; transform: translate3d(-50%, -50%, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(-50%, calc(-50% + 6px), 0) scale(.985); }
+}
+@keyframes motion-full-layer-in {
+  from { opacity: 0; transform: scale(.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes motion-full-layer-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(.985); }
+}
+@keyframes motion-menu-in {
+  from { opacity: 0; transform: translate3d(0, -4px, 0) scale(.96); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes motion-toast-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0) scale(.97); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes motion-float-in {
+  from { opacity: 0; transform: translate3d(0, 8px, 0) scale(.98); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes motion-float-out {
+  from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+  to { opacity: 0; transform: translate3d(0, 5px, 0) scale(.98); }
+}
+
+:root[data-ui-motion="reduced"] *,
+:root[data-ui-motion="reduced"] *::before,
+:root[data-ui-motion="reduced"] *::after {
+  animation-duration: .001ms !important;
+  transition-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-ui-motion="full"]) *,
+  :root:not([data-ui-motion="full"]) *::before,
+  :root:not([data-ui-motion="full"]) *::after {
+    animation-duration: .001ms !important;
+    transition-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

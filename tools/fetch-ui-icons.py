@@ -1,7 +1,7 @@
 from pathlib import Path
 import urllib.request,json,concurrent.futures,io,hashlib
 from PIL import Image
-items=[('quadrant','dashboard',9422920,'Freepik'),('timeblock','calendar',3229706,'wanicon'),('elder','elderly',5862238,'Eucalyp'),('market','puzzle',5726256,'Freepik'),('settings','settings',4677636,'Good Ware'),('pomodoro','stopwatch',1527068,'Freepik'),('weekly-report','business-report',3094836,'Freepik'),('elder-care','shield',1090479,'Kiranshastry'),('gx-news','trophy',2617955,'Freepik'),('chaoxing-notify','reading-book',4598885,'Freepik'),('cppu-notify','shield',1322221,'Freepik'),('wechat-push','notification',4611672,'Smashicons'),('capture','microphone',3712181,'Freepik')]
+items=[('quadrant','dashboard',9422920,'Freepik'),('timeblock','calendar',3229706,'wanicon'),('market','puzzle',5726256,'Freepik'),('settings','settings',4677636,'Good Ware'),('pomodoro','stopwatch',1527068,'Freepik'),('weekly-report','business-report',3094836,'Freepik'),('gx-news','trophy',2617955,'Freepik'),('chaoxing-notify','reading-book',4598885,'Freepik'),('cppu-notify','shield',1322221,'Freepik'),('wechat-push','notification',4611672,'Smashicons'),('capture','microphone',3712181,'Freepik')]
 out=Path('le-time-management/public/icons');out.mkdir(exist_ok=True)
 mini=Path('miniprogram/images/tab')
 def fetch(item):
@@ -9,7 +9,7 @@ def fetch(item):
  url=f'https://cdn-icons-png.magnific.com/512/{num//1000}/{num}.png'
  data=urllib.request.urlopen(url,timeout=25).read()
  im=Image.open(io.BytesIO(data)).convert('RGBA');im.resize((128,128),Image.Resampling.LANCZOS).save(out/f'{name}.png')
- if name in ['quadrant','timeblock','elder','settings','capture']:
+ if name in ['quadrant','timeblock','settings','capture']:
   for suffix in ['', '-on']:
    icon=im.resize((70,70),Image.Resampling.LANCZOS);canvas=Image.new('RGBA',(81,81));canvas.alpha_composite(icon,(5,5));canvas.save(mini/f'{name}{suffix}.png')
  return dict(key=name,author=author,source=f'https://www.magnific.com/icon/{slug}_{num}',cdn=url,sha256=hashlib.sha256((out/f'{name}.png').read_bytes()).hexdigest())

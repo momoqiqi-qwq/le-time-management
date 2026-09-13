@@ -1,4 +1,6 @@
 // 通用 UI 小件：toast、弹出菜单、dom 助手
+import { removeWithMotion } from "./motion.js";
+
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -18,10 +20,10 @@ export function toast(msg, opts = {}) {
   const box = document.getElementById("toasts");
   const t = el("div", { class: "toast" }, el("span", {}, msg));
   if (opts.action) {
-    t.append(el("button", { onclick: () => { opts.action(); t.remove(); } }, opts.actionLabel || "撤销"));
+    t.append(el("button", { onclick: () => { opts.action(); removeWithMotion(t); } }, opts.actionLabel || "撤销"));
   }
   box.append(t);
-  setTimeout(() => { t.style.opacity = "0"; t.style.transition = "opacity .3s"; setTimeout(() => t.remove(), 320); }, opts.ms || 4200);
+  setTimeout(() => removeWithMotion(t), opts.ms || 4200);
 }
 
 export function popmenu(x, y, items) {
@@ -36,7 +38,7 @@ export function popmenu(x, y, items) {
   const r = menu.getBoundingClientRect();
   menu.style.left = `${Math.min(x, innerWidth - r.width - 10)}px`;
   menu.style.top = `${Math.min(y, innerHeight - r.height - 10)}px`;
-  const close = () => { menu.remove(); document.removeEventListener("pointerdown", onDoc, true); };
+  const close = () => { removeWithMotion(menu); document.removeEventListener("pointerdown", onDoc, true); };
   const onDoc = (e) => { if (!menu.contains(e.target)) close(); };
   setTimeout(() => document.addEventListener("pointerdown", onDoc, true));
   return close;

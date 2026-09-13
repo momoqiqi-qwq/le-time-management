@@ -1,6 +1,6 @@
 [package]
 name = "letime"
-version = "0.1.0"
+version = "0.18.0"
 description = "Le时间管理 · 时间块与四象限"
 authors = ["yile"]
 edition = "2021"
@@ -22,12 +22,14 @@ des = "0.8"
 ecb = "0.1"
 hex = "0.4"
 base64 = "0.22"
+ring = "0.17.14"
 tiny_http = "0.12"
 qrcode = { version = "0.14", features = ["svg"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [target."cfg(any(target_os = \"windows\", target_os = \"linux\", target_os = \"macos\"))".dependencies]
 tauri-plugin-single-instance = "2"
+tauri-plugin-global-shortcut = "2"
 
 [profile.release]
 codegen-units = 1

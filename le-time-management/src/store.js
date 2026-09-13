@@ -1,10 +1,14 @@
 // 全局状态 + 持久化 + 派生数据
 import { api } from "./api.js";
+import { migrateState } from "./migrations.js";
 
 let state = null;
 const subs = new Set();
 let saveTimer = null;
 let saveFail = 0;
+let saveChain = Promise.resolve();
+let batchDepth = 0;
+let batchDirty = false;
 
 export function uid(p = "id") {
   return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -39,33 +43,69 @@ export function durLabel(m) {
   return r ? `${h}h ${r}m` : `${h} 小时`;
 }
 
-/* ── 初始化 ── */
+/* ── 初始化 / 结构归一化 ── */
+export function normalizeState(raw = {}) {
+  const next = raw && typeof raw === "object" ? raw : {};
+  next.tasks = Array.isArray(next.tasks) ? next.tasks : [];
+  next.blocks = Array.isArray(next.blocks) ? next.blocks : [];
+  next.settings = next.settings && typeof next.settings === "object" && !Array.isArray(next.settings) ? next.settings : {};
+  next.plugins = next.plugins && typeof next.plugins === "object" && !Array.isArray(next.plugins) ? next.plugins : {};
+  next.inbox = Array.isArray(next.inbox) ? next.inbox : [];
+  next.automation = next.automation && typeof next.automation === "object" && !Array.isArray(next.automation) ? next.automation : {};
+  return next;
+}
 export async function initStore(seed) {
+  let loaded;
   try {
-    state = await api.loadData();
+    loaded = await api.loadData();
   } catch {
-    state = seed;
+    loaded = seed;
   }
-  // 兜底字段，老数据也能跑
-  state.tasks ??= []; state.blocks ??= []; state.settings ??= {}; state.plugins ??= {};
+  // 迁移放在 try 之外：数据来自更新版本时要显式报错，而不是静默换成种子数据
+  state = normalizeState(migrateState(loaded));
   return state;
 }
 export function getState() { return state; }
 export function subscribe(fn) { subs.add(fn); return () => subs.delete(fn); }
-function changed() {
-  subs.forEach((f) => { try { f(); } catch (e) { console.error(e); } });
+function queueSave() {
+  saveChain = saveChain.catch(() => {}).then(() => api.saveData(state));
+  return saveChain.then(() => { saveFail = 0; }).catch((e) => { if (++saveFail === 1) console.error("保存失败", e); throw e; });
+}
+function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
-    try { await api.saveData(state); saveFail = 0; }
-    catch (e) { if (++saveFail === 1) console.error("保存失败", e); }
-  }, 350);
+  saveTimer = setTimeout(() => { queueSave().catch(() => {}); }, 350);
+}
+function emitChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("tide:state-changed"));
+  subs.forEach((f) => { try { f(); } catch (e) { console.error(e); } });
+}
+function changed() {
+  if (batchDepth > 0) { batchDirty = true; return; }
+  emitChanged();
+  scheduleSave();
+}
+// 仅请求持久化，不触发界面刷新/自动化。适合滑块、导航位置等高频设置。
+export function persistSoon() { scheduleSave(); }
+export function touch() { changed(); }
+// 批量修改期间合并刷新与写盘，避免循环中每条记录都触发一次全局更新。
+export async function batchChanges(fn) {
+  batchDepth++;
+  try { return await fn(); }
+  finally {
+    batchDepth--;
+    if (batchDepth === 0 && batchDirty) {
+      batchDirty = false;
+      emitChanged();
+      scheduleSave();
+    }
+  }
 }
 
 /* ── 任务 ── */
 export function addTask(patch) {
   const t = {
     id: uid("t"), title: "新任务", note: "", quad: 1, done: false, estMin: 30,
-    tags: [], project: "", due: null, createdAt: Date.now(), ...patch,
+    tags: [], project: "", due: null, dueTime: "23:59", reminderEnabled: true, reminderOffsets: null, createdAt: Date.now(), ...patch,
   };
   state.tasks.unshift(t); changed(); return t;
 }
@@ -173,12 +213,12 @@ export function removePluginState(id) {
   }
 }
 export function replaceAll(next) {
-  next.tasks ??= []; next.blocks ??= []; next.settings ??= {}; next.plugins ??= {};
-  state = next; changed();
+  state = normalizeState(migrateState(next));
+  changed();
 }
 export function saveNow() {
   clearTimeout(saveTimer);
-  return api.saveData(state);
+  return queueSave();
 }
 
 export const CATEGORIES = [

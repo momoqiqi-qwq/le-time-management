@@ -71,7 +71,7 @@ miniprogram/
 
 设置 → **插件中心** 会显示与 Windows / Android 完全相同的 12 个内置插件及版本。启停状态保存在同一个 `plugins` 字段里，备份 JSON 跨端导入后会继续生效。 tabBar 与插件中心图标由桌面端同一份 Font Awesome Free SVG sprite 生成，避免三端图标体系分叉。
 
-小程序当前原生适配 5 个：
+小程序当前原生适配 4 个：
 
 - **番茄专注**：25/5/15 分钟模式、任务关联、累计番茄与专注分钟；退后台后按结束时间恢复，不依赖后台 `setInterval`。
 - **周度报告**：过去 7 天排程、分类时长、任务完成度。
@@ -90,7 +90,7 @@ node tools/sync-plugins.js
 
 ## 关键实现备忘
 
-- **持久化**：`wx.setStorageSync("letime-data", state)`，与桌面端同字段名；设置页「导出备份」复制到剪贴板的 JSON 可直接粘进桌面端导入，反之亦然。
+- **持久化**：`wx.setStorageSync("tidebalance-data", state)`，与桌面端同字段名；设置页「导出备份」复制到剪贴板的 JSON 可直接粘进桌面端导入，反之亦然。
 - **跨页跳转**：捕获页「查看时间块」通过 `getApp().globalData.pendingTimeblockDate` 把目标日期传给时间块页（switchTab 不能带参）。
 - **时间轴几何**：07:00–24:00，54px/小时，15 分钟吸附；`movable-area` 顶部偏移 10px，与时刻行对齐，画布容器**垂直方向不允许内边距**（否则拖拽坐标错位）。
 - **兼容性**：`timeParser` 的「X号」匹配改用捕获组代替 lookbehind（`(?<!…)`），否则 iOS < 16.4 的 JavaScriptCore 在解析模块时直接抛语法错误。

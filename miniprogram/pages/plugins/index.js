@@ -23,6 +23,10 @@ Page({
   onShow() { this.refresh(); },
 
   refresh() {
+    const state = store.getState();
+    const customOrder = Array.isArray(state.settings && state.settings.pluginOrder) ? state.settings.pluginOrder : [];
+    const rank = {};
+    customOrder.forEach((id, index) => { rank[id] = index; });
     const plugins = catalog.plugins.map((man) => ({
       id: man.id,
       name: man.name,
@@ -33,7 +37,12 @@ Page({
       platforms: platformText(man),
       miniNative: man.platforms && man.platforms.miniprogram === "native",
       enabled: store.isPluginEnabled(man.id),
-    }));
+      manifestOrder: Number(man.order) || 999,
+    })).sort((a, b) => {
+      const ar = Object.prototype.hasOwnProperty.call(rank, a.id) ? rank[a.id] : Number.MAX_SAFE_INTEGER;
+      const br = Object.prototype.hasOwnProperty.call(rank, b.id) ? rank[b.id] : Number.MAX_SAFE_INTEGER;
+      return ar - br || a.manifestOrder - b.manifestOrder || a.name.localeCompare(b.name);
+    });
     this.setData({
       allPlugins: plugins,
       nativeCount: plugins.filter((x) => x.miniNative).length,

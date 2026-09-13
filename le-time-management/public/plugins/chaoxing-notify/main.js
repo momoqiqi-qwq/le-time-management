@@ -1,438 +1,613 @@
-// 学习通通知 —— 改造自 chaoxing-notify-skill v1.0.0（Python 脚本 → Le时间管理插件）
-// 流程：fanyalogin 登录（密码 DES-ECB/PKCS5，密钥 u2oh6Vu^，加密在本机 Rust 端完成）
-//       → 会话化 HTTP 保持登录态 → 消息中心 / 课程列表 / 通知分享码详情 → 一键转提醒
-// 安全：凭据只存本机 data.json；会话 Cookie 只在内存；消息中心接口有平台 IP 白名单，被拒时明确提示。
+// 学习通通知 v2 for Le时间管理
+// Based on the user-provided chaoxing-notify-skill v2 flow:
+// fanyalogin -> reusable Cookie session -> notice.chaoxing.com inbox (no IP allow-list)
+// -> courses -> full notification body -> todo extraction -> local reminders.
 (function () {
   const LOGIN_PAGE = "https://passport2.chaoxing.com/login?fid=&newversion=true&refer=https%3A%2F%2Fi.chaoxing.com";
   const LOGIN_URL = "https://passport2.chaoxing.com/fanyalogin";
+  const INBOX_URL = "https://notice.chaoxing.com/pc/notice/getNoticeList";
   const COURSES_URL = "https://mooc2-ans.chaoxing.com/visit/courses/list";
   const NOTICE_URL = (code) => `https://sharewh3.xuexi365.com/share/notice/${encodeURIComponent(code)}/notice_data?pt=&wxsn=`;
-  const MSG_URL = (uid) => `https://specie.chaoxing.com/apis/message/getMsgNewsListWithPoff?uid=${encodeURIComponent(uid)}&poff=0&size=30`;
+  const SHARE_PAGE = (code) => `https://sharewh3.xuexi365.com/share/${encodeURIComponent(code)}?t=4`;
   const DES_KEY = "u2oh6Vu^";
+  const MAX_KEEP = 1000;
+  // 带登录态的浏览器跳板：学习通 passport 会在登录完成后按 refer 跳回目标页；
+  // 浏览器本身已登录时，该地址会立即 302 到目标页，属于“两种情况都对”的打开方式。
+  const LOGIN_JUMP = (target) => `https://passport2.chaoxing.com/login?fid=&newversion=true&refer=${encodeURIComponent(target)}`;
+  const ANON_HOST_RE = /^sharewh\d*\.xuexi365\.com$/i;
+  const PROBE_TIMEOUT_MS = 8000;
 
   const state = {
-    creds: null,            // {uname, password}
-    sid: null, uid: "", loggedIn: false,
-    courses: [], msgs: [], msgError: null,
-    notice: null, noticeError: null,
-    loading: "",
-    seen: new Set(),
-    filter: { kw: "", hideSeen: false },
+    sid: null,
+    cookie: "",
+    loggedIn: false,
+    remember: true,
+    creds: null,
+    inbox: [],
+    courses: [],
+    newIds: new Set(),
+    knownIds: new Set(),
+    ignoredIds: new Set(),
+    tab: "inbox",
+    filter: { kw: "", category: "全部", onlyUnread: false },
+    notice: null,
+    loading: false,
+    busy: "",
+    error: "",
+    lastSync: "",
+    cacheLoaded: false,
+    workStatus: {},
   };
-  let ui = null;
+  let host = null;
 
-  function esc(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  const esc = (s) => String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  const stripHtml = (html) => String(html || "")
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<br\s*\/?\s*>|<\/p>|<\/div>|<\/li>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">").replace(/&quot;/gi, '"').replace(/&#39;/g, "'")
+    .replace(/\u200b/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  const pad = (n) => String(n).padStart(2, "0");
+  function timeText(v) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 1000000000) {
+      const d = new Date(n > 100000000000 ? n : n * 1000);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    return String(v || "").slice(0, 16);
   }
-  function strip(s) { return String(s || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); }
-  function msgKey(m) { return `${m.time || ""}::${(m.title || "").slice(0, 40)}`; }
+  function classify(item) {
+    const t = `${item.title || ""} ${item.body || ""}`;
+    if (/考试|测验|补考|缓考/.test(t)) return "考试";
+    if (/作业|习题|任务点/.test(t)) return "作业";
+    if (/签到|打卡/.test(t)) return "签到";
+    return "通知";
+  }
+  function deadline(text) {
+    const m = String(text || "").match(/(?:结束时间|截止时间)[：:]\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
+    return m ? `${m[1]} ${m[2].padStart(5, "0")}` : "";
+  }
+
+  /* ── 通知里的真实链接：正文 HTML 里的作业 / 考试 / 课程地址 ── */
+
+  const decodeEntities = (s) => String(s || "")
+    .replace(/&amp;/gi, "&").replace(/&#38;/g, "&").replace(/&#x26;/gi, "&")
+    .replace(/&quot;/gi, '"').replace(/&#39;/g, "'");
+  function hostOf(url) {
+    try { return new URL(url).hostname; } catch { return ""; }
+  }
+  // 公开分享页无需登录即可看到正文，浏览器直接打开即可，不做跳板。
+  function isAnonymousUrl(url) { return ANON_HOST_RE.test(hostOf(url)); }
+  function linkScore(url) {
+    if (/\/work\/|doHomeWorkNew|workId|workRelationId|homework/i.test(url)) return 100;
+    if (/\/exam\/|exam-ans|examId|testpaper|mock/i.test(url)) return 90;
+    if (/mooc1(-ans)?\.chaoxing\.com|mooc2-ans\.chaoxing\.com/i.test(url)) return 70;
+    if (/notice\.chaoxing\.com\/pc\/notice/i.test(url)) return 50;
+    if (/^sharewh\d*\.xuexi365\.com$/i.test(hostOf(url))) return 10;
+    if (/(^|\.)(chaoxing\.com|xuexi365\.com|chaoxing\.cn)$/i.test(hostOf(url))) return 30;
+    return 0;
+  }
+  // 图片 / 静态资源 / 接口端点不是「可打开的通知页」，先剔掉再打分。
+  const NOT_A_PAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|ico|css|js|woff2?|ttf)(\?|$)/i;
+  // 正文正文被 stripHtml 之后链接就没了，所以必须回到原始 rtf_content / content 里找。
+  function pickTargetLink(item) {
+    const raw = decodeEntities([item?.raw?.rtf_content, item?.raw?.content, item?.body].filter(Boolean).join("\n"));
+    const found = (raw.match(/https?:\/\/[^\s"'<>，。、）】]+/gi) || [])
+      .map((u) => u.replace(/[),.;:!?）】、，。]+$/, ""))
+      .filter((u) => !NOT_A_PAGE_RE.test(u) && !/\/notice_data\b/i.test(u));
+    const best = found.map((u) => ({ u, s: linkScore(u) })).filter((x) => x.s > 0).sort((a, b) => b.s - a.s)[0];
+    if (best) return best.u;
+    return item?.idCode ? SHARE_PAGE(item.idCode) : "";
+  }
+
+  const withTimeout = (promise, ms, fallback) => Promise.race([
+    promise.catch(() => fallback),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+
+  // 用本机会话探一次目标页：被扔到 passport 就是需要登录。
+  async function probeNeedsLogin(url) {
+    if (!state.cookie) return true;
+    if (!state.sid) state.sid = await tide.http.session();
+    const res = await tide.http.fetch(state.sid, "GET", url, {
+      headers: authHeaders({ "Referer": "https://notice.chaoxing.com/pc/notice/index", "Accept": "text/html, */*" }),
+    });
+    if (Array.isArray(res?.cookies) && res.cookies.length) state.cookie = mergeCookies(state.cookie, res.cookies);
+    if (/passport2\.chaoxing\.com/.test(String(res?.finalUrl || ""))) return true;
+    const head = String(res?.body || "").slice(0, 4000);
+    return /请先登录|用户登录|登录学习通|fanyalogin|账号登录/.test(head);
+  }
+
+  // 浏览器打开：能直接开就直接开；需要登录就改走 passport 跳板，登录后自动回到该页。
+  async function openTarget(item) {
+    const target = pickTargetLink(item);
+    if (!target) { tide.notify("这条通知里没有可打开的链接"); return; }
+    if (isAnonymousUrl(target)) { tide.util.openUrl(target); return; }
+    state.busy = "open"; paintMain();
+    let needLogin = true;
+    try { needLogin = await withTimeout(probeNeedsLogin(target), PROBE_TIMEOUT_MS, true); }
+    catch { needLogin = true; }
+    finally { state.busy = ""; paintMain(); }
+    if (needLogin) {
+      tide.util.openUrl(LOGIN_JUMP(target));
+      tide.notify("已用系统浏览器打开：若浏览器未登录学习通，登录后会自动跳回该页面");
+    } else {
+      tide.util.openUrl(target);
+    }
+  }
+  function cookieObject(cookie) {
+    const out = {};
+    String(cookie || "").split(";").forEach((part) => {
+      const p = part.trim(); const i = p.indexOf("=");
+      if (i > 0) out[p.slice(0, i).trim()] = p.slice(i + 1).trim();
+    });
+    return out;
+  }
+  function mergeCookies(base, setCookies) {
+    const jar = cookieObject(base);
+    for (const line of setCookies || []) {
+      const first = String(line).split(";", 1)[0];
+      const i = first.indexOf("=");
+      if (i > 0) jar[first.slice(0, i).trim()] = first.slice(i + 1).trim();
+    }
+    return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join("; ");
+  }
+  function authHeaders(extra = {}) { return state.cookie ? { ...extra, Cookie: state.cookie } : extra; }
+  function assertJsonResponse(res, label) {
+    const head = String(res.body || "").slice(0, 500);
+    if (/用户登录|passport2\.chaoxing\.com|登录学习通/.test(head) || /passport2\.chaoxing\.com/.test(res.finalUrl || "")) {
+      throw new Error(`${label}失败：登录会话已失效，请重新登录`);
+    }
+    try { return JSON.parse(res.body || "{}"); }
+    catch { throw new Error(`${label}失败：接口返回了非 JSON 内容，可能是会话失效或平台风控`); }
+  }
+  async function saveAuth() {
+    await tide.storage.set("sessionCookie", state.remember ? state.cookie : null);
+    await tide.storage.set("creds", state.remember ? state.creds : null);
+  }
+  async function saveKnown() { await tide.storage.set("knownIds", [...state.knownIds].slice(-MAX_KEEP)); }
+  async function saveIgnored() { await tide.storage.set("ignoredIds", [...state.ignoredIds].slice(-MAX_KEEP)); }
+  async function savePrefs() { await tide.storage.set("filter", state.filter); }
 
   function ensureStyle() {
-    if (document.getElementById("cx-notify-style")) return;
-    const st = document.createElement("style");
-    st.id = "cx-notify-style";
-    st.textContent = `
-      .cx-wrap{max-width:880px;margin:0 auto}
-      .cx-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
-      .cx-kw{flex:1;min-width:170px;height:34px;border:1px solid #E4DFD6;border-radius:9px;padding:0 11px;background:#fff}
-      .cx-btn{font-size:12px;border:1px solid #E4DFD6;border-radius:8px;padding:7px 13px;background:#fff;cursor:pointer;color:#22303A;white-space:nowrap}
-      .gx-btn:hover,.cx-btn:hover{border-color:#0F4C5C;color:#0F4C5C}
-      .cx-btn.pri{background:#0F4C5C;color:#fff;border-color:#0F4C5C;font-weight:600}
-      .cx-status{font-size:12px;color:#7E8B94;margin:2px 0 8px}
-      .cx-status .err{color:#B03535}
-      .cx-status .ok{color:#2E7D52}
-      .cx-sec{font-size:12.5px;font-weight:700;color:#0F4C5C;letter-spacing:.06em;margin:18px 0 8px;padding-left:9px;border-left:3px solid #0F4C5C}
-      .cx-card{display:flex;gap:12px;background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:12px 14px;margin-bottom:9px;content-visibility:auto;contain-intrinsic-size:auto 84px}
-      .cx-card.seen{opacity:.55}
-      .cx-main{flex:1;min-width:0}
-      .cx-title{font-size:13.5px;font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .cx-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:#7E8B94;margin-top:4px;flex-wrap:wrap}
-      .cx-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:10px}
-      .cx-tag.g{background:#E5F4EC;color:#2E7D52}
-      .cx-new{background:#FF6B6B;color:#fff;border-radius:8px;padding:1px 7px;font-size:10px}
-      .cx-snip{font-size:11.5px;color:#7E8B94;margin-top:5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-      .cx-act{display:flex;flex-direction:column;gap:6px;justify-content:center}
-      .cx-act .cx-btn{font-size:11px;padding:5px 10px}
-      .cx-login{max-width:420px;margin:26px auto;background:#fff;border:1px solid #E4DFD6;border-radius:18px;padding:28px 30px;box-shadow:0 2px 10px rgba(34,48,58,.07)}
-      .cx-login h3{font-size:16px;margin-bottom:4px}
-      .cx-login .d{font-size:12px;color:#7E8B94;line-height:1.7;margin-bottom:14px}
-      .cx-login label{display:block;font-size:12px;color:#7E8B94;margin:12px 0 5px}
-      .cx-login input{width:100%;height:38px;border:1px solid #E4DFD6;border-radius:9px;padding:0 12px;background:#fff;box-sizing:border-box}
-      .cx-login .row{display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:12px;color:#7E8B94}
-      .cx-login .submit{width:100%;height:40px;border-radius:10px;background:#0F4C5C;color:#fff;font-size:14px;font-weight:600;margin-top:18px;cursor:pointer}
-      .cx-login .err{color:#B03535;font-size:12px;margin-top:10px;min-height:16px}
-      .cx-login .sec{font-size:10.5px;color:#A9B2BA;margin-top:12px;line-height:1.7}
-      .cx-banner{background:#FFF7E8;border:1px solid #F2D9A6;color:#8A6420;border-radius:12px;padding:12px 15px;font-size:12px;line-height:1.8;margin-bottom:10px}
-      .cx-input{flex:1;height:34px;border:1px solid #E4DFD6;border-radius:9px;padding:0 11px;background:#fff;min-width:220px}
-      .cx-courses{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:9px}
-      .cx-course{background:#fff;border:1px solid #E4DFD6;border-radius:12px;padding:11px 13px}
-      .cx-course .n{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .cx-course .m{font-size:11px;color:#7E8B94;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .cx-empty{border:1.5px dashed #CFC8BA;border-radius:12px;padding:20px;text-align:center;color:#A9B2BA;font-size:12.5px;line-height:1.8}
-      .cx-notice-card{background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:14px 16px;margin-bottom:9px}
-      .cx-notice-card .c{font-size:12px;color:#4B565E;line-height:1.8;margin-top:8px;max-height:180px;overflow-y:auto}
-    `;
-    document.head.append(st);
+    if (document.getElementById("cx2-style")) return;
+    const s = document.createElement("style"); s.id = "cx2-style"; s.textContent = `
+      .cx2{max-width:1180px;margin:0 auto;padding:clamp(12px,2vw,24px);color:#203840}.cx2 *{box-sizing:border-box}.cx2 button,.cx2 input,.cx2 select,.cx2 textarea{font:inherit}.cx2-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.cx2 h2{margin:0;font-size:clamp(22px,3vw,30px)}.cx2-sub{font-size:12.5px;color:#6c7f86;margin:4px 0}.cx2-actions{display:flex;gap:7px;flex-wrap:wrap}.cx2 button{border:1px solid #cddadd;background:#fff;color:#24505c;border-radius:9px;min-height:40px;padding:7px 12px;cursor:pointer}.cx2 button:hover{background:#eff6f7}.cx2 button.primary{background:#155367;color:#fff;border-color:#155367;font-weight:650}.cx2 button.danger{color:#a03f3f;border-color:#e0bcbc}.cx2 button:disabled{opacity:.5;cursor:default}.cx2-nav{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 10px;padding-bottom:10px;border-bottom:1px solid #e3eaec}.cx2-nav button.on{background:#1a5a6d;color:#fff;border-color:#1a5a6d}.cx2-pill{display:inline-block;font-size:10px;border-radius:999px;padding:2px 7px;background:#e8f1f3;color:#275b68;margin-left:5px}.cx2-new{background:#ff5e66;color:#fff}.cx2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}.cx2-search{flex:1;min-width:220px;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 11px;background:#fff}.cx2-select{border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:6px 9px;background:#fff;color:#274750}.cx2-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#506b74;white-space:nowrap}.cx2-status{font-size:12px;color:#6b7f86;margin:7px 0 11px}.cx2-status.err{background:#fff1ed;border:1px solid #efc8bc;color:#924932;padding:10px;border-radius:9px}.cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.cx2-card{background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:12px;min-width:0}.cx2-card.unread{border-left:4px solid #2b889d}.cx2-title{font-weight:650;font-size:14px;line-height:1.45;overflow-wrap:anywhere}.cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:11px;color:#70838a}.cx2-tag{padding:2px 7px;border-radius:999px;background:#edf3f4;color:#42636c}.cx2-tag.作业{background:#fff1df;color:#8b5d1e}.cx2-tag.考试{background:#fde9e9;color:#9c3737}.cx2-tag.签到{background:#e7f5e9;color:#317044}.cx2-grading{display:inline-block;vertical-align:1px;margin-left:7px;padding:1px 8px;border-radius:999px;background:#fff1df;color:#8b5d1e;border:1px solid #f0dcb6;font-size:10.5px;font-weight:500;cursor:help}.cx2-body{font-size:12px;color:#556b73;line-height:1.65;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}.cx2-card.open .cx2-body{display:block;-webkit-line-clamp:unset;max-height:320px;overflow:auto}.cx2-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.cx2-card-actions button{min-height:34px;padding:5px 9px;font-size:11.5px}.cx2-empty{border:1.5px dashed #ccd9dc;border-radius:12px;padding:24px;text-align:center;color:#85969c;font-size:12.5px}.cx2-courses{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px}.cx2-course{background:#fff;border:1px solid #dce6e8;border-radius:11px;padding:11px}.cx2-course b{display:block;font-size:13px}.cx2-course span{display:block;font-size:11px;color:#70838a;margin-top:4px}.cx2-grade{margin:14px 0 4px}.cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;color:#1b3b45}.cx2-grade-sub{font-size:11px;font-weight:400;color:#7d8f96}.cx2-course{position:relative}.cx2-course.done{background:#fcfcfd;border-color:#e9edef}.cx2-course b{padding-right:64px}.cx2-course .cx2-mark{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:5px;margin:0;padding:2px 8px;border-radius:999px;font-size:10.5px;line-height:1.65;font-weight:500;letter-spacing:.2px}.cx2-course .cx2-mark::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.cx2-course .cx2-mark.done{background:#f1f2f4;color:#98a1a8;border:1px solid #e6e8eb}.cx2-course .cx2-mark.open{background:#1f2937;color:#fff;border:1px solid #1f2937}.cx2-course .cx2-termline{color:#5b6b73}.cx2-hint{margin-top:14px;font-size:11px;color:#8b9aa0;line-height:1.7}.cx2-login{max-width:650px;margin:18px auto;background:#fff;border:1px solid #dce6e8;border-radius:16px;padding:clamp(18px,3vw,28px)}.cx2-login h3{margin:0 0 4px}.cx2-tabs{display:flex;gap:6px;margin:14px 0}.cx2-tabs button.on{background:#155367;color:#fff}.cx2-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cx2 label{font-size:12px;color:#5f747c}.cx2 label span{display:block;margin-bottom:4px;font-weight:600}.cx2 input,.cx2 textarea{width:100%;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 10px}.cx2 textarea{min-height:100px;resize:vertical}.cx2-wide{grid-column:1/-1}.cx2-note{font-size:11px;color:#788a90;line-height:1.65;background:#f3f7f8;padding:9px 10px;border-radius:8px;margin-top:10px}.cx2-lookup{max-width:820px}.cx2-detail{margin-top:10px;background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:14px}.cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:12.5px;line-height:1.7;color:#435b63}.cx2-todo{display:grid;gap:9px;max-width:900px}.cx2-due{font-weight:700;color:#9a5828;font-size:12px}.cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cx2-kpi{background:#f0f6f7;border:1px solid #dbe8ea;border-radius:9px;padding:7px 10px;font-size:11.5px}.cx2 footer{margin-top:24px;border-top:1px solid #dde7e9;padding-top:12px;font-size:11px;color:#7b8d93}
+      .cx2-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+      .cx2-card-actions button{min-height:36px;padding:6px 10px;font-size:12.5px}
+      @media(max-width:760px){.cx2{padding:12px}.cx2-grid{grid-template-columns:1fr}.cx2-fields{grid-template-columns:1fr}.cx2-wide{grid-column:auto}.cx2-actions{width:100%}.cx2-actions button{flex:1}.cx2-nav{overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px}.cx2-nav button{white-space:nowrap}.cx2-toolbar .cx2-search{width:100%;flex-basis:100%}}
+      @media(pointer:coarse){.cx2 button,.cx2 input,.cx2 select{min-height:46px}.cx2-card-actions button{min-height:40px}}
+    `; document.head.append(s);
   }
 
   async function loadPrefs() {
-    const f = await tide.storage.get("filter", null);
-    if (f) state.filter = { ...state.filter, ...f };
     state.creds = await tide.storage.get("creds", null);
-    state.seen = new Set(await tide.storage.get("seen", []));
+    state.cookie = await tide.storage.get("sessionCookie", "") || "";
+    state.knownIds = new Set(await tide.storage.get("knownIds", []));
+    state.ignoredIds = new Set(await tide.storage.get("ignoredIds", []));
+    state.filter = { ...state.filter, ...(await tide.storage.get("filter", null) || {}) };
+    state.workStatus = await tide.storage.get("workStatus", null) || {};
+    const cached = await tide.storage.get("inboxCache", []);
+    if (Array.isArray(cached) && cached.length) { state.inbox = cached; state.cacheLoaded = true; }
   }
-  const saveFilter = () => tide.storage.set("filter", state.filter);
-  const saveSeen = () => tide.storage.set("seen", [...state.seen].slice(-400));
 
-  /* ── 登录与数据 ── */
   async function cxLogin(uname, password) {
     state.sid = await tide.http.session();
-    await tide.http.fetch(state.sid, "GET", LOGIN_PAGE);
+    let res = await tide.http.fetch(state.sid, "GET", LOGIN_PAGE, { headers: authHeaders() });
+    state.cookie = mergeCookies(state.cookie, res.cookies);
     const pwd = await tide.util.desEncryptHex(password, DES_KEY);
-    const res = await tide.http.fetch(state.sid, "POST", LOGIN_URL, {
-      headers: {
+    res = await tide.http.fetch(state.sid, "POST", LOGIN_URL, {
+      headers: authHeaders({
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "X-Requested-With": "XMLHttpRequest",
         "Origin": "https://passport2.chaoxing.com",
         "Referer": LOGIN_PAGE,
-      },
+      }),
       body: `fid=-1&uname=${encodeURIComponent(uname)}&password=${encodeURIComponent(pwd)}&refer=https%3A%2F%2Fi.chaoxing.com&t=true&forbidotherlogin=0&validate=`,
     });
-    const j = JSON.parse(res.body);
-    if (!j.status) throw new Error(j.msg2 || j.msg || "登录失败，请检查账号密码");
-    state.uid = ((res.cookies || []).join("\n").match(/_uid=(\d+)/) || [])[1] || "";
+    state.cookie = mergeCookies(state.cookie, res.cookies);
+    let j; try { j = JSON.parse(res.body); } catch { throw new Error("登录接口返回异常，请稍后重试"); }
+    if (!j.status) throw new Error(j.msg2 || j.msg || "登录失败，请检查账号密码；若频繁登录触发风控，可改用 Cookie 登录");
     state.loggedIn = true;
-    return state.uid;
+    await saveAuth();
+    return cookieObject(state.cookie)._uid || "";
+  }
+
+  async function startCookieSession(cookie) {
+    state.sid = await tide.http.session(); state.cookie = String(cookie || "").trim();
+    if (!state.cookie) throw new Error("Cookie 不能为空");
+    await fetchInbox(1, false);
+    state.loggedIn = true; await saveAuth();
+  }
+
+  function normalizeNotice(it) {
+    const body = stripHtml(it.rtf_content) || stripHtml(it.content);
+    const id = String(it.idCode || it.id || `${it.insertTime || ""}-${it.title || ""}`);
+    const tag = String(it.tag || "");
+    return {
+      id, idCode: String(it.idCode || ""), title: stripHtml(it.title || "(无标题)"), body,
+      sender: stripHtml(it.createrName || it.sender || ""), time: timeText(it.insertTime || it.sendTime),
+      insertTime: Number(it.insertTime || 0), unread: !(it.isread === 1 || it.isread === "1" || it.isread === true),
+      tag, courseId: (tag.match(/courseId(\d+)/i) || [])[1] || "", raw: it,
+    };
+  }
+
+  async function fetchInbox(limit = 0, commit = true, incremental = false) {
+    if (!state.sid) state.sid = await tide.http.session();
+    const items = []; let last = ""; let pages = 0;
+    while (pages < 50) {
+      const res = await tide.http.fetch(state.sid, "POST", INBOX_URL, {
+        headers: authHeaders({
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "Origin": "https://notice.chaoxing.com",
+          "Referer": "https://notice.chaoxing.com/pc/notice/index",
+          "X-Requested-With": "XMLHttpRequest",
+        }),
+        body: `type=2&year=${new Date().getFullYear()}&lastValue=${encodeURIComponent(last)}`,
+      });
+      state.cookie = mergeCookies(state.cookie, res.cookies);
+      const root = assertJsonResponse(res, "收件箱加载");
+      const notices = root.notices || {};
+      const list = Array.isArray(notices.list) ? notices.list : [];
+      items.push(...list); pages += 1;
+      const pageIds = list.map((x) => String(x.idCode || x.id || `${x.insertTime || ""}-${x.title || ""}`));
+      const overlapped = incremental && pageIds.some((id) => state.knownIds.has(id));
+      if ((limit && items.length >= limit) || notices.lastPage || !list.length || overlapped) break;
+      last = String(notices.lastGetId || ""); if (!last) break;
+    }
+    const fresh = items.slice(0, limit || items.length).map(normalizeNotice);
+    const merged = incremental ? [...fresh, ...state.inbox] : fresh;
+    const dedup = new Map(); for (const x of merged) if (x.id && !dedup.has(x.id)) dedup.set(x.id, x);
+    const normalized = [...dedup.values()].sort((a,b)=>(b.insertTime||0)-(a.insertTime||0));
+    if (commit) {
+      const ids = fresh.map((x) => x.id).filter(Boolean);
+      if (!state.knownIds.size) state.newIds = new Set();
+      else state.newIds = new Set(ids.filter((id) => !state.knownIds.has(id)));
+      ids.forEach((id) => state.knownIds.add(id));
+      state.inbox = normalized;
+      await tide.storage.set("inboxCache", state.inbox.slice(0, 2000));
+      await saveKnown(); await saveAuth();
+    }
+    return normalized;
   }
 
   async function loadCourses() {
     const res = await tide.http.fetch(state.sid, "GET", `${COURSES_URL}?v=${Date.now()}`, {
-      headers: { "Accept": "text/html, */*; q=0.01", "Referer": "https://mooc2-ans.chaoxing.com/visit/interaction" },
+      headers: authHeaders({ "Accept": "text/html, */*; q=0.01", "Referer": "https://mooc2-ans.chaoxing.com/visit/interaction" }),
     });
-    if (res.status !== 200) throw new Error(`HTTP ${res.status}（登录态可能失效，请重新登录）`);
-    const html = res.body;
-    const courses = [];
-    const pick = (s, re) => { const m = s.match(re); return m ? m[1] : ""; };
-    for (const li of html.split('<li class="course ').slice(1)) {
+    state.cookie = mergeCookies(state.cookie, res.cookies);
+    if (res.status !== 200 || /passport2\.chaoxing\.com/.test(res.finalUrl || "")) throw new Error("课程列表加载失败：登录态可能失效");
+    const courses = [], pick = (s, re) => (s.match(re) || [])[1] || "";
+    for (const li of String(res.body || "").split('<li class="course ').slice(1)) {
       const cid = pick(li, /class="courseId"\s+name="courseId"\s+value="(\d+)"/);
       const clz = pick(li, /class="clazzId"\s+name="clazzId"\s+value="(\d+)"/);
       const name = pick(li, /class="course-name[^"]*"\s+[^>]*title="([^"]+)"/);
       if (!cid || !clz || !name) continue;
-      courses.push({
-        name, courseid: cid, clazzid: clz,
-        cpi: pick(li, /info="\d+_(\d+)"/),
-        teacher: pick(li, /class="line2 color3"[^>]*title="([^"]+)"/),
-        clazz: pick(li, /班级：([^<]+)/).trim(),
-      });
+      courses.push({ name: stripHtml(name), courseid: cid, clazzid: clz,
+        cpi: pick(li, /info="\d+_(\d+)"/), teacher: stripHtml(pick(li, /class="line2 color3"[^>]*title="([^"]+)"/)),
+        clazz: stripHtml(pick(li, /班级：([^<]+)/)).trim(),
+        // 卡片里还有一行「开课时间：2025-09-01～2027-09-01」，课程页的年级分组与完成状态全靠它推断。
+        start: pick(li, /开课时间：\s*(\d{4}-\d{2}-\d{2})/),
+        end: pick(li, /开课时间：\s*\d{4}-\d{2}-\d{2}\s*[～~\-]\s*(\d{4}-\d{2}-\d{2})/) });
     }
-    state.courses = courses;
-  }
-
-  // 消息中心返回结构未知（接口有 IP 白名单，作者也未公开样例），做防御式解析：
-  // 取响应里第一个对象数组，字段按常见命名猜测
-  function normalizeMsgs(j) {
-    const firstArray = (function find(o) {
-      if (Array.isArray(o)) return o.length && typeof o[0] === "object" ? o : null;
-      if (o && typeof o === "object") {
-        for (const k of Object.keys(o)) { const r = find(o[k]); if (r) return r; }
-      }
-      return null;
-    })(j) || [];
-    return firstArray.map((it) => ({
-      title: strip(it.title || it.subject || it.name || it.msgTitle || it.noticeTitle || "(无标题)"),
-      snippet: strip(it.content || it.summary || it.msgContent || it.brief || it.desc || "").slice(0, 120),
-      time: String(it.time || it.createTime || it.sendTime || it.insertTime || it.date || "").slice(0, 16),
-      url: it.url || it.link || it.pcUrl || "",
-      sender: it.fromusername || it.sender || it.createrName || it.from || "",
-    }));
-  }
-
-  async function loadMessages() {
-    const res = await tide.http.fetch(state.sid, "GET", MSG_URL(state.uid), {
-      headers: { "Referer": "https://i.chaoxing.com/", "X-Requested-With": "XMLHttpRequest" },
-    });
-    let j;
-    try { j = JSON.parse(res.body); } catch { throw new Error("消息接口返回非 JSON"); }
-    if (String(j.result) !== "1") throw new Error(j.errorMsg || j.msg || "接口拒绝");
-    state.msgs = normalizeMsgs(j);
-    state.msgError = null;
+    state.courses = courses; await saveAuth(); return courses;
   }
 
   async function loadNotice(code) {
-    const res = await tide.http.fetch(state.sid, "GET", NOTICE_URL(code), {
-      headers: { "X-Requested-With": "XMLHttpRequest", "Referer": `https://sharewh3.xuexi365.com/share/${encodeURIComponent(code)}?t=4` },
+    const clean = String(code || "").trim().match(/[0-9a-fA-F]{32}/)?.[0] || String(code || "").trim();
+    if (!/^[0-9a-fA-F]{32}$/.test(clean)) throw new Error("通知分享码应为 32 位 idCode，也可以直接粘贴包含 idCode 的分享链接");
+    const res = await tide.http.fetch(state.sid || await tide.http.session(), "GET", NOTICE_URL(clean), {
+      headers: { "Accept": "application/json, text/javascript, */*; q=0.01", "Referer": SHARE_PAGE(clean), "X-Requested-With": "XMLHttpRequest" },
     });
-    const j = JSON.parse(res.body);
-    if (String(j.result) !== "1") throw new Error(j.msg || "通知获取失败");
+    const j = assertJsonResponse(res, "通知详情查询");
+    if (String(j.result) !== "1") throw new Error(j.msg || "通知详情查询失败");
     const d = j.data || {};
-    state.notice = {
-      idCode: d.idCode || code,
-      title: strip(d.title || "(无标题)"),
-      content: strip(d.content).slice(0, 2000),
-      createrName: d.createrName || "", toNames: d.toNames || "",
-      insertTime: String(d.insertTime || "").slice(0, 16),
-    };
-    state.noticeError = null;
+    state.notice = { idCode: clean, title: stripHtml(d.title || "(无标题)"), body: stripHtml(d.rtf_content) || stripHtml(d.content), sender: stripHtml(d.createrName || ""), time: timeText(d.insertTime), toNames: stripHtml(d.toNames || ""), raw: d };
   }
 
-  /* ── 转提醒 ── */
-  async function toReminder(title, content, link) {
-    const p = tide.util.parseWhen(`${title} ${strip(content).slice(0, 200)}`);
-    const cat = tide.util.guessCategory(`${title} ${content}`);
-    const task = tide.tasks.create({
-      title, quad: tide.util.guessQuad(p.date),
-      estMin: p.endMin ? p.endMin - p.startMin : 60,
-      due: p.date, tags: ["学习通"], note: link || "",
-    });
-    if (p.date && p.startMin !== null) {
-      tide.blocks.create({ date: p.date, start: tide.util.hhmmOf(p.startMin), durMin: p.endMin ? p.endMin - p.startMin : 60, title, taskId: task.id, cat });
-      tide.notify(`已创建提醒：「${title.slice(0, 20)}${title.length > 20 ? "…" : ""}」→ ${p.date.slice(5)} ${tide.util.hhmmOf(p.startMin)}`, {
-        actionLabel: "查看", ms: 6500, action: () => tide.util.navigate("timeblock"),
-      });
-    } else if (p.date) {
-      tide.blocks.create({ date: p.date, start: "09:00", durMin: 60, title, taskId: task.id, cat });
-      tide.notify(`识别到日期 ${p.date.slice(5)}，提醒先放在 09:00`);
-    } else {
-      tide.notify("没识别到日期，任务已存入象限池");
-    }
+  async function toReminder(item) {
+    const text = `${item.title || ""} ${item.body || ""}`;
+    const due = deadline(text); const p = tide.util.parseWhen(due ? `${item.title} ${due}` : text.slice(0, 700));
+    const date = due ? due.slice(0, 10) : p.date; const startMin = due ? (()=>{const [h,m]=due.slice(11).split(':').map(Number);return h*60+m;})() : p.startMin;
+    const title = item.title || "学习通提醒";
+    const link = item.idCode ? SHARE_PAGE(item.idCode) : "";
+    const task = tide.tasks.create({ title, quad: tide.util.guessQuad(date), estMin: 60, due: date || null, tags: ["学习通", classify(item)], note: [item.sender, link, item.body?.slice(0, 500)].filter(Boolean).join("\n") });
+    if (date) {
+      const start = tide.util.hhmmOf(startMin == null ? 9 * 60 : startMin);
+      tide.blocks.create({ date, start, durMin: 60, title, taskId: task.id, cat: tide.util.guessCategory(text) });
+      tide.notify(`已创建提醒：${date.slice(5)} ${start} · ${title.slice(0, 24)}`, { actionLabel: "查看", action: () => tide.util.navigate("timeblock") });
+    } else tide.notify("没有识别到明确日期，已保存到任务池");
   }
 
-  /* ── 渲染 ── */
-  function filteredMsgs() {
+  const isIgnored = (n) => n && state.ignoredIds.has(n.id);
+  function visibleInbox() { return state.inbox.filter((n) => !isIgnored(n)); }
+
+  function filteredInbox() {
     const kw = state.filter.kw.trim().toLowerCase();
-    return state.msgs.filter((m) => {
-      if (state.filter.hideSeen && state.seen.has(msgKey(m))) return false;
-      if (kw && !(m.title.toLowerCase().includes(kw) || m.snippet.toLowerCase().includes(kw))) return false;
+    return visibleInbox().filter((n) => {
+      const cat = classify(n);
+      if (state.filter.category !== "全部" && cat !== state.filter.category) return false;
+      if (state.filter.onlyUnread && !n.unread) return false;
+      if (kw && !`${n.title} ${n.body} ${n.sender}`.toLowerCase().includes(kw)) return false;
       return true;
     });
   }
-  function filteredCourses() {
-    const kw = state.filter.kw.trim().toLowerCase();
-    if (!kw) return state.courses;
-    return state.courses.filter((c) =>
-      c.name.toLowerCase().includes(kw) || c.teacher.toLowerCase().includes(kw) || c.clazz.toLowerCase().includes(kw));
+  function todos() {
+    const now = Date.now();
+    return visibleInbox().map((n) => ({ ...n, dueText: deadline(n.body) })).filter((n) => n.dueText && new Date(n.dueText.replace(' ', 'T')).getTime() >= now).sort((a,b)=>a.dueText.localeCompare(b.dueText));
   }
 
-  function paintLogin(el) {
-    el.innerHTML = `<div class="cx-login">
-      <h3>登录学习通</h3>
-      <div class="d">使用超星学习通账号（手机号/学号）登录。密码 DES 加密在本机 Rust 端完成，凭据只保存在本机数据文件中。</div>
-      <label>账号（手机号 / 学号）</label><input data-u type="text" autocomplete="off">
-      <label>密码</label><input data-p type="password">
-      <div class="row"><label style="margin:0;display:flex;gap:6px;align-items:center"><input data-r type="checkbox" checked> 记住凭据（仅本机）</label><span data-switch></span></div>
-      <button class="submit" data-go>登 录</button>
-      <div class="err" data-err></div>
-      <div class="sec">改造自 chaoxing-notify-skill（fanyalogin + DES-ECB/PKCS5）。「消息中心」接口有平台 IP 白名单：若被拒，课程与通知分享码查询仍可用。</div>
-    </div>`;
-    const errEl = el.querySelector("[data-err]");
-    el.querySelector("[data-go]").addEventListener("click", async () => {
-      const uname = el.querySelector("[data-u]").value.trim();
-      const password = el.querySelector("[data-p]").value;
-      const remember = el.querySelector("[data-r]").checked;
-      if (!uname || !password) { errEl.textContent = "请填写账号和密码"; return; }
-      errEl.textContent = "正在登录…";
-      try {
-        const uid = await cxLogin(uname, password);
-        if (remember) { state.creds = { uname, password }; await tide.storage.set("creds", state.creds); }
-        tide.notify(`登录成功${uid ? `（uid ${uid}）` : ""}`);
-        paintMain(el);
-        refreshAll();
-      } catch (e) {
-        errEl.textContent = e.message || e;
-      }
-    });
+  async function ignoreNotice(n) {
+    if (!n || !n.id) return;
+    state.ignoredIds.add(n.id);
+    state.newIds.delete(n.id);
+    await saveIgnored(); paintMain();
+    tide.notify("已从本机列表移除（不影响学习通平台数据），顶部可恢复");
+  }
+  async function restoreIgnored() {
+    const n = state.ignoredIds.size;
+    state.ignoredIds.clear();
+    await saveIgnored(); paintMain();
+    tide.notify(n ? `已恢复 ${n} 条通知` : "当前没有被忽略的通知");
+  }
+  function linkHintHtml(n) {
+    const t = pickTargetLink(n);
+    if (!t || isAnonymousUrl(t)) return "";
+    const s = linkScore(t);
+    return `<span class="cx2-pill" title="${esc(t)}">${s >= 100 ? "已识别作业页" : s >= 90 ? "已识别考试页" : "已识别页面"}</span>`;
+  }
+  const OPEN_TIP = "用系统浏览器打开该通知对应的真实页面：会自动带上学习通登录态；若浏览器本身未登录，会先跳到登录页并在登录后自动回到该页面";
+  const OPEN_SHARE_TIP = "用系统浏览器打开学习通公开分享页，无需登录即可看正文";
+  const SHARE_TIP = "打开学习通公开分享页，无需登录即可看正文";
+  // 卡片按钮统一在这里生成，收件箱 / 待办作业两个列表共用，避免两处漂移。
+  function cardActionsHtml(n, kind) {
+    const target = pickTargetLink(n);
+    const real = !!target && !isAnonymousUrl(target);
+    const btns = [];
+    if (kind === "inbox") btns.push(`<button data-act="toggle">展开/收起</button>`);
+    btns.push(`<button data-act="remind">${kind === "todo" ? "加入时间管理" : "转为提醒"}</button>`);
+    if (n.idCode) btns.push(`<button data-act="share" title="${esc(SHARE_TIP)}">打开通知</button>`);
+    if (target) btns.push(`<button data-act="open" title="${esc(real ? OPEN_TIP : OPEN_SHARE_TIP)}">浏览器打开${real ? "（带登录态）" : ""}</button>`);
+    btns.push(`<button class="danger" data-act="del" title="仅从本机列表移除并记住，不影响学习通平台，也不影响已创建的提醒；顶部「恢复已移除」可一键放回">移除</button>`);
+    return `<div class="cx2-card-actions">${btns.join("")}</div>`;
   }
 
-  function paintMain(el) {
-    el.innerHTML = `<div class="cx-wrap">
-      <div style="font-size:11px;letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">学 习 通 通 知 · 内 置 插 件</div>
-      <div class="cx-toolbar">
-        <button class="cx-btn pri" data-refresh>刷新</button>
-        <input class="cx-kw" data-kw type="text" placeholder="关键词过滤：课程 / 老师 / 作业 / 考试…">
-        <label class="gx-toggle" data-hs><i></i>只看未读</label>
-        <span style="flex:1"></span>
-        <button class="cx-btn" data-switch>切换账号</button>
-      </div>
-      <div class="cx-status" data-status></div>
-      <div data-body></div>
-      <div style="height:30px"></div>
-    </div>`;
-
-    ui = {
-      status: el.querySelector("[data-status]"),
-      body: el.querySelector("[data-body]"),
-      kw: el.querySelector("[data-kw]"),
-      hs: el.querySelector("[data-hs]"),
-    };
-    ui.kw.value = state.filter.kw;
-    ui.hs.classList.toggle("on", !!state.filter.hideSeen);
-    let kwTimer = null;
-    ui.kw.addEventListener("input", () => {
-      clearTimeout(kwTimer);
-      kwTimer = setTimeout(() => { state.filter.kw = ui.kw.value; saveFilter(); paintSections(); }, 200);
-    });
-    ui.kw.addEventListener("keydown", (e) => e.stopPropagation());
-    ui.hs.addEventListener("click", () => {
-      state.filter.hideSeen = !state.filter.hideSeen;
-      saveFilter(); paintSections();
-    });
-    el.querySelector("[data-refresh]").addEventListener("click", refreshAll);
-    el.querySelector("[data-switch]").addEventListener("click", () => {
-      state.creds = null; state.loggedIn = false;
-      tide.storage.set("creds", null);
-      paintLogin(el);
-    });
-    paintSections();
+  function navHtml() {
+    const t = todos();
+    return `<div class="cx2-nav">${[
+      ["inbox", `收件箱 <span class="cx2-pill">${visibleInbox().length}</span>${state.newIds.size?`<span class="cx2-pill cx2-new">+${state.newIds.size}</span>`:""}`],
+      ["todo", `待办作业 <span class="cx2-pill">${t.length}</span>`],
+      ["courses", `课程 <span class="cx2-pill">${state.courses.length}</span>`],
+      ["lookup", "分享码查询"],
+    ].map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'on':''}">${label}</button>`).join('')}</div>`;
   }
 
-  function paintSections() {
-    if (!ui) return;
-    const body = ui.body;
-    const msgs = filteredMsgs();
-    const courses = filteredCourses();
-    ui.hs.classList.toggle("on", !!state.filter.hideSeen);
+  function inboxHtml() {
+    const rows = filteredInbox();
+    return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 作业 / 考试 / 正文…"><select class="cx2-select" data-category>${["全部","通知","作业","考试","签到"].map(x=>`<option ${state.filter.category===x?'selected':''}>${x}</option>`).join('')}</select><label class="cx2-check"><input type="checkbox" data-unread ${state.filter.onlyUnread?'checked':''}> 只看平台未读</label></div>
+      <div class="cx2-kpis"><span class="cx2-kpi">本次新增 ${state.newIds.size}</span><span class="cx2-kpi">平台未读 ${visibleInbox().filter(x=>x.unread).length}</span><span class="cx2-kpi">显示 ${visibleInbox().length} / 共 ${state.inbox.length}</span>${state.ignoredIds.size?`<span class="cx2-kpi" title="仅在本机列表隐藏，原始通知仍在本地缓存里；点右上角「恢复已移除」可放回">已移除 ${state.ignoredIds.size}</span>`:''}</div>
+      ${rows.length?`<div class="cx2-grid">${rows.map((n)=>{const cat=classify(n),isNew=state.newIds.has(n.id);return `<article class="cx2-card ${n.unread?'unread':''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${isNew?'<span class="cx2-pill cx2-new">NEW</span>':''}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span>${n.sender?`<span>${esc(n.sender)}</span>`:''}<span>${esc(n.time||'未知时间')}</span>${n.unread?'<span>未读</span>':'<span>已读</span>'}${linkHintHtml(n)}</div><div class="cx2-body">${esc(n.body||'（无正文）')}</div>${cardActionsHtml(n,'inbox')}</article>`;}).join('')}</div>`:'<div class="cx2-empty">没有匹配的通知。</div>'}`;
+  }
+  function todoHtml() {
+    const list=todos();
+    return list.length?`<div class="cx2-todo">${list.map(n=>`<article class="cx2-card" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag 作业">作业</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div><div class="cx2-due">截止 ${esc(n.dueText)}</div><div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`).join('')}</div>`:'<div class="cx2-empty">当前拉取范围内没有识别到未截止作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>';
+  }
+  /* ── 作业提交状态探测：通知正文里没有提交/批改状态，只能拿附件里的作业入口实地看一眼 ──
+     附件 iframe 的 name 是 Base64(URL编码的 JSON)，里面带 workId 和作业入口 URL。
+     实测落地页（真实账号 12 条样本）：
+       · title「作业作答」→ 还能作答，即未提交；
+       · title「作答详情 / 查看详情 / 作业详情」→ 已提交后的查看页；
+     是否已批改没有静态信号（批改结果页是 Vue 异步渲染），所以已提交统一记为「正在批改」，
+     批改完成以平台通知为准。每轮刷新最多探 6 条未知项、逐条间隔进行，避免触发风控。 */
 
-    body.innerHTML = `
-      <div class="cx-status" data-mst></div>
-      <div data-mlist></div>
-      <div class="cx-sec">课 程 列 表 · ${courses.length} 门</div>
-      <div data-clist></div>
-      <div class="cx-sec">通 知 分 享 码 查 询</div>
-      <div class="cx-toolbar" style="margin-top:0">
-        <input class="cx-input" data-code type="text" placeholder="粘贴通知分享码（idCode），如 3A55CB22A1BF…">
-        <button class="cx-btn" data-lookup>查询详情</button>
-      </div>
-      <div data-ndetail></div>
-      <div style="height:20px"></div>
-    `;
-    const mst = body.querySelector("[data-mst]");
-    const mlist = body.querySelector("[data-mlist]");
-    const clist = body.querySelector("[data-clist]");
-    const ndetail = body.querySelector("[data-ndetail]");
-
-    // 消息中心
-    if (state.msgError) {
-      mst.innerHTML = "";
-      mlist.innerHTML = `<div class="cx-banner">${esc(state.msgError)}<br>学习通「消息中心」接口有来源 IP 白名单（平台限制，非账号问题）。被拒时请换到常用网络重试；课程列表与「通知分享码查询」不受影响。</div>`;
-    } else {
-      mst.innerHTML = `消息中心 · ${msgs.length} 条${state.msgs.length ? `（共拉取 ${state.msgs.length} 条）` : ""}`;
-      mlist.innerHTML = msgs.length ? msgs.map((m) => {
-        const k = msgKey(m);
-        const isNew = !state.seen.has(k);
-        return `<div class="cx-card${isNew ? "" : " seen"}" data-k="${esc(k)}">
-          <div class="cx-main">
-            <div class="cx-title">${esc(m.title)}</div>
-            <div class="cx-meta">${m.sender ? `<span class="cx-tag g">${esc(m.sender)}</span>` : ""}<span>${esc(m.time || "未知时间")}</span>${isNew ? '<span class="cx-new">NEW</span>' : ""}</div>
-            ${m.snippet ? `<div class="cx-snip">${esc(m.snippet)}</div>` : ""}
-          </div>
-          <div class="cx-act"><button class="cx-btn" data-act="remind">提醒</button>${m.url ? '<button class="cx-btn" data-act="open">打开</button>' : ""}</div>
-        </div>`;
-      }).join("") : `<div class="cx-empty">暂无消息 · 点上方「刷新」拉取</div>`;
-    }
-
-    // 课程
-    clist.innerHTML = courses.length
-      ? `<div class="cx-courses">${courses.map((c) => `<div class="cx-course"><div class="n" title="${esc(c.name)}">${esc(c.name)}</div><div class="m">${esc([c.teacher, c.clazz].filter(Boolean).join(" · ") || "—")}</div></div>`).join("")}</div>`
-      : `<div class="cx-empty">没有匹配的课程</div>`;
-
-    // 分享码查询状态
-    if (state.noticeError) {
-      ndetail.innerHTML = `<div class="cx-banner">${esc(state.noticeError)}</div>`;
-    } else if (state.notice) {
-      const n = state.notice;
-      ndetail.innerHTML = `<div class="cx-notice-card">
-        <div class="cx-title" style="white-space:normal">${esc(n.title)}</div>
-        <div class="cx-meta"><span class="cx-tag">${esc(n.createrName || "教师")}</span><span>${esc(n.insertTime)}</span>${n.toNames ? `<span>发给：${esc(n.toNames)}</span>` : ""}</div>
-        <div class="c">${esc(n.content)}</div>
-        <div class="cx-act" style="flex-direction:row;margin-top:10px"><button class="cx-btn" data-nremind>转为提醒</button></div>
-      </div>`;
-      ndetail.querySelector("[data-nremind]").addEventListener("click", async () => {
-        await toReminder(n.title, n.content, "");
-        paintSections();
+  function parseWorkRef(n) {
+    const m = String(n?.raw?.rtf_content || "").match(/<iframe[^>]*\bname="([A-Za-z0-9+/=]{40,})"/);
+    if (!m) return null;
+    try {
+      const w = JSON.parse(decodeURIComponent(atob(m[1]))).att_web || {};
+      if (!w.url || !w.examOrWorkId) return null;
+      return { id: String(w.examOrWorkId), url: w.url };
+    } catch { return null; }
+  }
+  async function saveWorkStatus() { await tide.storage.set("workStatus", state.workStatus); }
+  function statusOf(n) {
+    const ref = parseWorkRef(n);
+    return ref ? (state.workStatus[ref.id] || "") : "";
+  }
+  const gradingBadge = (n) => statusOf(n) === "grading"
+    ? `<span class="cx2-grading" title="已提交：作业页打开是查看页而非作答页；批改完成后以平台通知为准">正在批改</span>`
+    : "";
+  async function probeWorkStatus(n) {
+    const ref = parseWorkRef(n);
+    if (!ref || state.workStatus[ref.id]) return;
+    try {
+      const res = await tide.http.fetch(state.sid || await tide.http.session(), "GET", ref.url, {
+        headers: authHeaders({ "Accept": "text/html,*/*; q=0.9", "Referer": "https://i.chaoxing.com/" }),
       });
-    }
+      state.cookie = mergeCookies(state.cookie, res.cookies);
+      const title = (String(res.body || "").match(/<title>([^<]*)<\/title>/) || [])[1] || "";
+      state.workStatus[ref.id] = /作业作答/.test(title) ? "unsent" : /详情/.test(title) ? "grading" : "";
+    } catch { return; } // 探测失败不留记录，下次刷新再试
+    await saveWorkStatus();
+  }
+  let probing = false;
+  async function probePendingWorks() {
+    if (probing || !state.loggedIn) return;
+    const targets = todos().filter((n) => { const r = parseWorkRef(n); return r && !state.workStatus[r.id]; }).slice(0, 6);
+    if (!targets.length) return;
+    probing = true;
+    try {
+      for (const n of targets) { await probeWorkStatus(n); paintMain(); }
+    } finally { probing = false; paintMain(); }
   }
 
-  function wireSectionEvents(el) {
-    ui.body.addEventListener("click", async (e) => {
-      const btn = e.target.closest("[data-act]");
-      const card = e.target.closest(".cx-card");
-      if (btn && card) {
-        const m = filteredMsgs().find((x) => msgKey(x) === card.dataset.k) || state.msgs.find((x) => msgKey(x) === card.dataset.k);
-        if (!m) return;
-        if (btn.dataset.act === "remind") {
-          await toReminder(m.title, m.snippet, m.url);
-          state.seen.add(msgKey(m)); saveSeen(); paintSections();
-        } else if (btn.dataset.act === "open" && m.url) {
-          tide.util.openUrl(m.url);
-        }
-        return;
-      }
-      const lookup = e.target.closest("[data-lookup]");
-      if (lookup) {
-        const code = el.querySelector("[data-code]").value.trim();
-        const nd = el.querySelector("[data-ndetail]");
-        if (!code) { nd.innerHTML = `<div class="cx-banner">请先粘贴通知分享码（在课程通知的分享链接里）</div>`; return; }
-        state.noticeError = null;
-        nd.innerHTML = `<div class="cx-empty">正在查询…</div>`;
-        try { await loadNotice(code); } catch (err) { state.notice = null; state.noticeError = String(err.message || err); }
-        paintSections();
-        el.querySelector("[data-code]").value = code;
-      }
-    });
+  /* ── 课程分类：全部是本地推断，学习通接口并不返回年级和完成状态 ──────────────
+     课程接口只给 courseId / clazzId / 课程名 / 教师 / 班级；唯一的时间信号是卡片里的
+     「开课时间：YYYY-MM-DD～YYYY-MM-DD」（注意结课时间一律是开课 +2 年，不能拿它判完成）。
+     推断规则：
+       · 开课月份 ≥ 7 → 秋季学期（学年 = 当年），否则春季学期（学年 = 上一年）；
+       · 开课学期早于当前学期 → 已完成；否则未完成；
+       · 年级 = 开课学年 − 入学学年 + 1；入学学年由班级名里的「25防火」、文本里的「20XX 级」投票决定。
+     页面上会写明这是推断值，不假装成平台原始数据。                                        */
+
+  function termOf(dateStr) {
+    const m = String(dateStr || "").match(/^(\d{4})-(\d{2})/);
+    if (!m) return null;
+    const y = Number(m[1]), mo = Number(m[2]);
+    if (!y || mo < 1 || mo > 12) return null;
+    const autumn = mo >= 7;
+    return { year: autumn ? y : y - 1, half: autumn ? "上" : "下", rank: (autumn ? y : y - 1) * 2 + (autumn ? 0 : 1), label: `${autumn ? y : y - 1}-${autumn ? y + 1 : y} 学年${autumn ? "上" : "下"}学期` };
+  }
+  function currentTerm(now) {
+    const d = now || new Date();
+    return termOf(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`);
+  }
+  const GRADE_NAMES = ["大一", "大二", "大三", "大四", "大五", "大六"];
+  function gradeOf(termYear, enrollYear) {
+    if (!termYear || !enrollYear) return "";
+    const n = termYear - enrollYear + 1;
+    if (n < 1) return "入学前";
+    return GRADE_NAMES[n - 1] || `大${n}`;
+  }
+  // 入学学年：班级名里的「25防火」与文本里的「2025 级」各投一票取众数；都没票时退回最早的开课学年。
+  function detectEnrollYear(courses) {
+    const votes = new Map();
+    const bump = (y) => { if (y >= 2000 && y <= 2100) votes.set(y, (votes.get(y) || 0) + 1); };
+    const years = [];
+    for (const c of courses || []) {
+      const clazz = String(c?.clazz || "");
+      for (const m of `${c?.name || ""} ${clazz}`.matchAll(/(20\d{2})\s*级/g)) bump(Number(m[1]));
+      for (const m of clazz.matchAll(/(?:^|[^\d])(\d{2})(?=防火|英普|侦查|治安|消防|警犬|法学)/g)) bump(2000 + Number(m[1]));
+      const t = termOf(c?.start);
+      if (t) years.push(t.year);
+    }
+    let best = 0, bestVotes = 0;
+    for (const [y, n] of votes) if (n > bestVotes || (n === bestVotes && y > best)) { best = y; bestVotes = n; }
+    if (bestVotes) return best;
+    return years.length ? Math.min(...years) : 0;
+  }
+  const courseStatus = (c, now) => {
+    const t = termOf(c?.start);
+    if (!t) return "unknown";
+    return t.rank < currentTerm(now).rank ? "done" : "open";
+  };
+  // 按年级聚合（大一 / 大二 / …），没有开课时间的归最后一组；组内保持接口返回顺序。
+  function courseGroups(courses, enrollYear, now) {
+    const buckets = new Map();
+    for (const c of courses || []) {
+      const t = termOf(c?.start);
+      const grade = t ? gradeOf(t.year, enrollYear) : "";
+      const key = t ? (grade || `学年 ${t.year}`) : "__unknown";
+      if (!buckets.has(key)) buckets.set(key, { key, label: key === "__unknown" ? "其他（无开课时间）" : key, termYear: t ? t.year : 0, list: [] });
+      buckets.get(key).list.push(c);
+    }
+    return [...buckets.values()].map((g) => {
+      const done = g.list.filter((c) => courseStatus(c, now) === "done").length;
+      const open = g.list.filter((c) => courseStatus(c, now) === "open").length;
+      const yearText = g.termYear ? `${g.termYear}-${g.termYear + 1} 学年 · ` : "";
+      const stateText = g.key === "__unknown" ? "状态未知" : `已完成 ${done} · 未完成 ${open}`;
+      return { ...g, sub: `${yearText}共 ${g.list.length} 门 · ${stateText}` };
+    }).sort((a, b) => (a.key === "__unknown" ? 1 : b.key === "__unknown" ? -1 : a.termYear - b.termYear || a.key.localeCompare(b.key)));
+  }
+  function courseCardHtml(c, enrollYear, now) {
+    const st = courseStatus(c, now);
+    const t = termOf(c?.start);
+    const g = t ? gradeOf(t.year, enrollYear) : "";
+    const mark = st === "unknown" ? ""
+      : `<span class="cx2-mark ${st}" title="${st === "done" ? "开课学期已经过去，按本地推断为已完成" : "开课学期尚未结束，按本地推断为未完成"}">${st === "done" ? "已完成" : "未完成"}</span>`;
+    const termLine = t ? `${g ? g + t.half : `学年 ${t.year}${t.half}`} · 开课 ${c.start}` : "无开课时间";
+    return `<div class="cx2-course ${st}">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span></div>`;
+  }
+  function coursesHtml() {
+    const kw = state.filter.kw.trim().toLowerCase();
+    const all = state.courses;
+    const list = kw ? all.filter(c=>`${c.name} ${c.teacher} ${c.clazz}`.toLowerCase().includes(kw)) : all;
+    const now = new Date();
+    const enrollYear = detectEnrollYear(all);
+    const body = list.length
+      ? courseGroups(list, enrollYear, now).map((g)=>`<section class="cx2-grade"><h4 class="cx2-grade-head">${esc(g.label)}<span class="cx2-grade-sub">${esc(g.sub)}</span></h4><div class="cx2-courses">${g.list.map((c)=>courseCardHtml(c, enrollYear, now)).join('')}</div></section>`).join('')
+      : '<div class="cx2-empty">没有匹配课程。</div>';
+    return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 班级…"></div>${body}<div class="cx2-hint">年级与「已完成 / 未完成」都是本地按课程卡片里的「开课时间」推断的（${enrollYear ? `按 ${enrollYear} 级入学计算` : "未识别到入学年份，只按学年分组"}）：开课学期早于当前学期的记为已完成（灰标），当前及以后的记为未完成（黑标）。学习通接口本身不返回这两项，所以这里可能与平台显示不一致。</div>`;
+  }
+  function lookupHtml() {
+    const n=state.notice;
+    return `<div class="cx2-lookup"><div class="cx2-toolbar"><input class="cx2-search" data-code placeholder="粘贴 32 位 idCode 或学习通分享链接"><button class="primary" data-lookup>查询全文</button></div>${n?`<div class="cx2-detail"><div class="cx2-title">${esc(n.title)}</div><div class="cx2-meta"><span>${esc(n.sender)}</span><span>${esc(n.time)}</span>${n.toNames?`<span>发送给 ${esc(n.toNames)}</span>`:''}</div><div class="body">${esc(n.body||'（无正文）')}</div><div class="cx2-card-actions"><button data-notice-remind>转为提醒</button><button data-notice-open title="${esc(OPEN_TIP)}">浏览器打开（带登录态）</button><button class="danger" data-notice-del title="仅从本机收件箱列表移除并记住，可在顶部「恢复已移除」放回">移除</button></div></div>`:'<div class="cx2-empty">收件箱本身已经包含 rtf_content 全文；这里只用于按分享码单独查询通知。</div>'}</div>`;
+  }
+
+  function paintMain() {
+    if (!host) return;
+    host.innerHTML = `<div class="cx2"><div class="cx2-head"><div><h2>学习通</h2><p class="cx2-sub">收件箱通知 · 未截止作业 · 课程列表 · 分享码全文</p></div><div class="cx2-actions"><button class="primary" data-refresh ${state.loading?'disabled':''}>${state.loading?'刷新中…':'快速刷新'}</button><button data-full-sync ${state.loading?'disabled':''}>完整同步</button>${state.ignoredIds.size?`<button data-ignore-reset title="把被移除的通知重新放回列表，不需要重新同步">恢复已移除（${state.ignoredIds.size}）</button>`:''}<button data-switch>切换登录</button></div></div>${navHtml()}<div class="cx2-status ${state.error?'err':''}">${state.error?esc(state.error):`${state.busy==='open'?'正在校验学习通登录态，随后交给系统浏览器 · ':''}${state.lastSync?`上次刷新 ${esc(state.lastSync)} · `:''}收件箱使用 notice.chaoxing.com 无 IP 白名单主路径`}</div><div data-body>${state.tab==='inbox'?inboxHtml():state.tab==='todo'?todoHtml():state.tab==='courses'?coursesHtml():lookupHtml()}</div><footer>基于 chaoxing-notify-skill v2.0.0 的已验证接口流程。Cookie/账号信息仅在选择“保存登录信息”时写入本机；Cookie 等同账号登录身份，请勿外传。</footer></div>`;
   }
 
   async function refreshAll() {
-    if (!ui || !state.loggedIn) return;
-    state.loading = "refresh";
-    ui.status.innerHTML = "正在刷新消息与课程…";
-    state.msgError = null;
+    if (!state.loggedIn || state.loading) return;
+    state.loading = true; state.error = ""; paintMain();
     try {
-      await loadMessages();
+      await fetchInbox(0, true, state.inbox.length > 0);
+      try { await loadCourses(); } catch (e) { state.error = String(e.message || e); }
+      state.lastSync = new Date().toLocaleString();
+      probePendingWorks(); // 后台串行探测作业提交状态，不阻塞刷新
     } catch (e) {
-      state.msgError = String(e.message || e);
-    }
-    try {
-      await loadCourses();
-    } catch (e) {
-      if (!state.msgError) state.msgError = `课程列表加载失败：${e.message || e}（登录态可能失效，请切换账号重登）`;
-    }
-    state.loading = "";
-    paintSections();
+      state.error = String(e.message || e);
+      if (/登录|会话/.test(state.error)) state.loggedIn = false;
+    } finally { state.loading = false; paintMain(); }
   }
 
-  function buildMain(el) {
-    paintMain(el);
-    wireSectionEvents(el);
-    refreshAll();
+  async function fullSync() {
+    if (!state.loggedIn || state.loading) return;
+    state.loading = true; state.error = ""; paintMain();
+    try {
+      await fetchInbox(0, true, false);
+      state.lastSync = new Date().toLocaleString();
+      tide.notify(`完整同步完成，共 ${state.inbox.length} 条通知`);
+    } catch (e) { state.error = String(e.message || e); }
+    finally { state.loading = false; paintMain(); }
   }
 
-  function render(el) {
-    ensureStyle();
-    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在读取凭据…</div>';
-    loadPrefs().then(() => {
-      if (state.creds && state.creds.uname) {
-        // 有记住的凭据：自动登录
-        el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在登录学习通…</div>';
-        cxLogin(state.creds.uname, state.creds.password)
-          .then((uid) => {
-            tide.notify(`已自动登录学习通${uid ? `（uid ${uid}）` : ""}`);
-            buildMain(el);
-          })
-          .catch((e) => {
-            state.creds = null;
-            tide.storage.set("creds", null);
-            paintLogin(el);
-            const errEl = el.querySelector("[data-err]");
-            if (errEl) errEl.textContent = `自动登录失败：${e.message || e}`;
-          });
-      } else {
-        paintLogin(el);
-      }
+  function loginHtml(message = "") {
+    host.innerHTML = `<div class="cx2"><div class="cx2-login"><h3>登录学习通</h3><p class="cx2-sub">推荐账号密码登录；若频繁登录触发风控，可粘贴浏览器/App 已登录 Cookie 直接复用会话。</p><div class="cx2-tabs"><button class="on" data-login-tab="password">账号密码</button><button data-login-tab="cookie">Cookie</button></div><div data-login-password><div class="cx2-fields"><label><span>账号（手机号 / 学号）</span><input data-u autocomplete="username"></label><label><span>密码</span><input data-p type="password" autocomplete="current-password"></label></div><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-login>登录</button></div></div><div data-login-cookie hidden><label><span>Cookie</span><textarea data-cookie placeholder="例如：_uid=...; route=...; ..."></textarea></label><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-cookie-login>使用 Cookie</button></div></div><label class="cx2-check" style="margin-top:12px"><input type="checkbox" data-remember checked> 保存登录信息到本机，便于下次直接复用</label><div class="cx2-status ${message?'err':''}" data-login-status>${esc(message)}</div><div class="cx2-note">账号密码登录使用 fanyalogin + DES-ECB/PKCS5；密码加密在本机 Tauri 后端完成。收件箱改用 v2 包确认的 getNoticeList 接口，不再依赖 specie.chaoxing.com 的来源 IP 白名单。</div></div></div>`;
+  }
+
+  async function autoLogin() {
+    if (state.cookie) {
+      try { state.remember = true; await startCookieSession(state.cookie); return true; } catch { state.cookie = ""; await tide.storage.set("sessionCookie", null); }
+    }
+    if (state.creds?.uname && state.creds?.password) {
+      try { state.remember = true; await cxLogin(state.creds.uname, state.creds.password); return true; } catch { state.creds = null; await tide.storage.set("creds", null); }
+    }
+    return false;
+  }
+
+  function wire() {
+    host.addEventListener("click", async (e) => {
+      const loginTab=e.target.closest('[data-login-tab]');if(loginTab){const cookie=loginTab.dataset.loginTab==='cookie';host.querySelectorAll('[data-login-tab]').forEach(b=>b.classList.toggle('on',b===loginTab));host.querySelector('[data-login-password]').hidden=cookie;host.querySelector('[data-login-cookie]').hidden=!cookie;return;}
+      if(e.target.closest('[data-login]')){const u=host.querySelector('[data-u]').value.trim(),p=host.querySelector('[data-p]').value,status=host.querySelector('[data-login-status]');if(!u||!p){status.textContent='请填写账号和密码';return;}state.remember=host.querySelector('[data-remember]').checked;state.creds={uname:u,password:p};status.textContent='正在登录…';try{await cxLogin(u,p);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
+      if(e.target.closest('[data-cookie-login]')){const c=host.querySelector('[data-cookie]').value.trim(),status=host.querySelector('[data-login-status]');state.remember=host.querySelector('[data-remember]').checked;state.creds=null;status.textContent='正在验证 Cookie…';try{await startCookieSession(c);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
+      const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
+      if(e.target.closest('[data-refresh]')){await refreshAll();return;}
+      if(e.target.closest('[data-switch]')){state.loggedIn=false;state.sid=null;state.cookie='';state.creds=null;await tide.storage.set('sessionCookie',null);await tide.storage.set('creds',null);loginHtml();return;}
+      const lookup=e.target.closest('[data-lookup]');if(lookup){const input=host.querySelector('[data-code]');try{state.error='';await loadNotice(input.value);paintMain();}catch(err){state.error=err.message||String(err);paintMain();}return;}
+      if(e.target.closest('[data-ignore-reset]')){await restoreIgnored();return;}
+      if(e.target.closest('[data-notice-remind]')&&state.notice){await toReminder(state.notice);return;}
+      if(e.target.closest('[data-notice-open]')&&state.notice){await openTarget(state.notice);return;}
+      if(e.target.closest('[data-notice-del]')&&state.notice){const hit=state.inbox.find(x=>x.idCode&&x.idCode===state.notice.idCode);if(hit)await ignoreNotice(hit);else tide.notify('这条分享码对应的通知不在当前收件箱列表里');return;}
+      const card=e.target.closest('[data-id]'),act=e.target.closest('[data-act]');if(card&&act){const n=state.inbox.find(x=>x.id===card.dataset.id);if(!n)return;const a=act.dataset.act;if(a==='toggle'){card.classList.toggle('open');return;}if(a==='remind'){await toReminder(n);return;}if(a==='share'&&n.idCode){tide.util.openUrl(SHARE_PAGE(n.idCode));return;}if(a==='open'){await openTarget(n);return;}if(a==='del'){await ignoreNotice(n);return;}}
     });
+    host.addEventListener("input", (e) => { if(e.target.matches('[data-search]')){state.filter.kw=e.target.value;savePrefs();const pos=e.target.selectionStart;paintMain();const next=host.querySelector('[data-search]');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}} });
+    host.addEventListener("change", (e) => { if(e.target.matches('[data-category]')){state.filter.category=e.target.value;savePrefs();paintMain();}if(e.target.matches('[data-unread]')){state.filter.onlyUnread=e.target.checked;savePrefs();paintMain();} });
+    host.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))e.stopPropagation();});
   }
 
-  tide.ui.registerView({ id: "chaoxing-notify", title: "学习通通知", icon: "学", render });
+  async function render(el) {
+    host = el; ensureStyle(); host.innerHTML = '<div class="cx2"><div class="cx2-empty">正在读取学习通登录信息…</div></div>';
+    wire(); await loadPrefs();
+    if (state.inbox.length) paintMain();
+    const ok = await autoLogin();
+    if (ok) { paintMain(); await refreshAll(); } else loginHtml();
+  }
+
+  tide.ui.registerView({ id: "chaoxing-notify", title: "学习通", icon: 'graduation-cap', render });
 })();

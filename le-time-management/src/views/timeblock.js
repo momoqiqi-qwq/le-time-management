@@ -2,6 +2,9 @@
 import * as S from "../store.js";
 import { el, popmenu, toast, pointerDrag } from "../ui.js";
 import { openTaskDrawer } from "./drawer.js";
+import { previewSchedule } from "../scheduleConflict.js";
+import { closeLayer } from "../motion.js";
+import { createTimeViewSwitcher, renderTimeView } from "./timeViews.js";
 
 const DAY_START = 7 * 60;    // 07:00
 const DAY_END = 24 * 60;     // 24:00
@@ -11,10 +14,21 @@ const PX_PER_MIN = HOUR_PX / 60;
 export function renderTimeblock(container) {
   let curDate = S.getState().settings.lastDate || S.todayStr();
   container.classList.add("tb-root");
+  let viewMode = S.getState().settings.timeViewMode || "day";
+  const shell = el("div", { class: "tb-shell" });
   const wrap = el("div", { class: "tb-wrap" });
-  container.append(wrap);
+  const altHost = el("div", { class: "time-alt-host", style: "display:none" });
+  const switcher = createTimeViewSwitcher({ current: viewMode, onChange: (mode) => {
+    viewMode = mode;
+    S.getState().settings.timeViewMode = mode;
+    S.saveNow();
+    switcher.setCurrent(mode);
+    syncView();
+  } });
+  shell.append(switcher, wrap, altHost);
+  container.append(shell);
 
-  const persistDate = () => { S.getState().settings.lastDate = curDate; S.saveNow(); };
+  const persistDate = () => { S.getState().settings.lastDate = curDate; S.persistSoon(); };
 
   /* ── 左：任务池 ── */
   const poolList = el("div", { class: "plist" });
@@ -94,7 +108,11 @@ export function renderTimeblock(container) {
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
     const min = Math.max(DAY_START, Math.round((y - rect.top - 10) / PX_PER_MIN / 15) * 15 + DAY_START);
     try { S.placeTask(t, curDate, min, t.__cat || catOf(t)); }
-    catch (e) { toast(e.message); }
+    catch (e) {
+      const preview = previewSchedule(S.blocksOf(curDate), { startMin: min, durMin: Math.max(15, Number(t.estMin) || 30) }, { dayStart: DAY_START, dayEnd: DAY_END });
+      const alt = preview.alternatives[0];
+      toast(alt ? `${e.message}；可改到 ${alt.start}` : e.message, alt ? { actionLabel: `排到 ${alt.start}`, ms: 6500, action: () => { try { S.placeTask(t, curDate, alt.startMin, t.__cat || catOf(t)); } catch (err) { toast(err.message); } } } : {});
+    }
   }
 
   function autoPlace(t) {
@@ -115,21 +133,43 @@ export function renderTimeblock(container) {
     const category = el("select", {});
     S.CATEGORIES.forEach(c => category.append(el("option", { value: c.id }, c.label)));
     category.value = b.cat;
+    const conflictBox = el("div", { class: "conflict-preview ok" });
+    const getPreview = () => {
+      const min = S.mmOf(start.value || "00:00"), dur = Number(duration.value);
+      if (!date.value || !Number.isFinite(dur) || dur <= 0 || min + dur > 1440) return null;
+      return previewSchedule(S.blocksOf(date.value), { startMin: min, durMin: dur }, { ignoreId: b.id, dayStart: DAY_START, dayEnd: DAY_END });
+    };
+    const paintConflict = () => {
+      const p = getPreview();
+      conflictBox.replaceChildren();
+      if (!p) { conflictBox.className = "conflict-preview"; conflictBox.append("请先填写有效日期、开始时间和时长"); return; }
+      if (p.ok) { conflictBox.className = "conflict-preview ok"; conflictBox.append("✓ 当前时段没有冲突"); return; }
+      conflictBox.className = "conflict-preview";
+      const names = p.conflicts.slice(0, 3).map((x) => `${x.start} ${x.title}`).join("、");
+      conflictBox.append(el("div", {}, `⚠ 与 ${names || `${p.conflicts.length} 个时间块`} 冲突`));
+      if (p.alternatives.length) {
+        const alts = el("div", { class: "conflict-alts" });
+        for (const alt of p.alternatives.slice(0, 3)) alts.append(el("button", { type: "button", class: "btn ghost sm", onclick: () => { start.value = alt.start; paintConflict(); } }, `改到 ${alt.start}`));
+        conflictBox.append(alts);
+      } else conflictBox.append(el("div", {}, "当天没有找到足够的连续空闲时间"));
+    };
     const form = el("form", { class: "dbody", onsubmit: (e) => {
       e.preventDefault();
       const name = title.value.trim(), min = S.mmOf(start.value), dur = Number(duration.value);
       if (!name) { toast("时间块名称不能为空"); return; }
       if (min + dur > 1440) { toast("时间块不能跨越当天午夜"); return; }
-      const conflict = S.blocksOf(date.value).some(x => x.id !== b.id && min < S.mmOf(x.start) + x.durMin && min + dur > S.mmOf(x.start));
-      if (conflict) { toast("这个时段已有安排，请调整时间"); return; }
+      const preview = getPreview();
+      if (!preview?.ok) { paintConflict(); toast("当前时段有冲突，可直接选择下方候选时间"); return; }
       S.updateBlock(b.id, { title: name, date: date.value, start: start.value, durMin: dur, cat: category.value });
       close(); toast("时间块已保存");
     } });
     for (const [label, input] of [["名称", title], ["日期", date], ["开始时间", start], ["时长（分钟）", duration], ["分类", category]]) form.append(el("label", { class: "kv" }, el("span", {}, label), input));
-    form.append(el("button", { class: "btn pri", type: "submit" }, "保存时间块"));
+    for (const input of [date, start, duration]) input.addEventListener("input", paintConflict);
+    form.append(conflictBox, el("button", { class: "btn pri", type: "submit" }, "保存时间块"));
+    paintConflict();
     const drawer = el("div", { class: "drawer", role: "dialog", "aria-label": "编辑时间块" }, el("div", { class: "dh" }, el("h3", {}, "编辑时间块"), el("button", { class: "btn ghost sm", onclick: close }, "关闭")), form);
     const onKey = e => { if (e.key === "Escape") close(); };
-    function close() { document.removeEventListener("keydown", onKey); mask.remove(); drawer.remove(); }
+    function close() { closeLayer(drawer, mask, () => document.removeEventListener("keydown", onKey)); }
     drawer._close = close;
     document.addEventListener("keydown", onKey);
     document.body.append(mask, drawer);
@@ -156,7 +196,12 @@ export function renderTimeblock(container) {
           const rect = canvas.getBoundingClientRect();
           if (d.x < rect.left || d.x > rect.right || d.y < rect.top || d.y > rect.bottom) return;
           const min = Math.min(DAY_END - b.durMin, Math.max(DAY_START, Math.round((d.y - rect.top - 10) / PX_PER_MIN / 15) * 15 + DAY_START));
-          if (S.blocksOf(curDate).some(x => x.id !== b.id && min < S.mmOf(x.start) + x.durMin && min + b.durMin > S.mmOf(x.start))) { toast("这个时段已有安排"); return; }
+          const preview = previewSchedule(S.blocksOf(curDate), { startMin: min, durMin: b.durMin }, { ignoreId: b.id, dayStart: DAY_START, dayEnd: DAY_END });
+          if (!preview.ok) {
+            const alt = preview.alternatives[0];
+            toast(alt ? `这个时段已有安排，可改到 ${alt.start}` : "这个时段已有安排，且当天没有合适空档", alt ? { actionLabel: `改到 ${alt.start}`, ms: 6500, action: () => S.updateBlock(b.id, { date: curDate, start: alt.start }) } : {});
+            return;
+          }
           S.updateBlock(b.id, { date: curDate, start: S.hhmmOf(min) });
         },
         onClick: (ev) => { hideHint(); blockMenu(ev, b); },
@@ -261,7 +306,14 @@ export function renderTimeblock(container) {
   }
 
   /* ── 拼装 ── */
-  function renderAll() { renderPool(); renderCanvas(); renderAside(); }
+  function syncView() {
+    const day = viewMode === "day";
+    wrap.style.display = day ? "flex" : "none";
+    altHost.style.display = day ? "none" : "block";
+    if (day) { renderPool(); renderCanvas(); renderAside(); }
+    else renderTimeView(altHost, viewMode, curDate);
+  }
+  function renderAll() { syncView(); }
   wrap.append(pool, timeline, aside);
   renderAll();
   const un = S.subscribe(renderAll);

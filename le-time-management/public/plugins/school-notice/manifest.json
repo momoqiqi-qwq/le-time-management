@@ -1,0 +1,25 @@
+{
+  "id": "school-notice",
+  "name": "学校通知网站",
+  "version": "1.1.0",
+  "author": "Le时间管理内置",
+  "icon": "school",
+  "faIcon": "school",
+  "description": "输入学校公告/通知网址后自动识别常见高校 CMS 列表；支持会话登录、用户名密码和手动验证码，并可把公告转成 Le时间管理提醒。",
+  "permissions": [
+    "ui",
+    "storage",
+    "tasks",
+    "blocks",
+    "http",
+    "openUrl",
+    "timeParse"
+  ],
+  "entry": "main.js",
+  "order": 3,
+  "platforms": {
+    "windows": "full",
+    "android": "full",
+    "miniprogram": "unavailable"
+  }
+}

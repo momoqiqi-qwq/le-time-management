@@ -3,7 +3,7 @@ param(
     [switch]$Installer
 )
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path $PSScriptRoot -Parent
+$repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 if ($BuildDirectory -match '[^\x00-\x7F]') { throw 'BuildDirectory must use an ASCII path for Windows jpackage.' }
 if (-not $env:JAVA_HOME -or -not (Test-Path "$env:JAVA_HOME/bin/jpackage.exe")) { throw 'Set JAVA_HOME to a JDK 21 installation.' }
 Push-Location (Join-Path $repo 'vendor/shiguangschedule')

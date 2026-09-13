@@ -1,10 +1,13 @@
 {
   "id": "wechat-push",
   "name": "微信提醒推送",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "author": "Le时间管理内置",
-  "icon": "微",
-  "description": "时间块开始前 N 分钟，通过 Server酱 把提醒推送到你的微信（手机上收到服务号消息）。需要在 sct.ftqq.com 用微信扫码登录获取 SendKey。免费额度每天 5 条。",
-  "permissions": ["ui", "blocks", "storage", "notify", "http"],
-  "entry": "main.js"
+  "icon": "comment-dots",
+  "faIcon": "comment-dots",
+  "description": "通过 PushPlus（推荐）把时间块与任务截止提醒推送到微信，支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口；兼容旧版 Server酱配置。",
+  "permissions": ["ui", "tasks", "blocks", "storage", "notify", "http", "openUrl"],
+  "entry": "main.js",
+  "order": 10,
+  "platforms": { "windows": "full", "android": "full", "miniprogram": "unavailable" }
 }

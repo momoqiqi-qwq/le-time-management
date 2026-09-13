@@ -314,7 +314,7 @@
             <span class="cell-sub">不依赖 Tauri，原生 WXML/WXSS</span>
             <ul>
               <li><span class="tag warn">引擎</span><span class="desc">JavaScriptCore（iOS 16.4 兼容，无 lookbehind）</span></li>
-              <li><span class="tag warn">页面</span><span class="desc">象限 / 时间块 / 捕获 / 任务 / 设置 / 长辈关怀</span></li>
+              <li><span class="tag warn">页面</span><span class="desc">象限 / 时间块 / 捕获 / 任务 / 设置</span></li>
               <li><span class="tag warn">数据</span><span class="desc"><code>wx.setStorageSync</code> · 与桌面同 schema</span></li>
               <li><span class="tag warn">能力</span><span class="desc">暗色模式 / 7 天快切 / movable-view 拖动</span></li>
             </ul>
@@ -423,7 +423,7 @@ bootPluginHost({ registerView, views });</code></pre>
           <li><strong>lib.rs</strong> —— Tauri 命令注册 / 窗口初始化 / 插件目录扫描</li>
           <li><strong>mobile.html</strong> —— Android 端首次启动的引导页</li>
           <li><strong>native_schedule.rs</strong> —— 原生日程算法库，被 Android 原生壳调用</li>
-          <li><strong>care_voice.rs</strong> —— 长辈关怀 TTS 引擎绑定</li>
+          <li><strong>lan.rs</strong> —— 局域网同步（设备发现与数据交换）</li>
         </ul>
         <h3>编译配置</h3>
         <pre><code>[profile.release]
@@ -482,7 +482,6 @@ strip         = true <span class="cmt"># 去掉符号表与 panic 段</span></co
             <tr><td>chaoxing-notify</td><td>学习通通知抓取</td></tr>
             <tr><td>cppu-notify</td><td>警大门户通知（已移除 74MB OCR 依赖）</td></tr>
             <tr><td>wechat-push</td><td>微信 Server酱推送</td></tr>
-            <tr><td>elder-care</td><td>长辈关怀视图（明/暗大风字）</td></tr>
             <tr><td>cn-holiday</td><td>中国节假日 + 调休日历</td></tr>
             <tr><td>exam-calendar</td><td>考试日历 + 倒计时</td></tr>
             <tr><td>shiguang-schedule</td><td>原生日程表同步</td></tr>
@@ -503,12 +502,9 @@ miniprogram/
 │  ├─ capture/         <span class="cmt"># 文本捕获 + 解析预览</span>
 │  ├─ task/            <span class="cmt"># 任务详情</span>
 │  ├─ settings/        <span class="cmt"># 数据统计 + 导入导出</span>
-│  ├─ elder/           <span class="cmt"># 长辈关怀</span>
 │  └─ webview/         <span class="cmt"># 内嵌网页（如政策详情）</span>
 ├─ core/
-│  ├─ timeParser.js    <span class="cmt"># 移除了正则 lookbehind 的桌面同源版</span>
-│  ├─ care.js          <span class="cmt"># 长辈关怀模型</span>
-│  └─ careVoice.js     <span class="cmt"># TTS 调度</span>
+│  └─ timeParser.js    <span class="cmt"># 移除了正则 lookbehind 的桌面同源版</span>
 └─ images/tab/         <span class="cmt"># tabBar PNG（脚本生成）</span></code></pre>
         <div class="callout"><strong>iOS 16.4 以下的 JavaScriptCore 兼容性</strong><p>桌面端 <code>timeParser.js</code> 用到了正则 lookbehind；小程序 JavaScriptCore 在 iOS 16.4 之前不支持，会导致模块加载崩溃。<code>miniprogram/core/timeParser.js</code> 重写时去掉了这些用法，行为与桌面端保持一致。</p></div>
       </section>
@@ -559,7 +555,7 @@ miniprogram/
           <li><strong>core 时间解析</strong>：<code>node tools/test-miniprogram-core.js</code> · 39 用例，覆盖日期 / 时刻 / 时长 / 合并</li>
           <li><strong>小程序静态校验</strong>：<code>node tools/check-miniprogram.js</code> · 字段、文件存在性、四页面对齐</li>
           <li><strong>tabBar 图标再生</strong>：<code>node tools/gen-miniprogram-tab-icons.js</code> · 从 SVG → 渲染 PNG</li>
-          <li><strong>桌面行为快照</strong>：<code>scripts/test-care.mjs</code> / <code>test-cppu.mjs</code> / <code>test-schedule.mjs</code> / <code>test-interactions.mjs</code></li>
+          <li><strong>桌面行为快照</strong>：<code>scripts/test-cppu.mjs</code> / <code>test-schedule.mjs</code> / <code>test-interactions.mjs</code> / <code>test-v0116-ai.mjs</code></li>
           <li><strong>Android 原生交叉编译</strong>：<code>tools/build-native-android.ps1</code> · <code>tools/build-native-schedule.ps1</code></li>
         </ul>
         <div class="callout cool"><strong>回填约定</strong><p>关键提交会把测试结果 JSON 落到 <code>test-results/</code>，评审时一眼能看出本次改动覆盖了哪些场景。</p></div>

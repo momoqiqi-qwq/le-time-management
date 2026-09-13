@@ -1,11 +1,10 @@
-mod care_voice;
 mod native_schedule;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt as _;
 
@@ -25,6 +24,349 @@ fn plugins_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = data_dir(app)?.join("plugins");
     fs::create_dir_all(&dir).map_err(|e| format!("无法创建插件目录: {e}"))?;
     Ok(dir)
+}
+
+
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct AiSecretConfig {
+    #[serde(rename = "baseUrl")]
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+#[derive(serde::Serialize)]
+struct AiVaultStatus {
+    configured: bool,
+    #[serde(rename = "baseUrl")]
+    base_url: String,
+    model: String,
+    #[serde(rename = "keyMasked")]
+    key_masked: String,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone)]
+struct AiMessage {
+    role: String,
+    content: String,
+}
+
+fn ai_vault_key_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(data_dir(app)?.join(".ai-vault.key"))
+}
+
+fn ai_vault_data_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(data_dir(app)?.join("ai-vault.bin"))
+}
+
+fn restrict_secret_file(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            let mut perms = meta.permissions();
+            perms.set_mode(0o600);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
+fn ai_vault_key(app: &AppHandle) -> Result<Vec<u8>, String> {
+    use ring::rand::{SecureRandom, SystemRandom};
+    let path = ai_vault_key_path(app)?;
+    if path.exists() {
+        let key = fs::read(&path).map_err(|e| format!("读取 AI 加密密钥失败: {e}"))?;
+        if key.len() != 32 {
+            return Err("AI 加密密钥长度异常".into());
+        }
+        return Ok(key);
+    }
+    let mut key = vec![0u8; 32];
+    SystemRandom::new()
+        .fill(&mut key)
+        .map_err(|_| "生成 AI 加密密钥失败".to_string())?;
+    fs::write(&path, &key).map_err(|e| format!("写入 AI 加密密钥失败: {e}"))?;
+    restrict_secret_file(&path);
+    Ok(key)
+}
+
+fn ai_encrypt(app: &AppHandle, plain: &[u8]) -> Result<Vec<u8>, String> {
+    aead_encrypt(&ai_vault_key(app)?, plain)
+}
+
+fn ai_decrypt(app: &AppHandle, raw: &[u8]) -> Result<Vec<u8>, String> {
+    aead_decrypt(&ai_vault_key(app)?, raw)
+}
+
+/// AES-256-GCM。密文格式：版本号(1) + nonce(12) + 密文+tag。
+/// AI 凭据与插件密钥库共用同一个本机密钥文件（.ai-vault.key）。
+fn aead_encrypt(key: &[u8], plain: &[u8]) -> Result<Vec<u8>, String> {
+    use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
+    use ring::rand::{SecureRandom, SystemRandom};
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| "初始化加密器失败".to_string())?;
+    let less_safe = LessSafeKey::new(unbound);
+    let mut nonce_bytes = [0u8; 12];
+    SystemRandom::new()
+        .fill(&mut nonce_bytes)
+        .map_err(|_| "生成加密随机数失败".to_string())?;
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut in_out = plain.to_vec();
+    less_safe
+        .seal_in_place_append_tag(nonce, Aad::empty(), &mut in_out)
+        .map_err(|_| "凭据加密失败".to_string())?;
+    let mut out = Vec::with_capacity(1 + nonce_bytes.len() + in_out.len());
+    out.push(1);
+    out.extend_from_slice(&nonce_bytes);
+    out.extend_from_slice(&in_out);
+    Ok(out)
+}
+
+fn aead_decrypt(key: &[u8], raw: &[u8]) -> Result<Vec<u8>, String> {
+    use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
+    if raw.len() < 1 + 12 + 16 || raw[0] != 1 {
+        return Err("凭据文件格式不受支持".into());
+    }
+    let unbound = UnboundKey::new(&AES_256_GCM, key).map_err(|_| "初始化解密器失败".to_string())?;
+    let less_safe = LessSafeKey::new(unbound);
+    let mut nonce_bytes = [0u8; 12];
+    nonce_bytes.copy_from_slice(&raw[1..13]);
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let mut in_out = raw[13..].to_vec();
+    let plain = less_safe
+        .open_in_place(nonce, Aad::empty(), &mut in_out)
+        .map_err(|_| "凭据解密失败，可能已损坏或密钥已变化".to_string())?;
+    Ok(plain.to_vec())
+}
+
+fn load_ai_secret(app: &AppHandle) -> Result<AiSecretConfig, String> {
+    let path = ai_vault_data_path(app)?;
+    if !path.exists() {
+        return Err("尚未配置 AI Base URL / API Key".into());
+    }
+    let raw = fs::read(&path).map_err(|e| format!("读取 AI 凭据失败: {e}"))?;
+    let plain = ai_decrypt(app, &raw)?;
+    serde_json::from_slice(&plain).map_err(|e| format!("AI 凭据解析失败: {e}"))
+}
+
+fn mask_api_key(key: &str) -> String {
+    let chars: Vec<char> = key.chars().collect();
+    if chars.len() <= 8 {
+        return "••••••••".into();
+    }
+    let head: String = chars.iter().take(3).copied().collect();
+    let tail: String = chars.iter().skip(chars.len() - 4).copied().collect();
+    format!("{head}••••••{tail}")
+}
+
+fn validate_ai_base_url(base_url: &str) -> Result<(), String> {
+    let base = base_url.trim();
+    if base.is_empty() {
+        return Err("Base URL 不能为空".into());
+    }
+    if !base.starts_with("https://") && !base.starts_with("http://") {
+        return Err("Base URL 仅支持 http/https".into());
+    }
+    Ok(())
+}
+
+fn ai_chat_endpoint(base_url: &str) -> String {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        base.to_string()
+    } else {
+        format!("{base}/chat/completions")
+    }
+}
+
+#[tauri::command]
+fn ai_vault_save(app: AppHandle, base_url: String, api_key: String, model: String) -> Result<AiVaultStatus, String> {
+    validate_ai_base_url(&base_url)?;
+    let model = model.trim().to_string();
+    if model.is_empty() {
+        return Err("模型名称不能为空".into());
+    }
+    let existing = load_ai_secret(&app).ok();
+    let key = if api_key.trim().is_empty() {
+        existing
+            .as_ref()
+            .map(|x| x.api_key.clone())
+            .ok_or("首次保存时必须填写 API Key")?
+    } else {
+        api_key.trim().to_string()
+    };
+    let secret = AiSecretConfig {
+        base_url: base_url.trim().trim_end_matches('/').to_string(),
+        api_key: key,
+        model,
+    };
+    let plain = serde_json::to_vec(&secret).map_err(|e| format!("AI 凭据序列化失败: {e}"))?;
+    let encrypted = ai_encrypt(&app, &plain)?;
+    let path = ai_vault_data_path(&app)?;
+    let tmp = path.with_extension("bin.tmp");
+    fs::write(&tmp, encrypted).map_err(|e| format!("写入 AI 凭据失败: {e}"))?;
+    restrict_secret_file(&tmp);
+    if path.exists() {
+        fs::remove_file(&path).map_err(|e| format!("替换旧 AI 凭据失败: {e}"))?;
+    }
+    fs::rename(&tmp, &path).map_err(|e| format!("保存 AI 凭据失败: {e}"))?;
+    restrict_secret_file(&path);
+    Ok(AiVaultStatus {
+        configured: true,
+        base_url: secret.base_url,
+        model: secret.model,
+        key_masked: mask_api_key(&secret.api_key),
+    })
+}
+
+#[tauri::command]
+fn ai_vault_status(app: AppHandle) -> Result<AiVaultStatus, String> {
+    match load_ai_secret(&app) {
+        Ok(secret) => Ok(AiVaultStatus {
+            configured: true,
+            base_url: secret.base_url,
+            model: secret.model,
+            key_masked: mask_api_key(&secret.api_key),
+        }),
+        Err(_) => Ok(AiVaultStatus {
+            configured: false,
+            base_url: String::new(),
+            model: String::new(),
+            key_masked: String::new(),
+        }),
+    }
+}
+
+#[tauri::command]
+fn ai_vault_clear(app: AppHandle) -> Result<(), String> {
+    let data_path = ai_vault_data_path(&app)?;
+    if data_path.exists() {
+        fs::remove_file(data_path).map_err(|e| format!("清除 AI 凭据失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/* ── 插件密钥库：与 AI 凭据同机制的加密 KV，供插件保存密码、会话票据等敏感数据 ── */
+
+type PluginVault = HashMap<String, HashMap<String, String>>;
+
+fn plugin_vault_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(data_dir(app)?.join("plugin-vault.bin"))
+}
+
+fn load_plugin_vault(app: &AppHandle) -> Result<PluginVault, String> {
+    let path = plugin_vault_path(app)?;
+    if !path.exists() {
+        return Ok(HashMap::new());
+    }
+    let raw = fs::read(&path).map_err(|e| format!("读取插件密钥库失败: {e}"))?;
+    if raw.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let plain = ai_decrypt(app, &raw)?;
+    serde_json::from_slice(&plain).map_err(|e| format!("插件密钥库解析失败: {e}"))
+}
+
+fn save_plugin_vault(app: &AppHandle, vault: &PluginVault) -> Result<(), String> {
+    let plain = serde_json::to_vec(vault).map_err(|e| format!("插件密钥库序列化失败: {e}"))?;
+    let encrypted = ai_encrypt(app, &plain)?;
+    let path = plugin_vault_path(app)?;
+    let tmp = path.with_extension("bin.tmp");
+    fs::write(&tmp, encrypted).map_err(|e| format!("写入插件密钥库失败: {e}"))?;
+    restrict_secret_file(&tmp);
+    fs::rename(&tmp, &path).map_err(|e| format!("替换插件密钥库失败: {e}"))?;
+    restrict_secret_file(&path);
+    Ok(())
+}
+
+#[tauri::command]
+fn plugin_vault_set(app: AppHandle, plugin_id: String, key: String, value: String) -> Result<(), String> {
+    if !valid_plugin_id(&plugin_id) {
+        return Err(format!("插件 ID 不合法: {plugin_id}"));
+    }
+    if key.trim().is_empty() {
+        return Err("密钥库名不能为空".into());
+    }
+    let mut vault = load_plugin_vault(&app)?;
+    vault.entry(plugin_id).or_default().insert(key, value);
+    save_plugin_vault(&app, &vault)
+}
+
+#[tauri::command]
+fn plugin_vault_get(app: AppHandle, plugin_id: String, key: String) -> Result<Option<String>, String> {
+    if !valid_plugin_id(&plugin_id) {
+        return Err(format!("插件 ID 不合法: {plugin_id}"));
+    }
+    Ok(load_plugin_vault(&app)?.get(&plugin_id).and_then(|m| m.get(&key)).cloned())
+}
+
+#[tauri::command]
+fn plugin_vault_del(app: AppHandle, plugin_id: String, key: String) -> Result<(), String> {
+    if !valid_plugin_id(&plugin_id) {
+        return Err(format!("插件 ID 不合法: {plugin_id}"));
+    }
+    let mut vault = load_plugin_vault(&app)?;
+    if let Some(entry) = vault.get_mut(&plugin_id) {
+        entry.remove(&key);
+        if entry.is_empty() {
+            vault.remove(&plugin_id);
+        }
+    }
+    if vault.is_empty() {
+        let path = plugin_vault_path(&app)?;
+        if path.exists() {
+            fs::remove_file(path).map_err(|e| format!("清除插件密钥库失败: {e}"))?;
+        }
+        return Ok(());
+    }
+    save_plugin_vault(&app, &vault)
+}
+
+#[tauri::command]
+async fn ai_chat(app: AppHandle, messages: Vec<AiMessage>, temperature: Option<f64>) -> Result<String, String> {
+    let secret = load_ai_secret(&app)?;
+    validate_ai_base_url(&secret.base_url)?;
+    if messages.is_empty() || messages.len() > 24 {
+        return Err("AI 消息数量必须在 1～24 条之间".into());
+    }
+    let total_chars: usize = messages.iter().map(|m| m.content.chars().count()).sum();
+    if total_chars > 60_000 {
+        return Err("AI 上下文过长，请减少内容后重试".into());
+    }
+    if messages.iter().any(|m| !matches!(m.role.as_str(), "system" | "user" | "assistant")) {
+        return Err("AI 消息角色不合法".into());
+    }
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(55))
+        .build()
+        .map_err(|e| format!("AI HTTP 客户端初始化失败: {e}"))?;
+    let endpoint = ai_chat_endpoint(&secret.base_url);
+    let body = json!({
+        "model": secret.model,
+        "messages": messages,
+        "temperature": temperature.unwrap_or(0.2).clamp(0.0, 2.0),
+    });
+    let resp = client
+        .post(endpoint)
+        .bearer_auth(&secret.api_key)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(body.to_string())
+        .send()
+        .await
+        .map_err(|e| format!("AI 请求失败: {e}"))?;
+    let status = resp.status();
+    let text = resp.text().await.map_err(|e| format!("读取 AI 响应失败: {e}"))?;
+    if !status.is_success() {
+        let brief: String = text.chars().take(900).collect();
+        return Err(format!("AI 接口返回 {}：{}", status.as_u16(), brief));
+    }
+    let value: Value = serde_json::from_str(&text).map_err(|e| format!("AI 响应不是有效 JSON: {e}"))?;
+    let content = value
+        .pointer("/choices/0/message/content")
+        .and_then(|v| v.as_str())
+        .or_else(|| value.pointer("/output_text").and_then(|v| v.as_str()))
+        .ok_or_else(|| "AI 响应缺少 choices[0].message.content".to_string())?;
+    Ok(content.to_string())
 }
 
 /// 首次启动的示例数据，让应用一打开就有内容可玩
@@ -292,6 +634,7 @@ fn export_plugins_zip(app: AppHandle, ids: Vec<String>) -> Result<String, String
 struct AppInfo {
     version: String,
     os: String,
+    arch: String,
     data_dir: String,
 }
 
@@ -300,6 +643,7 @@ fn app_info(app: AppHandle) -> Result<AppInfo, String> {
     Ok(AppInfo {
         version: app.package_info().version.to_string(),
         os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
         data_dir: data_dir(&app)?.to_string_lossy().to_string(),
     })
 }
@@ -314,17 +658,29 @@ struct HttpResp {
     content_type: String,
 }
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn shared_http_client() -> Result<&'static reqwest::Client, String> {
+    if let Some(c) = HTTP_CLIENT.get() { return Ok(c); }
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("Mozilla/5.0 LeTimeManagement/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(6))
+        .timeout(std::time::Duration::from_secs(15))
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .pool_max_idle_per_host(8)
+        .build()
+        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+    let _ = HTTP_CLIENT.set(client);
+    HTTP_CLIENT.get().ok_or_else(|| "HTTP 客户端初始化失败".into())
+}
+
 /// 插件网络桥：服务端抓取，绕开 WebView 的 CORS 限制
 #[tauri::command]
 async fn http_get(url: String) -> Result<HttpResp, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 地址".into());
     }
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Le/0.1")
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+    let client = shared_http_client()?;
     let resp = client
         .get(&url)
         .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
@@ -409,15 +765,43 @@ fn des_ecb_encrypt_hex(plain: String, key: String) -> Result<String, String> {
 
 /* ── 会话化 HTTP：带 Cookie Jar，供需要登录态的插件（如学习通）使用 ── */
 
-pub struct HttpSessions(pub Mutex<HashMap<String, reqwest::Client>>);
+/// 一个会话 = reqwest Client + 它的 Cookie Jar 句柄。
+/// 留着 jar 引用是为了整体导出/恢复 Cookie（应用重启后恢复登录态，免验证码）。
+pub struct HttpSession {
+    client: reqwest::Client,
+    jar: Arc<reqwest::cookie::Jar>,
+}
 
-fn new_http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .cookie_provider(Arc::new(reqwest::cookie::Jar::default()))
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-        .timeout(std::time::Duration::from_secs(25))
+impl Clone for HttpSession {
+    fn clone(&self) -> Self {
+        Self { client: self.client.clone(), jar: self.jar.clone() }
+    }
+}
+
+pub struct HttpSessions(pub Mutex<HashMap<String, HttpSession>>);
+
+fn new_http_session() -> Result<HttpSession, String> {
+    let jar = Arc::new(reqwest::cookie::Jar::default());
+    let client = reqwest::Client::builder()
+        .cookie_provider(jar.clone())
+        .user_agent(concat!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 LeTimeManagement/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(6))
+        .timeout(std::time::Duration::from_secs(18))
+        .pool_idle_timeout(std::time::Duration::from_secs(90))
+        .pool_max_idle_per_host(8)
         .build()
-        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))
+        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
+    Ok(HttpSession { client, jar })
+}
+
+fn new_session_id() -> String {
+    format!(
+        "s{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    )
 }
 
 #[derive(serde::Serialize)]
@@ -433,18 +817,65 @@ struct HttpFetchResp {
 
 #[tauri::command]
 fn http_session_new(state: State<HttpSessions>) -> Result<String, String> {
-    let id = format!(
-        "s{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    );
+    let id = new_session_id();
     state
         .0
         .lock()
         .map_err(|_| "会话表被占用")?
-        .insert(id.clone(), new_http_client()?);
+        .insert(id.clone(), new_http_session()?);
+    Ok(id)
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct CookieDump {
+    url: String,
+    /// 该 URL 下当前生效的全部 Cookie，形如 "k1=v1; k2=v2"
+    cookie: String,
+}
+
+/// 导出会话在给定 URL 下的全部 Cookie（登录成功后由插件保存，重启后恢复免验证码）
+#[tauri::command]
+fn http_session_export(state: State<HttpSessions>, sid: String, urls: Vec<String>) -> Result<Vec<CookieDump>, String> {
+    use reqwest::cookie::CookieStore as _;
+    let session = state
+        .0
+        .lock()
+        .map_err(|_| "会话表被占用")?
+        .get(&sid)
+        .ok_or("会话不存在或已过期")?
+        .clone();
+    let mut out = Vec::new();
+    for url in urls {
+        let parsed = reqwest::Url::parse(&url).map_err(|e| format!("URL 无法解析: {e}"))?;
+        if let Some(value) = session.jar.cookies(&parsed) {
+            let cookie = value.to_str().unwrap_or("").to_string();
+            if !cookie.is_empty() {
+                out.push(CookieDump { url, cookie });
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 用导出的 Cookie 重建一个会话（host-only 属性与导出时一致，可直接续期）
+#[tauri::command]
+fn http_session_restore(state: State<HttpSessions>, cookies: Vec<CookieDump>) -> Result<String, String> {
+    let session = new_http_session()?;
+    for dump in &cookies {
+        let url = reqwest::Url::parse(&dump.url).map_err(|e| format!("URL 无法解析: {e}"))?;
+        for part in dump.cookie.split(';') {
+            let part = part.trim();
+            if part.contains('=') {
+                session.jar.add_cookie_str(part, &url);
+            }
+        }
+    }
+    let id = new_session_id();
+    state
+        .0
+        .lock()
+        .map_err(|_| "会话表被占用")?
+        .insert(id.clone(), session);
     Ok(id)
 }
 
@@ -461,13 +892,14 @@ async fn http_fetch(
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 地址".into());
     }
-    let client = state
+    let session = state
         .0
         .lock()
         .map_err(|_| "会话表被占用")?
         .get(&sid)
         .cloned()
         .ok_or("会话不存在或已过期，请重新创建")?;
+    let client = session.client;
 
     let mut req = match method.to_uppercase().as_str() {
         "POST" => client.post(&url),
@@ -523,16 +955,16 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }));
+        builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
     #[cfg(target_os = "android")]
-    { builder = builder.plugin(care_voice::init()).plugin(native_schedule::init()); }
+    { builder = builder.plugin(native_schedule::init()); }
     builder
         .plugin(tauri_plugin_opener::init())
         .manage(HttpSessions(Mutex::new(HashMap::new())))
         .manage(LanHandle(Mutex::new(None)))
         .manage(native_schedule::NativeSchedule::default())
         .invoke_handler(tauri::generate_handler![
-            care_voice::care_voice,
             native_schedule::native_schedule,
             load_data,
             save_data,
@@ -547,6 +979,15 @@ pub fn run() {
             des_ecb_encrypt_hex,
             http_session_new,
             http_fetch,
+            http_session_export,
+            http_session_restore,
+            plugin_vault_set,
+            plugin_vault_get,
+            plugin_vault_del,
+            ai_vault_save,
+            ai_vault_status,
+            ai_vault_clear,
+            ai_chat,
             lan_start,
             lan_stop,
             lan_status
@@ -570,5 +1011,23 @@ mod tests {
             des_ecb_encrypt_hex("abc".into(), "u2oh6Vu^".into()).unwrap(),
             "4cfc33620fedd8d7"
         );
+    }
+
+    #[test]
+    fn aead_round_trip_and_tamper_detection() {
+        // 插件密钥库同款加解密：随机密钥 round-trip + 篡改必须失败
+        let key: Vec<u8> = (0..32u8).collect();
+        let plain = b"password123&cookies-json";
+        let sealed = aead_encrypt(&key, plain).unwrap();
+        assert_ne!(sealed, plain.to_vec());
+        assert_eq!(aead_decrypt(&key, &sealed).unwrap(), plain.to_vec());
+        // 换密钥解不开
+        let wrong: Vec<u8> = (32..64u8).collect();
+        assert!(aead_decrypt(&wrong, &sealed).is_err());
+        // 篡改一个字节必须失败
+        let mut tampered = sealed.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0x01;
+        assert!(aead_decrypt(&key, &tampered).is_err());
     }
 }

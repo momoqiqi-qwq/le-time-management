@@ -33,7 +33,7 @@ function taskCard(t) {
       expandable ? el("span", { class: "exp" }, "⌄") : null,
       hasNote ? el("span", { class: "tn" }, t.note) : null,
       el("span", { class: "m" },
-        t.due ? `截止 ${t.due.slice(5).replace("-", "/")}` : "无截止",
+        t.due ? `截止 ${t.due.slice(5).replace("-", "/")} ${t.dueTime || "23:59"}` : "无截止",
         t.project ? ` · ${t.project}` : "",
         t.attachments?.length ? " · 📷" : ""),
     ),

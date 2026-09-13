@@ -3,8 +3,19 @@
   "name": "周度报告",
   "version": "0.1.0",
   "author": "Le时间管理内置",
-  "icon": "报",
+  "icon": "chart-column",
   "description": "按周汇总：每天的时间块分布、分类占比、任务完成度，一眼看清这一周过得怎么样。",
-  "permissions": ["ui", "tasks", "blocks"],
-  "entry": "main.js"
+  "permissions": [
+    "ui",
+    "tasks",
+    "blocks"
+  ],
+  "entry": "main.js",
+  "order": 5,
+  "platforms": {
+    "windows": "full",
+    "android": "full",
+    "miniprogram": "native"
+  },
+  "faIcon": "chart-column"
 }

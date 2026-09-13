@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, formEncode } from '../src/webContent.js';
+assert.equal(normalizeWebUrl('example.edu.cn'), 'https://example.edu.cn/');
+assert.equal(resolveWebUrl('../notice/1.htm', 'https://www.example.edu.cn/xw/list.htm'), 'https://www.example.edu.cn/notice/1.htm');
+const html=`<html><head><meta property="og:site_name" content="示例大学"><link rel="icon" href="/logo.ico"></head><body><ul class="notice-list"><li><a href="/info/1001/1234.htm">关于开展 2026 年奖学金申报的通知</a><span>2026-09-10</span></li><li><a href="/">首页</a></li></ul></body></html>`;
+const meta=parseSiteMeta(html,'https://www.example.edu.cn/news/');
+assert.equal(meta.title,'示例大学');assert.equal(meta.iconUrl,'https://www.example.edu.cn/logo.ico');assert.equal(meta.iconName,'school');
+const rows=extractNoticeLinks(html,'https://www.example.edu.cn/news/');assert.equal(rows.length,1);assert.equal(rows[0].url,'https://www.example.edu.cn/info/1001/1234.htm');assert.equal(rows[0].date,'2026-09-10');
+const plain=`<ul><li><a href="/2026/0911/c123a456/page.htm">2026 年秋季学期本科生选课安排</a><span>2026-09-11</span></li></ul>`;
+const plainRows=extractNoticeLinks(plain,'https://jwc.example.edu.cn/tzgg/');assert.equal(plainRows.length,1);assert.equal(plainRows[0].date,'2026-09-11');
+assert.equal(inferSiteIconName('校园图书馆','https://lib.example.edu.cn'),'book-open');
+assert.equal(formEncode({username:'张三',password:'a&b'}),'username=%E5%BC%A0%E4%B8%89&password=a%26b');
+console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction and form encoding');

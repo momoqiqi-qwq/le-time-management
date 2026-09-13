@@ -144,6 +144,29 @@ ok("createFromCapture 有日期建块字段一致",
   [b2.hasBlock, nb.date, nb.start, nb.durMin, nb.cat, nb.taskId === b2.task.id],
   [true, "2026-09-08", "10:30", 45, "life", true]);
 
+
+/* ── 三端插件同步 / 小程序原生适配 ── */
+console.log("[plugins]");
+const catalog = require("../miniprogram/core/pluginCatalog.js");
+const pluginRuntime = require("../miniprogram/core/pluginRuntime.js");
+ok("内置插件清单同步为 12 个", catalog.plugins.length, 12);
+ok("小程序原生适配 4 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 4);
+store.setPluginEnabled("pomodoro", false);
+ok("插件启停写入与桌面相同的 plugins 字段", store.getState().plugins.pomodoro.enabled, false);
+store.setPluginEnabled("pomodoro", true);
+store.pluginStorageSet("pomodoro", "doneCount", 3);
+ok("插件 storage 字段可跨端备份", store.getState().plugins.pomodoro.storage.doneCount, 3);
+const hs = pluginRuntime.holidaySummary("2026-09-06");
+ok("节假日适配读取桌面同源数据", [hs.available, hs.upcoming.length > 0], [true, true]);
+const ex = pluginRuntime.futureExams("2026-09-06", 5);
+ok("考试日历适配读取桌面内嵌数据", [ex.length > 0, ex.every((x) => x.date >= "2026-09-06")], [true, true]);
+const cet4 = pluginRuntime.futureExams("2026-09-06", 60, "cet4");
+ok("考试日历可只看 CET4 全流程", [cet4.length > 0, cet4.every((x) => ["cet4", "cet-set4"].includes(x.examId) || String(x.examId).includes("大学英语四六级"))], [true, true]);
+const cetFlow = pluginRuntime.examFlow("2026-09-06", "cet4");
+ok("CET 报名提示包含学校/考点与报名系统", [cetFlow.cetNotice.includes("学校"), cetFlow.cetNotice.includes("考点"), cetFlow.signupUrl], [true, true, "https://cet-bm.neea.edu.cn/"]);
+const wr = pluginRuntime.weeklyReport("2026-09-08");
+ok("周度报告适配输出 7 天", wr.days.length, 7);
+
 /* ── 汇总 ── */
 console.log(`\n结果：${pass} 通过，${fail} 失败`);
 process.exit(fail ? 1 : 0);

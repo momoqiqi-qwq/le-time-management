@@ -44,10 +44,8 @@ case "$(uname -s)" in
     ;;
 esac
 
-node ../tools/sync-android-care.js
-
-# ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）
 # vite emptyOutDir 已设为 false；如需清理 dist 请在构建前手动删除
+# ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）
 npx vite build
 
 # ② 逐目标交叉编译 .so

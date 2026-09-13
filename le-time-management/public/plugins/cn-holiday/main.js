@@ -37,7 +37,7 @@
     return { year, papers: j.papers || [], days: j.days };
   }
 
-  async function loadYear(year, forceNetwork = false) {
+  async function loadYear(year, forceNetwork = false, allowNetwork = true) {
     if (!forceNetwork && cache.has(year)) return cache.get(year);
     if (!forceNetwork) {
       const stored = await tide.storage.get(`year:${year}`, null);
@@ -60,7 +60,14 @@
         }
       }
     }
-    const res = await tide.http.get(`${REMOTE}/${year}.json`);
+    if (!allowNetwork) {
+      const e = new Error(`${year} 年暂无本地数据`);
+      e.code = "LOCAL_MISS";
+      throw e;
+    }
+    const res = forceNetwork
+      ? await tide.http.get(`${REMOTE}/${year}.json`)
+      : await tide.http.getCached(`${REMOTE}/${year}.json`, 12 * 60 * 60 * 1000);
     if (res.status !== 200) throw new Error(`获取 ${year} 年数据失败（HTTP ${res.status}）`);
     const doc = validateDoc(JSON.parse(res.body), year);
     await tide.storage.set(`year:${year}`, doc);
@@ -133,12 +140,18 @@
   }
 
   async function neighborhood(date) {
-    const y = yearOf(date), docs = [], errors = [];
-    for (const yy of [y - 1, y, y + 1]) {
-      try { docs.push((await loadYear(yy)).doc); }
-      catch (e) { errors.push({ year: yy, error: e.message, unpublished: e.code === "UNPUBLISHED" }); }
+    const y = yearOf(date), years = [y - 1, y, y + 1], docs = [], errors = [];
+    // 首屏只读取缓存/内置数据，避免为了“下一年尚未公布”白等一次公网请求。
+    const local = await Promise.allSettled(years.map((yy) => loadYear(yy, false, false)));
+    local.forEach((r, i) => {
+      if (r.status === "fulfilled") docs.push(r.value.doc);
+      else errors.push({ year: years[i], error: r.reason?.message || String(r.reason), unpublished: r.reason?.code === "UNPUBLISHED" });
+    });
+    if (!docs.some((d) => d.year === y)) {
+      // 当前查询年份确实缺失时才联网，且只请求这一年。
+      try { docs.push((await loadYear(y, false, true)).doc); }
+      catch (e) { throw new Error(e.message || `${y} 年数据不可用`); }
     }
-    if (!docs.some((d) => d.year === y)) throw new Error(errors.find((x) => x.year === y)?.error || `${y} 年数据不可用`);
     return { index: buildIndex(docs), errors };
   }
 
@@ -149,21 +162,21 @@
     st.textContent = `
       .ch-wrap{max-width:900px;margin:0 auto;padding-bottom:28px}
       .ch-hero{display:grid;grid-template-columns:1.35fr .65fr;gap:14px;margin:12px 0 14px}
-      .ch-card{background:#fff;border:1px solid #E4DFD6;border-radius:18px;padding:20px 22px}
-      .ch-kicker{font-size:10px;color:#8B979F;letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
-      .ch-name{font-size:28px;font-weight:800;letter-spacing:.02em;color:#22303A}
-      .ch-count{font-size:52px;line-height:1;font-weight:800;color:#0F4C5C;margin:10px 0 6px}
-      .ch-count small{font-size:13px;color:#7E8B94;font-weight:500;margin-left:5px}
-      .ch-muted{font-size:12px;color:#7E8B94;line-height:1.7}
-      .ch-status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 10px;background:#EEF6F4;color:#176C60;font-size:11px;font-weight:700}
-      .ch-status.makeup{background:#FFF1E8;color:#9A4D16}.ch-status.workday{background:#F1F3F5;color:#59656D}.ch-status.weekend{background:#EEF1FB;color:#5364A5}
-      .ch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.ch-btn{height:34px;border-radius:9px;border:1px solid #DCD6CB;background:#fff;padding:0 13px;cursor:pointer;font-size:12px;color:#22303A}.ch-btn.pri{background:#0F4C5C;border-color:#0F4C5C;color:#fff}.ch-btn:disabled{opacity:.5}
-      .ch-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ch-title{font-size:14px;font-weight:750;margin-bottom:12px}.ch-rest-big{font-size:22px;font-weight:750;color:#22303A;margin:6px 0}.ch-rest-big em{font-style:normal;color:#0F4C5C}
-      .ch-check{display:flex;gap:8px}.ch-in{height:36px;border:1px solid #DDD7CD;border-radius:9px;padding:0 10px;background:#fff;color:#22303A}.ch-check .ch-in{flex:1;min-width:130px}
-      .ch-result{margin-top:12px;border-radius:12px;background:#F8F7F3;padding:13px 14px;font-size:13px;line-height:1.7;color:#46545D;min-height:47px}
+      .ch-card{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:20px 22px}
+      .ch-kicker{font-size:10px;color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
+      .ch-name{font-size:28px;font-weight:800;letter-spacing:.02em;color:var(--ink,#22303A)}
+      .ch-count{font-size:52px;line-height:1;font-weight:800;color:var(--deep,#0F4C5C);margin:10px 0 6px}
+      .ch-count small{font-size:13px;color:var(--ink-2,#7E8B94);font-weight:500;margin-left:5px}
+      .ch-muted{font-size:12px;color:var(--ink-2,#7E8B94);line-height:1.7}
+      .ch-status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 10px;background:color-mix(in srgb,var(--mint,#2ec4b6) 12%,var(--panel,#fff));color:var(--deep,#176C60);font-size:11px;font-weight:700}
+      .ch-status.makeup{background:color-mix(in srgb,var(--sun,#e3a008) 12%,var(--panel,#fff));color:var(--ink,#9A4D16)}.ch-status.workday{background:var(--paper,#F1F3F5);color:var(--ink-2,#59656D)}.ch-status.weekend{background:color-mix(in srgb,var(--sea,#5364A5) 10%,var(--panel,#fff));color:var(--deep,#5364A5)}
+      .ch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.ch-btn{height:34px;border-radius:9px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);padding:0 13px;cursor:pointer;font-size:12px;color:var(--ink,#22303A)}.ch-btn.pri{background:#0F4C5C;border-color:var(--deep,#0F4C5C);color:#fff}.ch-btn:disabled{opacity:.5}
+      .ch-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ch-title{font-size:14px;font-weight:750;margin-bottom:12px}.ch-rest-big{font-size:22px;font-weight:750;color:var(--ink,#22303A);margin:6px 0}.ch-rest-big em{font-style:normal;color:var(--deep,#0F4C5C)}
+      .ch-check{display:flex;gap:8px}.ch-in{height:36px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:#fff;color:var(--ink,#22303A)}.ch-check .ch-in{flex:1;min-width:130px}
+      .ch-result{margin-top:12px;border-radius:12px;background:var(--paper,#F8F7F3);padding:13px 14px;font-size:13px;line-height:1.7;color:var(--ink-2,#46545D);min-height:47px}
       .ch-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 8px}.ch-year-nav{display:flex;align-items:center;gap:7px}.ch-year{font-size:18px;font-weight:800;min-width:76px;text-align:center}
-      .ch-list{background:#fff;border:1px solid #E4DFD6;border-radius:18px;overflow:hidden}.ch-row{display:grid;grid-template-columns:92px 1fr auto;gap:12px;align-items:center;padding:13px 17px;border-bottom:1px solid #F0ECE5}.ch-row:last-child{border-bottom:0}.ch-row b{font-size:13px}.ch-range{font-size:12px;color:#687780}.ch-days{font-size:11px;color:#0F4C5C;background:#EDF5F3;border-radius:999px;padding:4px 9px}
-      .ch-makeup{margin-top:10px;font-size:11px;color:#8A6B52;line-height:1.8}.ch-source{font-size:10px;color:#A1A9AF;margin-top:10px}.ch-err{color:#B34747}
+      .ch-list{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:18px;overflow:hidden}.ch-row{display:grid;grid-template-columns:92px 1fr auto;gap:12px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line-soft,#F0ECE5)}.ch-row:last-child{border-bottom:0}.ch-row b{font-size:13px}.ch-range{font-size:12px;color:var(--ink-2,#687780)}.ch-days{font-size:11px;color:var(--deep,#0F4C5C);background:color-mix(in srgb,var(--mint,#2ec4b6) 10%,var(--panel,#fff));border-radius:999px;padding:4px 9px}
+      .ch-makeup{margin-top:10px;font-size:11px;color:var(--ink-2,#8A6B52);line-height:1.8}.ch-source{font-size:10px;color:var(--ink-3,#A1A9AF);margin-top:10px}.ch-err{color:#B34747}
       @media(max-width:720px){.ch-hero,.ch-grid{grid-template-columns:1fr}.ch-name{font-size:23px}.ch-count{font-size:44px}.ch-row{grid-template-columns:76px 1fr auto;padding:12px}.ch-card{padding:17px}}
     `;
     document.head.append(st);
@@ -251,11 +264,9 @@
     busy = true;
     const btn = root?.querySelector("[data-refresh]");
     if (btn) { btn.disabled = true; btn.textContent = "更新中…"; }
-    const y = yearOf(tide.util.today()), result = [];
-    for (const yy of [y, y + 1]) {
-      try { await loadYear(yy, true); result.push(`${yy} 已更新`); }
-      catch (e) { result.push(`${yy}：${e.message}`); }
-    }
+    const y = yearOf(tide.util.today()), years = [y, y + 1];
+    const settled = await Promise.allSettled(years.map((yy) => loadYear(yy, true)));
+    const result = settled.map((r, i) => r.status === "fulfilled" ? `${years[i]} 已更新` : `${years[i]}：${r.reason?.message || r.reason}`);
     tide.notify(result.join("；"));
     busy = false;
     await paint();
@@ -269,5 +280,5 @@
     return () => { if (root === el) root = null; };
   }
 
-  tide.ui.registerView({ id: "cn-holiday", title: "中国节假日", icon: "假", render });
+  tide.ui.registerView({ id: "cn-holiday", title: "中国节假日", icon: 'calendar-day', render });
 })();

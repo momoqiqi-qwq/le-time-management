@@ -1,6 +1,6 @@
 param([ValidateSet('Debug','Release')][string]$Configuration = 'Debug')
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path $PSScriptRoot -Parent
+$repo = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $generated = Join-Path $repo 'le-time-management/src-tauri/gen/android'
 $settings = Get-Content (Join-Path $generated 'tauri.settings.gradle') -Raw
 $sources = @{}

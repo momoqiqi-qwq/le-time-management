@@ -13,7 +13,7 @@ async function cppuBridge(op, args) {
   return data.result;
 }
 
-const LS_KEY = "letime-data";
+const LS_KEY = "tidebalance-data";
 
 export const api = {
   isTauri,
@@ -56,7 +56,7 @@ export const api = {
   },
 
   async appInfo() {
-    if (!isTauri) return { version: "web-dev", os: "browser", dataDir: "localStorage（浏览器调试模式）" };
+    if (!isTauri) return { version: "web-dev", os: "browser", arch: navigator.platform || "web", dataDir: "localStorage（浏览器调试模式）" };
     return invoke("app_info");
   },
 
@@ -101,6 +101,31 @@ export const api = {
     throw new Error("DES 加密仅支持在 Tauri 环境使用");
   },
 
+  // 会话 Cookie 导出/恢复：让插件登录态跨应用重启（免验证码续期）
+  async httpSessionExport(sid, urls) {
+    if (!isTauri) return [];
+    return invoke("http_session_export", { sid, urls });
+  },
+  async httpSessionRestore(cookies) {
+    if (!isTauri) return api.httpSessionNew();
+    return invoke("http_session_restore", { cookies });
+  },
+
+  // 插件密钥库：密码、会话票据等敏感数据保存在 Rust 侧 AES-256-GCM 加密文件，
+  // 不进入 data.json / 普通备份。浏览器调试环境降级为 null（功能不可用但不崩）。
+  async pluginVaultSet(pluginId, key, value) {
+    if (!isTauri) throw new Error("插件密钥库仅在 Tauri 应用中可用");
+    return invoke("plugin_vault_set", { pluginId, key, value });
+  },
+  async pluginVaultGet(pluginId, key) {
+    if (!isTauri) return null;
+    return invoke("plugin_vault_get", { pluginId, key });
+  },
+  async pluginVaultDel(pluginId, key) {
+    if (!isTauri) return;
+    return invoke("plugin_vault_del", { pluginId, key });
+  },
+
   // 局域网联动服务
   async lanStart(port, token) {
     if (!isTauri) throw new Error("仅 Tauri 环境可用");
@@ -112,5 +137,23 @@ export const api = {
   async lanStatus() {
     if (!isTauri) return { running: false };
     return invoke("lan_status");
+  },
+
+  // AI 凭据只保存在 Rust 侧加密保险箱；不会进入 data.json / 普通备份。
+  async aiVaultStatus() {
+    if (!isTauri) return { configured: false, baseUrl: "", model: "", keyMasked: "" };
+    return invoke("ai_vault_status");
+  },
+  async aiVaultSave(baseUrl, apiKey, model) {
+    if (!isTauri) throw new Error("AI 加密凭据仅在 Tauri 应用中可用");
+    return invoke("ai_vault_save", { baseUrl, apiKey, model });
+  },
+  async aiVaultClear() {
+    if (!isTauri) return;
+    return invoke("ai_vault_clear");
+  },
+  async aiChat(messages, temperature = 0.2) {
+    if (!isTauri) throw new Error("AI 请求仅在 Tauri 应用中可用");
+    return invoke("ai_chat", { messages, temperature });
   },
 };

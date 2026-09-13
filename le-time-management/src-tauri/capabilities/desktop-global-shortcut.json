@@ -1,0 +1,18 @@
+{
+  "$schema": "gen/schemas/desktop-schema.json",
+  "identifier": "desktop-global-shortcut",
+  "description": "桌面端专属：系统级全局快捷键。该插件在 lib.rs 中以 #[cfg(desktop)] 注册，Android/iOS 上不存在对应权限，因此必须限定平台，否则移动端构建会因为找不到权限而失败。",
+  "platforms": [
+    "windows",
+    "linux",
+    "macOS"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
+  ]
+}

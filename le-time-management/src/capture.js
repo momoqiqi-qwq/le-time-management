@@ -4,6 +4,8 @@ import * as S from "./store.js";
 import { el, toast } from "./ui.js";
 import { parseWhen, guessCategory, guessQuad } from "./timeParser.js";
 import { openTaskDrawer } from "./views/drawer.js";
+import { previewSchedule } from "./scheduleConflict.js";
+import { closeLayer, removeWithMotion } from "./motion.js";
 
 let overlay = null;
 let dragDepth = 0;
@@ -14,6 +16,46 @@ export function initCapture() {
   document.addEventListener("dragleave", onDragLeave);
   document.addEventListener("drop", onDrop);
   document.addEventListener("paste", onPaste);
+  window.addEventListener("tide:quick-capture", () => openQuickCapture());
+}
+
+export function openQuickCapture() {
+  document.querySelector(".quick-cap-mask")?.remove();
+  document.querySelector(".quick-cap")?.remove();
+  const input = el("textarea", {
+    class: "quick-cap-input",
+    placeholder: "例如：明天下午 3 点交论文，预计 1 小时\n也可以直接粘贴聊天消息、通知或网址说明…",
+    "aria-label": "快速捕获内容",
+  });
+  const mask = el("div", { class: "drawer-mask quick-cap-mask", onclick: close });
+  const panel = el("div", { class: "quick-cap", role: "dialog", "aria-label": "快速捕获" },
+    el("div", { class: "quick-cap-head" },
+      el("div", {}, el("b", {}, "快速捕获"), el("small", {}, "Ctrl+Enter 创建 · Esc 关闭")),
+      el("button", { class: "btn ghost sm", onclick: close }, "关闭"),
+    ),
+    input,
+    el("div", { class: "quick-cap-actions" },
+      el("button", { class: "btn pri", onclick: create }, "识别并创建"),
+      el("span", { class: "desc" }, "会自动解析日期、时间、分类与预计时长"),
+    ),
+  );
+  function create() {
+    const text = input.value.trim();
+    if (!text) { toast("先输入要捕获的内容"); input.focus(); return; }
+    handleText(text);
+    close();
+  }
+  function close() {
+    closeLayer(panel, mask, () => document.removeEventListener("keydown", onKey, true));
+  }
+  function onKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); create(); }
+  }
+  input.addEventListener("keydown", (e) => e.stopPropagation());
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(mask, panel);
+  setTimeout(() => input.focus(), 0);
 }
 
 function wants(e) {
@@ -76,6 +118,16 @@ function onPaste(e) {
   }
 }
 
+/* ── 冲突安全放置：捕获流程不再静默覆盖已有安排 ── */
+function placeCapturedBlock(patch) {
+  const startMin = S.mmOf(patch.start || "09:00");
+  const preview = previewSchedule(S.blocksOf(patch.date), { startMin, durMin: patch.durMin }, { dayStart: 7 * 60, dayEnd: 24 * 60 });
+  if (preview.ok) return { block: S.addBlock(patch), moved: false, requestedStart: patch.start };
+  const alt = preview.alternatives[0];
+  if (!alt) return { block: null, moved: false, requestedStart: patch.start, conflicts: preview.conflicts };
+  return { block: S.addBlock({ ...patch, start: alt.start }), moved: true, requestedStart: patch.start, conflicts: preview.conflicts };
+}
+
 /* ── 文本：自动解析并创建 ── */
 function handleText(text) {
   const p = parseWhen(text);
@@ -92,14 +144,23 @@ function handleText(text) {
 
   if (p.date && p.startMin !== null) {
     const dur = p.endMin ? p.endMin - p.startMin : 60;
-    S.addBlock({ date: p.date, start: S.hhmmOf(p.startMin), durMin: dur, title, taskId: task.id, cat });
-    toast(`已捕获「${title}」→ ${p.date.slice(5).replace("-", "/")} ${S.hhmmOf(p.startMin)} · ${S.durLabel(dur)}`, {
-      actionLabel: "查看", ms: 6500,
-      action: () => window.dispatchEvent(new CustomEvent("tide:navigate", { detail: "timeblock" })),
-    });
+    const placed = placeCapturedBlock({ date: p.date, start: S.hhmmOf(p.startMin), durMin: dur, title, taskId: task.id, cat });
+    if (!placed.block) {
+      toast(`已保存任务「${title}」，但 ${S.hhmmOf(p.startMin)} 时段冲突且当天没有连续空档`, { actionLabel: "调整", ms: 7000, action: () => openTaskDrawer(task.id) });
+    } else {
+      toast(placed.moved
+        ? `已捕获「${title}」；原定 ${placed.requestedStart} 冲突，自动改到 ${placed.block.start}`
+        : `已捕获「${title}」→ ${p.date.slice(5).replace("-", "/")} ${placed.block.start} · ${S.durLabel(dur)}`, {
+        actionLabel: "查看", ms: 6500,
+        action: () => window.dispatchEvent(new CustomEvent("tide:navigate", { detail: "timeblock" })),
+      });
+    }
   } else if (p.date) {
-    S.addBlock({ date: p.date, start: "09:00", durMin: 60, title, taskId: task.id, cat });
-    toast(`已捕获「${title}」→ ${p.date.slice(5).replace("-", "/")}，未写时间，先放在 09:00`, {
+    const placed = placeCapturedBlock({ date: p.date, start: "09:00", durMin: 60, title, taskId: task.id, cat });
+    if (!placed.block) toast(`已保存任务「${title}」，但当天没有可用的 60 分钟连续空档`, { actionLabel: "调整", ms: 6500, action: () => openTaskDrawer(task.id) });
+    else toast(placed.moved
+      ? `已捕获「${title}」；09:00 有冲突，自动改到 ${placed.block.start}`
+      : `已捕获「${title}」→ ${p.date.slice(5).replace("-", "/")}，未写时间，先放在 09:00`, {
       actionLabel: "调整", ms: 6500, action: () => openTaskDrawer(task.id),
     });
   } else {
@@ -188,8 +249,9 @@ function openCaptureModal(dataUrl, caption) {
     });
     if (dateIn.value) {
       const [h, m] = timeIn.value.split(":").map(Number);
-      S.addBlock({ date: dateIn.value, start: timeIn.value || "09:00", durMin: Number(durSel.value), title, taskId: task.id, cat: catSel.value });
-      toast(`已创建：${title} → ${dateIn.value.slice(5)} ${timeIn.value}`, { actionLabel: "查看", action: () => window.dispatchEvent(new CustomEvent("tide:navigate", { detail: "timeblock" })) });
+      const placed = placeCapturedBlock({ date: dateIn.value, start: timeIn.value || "09:00", durMin: Number(durSel.value), title, taskId: task.id, cat: catSel.value });
+      if (placed.block) toast(placed.moved ? `已创建：${title} · 原时段冲突，自动改到 ${placed.block.start}` : `已创建：${title} → ${dateIn.value.slice(5)} ${placed.block.start}`, { actionLabel: "查看", action: () => window.dispatchEvent(new CustomEvent("tide:navigate", { detail: "timeblock" })) });
+      else toast(`任务已保存，但 ${timeIn.value || "09:00"} 时段冲突且没有连续空档`, { actionLabel: "调整", action: () => openTaskDrawer(task.id) });
       void h; void m;
     } else {
       toast(`已保存任务「${title}」`);
@@ -201,7 +263,7 @@ function openCaptureModal(dataUrl, caption) {
     toast(`已保存任务「${task.title}」（含图片附件）`);
     close();
   }
-  function close() { mask.remove(); modal.remove(); }
+  function close() { closeLayer(modal, mask); }
 }
 
 function defaultTime() {
@@ -224,7 +286,7 @@ function showOverlay() {
   document.body.append(overlay);
 }
 function hideOverlay() {
-  overlay?.remove();
+  removeWithMotion(overlay);
   overlay = null;
   dragDepth = 0;
 }

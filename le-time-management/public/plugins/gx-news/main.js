@@ -383,5 +383,5 @@
     loadPrefs().then(() => buildUI(el)).catch(() => buildUI(el));
   }
 
-  tide.ui.registerView({ id: "gx-news", title: "竞赛消息", icon: "赛", render });
+  tide.ui.registerView({ id: "gx-news", title: "竞赛消息", icon: 'trophy', render });
 })();

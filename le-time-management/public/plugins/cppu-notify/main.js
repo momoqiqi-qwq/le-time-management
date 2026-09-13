@@ -1,7 +1,9 @@
 // 警大门户通知 —— 对齐 cppu-notify-skill v1.2.1（Python + tesseract OCR → Le时间管理插件）
-// 相比原 skill 的优化：移除 74MB OCR 运行时，验证码改为界面内手输；
-// 保留完整 SSO 链路（主 SSO → sso-jw bridge → 门户 tp_up）与 rememberMe 5 天免密。
-// 安全：学号存本机，密码不落盘；会话 Cookie 只在内存。
+// 自动登录：登录成功一次后，密码与门户会话票据（Cookie）加密存入应用密钥库
+// （tide.vault，Rust 侧 AES-256-GCM，不进 data.json / 备份）；
+// 之后每次打开插件：先恢复票据静默续期直达消息页；票据过期则自动识别验证码
+// （内置纯 JS 数字识别 + 失败自动换图重试）完成登录，全程无需手填。
+// 保留完整 SSO 链路（主 SSO → sso-jw bridge → 门户 tp_up）与 rememberMe。
 (function () {
   const SSO = "https://sso.cppu.edu.cn";
   const JW = "https://sso-jw.cppu.edu.cn";
@@ -36,7 +38,7 @@
   }
 
   const state = {
-    sid: null, token: "", username: "", rememberUsername: true,
+    sid: null, token: "", username: "", rememberUsername: true, autoLogin: true,
     notices: [], page: 1, hasMore: true,
     fetching: false, error: null, fetchedAt: 0,
     expanded: new Set(),
@@ -44,6 +46,7 @@
     seen: new Set(),
     filter: { kw: "", month: "all", hideSeen: false },
     captcha: "", pending: null, renderedCount: CHUNK,
+    savedPassword: "",     // 密钥库取出的密码（仅内存，用于自动登录与表单预填）
   };
   let ui = null, io = null, sentinelCb = null, paintToken = 0;
 
@@ -96,7 +99,7 @@
   function explainHttpError(e) {
     const msg = String(e && (e.message || e) || "");
     if (/Failed to fetch|Load failed|NetworkError/i.test(msg)) {
-      return "网络桥不可用：浏览器预览会被智慧警大跨域策略拦截，请在桌面版 Le 中打开本插件。";
+      return "网络桥不可用：浏览器预览会被智慧警大跨域策略拦截，请在桌面版 Le时间管理 中打开本插件。";
     }
     return msg || "网络请求失败";
   }
@@ -125,9 +128,12 @@
       .pp-status{font-size:12px;color:#7E8B94;margin:2px 0 8px}
       .pp-status .err{color:#B03535}
       .pp-month{font-size:12.5px;font-weight:700;color:#0F4C5C;padding:9px 2px 7px;letter-spacing:.05em}
-      .pp-card{background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:12px 14px;margin-bottom:9px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 74px}
+      .pp-card{background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:12px 14px;margin-bottom:9px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 74px;transition:border-color .28s ease,box-shadow .28s ease,background .28s ease}
+      .pp-card.open{border-color:#D5DED9;box-shadow:0 7px 24px rgba(34,48,58,.055)}
       .pp-heading{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:4px 0;cursor:pointer;font-family:inherit;min-height:44px}
-      .pp-expand{margin-top:10px;min-height:44px}
+      .pp-expand{margin-top:10px;min-height:44px;display:inline-flex;align-items:center;gap:7px;transition:background .2s ease,border-color .2s ease,color .2s ease}
+      .pp-expand::after{content:"⌄";display:inline-block;font-size:14px;line-height:1;transform:translateY(-1px) rotate(0deg);transition:transform .36s cubic-bezier(.22,.8,.22,1)}
+      .pp-card.open .pp-expand::after{transform:translateY(1px) rotate(180deg)}
       .pp-heading:focus-visible,.pp-btn:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       @media(max-width:600px){.pp-wrap{width:100%;min-width:0}.pp-login{margin:12px auto;padding:20px 16px;max-width:100%;box-sizing:border-box}.pp-title{font-size:17px!important}.pp-meta{font-size:13px!important}.pp-detail .c{font-size:16px!important;max-height:none!important;overflow-wrap:anywhere}.pp-btn,.pp-chip{min-height:44px;font-size:14px!important}.pp-kw{width:100%;flex-basis:100%;box-sizing:border-box;min-height:44px}.pp-card{padding:14px;cursor:default}.pp-caprow input{min-width:0}.pp-detail .pp-act{flex-wrap:wrap}}
       .pp-card:hover{background:#FBFAF5;border-color:#D8D2C4}
@@ -137,8 +143,12 @@
       .pp-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:10px}
       .pp-tag.top{background:#FFF0E1;color:#B26A00}
       .pp-tag.unread{background:#FDE8E8;color:#C64545}
-      .pp-detail{margin-top:10px;border-top:1px dashed #EFEAE1;padding-top:10px}
-      .pp-detail .c{font-size:12px;color:#4B565E;line-height:1.9;white-space:pre-wrap;max-height:320px;overflow-y:auto}
+      .pp-detail-shell{display:grid;grid-template-rows:0fr;opacity:0;margin-top:0;transition:grid-template-rows .42s cubic-bezier(.2,.78,.2,1),opacity .24s ease,margin-top .42s cubic-bezier(.2,.78,.2,1)}
+      .pp-card.open .pp-detail-shell{grid-template-rows:1fr;opacity:1;margin-top:10px}
+      .pp-detail-clip{min-height:0;overflow:hidden}
+      .pp-detail{border-top:1px dashed #EFEAE1;padding-top:10px;transform:translateY(-7px);transition:transform .36s cubic-bezier(.2,.78,.2,1)}
+      .pp-card.open .pp-detail{transform:translateY(0)}
+      .pp-detail .c{font-size:12px;color:#4B565E;line-height:1.9;white-space:pre-wrap;max-height:320px;overflow-y:auto;overscroll-behavior:contain}
       .pp-detail .pp-act{display:flex;gap:8px;margin-top:10px}
       .pp-login{max-width:440px;margin:26px auto;background:#fff;border:1px solid #E4DFD6;border-radius:18px;padding:28px 30px;box-shadow:0 2px 10px rgba(34,48,58,.07)}
       .pp-login h3{font-size:16px;margin-bottom:4px}
@@ -156,6 +166,7 @@
       .pp-banner{background:#FFF7E8;border:1px solid #F2D9A6;color:#8A6420;border-radius:12px;padding:12px 15px;font-size:12px;line-height:1.8;margin-bottom:10px}
       .pp-more{display:flex;justify-content:center;padding:8px 0 4px}
       .pp-more .pp-btn{padding:8px 20px;font-size:12px}
+      @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail{transition-duration:.01ms!important}}
     `;
     document.head.append(st);
   }
@@ -165,10 +176,42 @@
     if (f) state.filter = { ...state.filter, ...f };
     state.username = (await tide.storage.get("username", "")) || "";
     state.rememberUsername = await tide.storage.get("rememberUsername", true) !== false;
+    state.autoLogin = await tide.storage.get("autoLogin", true) !== false;
     state.seen = new Set(await tide.storage.get("seen", []));
+    if (state.autoLogin && typeof tide.vault?.get === "function") {
+      try { state.savedPassword = JSON.parse((await tide.vault.get("secret")) || "null")?.password || ""; } catch { state.savedPassword = ""; }
+    }
   }
   const saveFilter = () => tide.storage.set("filter", state.filter);
   const saveSeen = () => tide.storage.set("seen", [...state.seen].slice(-500));
+
+  /* ── 登录态持久化：Cookie 存密钥库，重启后恢复会话免验证码 ── */
+  async function saveCookies() {
+    if (typeof tide.vault?.set !== "function" || !state.sid) return;
+    try {
+      const dump = await tide.http.exportCookies(state.sid, [SSO, JW, PORTAL]);
+      if (dump.length) await tide.vault.set("cookies", JSON.stringify(dump));
+    } catch { /* 密钥库不可用（浏览器调试）时静默跳过 */ }
+  }
+
+  async function restoreCookies() {
+    if (typeof tide.vault?.get !== "function") return;
+    try {
+      const raw = await tide.vault.get("cookies");
+      const dump = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(dump) && dump.length) {
+        state.sid = await tide.http.restoreCookies(dump);
+      }
+    } catch { /* 票据损坏按无票据处理 */ }
+  }
+
+  async function clearSavedLogin() {
+    state.savedPassword = "";
+    try {
+      await tide.vault?.del?.("secret");
+      await tide.vault?.del?.("cookies");
+    } catch { /* ignore */ }
+  }
 
   /* ── SSO 登录链路 ── */
   async function newSession() { if (!state.sid) state.sid = await tide.http.session(); }
@@ -196,6 +239,311 @@
     // 更新页面上所有验证码图（登录表单/换图按钮共用）
     document.querySelectorAll("img[data-cap]").forEach((img) => { img.src = state.captcha; });
     return state.captcha;
+  }
+
+  /* ══ 验证码识别（纯 JS，无外部运行时）══
+     警大 SSO 验证码：4 位数字、每个数字一种颜色、叠加贯穿细线。
+     识别管线：解码 → Otsu 二值化 → 连通域去线去噪 → x 区间分组 →
+     归一化 16×16 位图 → 与「内置字体模板 + 历史确认样本」匹配。
+     单次识别有误差，由自动登录层用「识别失败就换图重试」兜底；
+     登录成功后样本回存，识别率随使用快速提升。 */
+  const OCR = (() => {
+    const N = 16;
+    const SAMPLE_MAX = 240;
+
+    // —— 纯函数：区域归一化（最近邻缩放到 N×N 二值位图）——
+    function normalizeRegion(w, get, x0, y0, bw, bh) {
+      const out = new Array(N * N).fill(0);
+      for (let ry = 0; ry < N; ry++) {
+        const sy = Math.min(y0 + bh - 1, y0 + Math.floor((ry + 0.5) * bh / N));
+        for (let rx = 0; rx < N; rx++) {
+          const sx = Math.min(x0 + bw - 1, x0 + Math.floor((rx + 0.5) * bw / N));
+          out[ry * N + rx] = get(sx, sy) ? 1 : 0;
+        }
+      }
+      return out;
+    }
+
+    // —— 纯函数：Jaccard 相似度 ——
+    function similarity(a, b) {
+      let inter = 0, union = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] && b[i]) inter++;
+        if (a[i] || b[i]) union++;
+      }
+      return union ? inter / union : 0;
+    }
+
+    // —— 纯函数：分类（内置模板 + 历史样本里取最优匹配）——
+    function classify(bits, templates, samples) {
+      let best = { d: -1, score: 0 };
+      for (const t of templates) {
+        const s = similarity(bits, t.bits);
+        if (s > best.score) best = { d: t.d, score: s };
+      }
+      for (const smp of samples || []) {
+        // 样本可能来自 storage（"0101…" 字符串）或当次识别（数组）
+        const arr = typeof smp.b === "string" ? [...smp.b].map(Number) : smp.b;
+        const s = similarity(bits, arr) * 1.02; // 同源样本略加权
+        if (s > best.score) best = { d: smp.d, score: s };
+      }
+      return best;
+    }
+
+    // —— 纯函数：连通域按 x 区间重叠合并成字符组 ——
+    function groupByX(comps) {
+      const sorted = [...comps].sort((a, b) => a.minX - b.minX);
+      const groups = [];
+      for (const c of sorted) {
+        const g = groups.find((g) => c.minX <= g.maxX + 1 && c.maxX >= g.minX - 1);
+        if (g) {
+          g.pix.push(...c.pix);
+          g.minX = Math.min(g.minX, c.minX); g.maxX = Math.max(g.maxX, c.maxX);
+          g.minY = Math.min(g.minY, c.minY); g.maxY = Math.max(g.maxY, c.maxY);
+        } else {
+          groups.push({ pix: [...c.pix], minX: c.minX, maxX: c.maxX, minY: c.minY, maxY: c.maxY });
+        }
+      }
+      return groups.sort((a, b) => a.minX - b.minX);
+    }
+
+    // —— 纯函数：连通域标记（8 邻接）——
+    function components(w, h, get) {
+      const seen = new Uint8Array(w * h);
+      const comps = [];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (!get(x, y) || seen[y * w + x]) continue;
+          const pix = [];
+          const stack = [y * w + x];
+          seen[y * w + x] = 1;
+          let minX = x, maxX = x, minY = y, maxY = y;
+          while (stack.length) {
+            const cur = stack.pop();
+            const cx = cur % w, cy = (cur / w) | 0;
+            pix.push(cur);
+            if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+            if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+              const nx = cx + dx, ny = cy + dy;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              const ni = ny * w + nx;
+              if (!seen[ni] && get(nx, ny)) { seen[ni] = 1; stack.push(ni); }
+            }
+          }
+          comps.push({ pix, minX, maxX, minY, maxY, size: pix.length });
+        }
+      }
+      return comps;
+    }
+
+    // —— Otsu 全局阈值（返回值配合「亮度 < 阈值 = 墨迹」使用，取最大方差点右移一位）——
+    function otsu(histogram, total) {
+      let sum = 0;
+      for (let i = 0; i < 256; i++) sum += i * histogram[i];
+      let sumB = 0, wB = 0, best = 0, threshold = 127;
+      for (let t = 0; t < 256; t++) {
+        wB += histogram[t];
+        if (!wB) continue;
+        const wF = total - wB;
+        if (!wF) break;
+        sumB += t * histogram[t];
+        const mB = sumB / wB, mF = (sum - sumB) / wF;
+        const between = wB * wF * (mB - mF) * (mB - mF);
+        if (between > best) { best = between; threshold = t; }
+      }
+      return threshold + 1;
+    }
+
+    // —— 内置模板：运行时用 canvas 多字体渲染 0-9 生成（含轻微旋转/斜体变化）——
+    let templates = null;
+    function buildTemplates() {
+      if (templates || typeof document === "undefined") return templates || [];
+      templates = [];
+      const S = 44;
+      const cv = document.createElement("canvas");
+      cv.width = S; cv.height = S;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return [];
+      const fonts = [
+        'bold 30px Georgia, serif', 'bold 30px "Times New Roman", serif',
+        'bold 30px Arial, sans-serif', 'bold 30px Verdana, sans-serif',
+        'italic bold 30px Georgia, serif', 'serif',
+      ];
+      for (let d = 0; d <= 9; d++) {
+        for (const font of fonts) {
+          for (const rot of [-0.1, 0, 0.1]) {
+            ctx.clearRect(0, 0, S, S);
+            ctx.save();
+            ctx.translate(S / 2, S / 2);
+            ctx.rotate(rot);
+            ctx.font = font;
+            ctx.fillStyle = "#000";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(d), 0, 1);
+            ctx.restore();
+            const data = ctx.getImageData(0, 0, S, S).data;
+            const get = (x, y) => data[(y * S + x) * 4 + 3] > 100;
+            const box = tightBox(S, S, get);
+            if (!box) continue;
+            templates.push({ d, bits: normalizeRegion(S, get, box.x0, box.y0, box.w, box.h) });
+          }
+        }
+      }
+      return templates;
+    }
+
+    function tightBox(w, h, get) {
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (!get(x, y)) continue;
+          if (x < x0) x0 = x; if (x > x1) x1 = x;
+          if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+      }
+      if (x1 < 0) return null;
+      return { x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+    }
+
+    // —— 历史确认样本（登录成功 = 当次识别全部正确，回存提升识别率）——
+    async function loadSamples() {
+      try { const s = await tide.storage.get("ocrSamples", []); return Array.isArray(s) ? s.slice(-SAMPLE_MAX) : []; }
+      catch { return []; }
+    }
+    async function confirmSamples(samples) {
+      if (!Array.isArray(samples) || !samples.length) return;
+      const mine = samples.map((s) => ({ b: String(s.b || "").slice(0, N * N), d: s.d | 0 }));
+      const all = (await loadSamples()).concat(mine).slice(-SAMPLE_MAX);
+      try { await tide.storage.set("ocrSamples", all); } catch { /* ignore */ }
+    }
+
+    // —— 主入口：dataURL → {code, confidence, samples} ——
+    async function recognize(dataUrl) {
+      if (typeof document === "undefined" || !dataUrl) return { code: "", confidence: 0, samples: [] };
+      const img = new Image();
+      img.src = dataUrl;
+      try { await img.decode(); } catch { return { code: "", confidence: 0, samples: [] }; }
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w || !h || w > 600 || h > 300) return { code: "", confidence: 0, samples: [] };
+      const cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext("2d", { willReadFrequently: true });
+      if (!ctx) return { code: "", confidence: 0, samples: [] };
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, w, h).data;
+
+      // Otsu 二值化：墨迹 = 亮度低于阈值
+      const histogram = new Array(256).fill(0);
+      const lum = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        const l = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) | 0;
+        lum[i] = l;
+        histogram[l]++;
+      }
+      const t = otsu(histogram, w * h);
+      const get = (x, y) => lum[y * w + x] < t;
+
+      // 连通域：去噪点、去贯穿细线（宽超过画面 55% 的组件是那条波浪线）
+      const comps = components(w, h, get)
+        .filter((c) => c.size >= 8 && (c.maxX - c.minX) < w * 0.55);
+      if (!comps.length) return { code: "", confidence: 0, samples: [] };
+
+      // x 重叠合并 → 期望 4 个字符组
+      let groups = groupByX(comps);
+      // 兜底：多余组按 x 均分（细线断片可能被当成独立组）
+      if (groups.length > 4) {
+        const xs = groups.map((g) => (g.minX + g.maxX) / 2);
+        const step = (Math.max(...xs) - Math.min(...xs)) / 4;
+        const merged = [[], [], [], []];
+        groups.forEach((g, i) => merged[Math.min(3, Math.max(0, Math.floor((xs[i] - xs[0]) / step)))].push(g));
+        groups = merged
+          .map((list) => list.length ? list.reduce((acc, g) => ({
+            minX: Math.min(acc.minX, g.minX), maxX: Math.max(acc.maxX, g.maxX),
+            minY: Math.min(acc.minY, g.minY), maxY: Math.max(acc.maxY, g.maxY),
+            pix: acc.pix.concat(g.pix),
+          })) : null)
+          .filter(Boolean);
+      }
+      if (groups.length !== 4) return { code: "", confidence: 0, samples: [] };
+
+      const lib = buildTemplates();
+      const samples = await loadSamples();
+      let code = "", worst = 1;
+      const out = [];
+      for (const g of groups) {
+        const getG = (x, y) => g.pix.includes(y * w + x);
+        const bits = normalizeRegion(w, getG, g.minX, g.minY, g.maxX - g.minX + 1, g.maxY - g.minY + 1);
+        const hit = classify(bits, lib, samples);
+        if (hit.d < 0 || hit.score < 0.18) return { code: "", confidence: 0, samples: [] };
+        worst = Math.min(worst, hit.score);
+        code += String(hit.d);
+        out.push({ b: bits.join(""), d: hit.d });
+      }
+      return { code, confidence: worst, samples: out };
+    }
+
+    return { recognize, confirmSamples, loadSamples, normalizeRegion, similarity, classify, groupByX, components, otsu };
+  })();
+
+  /* ── 自动登录：恢复票据 → 静默续期 → 密码 + 验证码识别兜底 ── */
+  const AUTO_ATTEMPTS = 6;
+
+  async function autoLogin(el) {
+    await newSession();
+    // ① 恢复上次会话票据（CASTGC 有效期内直达，不碰验证码）
+    await restoreCookies();
+    if (state.token) { buildMain(el); return true; }
+    if (await silentRenew()) {
+      await saveCookies();
+      tide.notify("已自动恢复门户登录，正在打开通知");
+      buildMain(el);
+      loadPage(1);
+      return true;
+    }
+    // ② 票据失效：有保存的密码就走「验证码识别 + 换图重试」全自动登录
+    if (!state.autoLogin || !state.username || !state.savedPassword) return false;
+    let lastOcr = "";
+    let confirmed = null;
+    for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
+      try {
+        state.pending = { execution: await fetchLoginHtml() };
+        await fetchCaptcha();
+      } catch (e) {
+        paintLogin(el, String(e.message || e));
+        return false;
+      }
+      const ocr = await OCR.recognize(state.captcha);
+      if (!ocr.code) continue;           // 没认出来：换一张再来
+      lastOcr = ocr.code;
+      confirmed = ocr.samples;
+      try {
+        await submitLogin(ocr.code);
+        // 登录成功 → 密码/票据入库 + 本次识别样本确认
+        await persistCredentials(state.savedPassword);
+        OCR.confirmSamples(confirmed);
+        await saveCookies();
+        tide.notify("已自动完成登录（含验证码识别），正在打开通知");
+        buildMain(el);
+        loadPage(1);
+        return true;
+      } catch (e) {
+        if (e && e.fatal) break;         // 密码不对：自动登录无解，转人工表单
+        // 其余失败（多半是验证码）：换图重试
+      }
+    }
+    // ③ 兜底：登录表单，账号/密码/最后一次识别结果全部预填，人工只需核对
+    paintLogin(el, "自动登录未成功，已填好账号密码，请核对验证码后点「登 录」", { prefillCode: lastOcr });
+    return false;
+  }
+
+  async function persistCredentials(password) {
+    if (!state.autoLogin || typeof tide.vault?.set !== "function") return;
+    try {
+      await tide.vault.set("secret", JSON.stringify({ password }));
+      state.savedPassword = password;
+    } catch { /* 密钥库不可用时跳过 */ }
   }
 
   async function finishPortalLogin(firstRes) {
@@ -240,7 +588,7 @@
     throw { retry: msg || `登录未通过（HTTP ${res.status}），已重置登录页，请重试`, diag };
   }
 
-  // 静默续期：CASTGC 5 天内有效时，sso-jw 会自动换 ticket，无需验证码
+  // 静默续期：当前内存 Cookie Jar 中 CASTGC 仍有效时，sso-jw 可自动换 ticket，无需验证码
   async function silentRenew() {
     try {
       const res = await getPage(SILENT_LOGIN);
@@ -283,6 +631,14 @@
       state.hasMore = items.length >= PAGE_SIZE && page < PAGES_MAX;
       state.fetchedAt = Date.now();
       state.error = null;
+      // v0.11.0：新通知先进入统一收件箱，用户确认后再转任务，避免自动化误建日程。
+      if (page === 1 && tide.inbox && typeof tide.inbox.create === "function") {
+        for (const it of items.slice(0, 12)) {
+          const title = titleOf(it);
+          const key = itemKey(it);
+          tide.inbox.create({ sourceKey: `cppu:${key}`, title, note: "警大门户新通知 · 打开通知详情后可进一步识别日期和时间", suggestion: "create-task" });
+        }
+      }
     } catch (e) {
       // 会话过期先尝试静默续期一次
       if (!renewed && await silentRenew()) {
@@ -299,7 +655,7 @@
     const cur = state.details[rid] || {};
     if (cur.content || cur.loading) return;
     state.details[rid] = { loading: true };
-    paintList();
+    updateDetail(rid);
     try {
       let res;
       try {
@@ -336,7 +692,7 @@
     } catch (e) {
       state.details[rid] = { error: String(e.message || e) };
     }
-    paintList();
+    updateDetail(rid);
   }
 
   /* ── 过滤与渲染 ── */
@@ -375,15 +731,42 @@
     ui.hs.classList.toggle("on", !!state.filter.hideSeen);
   }
 
+  function detailHtml(rid) {
+    const det = state.details[rid];
+    return !det || det.loading ? "正在加载正文…" :
+      det.error ? `<span style="color:#B03535;font-size:12px">${esc(det.error)}</span><button class="pp-btn" data-retry>重试加载正文</button>` :
+      `<div class="c">${esc(det.content)}</div><div class="pp-act"><button class="pp-btn" data-remind>转为提醒</button></div>`;
+  }
+
+  function updateDetail(rid) {
+    if (!ui?.list) return;
+    const card = [...ui.list.querySelectorAll(".pp-card")].find((node) => node.dataset.rid === rid);
+    const detail = card?.querySelector("[data-detail-content]");
+    if (detail) detail.innerHTML = detailHtml(rid);
+  }
+
+  function setCardExpanded(card, open) {
+    if (!card) return;
+    card.classList.toggle("open", open);
+    card.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.setAttribute("aria-expanded", String(open));
+      if (btn.classList.contains("pp-expand")) btn.firstChild && (btn.firstChild.textContent = open ? "收起正文" : "展开正文");
+      if (btn.classList.contains("pp-heading")) {
+        const title = btn.textContent.trim();
+        btn.setAttribute("aria-label", `${title}，${open ? "收起正文" : "展开正文"}`);
+      }
+    });
+    card.querySelector(".pp-detail-shell")?.setAttribute("aria-hidden", String(!open));
+  }
+
   function cardHtml(it) {
     const rid = itemKey(it);
     const key = rid;
     const isNew = !state.seen.has(key);
     const t = Number(it.CREATE_TIME || 0);
     const timeStr = t ? new Date(t).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
-    const det = state.details[rid];
     const open = state.expanded.has(rid);
-    return `<div class="pp-card" data-rid="${esc(rid)}">
+    return `<div class="pp-card${open ? " open" : ""}" data-rid="${esc(rid)}">
       <button class="pp-title pp-heading" data-toggle aria-expanded="${open}" aria-label="${esc(titleOf(it))}，${open ? "收起正文" : "展开正文"}">${esc(titleOf(it))}</button>
       <div class="pp-meta">
         ${it.IS_TOP === "1" ? '<span class="pp-tag top">置顶</span>' : ""}
@@ -393,11 +776,8 @@
         <span>${timeStr}</span>
         ${isNew ? '<span class="pp-tag unread">NEW</span>' : ""}
       </div>
-      <button class="pp-btn pp-expand" data-toggle aria-expanded="${open}">${open ? "收起正文" : "展开正文"}</button>
-      ${open ? `<div class="pp-detail">${!det || det.loading ? "正在加载正文…" :
-        det.error ? `<span style="color:#B03535;font-size:12px">${esc(det.error)}</span><button class="pp-btn" data-retry>重试加载正文</button>` :
-        `<div class="c">${esc(det.content)}</div>
-         <div class="pp-act"><button class="pp-btn" data-remind>转为提醒</button></div>`}</div>` : ""}
+      <button class="pp-btn pp-expand" data-toggle aria-expanded="${open}"><span>${open ? "收起正文" : "展开正文"}</span></button>
+      <div class="pp-detail-shell" aria-hidden="${!open}"><div class="pp-detail-clip"><div class="pp-detail" data-detail-content>${detailHtml(rid)}</div></div></div>
     </div>`;
   }
 
@@ -475,13 +855,15 @@
       note: PORTAL + "/tp_up/view?m=up",
     });
     if (p.date && p.startMin !== null) {
-      tide.blocks.create({ date: p.date, start: tide.util.hhmmOf(p.startMin), durMin: p.endMin ? p.endMin - p.startMin : 60, title, taskId: task.id, cat });
-      tide.notify(`已创建提醒：「${title.slice(0, 20)}${title.length > 20 ? "…" : ""}」→ ${p.date.slice(5)} ${tide.util.hhmmOf(p.startMin)}`, {
+      const placement = tide.blocks.createSmart({ date: p.date, start: tide.util.hhmmOf(p.startMin), durMin: p.endMin ? p.endMin - p.startMin : 60, title, taskId: task.id, cat });
+      tide.notify(placement.moved
+        ? `已创建提醒：「${title.slice(0, 20)}${title.length > 20 ? "…" : ""}」· 原时段冲突，自动改到 ${placement.block.start}`
+        : `已创建提醒：「${title.slice(0, 20)}${title.length > 20 ? "…" : ""}」→ ${p.date.slice(5)} ${tide.util.hhmmOf(p.startMin)}`, {
         actionLabel: "查看", ms: 6500, action: () => tide.util.navigate("timeblock"),
       });
     } else if (p.date) {
-      tide.blocks.create({ date: p.date, start: "09:00", durMin: 60, title, taskId: task.id, cat });
-      tide.notify(`识别到日期 ${p.date.slice(5)}，提醒先放在 09:00`);
+      const placement = tide.blocks.createSmart({ date: p.date, start: "09:00", durMin: 60, title, taskId: task.id, cat });
+      tide.notify(placement.moved ? `识别到日期 ${p.date.slice(5)}；09:00 冲突，已改到 ${placement.block.start}` : `识别到日期 ${p.date.slice(5)}，提醒先放在 09:00`);
     } else {
       tide.notify("通知里没识别到日期，任务已存入象限池");
     }
@@ -493,26 +875,30 @@
   function setSeen(rid) { state.seen.add(rid); saveSeen(); }
 
   /* ── 登录界面 ── */
-  function paintLogin(el, errMsg) {
+  function paintLogin(el, errMsg, opts = {}) {
     const hasSaved = !!state.username;
+    const canVault = typeof tide.vault?.get === "function";
     el.innerHTML = `<div class="pp-login">
       <h3>登录智慧警大门户</h3>
-      <div class="d">中国人民警察大学统一门户（portal-jw.cppu.edu.cn）。系统会优先尝试当前会话自动登录；失效后只需要在这里输入密码和验证码。</div>
-      ${hasSaved ? `<div class="saved">已填入上次账号 ${esc(state.username)}。密码不会保存，每次只在这个登录框里输入。</div>` : ""}
+      <div class="d">中国人民警察大学统一门户（portal-jw.cppu.edu.cn）。系统会先自动恢复上次会话，失败后自动识别验证码完成登录；都行不通才需要在这里核对信息。</div>
+      <div class="d"><b>自动登录状态：</b>记住账号 ${state.rememberUsername ? "✓" : "✗"} · 票据静默续期 ✓ · 加密保存密码 ${state.autoLogin && canVault ? "✓" : "✗"} · 验证码自动识别 ✓</div>
+      ${hasSaved ? `<div class="saved">已自动填入账号 ${esc(state.username)}${state.autoLogin && state.savedPassword ? "与保存的密码" : ""}。验证码会自动识别预填，核对无误直接点「登 录」即可。</div>` : ""}
       <label>学号 / 用户名</label><input data-u aria-label="学号 / 用户名" type="text" value="${esc(state.username)}" autocomplete="off">
-      <label>密码</label><input data-p aria-label="密码" type="password" autocomplete="current-password">
+      <label>密码</label><input data-p aria-label="密码" type="password" autocomplete="current-password" value="${esc(state.autoLogin ? state.savedPassword : "")}">
       <label>验证码</label>
       <div class="pp-caprow">
-        <input data-code aria-label="验证码" type="text" maxlength="4" placeholder="4 位字符">
+        <input data-code aria-label="验证码" type="text" maxlength="4" placeholder="4 位字符" value="${esc(opts.prefillCode || "")}">
         <div class="capbox" data-capbox title="点击更换"><img data-cap src="${esc(state.captcha)}"><small>看不清？点图换一张</small></div>
       </div>
       <div class="row" style="margin-top:12px;gap:12px;align-items:center;flex-wrap:wrap">
         <label class="pp-toggle ${state.rememberUsername ? "on" : ""}" data-remember><i></i>记住账号</label>
+        ${canVault ? `<label class="pp-toggle ${state.autoLogin ? "on" : ""}" data-autologin><i></i>记住密码并自动登录</label>` : ""}
         <span data-switchuser style="font-size:12px;color:#7E8B94;cursor:pointer">清除上次账号</span>
+        ${state.autoLogin && canVault ? `<span data-clearauth style="font-size:12px;color:#7E8B94;cursor:pointer">清除保存的密码</span>` : ""}
       </div>
       <button class="submit" data-go style="width:100%;height:40px;border-radius:10px;background:#0F4C5C;color:#fff;font-size:14px;font-weight:600;margin-top:14px;cursor:pointer">登 录</button>
       <div class="err" data-err>${esc(errMsg || "")}</div>
-      <div class="sec">登录成功后会保存账号并在本次应用运行期间保留门户自动登录票据；密码只在内存中用于本次登录，不会落盘。</div>
+      <div class="sec">开启「记住密码并自动登录」后，密码与门户会话票据会加密保存在本机密钥库（AES-256-GCM），下次打开自动登录、直达通知列表；不会进入数据备份、同步或其他插件。关闭后只记住账号，密码仅本次内存使用。</div>
     </div>`;
 
     const errEl = el.querySelector("[data-err]");
@@ -521,12 +907,21 @@
     const userEl = el.querySelector("[data-u]");
     const passEl = el.querySelector("[data-p]");
     const rememberEl = el.querySelector("[data-remember]");
+    const autoEl = el.querySelector("[data-autologin]");
+    const prefillSamples = opts.ocrSamples || null;
     el.querySelector("[data-capbox]").addEventListener("click", async () => {
       errEl.textContent = "正在换验证码…";
       try {
         const url = await fetchCaptcha();
         if (capImg) capImg.src = url;   // 直接更新登录表单里的验证码图
         errEl.textContent = "";
+        // 换图后同样自动识别预填
+        const ocr = await OCR.recognize(url);
+        if (ocr.code) {
+          codeEl.value = ocr.code;
+          state._manualSamples = ocr.samples;
+          state._manualCode = ocr.code;
+        }
       } catch (e) {
         errEl.textContent = e.message || e;
       }
@@ -537,11 +932,23 @@
       tide.storage.set("rememberUsername", state.rememberUsername);
       if (!state.rememberUsername) tide.storage.set("username", "");
     });
+    if (autoEl) autoEl.addEventListener("click", () => {
+      state.autoLogin = !state.autoLogin;
+      autoEl.classList.toggle("on", state.autoLogin);
+      tide.storage.set("autoLogin", state.autoLogin);
+      if (!state.autoLogin) clearSavedLogin();
+      tide.notify(state.autoLogin ? "已开启记住密码并自动登录" : "已关闭自动登录，并清除保存的密码");
+    });
     el.querySelector("[data-switchuser]").addEventListener("click", () => {
       state.username = "";
       tide.storage.set("username", "");
       userEl.value = "";
       userEl.focus();
+    });
+    el.querySelector("[data-clearauth]")?.addEventListener("click", async () => {
+      await clearSavedLogin();
+      passEl.value = "";
+      tide.notify("已清除保存的密码与会话票据");
     });
 
     let loggingIn = false;
@@ -560,6 +967,12 @@
         state.username = username;
         if (state.rememberUsername) tide.storage.set("username", username);
         else tide.storage.set("username", "");
+        await persistCredentials(password);
+        await saveCookies();
+        // 验证码若来自自动识别且登录成功 → 样本确认，后续识别更准
+        if (prefillSamples && code === (opts.prefillCode || "")) OCR.confirmSamples(prefillSamples);
+        else if (state._manualSamples && code === state._manualCode) OCR.confirmSamples(state._manualSamples);
+        state.savedPassword = state.autoLogin ? password : "";
         passEl.value = "";
         tide.notify("登录成功，正在获取门户通知");
         buildMain(el);
@@ -567,8 +980,15 @@
       } catch (e2) {
         if (e2 && e2.fatal) { errEl.textContent = e2.fatal; }
         else {
-          errEl.innerHTML = esc((e2 && e2.retry) || e2.message || "登录失败") +
-            (e2 && e2.diag ? `<br><span style="font-size:10.5px;color:#A9B2BA;word-break:break-all">${e2.diag}</span>` : "");
+        errEl.innerHTML = esc((e2 && e2.retry) || e2.message || "登录失败") +
+          (e2 && e2.diag ? `<br><span style="font-size:10.5px;color:#A9B2BA;word-break:break-all">${e2.diag}</span>` : "");
+        // 失败后 submitLogin 已重置登录页并换了新验证码：顺手再自动识别预填一次
+        const ocr = await OCR.recognize(state.captcha).catch(() => null);
+        if (ocr?.code) {
+          codeEl.value = ocr.code;
+          state._manualSamples = ocr.samples;
+          state._manualCode = ocr.code;
+        }
         }
       } finally {
         loggingIn = false;
@@ -583,15 +1003,19 @@
         if (e.key === "Enter") doLogin();
       });
     }
-    setTimeout(() => (hasSaved ? passEl : userEl).focus(), 0);
+    setTimeout(() => (hasSaved && state.savedPassword ? codeEl : userEl).focus(), 0);
 
-    // 首次进入：拉登录页 + 验证码
+    // 首次进入：拉登录页 + 验证码，并自动识别预填
     (async () => {
       try {
         await newSession();
         if (!state.pending?.execution || !state.captcha) {
           state.pending = { execution: await fetchLoginHtml() };
           await fetchCaptcha();
+        }
+        if (!codeEl.value) {
+          const ocr = await OCR.recognize(state.captcha).catch(() => null);
+          if (ocr?.code) { codeEl.value = ocr.code; state._manualSamples = ocr.samples; state._manualCode = ocr.code; }
         }
       } catch (e) {
         errEl.textContent = e.message || e;
@@ -651,8 +1075,15 @@
       if (e.target.closest("[data-remind]")) { await toReminder(it); return; }
       if (e.target.closest("[data-retry]")) { loadDetail(rid); return; }
       if (!e.target.closest("[data-toggle]")) return;
-      if (state.expanded.has(rid)) { state.expanded.delete(rid); paintList(); }
-      else { state.expanded.add(rid); setSeen(rid); paintList(); loadDetail(rid); }
+      if (state.expanded.has(rid)) {
+        state.expanded.delete(rid);
+        setCardExpanded(card, false);
+      } else {
+        state.expanded.add(rid);
+        setSeen(rid);
+        setCardExpanded(card, true);
+        loadDetail(rid);
+      }
     });
 
     paintAll();
@@ -661,21 +1092,22 @@
 
   function render(el) {
     ensureStyle();
-    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在读取偏好…</div>';
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>';
     loadPrefs().then(async () => {
-      await newSession();
+      // 自动登录三级链路：恢复票据静默续期 → 保存的密码 + 验证码识别 → 人工表单（预填）
       if (state.token) { buildMain(el); return; }
-      // 有记住的学号：先试静默续期（CASTGC 5 天内有效时免验证码）
-      if (state.username && await silentRenew()) {
-        tide.notify("已通过 5 天票据静默续期门户会话");
-        buildMain(el);
-        loadPage(1);
-      } else {
-        try { state.pending = { execution: await fetchLoginHtml() }; await fetchCaptcha(); } catch (e) { state.captcha = ""; state.pending = state.pending || {}; state.pendingError = String(e.message || e); }
-        paintLogin(el, state.pendingError);
+      const ok = await autoLogin(el);
+      // autoLogin 失败路径里已经 paintLogin（含预填）；这里只兜「无凭据直接表单」
+      if (!ok && !el.querySelector(".pp-login")) {
+        try {
+          await newSession();
+          state.pending = { execution: await fetchLoginHtml() };
+          await fetchCaptcha();
+        } catch { state.captcha = ""; }
+        paintLogin(el, "");
       }
     });
   }
 
-  tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: "警", render });
+  tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: 'building-columns', render });
 })();

@@ -1,18 +1,29 @@
 # Le时间管理
 
+> v0.11.4：插件启停改为滑块；主 UI 采用 Icons8 / iGoutu iOS Filled 图标；警大通知正文展开/收起加入平滑动画。
+
 把概念稿 **03「权衡」四象限决策台** 与 **04「潮汐」时间块规划轴** 合成的本地优先时间管理平台。
 
 - **四象限**：重要/紧急四象限管理任务，点卡片开详情抽屉，可一键「排入今天时间块」
 - **时间块**：左侧任务池拖进一天的时间轴（鼠标/触摸通用，安卓可拖），「现在」红线、7 天节奏、明日预告
 - **捕获**：把聊天文字、网页文本、链接、图片**拖进窗口**（或截图后 Ctrl+V），自动解析中文时间（"明天下午3点到4点"、"9月10日 14:00"、"下周一晚上8点半"）并在对应时间创建时间块
-- **插件系统**：内置「番茄专注」「周度报告」「中国节假日」等插件；支持把插件放进数据目录 `plugins/` 动态加载
+- **插件系统**：内置「课程表」「网页收集」「学校通知网站」「番茄专注」「学习通」「中国节假日」等 12 个插件；支持把插件放进数据目录 `plugins/` 动态加载
 - **本地优先**：数据就是一个 JSON 文件，存在本机应用数据目录，无账号、无联网
 - **Tauri 2**：一套代码打包 Windows / Linux / Android
+
+## v0.4.0 新增
+
+- **网页收集**：自动识别站点标题、favicon 与 Font Awesome 图标名，支持本地收藏、搜索和备注。
+- **学校通知网站**：通用高校公告列表解析；会话化登录支持用户名、密码、隐藏字段和手动验证码。对动态 JS 加密/扫码/短信认证站点会提示需要专用适配器。
+- **9 套主题**：新增深海蓝、樱花粉、松林绿、暮光紫、极简灰，并让课程表跟随全局主题变量。
+- **性能**：插件代码并行预加载；HTTP 提供内存 TTL 缓存；中国节假日离线优先；课程表减少重复日期/节次/冲突扫描。
+- **全局搜索 / 命令面板**：Ctrl/Cmd+K 搜任务、时间块、插件和常用命令；桌面安装版另有可配置系统级快捷键。
+- **可选同步**：WebDAV JSON 快照采用显式上传/下载，本地优先不变；密码不持久化。
 
 ## 目录结构
 
 ```
-le-time-management/
+Le-time-management/
 ├─ index.html / vite.config.js / package.json   # 前端（Vite + 原生 JS）
 ├─ src/
 │  ├─ main.js            # 启动入口
@@ -26,7 +37,7 @@ le-time-management/
 │     ├─ drawer.js       # 任务详情抽屉
 │     ├─ timeblock.js    # 时间块视图
 │     └─ settings.js     # 设置（数据 / 插件管理 / 关于）
-├─ public/plugins/       # 内置插件（番茄专注、周度报告、中国节假日、竞赛消息雷达、学习通通知、警大门户通知、微信推送）
+├─ public/plugins/       # 12 个内置插件（课程表、网页收集、学校通知网站、番茄专注、学习通、中国节假日等）
 ├─ miniprogram/          # 微信小程序（连接 Win 控制端局域网服务）
 └─ src-tauri/            # Rust 侧：数据读写(原子写)、插件目录扫描、应用信息
 ```
@@ -68,7 +79,7 @@ npm run tauri android build -- --apk --target aarch64  # 产出 APK
 - 环境变量：`JAVA_HOME` / `ANDROID_HOME` / `NDK_HOME` 指向上述路径
 - gen/android 是 gitignore 的生成目录，重新 init 后需要补两处：
   - `gradle.properties` 加 `android.overridePathCheck=true`（项目路径含中文）
-  - release 签名：`gen/android/keystore.properties`（storeFile 指向 `le-time-management/keystore/tidebalance-release.keystore`，alias `tidebalance`，密码见本地 keystore.properties）+ `app/build.gradle.kts` 里读取该文件的 `signingConfigs`（已就位，init 覆盖后需按本文件重加）
+  - release 签名：`gen/android/keystore.properties`（storeFile 指向 `tidebalance/keystore/tidebalance-release.keystore`，alias `tidebalance`，密码见本地 keystore.properties）+ `app/build.gradle.kts` 里读取该文件的 `signingConfigs`（已就位，init 覆盖后需按本文件重加）
   - Gradle 发行版走腾讯镜像：`gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl`
 - 国内网络下 `rustup target add` 若龟速：直连 USTC 镜像（`RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static`），或用 curl 把 `rust-std-*.tar.xz` 按 manifest 的 xz_hash 放进 `~/.rustup/downloads/<hash>` 再跑 rustup
 
@@ -129,7 +140,7 @@ plugins/
 
 把文件夹放进 **设置 → 数据** 里显示的目录下的 `plugins/` 子目录（Android 上暂不支持外部目录扫描，可用内置插件方式），回到设置点「重新扫描」即可。
 
-**图标**：`manifest.json` 的 `icon` 只决定**侧栏的字形标识**（建议 1 个汉字，最多 2 字符，如 `"番"`、`"学"`）；侧栏方块、插件市场卡片、设置页列表里的**方块图标**是随包 PNG 资源（`public/icons/<key>.png`，128×128 RGBA 透明底，由 `src/icons.js` 的 `KEYS` 白名单放行，未登记的 key 一律回落拼图）。新增/更换图标、尺寸与授权规则的完整说明见 **[docs/plugin-icons.md](./docs/plugin-icons.md)**。
+> v0.10.0 起，manifest 的 `permissions` 不再只是说明：宿主会在 `tide` API 调用时检查运行时权限开关。用户可在设置中逐项关闭任务、时间块、网络、外链等已声明权限。该机制是 API 能力控制，不等同于独立进程级安全沙箱。
 
 `main.js` 在严格模式的函数沙箱中执行，唯一入口是注入的 `tide` 对象：
 
@@ -149,6 +160,9 @@ tide.ui.registerTaskAction({
 // 数据（均为异步/同步安全拷贝）
 tide.tasks.list(); tide.tasks.create({ title: "新任务", quad: 2 });
 tide.blocks.list("2026-09-05"); tide.blocks.create({ start: "10:00", durMin: 45, title: "读书" });
+// v0.10.0：冲突预览 / 自动挪到附近空闲时段
+tide.blocks.preview({ date: "2026-09-05", start: "10:00", durMin: 45, title: "读书" });
+tide.blocks.createSmart({ date: "2026-09-05", start: "10:00", durMin: 45, title: "读书" });
 
 // 插件私有存储（随主数据一起持久化）
 await tide.storage.set("count", 1); await tide.storage.get("count", 0);
@@ -196,7 +210,7 @@ tide.util.mmOf("09:30"); tide.util.hhmmOf(570); tide.util.durLabel(90);
 - 内置插件 `public/plugins/cn-holiday/`（中国节假日）：由 cn-holiday Skill 移植，内置 2024–2026 数据快照，支持下个假期倒计时、下次休息日、指定日期放假/调休判断、全年安排；缺失年份通过 `tide.http` 联网读取并缓存。
 - 内置插件 `public/plugins/gx-news/`（竞赛消息雷达）：`tide.http.get` 抓取摩课云竞赛平台公告、关键词/类型/月份/已读过滤、`openUrl` 打开详情、`parseWhen` 一键转提醒。
 - 内置插件 `public/plugins/chaoxing-notify/`（学习通通知）：需要登录态的场景——`http.session/fetch` 保持 Cookie、`desEncryptHex` 在本机完成超星 DES 登录加密（改造自 chaoxing-notify-skill）。注意：学习通「消息中心」接口有平台 IP 白名单，被拒时插件会明确提示；课程列表与通知分享码查询不受影响。
-- 内置插件 `public/plugins/cppu-notify/`（警大门户通知）：改造自 cppu-notify-skill，完整复刻三段式 SSO 链路（主 SSO 验证码手输 → sso-jw bridge → 门户 tp_up）+ Sudy CAS RSA 加密（BigInt 移植，与原实现逐字节一致）。相比原 skill 移除了 74MB 的 tesseract OCR 运行时——验证码改为界面内手输，CASTGC 5 天内静默续期免验证码。
+- 内置插件 `public/plugins/cppu-notify/`（警大门户通知）：改造自 cppu-notify-skill，完整复刻三段式 SSO 链路（主 SSO 验证码手输 → sso-jw bridge → 门户 tp_up）+ Sudy CAS RSA 加密（BigInt 移植，与原实现逐字节一致）。相比原 skill 移除了 74MB 的 tesseract OCR 运行时——验证码改为界面内手输，CASTGC 有效时可在当前应用运行会话内尝试静默续期免验证码。HTTP Cookie 会话目前只保存在内存，因此退出并重启应用后不能承诺自动登录；密码仍不落盘，验证码仍需手输。
 - 内置插件 `public/plugins/wechat-push/`（微信推送）：时间块开始前 N 分钟经 Server酱 推送到微信，带测试按钮与推送日志。
 
 ## 设计来源
@@ -210,4 +224,4 @@ tide.util.mmOf("09:30"); tide.util.hhmmOf(570); tide.util.durLabel(90);
 - 已内置 `exam-calendar`（考试日历）插件。
 - 设置 → 插件支持 ZIP 导入、所选插件 ZIP 导出、保存插件配置、全选用户插件和多选删除。
 - 内置插件只能启用/停用，不能误删；批量删除只作用于用户插件目录。
-- 设置 → 插件标题旁提供 GitHub 图标「插件开发文档」，点击打开 https://github.com/momoqiqi-qwq/le-time-management 。
+- 设置 → 插件标题旁提供 GitHub 图标「插件开发文档」，点击打开 https://github.com/momoqiqi-qwq/tidebalance 。

@@ -7,11 +7,12 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView(){}},http:{session:async()=>'s1',fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null}}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
-assert.doesNotMatch(cardHtml(item),/class="pp-detail"/);
+assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
+assert.doesNotMatch(cardHtml(item),/class="pp-card open"/);
 state.expanded.add('test');
 assert.match(cardHtml(item),/aria-expanded="true"/);
 assert.match(cardHtml(item),/正在加载正文/);
@@ -21,7 +22,8 @@ const pending=loadDetail('test');
 state.expanded.delete('test');
 release({status:200,body:JSON.stringify([{PIM_CONTENT:'First<br><br>Second'}])});
 await pending;
-assert.doesNotMatch(cardHtml(item),/class="pp-detail"/,'Late response must not reopen collapsed card');
+assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/,'Late response must keep collapsed card closed');
+assert.doesNotMatch(cardHtml(item),/class="pp-card open"/,'Late response must not reopen collapsed card');
 state.expanded.add('test');
 assert.match(cardHtml(item),/First\n\nSecond/);
 const count=calls.length;
@@ -41,4 +43,60 @@ assert.equal(calls.filter(c=>c[2].includes('allpim')).length,2,'Only one renewal
 assert.equal(state.fetching,false);
 await newSession();const sid=state.sid;await newSession();assert.equal(state.sid,sid);
 assert.ok(source.includes('if (!e.target.closest("[data-toggle]")) return;'),'Selecting body text must not collapse');
+
+/* ── 8. 自动登录：加密凭据、会话恢复、验证码识别重试链路 ── */
+assert.ok(source.includes('tide.vault'), '插件必须通过 tide.vault 存取加密凭据');
+assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'), '登录态必须能导出/恢复以跨重启');
+assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
+assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
+const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
+assert.equal(cppuManifest.version, '1.3.0');
+assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
+const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
+const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
+const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
+assert.match(cppuBlock, /"1\.3\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
+const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
+assert.ok(hostSrc.includes('vault: "加密密钥库'), '插件宿主必须定义 vault 权限标签');
+assert.ok(hostSrc.includes('requirePermission(man, pid, "vault")'), 'tide.vault 必须走权限校验');
+const apiSrc = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
+assert.ok(apiSrc.includes('plugin_vault_get') && apiSrc.includes('http_session_restore'), 'api 层必须接通密钥库与会话恢复命令');
+const libSrc = fs.readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
+assert.ok(libSrc.includes('fn http_session_export') && libSrc.includes('fn plugin_vault_set'), 'Rust 侧必须提供会话导出与密钥库命令');
+
+/* ── 9. OCR 纯函数：相似度 / 分类 / 分组 / 归一化 / 阈值 ── */
+const bitsA = new Array(256).fill(0);   // 「实心环」图案，代表数字 A
+for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+  const edge = x < 3 || x > 12 || y < 3 || y > 12;
+  const hole = x > 5 && x < 10 && y > 5 && y < 10;
+  bitsA[y * 16 + x] = edge && !hole ? 1 : 0;
+}
+assert.equal(OCR.similarity(bitsA, bitsA), 1, '同位图相似度必须为 1');
+const noisy = [...bitsA];
+for (let i = 0; i < 8; i++) noisy[40 + i * 7] ^= 1;
+assert.ok(OCR.similarity(bitsA, noisy) > 0.9, '轻微噪点相似度必须接近 1');
+const bitsB = new Array(256).fill(0);   // 「左半实心」图案，代表数字 B
+for (let y = 0; y < 16; y++) for (let x = 0; x < 8; x++) bitsB[y * 16 + x] = 1;
+const lib = [{ d: 3, bits: bitsB }, { d: 8, bits: bitsA }];
+assert.equal(OCR.classify(noisy, lib, []).d, 8, '带噪样本必须归类到最优模板');
+assert.equal(OCR.classify(bitsB, lib, [{ b: bitsB.join(''), d: 1 }]).d, 1, '历史样本可以覆盖内置模板');
+assert.equal(OCR.normalizeRegion(16, () => true, 0, 0, 16, 16).reduce((a, b) => a + b, 0), 256, '全墨区域归一化后应全为 1');
+const leftHalf = OCR.normalizeRegion(16, (x) => x < 8, 0, 0, 16, 16);
+assert.equal(leftHalf.filter(Boolean).length, 128, '左半墨区域归一化后应恰好一半为 1');
+const g1 = OCR.groupByX([{ pix: [0, 1, 2], minX: 0, maxX: 2, minY: 0, maxY: 1, size: 3 }]);
+const g2 = OCR.groupByX([
+  { pix: [0], minX: 0, maxX: 0, minY: 0, maxY: 0, size: 1 },
+  { pix: [1], minX: 0, maxX: 1, minY: 1, maxY: 1, size: 1 },
+  { pix: [9], minX: 9, maxX: 9, minY: 0, maxY: 0, size: 1 },
+]);
+assert.equal(g1.length, 1);
+assert.equal(g2.length, 2, 'x 不重叠的连通域不能合并');
+const getMask = (x, y) => (x === y && x < 3) || (x === 3 && y < 3); // 一条 5 像素折线
+assert.equal(OCR.components(5, 5, getMask).length, 1, '连通像素必须归为一个连通域');
+const hist = new Array(256).fill(0);
+for (let i = 0; i < 100; i++) { hist[30]++; hist[220]++; } // 双峰直方图
+const th = OCR.otsu(hist, 200);
+assert.ok(th > 30 && th <= 220, 'Otsu 阈值必须落在两峰之间（暗峰右移一位）');
+
 console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths and bounded renewal');

@@ -2,20 +2,20 @@
 /*
  * 三平台内置插件同步器。
  *
- * 单一事实源：01-windows/app/public/plugins/<id>/manifest.json + 对应内置数据。
- * - Windows：生成 src/pluginCatalog.js，插件宿主不再维护手写 ID 列表。
- * - Android：复用 01-windows/app 前端与 src-tauri，因此与 Windows 自动同源；这里做显式校验。
- * - 微信小程序：生成 core/pluginCatalog.js，并同步节假日/考试日历的离线数据，供原生适配页使用。
+ * 单一事实源：le-time-management/public/plugins/<id>/manifest.json + 对应内置数据。
+ * - Windows：生成 le-time-management/src/pluginCatalog.js，插件宿主不再维护手写 ID 列表。
+ * - Android：复用 le-time-management 前端与 src-tauri，因此与 Windows 自动同源；这里做显式校验。
+ * - 微信小程序：生成 miniprogram/core/pluginCatalog.js，并同步节假日/考试日历的离线数据，供原生适配页使用。
  *
- * 用法：在三端源码包根目录执行 `node tools/sync-plugins.js`。
+ * 用法：在仓库根目录执行 `node tools/sync-plugins.js`。
  */
 const fs = require("fs");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const DESKTOP_PLUGINS = path.join(ROOT, "01-windows", "app", "public", "plugins");
-const DESKTOP_CATALOG = path.join(ROOT, "01-windows", "app", "src", "pluginCatalog.js");
-const MINI_CORE = path.join(ROOT, "03-miniprogram", "core");
+const DESKTOP_PLUGINS = path.join(ROOT, "le-time-management", "public", "plugins");
+const DESKTOP_CATALOG = path.join(ROOT, "le-time-management", "src", "pluginCatalog.js");
+const MINI_CORE = path.join(ROOT, "miniprogram", "core");
 const MINI_CATALOG = path.join(MINI_CORE, "pluginCatalog.js");
 const MINI_DATA = path.join(MINI_CORE, "pluginData");
 const REQUIRED_PLATFORMS = ["windows", "android", "miniprogram"];
@@ -125,6 +125,19 @@ function syncExamData() {
   );
 }
 
+function syncPluginIcons(manifests) {
+  // 插件图标单一事实源在微信端：miniprogram/images/plugins/<id>.png。
+  // 桌面端 public/icons/plugins/ 是生成目录，Windows / Android 共用同一份。
+  const miniIcons = path.join(ROOT, "miniprogram", "images", "plugins");
+  const desktopIcons = path.join(ROOT, "le-time-management", "public", "icons", "plugins");
+  fs.mkdirSync(desktopIcons, { recursive: true });
+  for (const man of manifests) {
+    const source = path.join(miniIcons, `${man.id}.png`);
+    if (!fs.existsSync(source)) fail(`${man.id}: 缺少三端同步插件图标 ${source}`);
+    fs.copyFileSync(source, path.join(desktopIcons, `${man.id}.png`));
+  }
+}
+
 function main() {
   const manifests = loadManifests();
   if (!manifests.length) fail("没有发现内置插件");
@@ -145,9 +158,10 @@ function main() {
 
   syncHolidayData();
   syncExamData();
+  syncPluginIcons(manifests);
 
-  // Android 与 Windows 共用 01-windows/app；只要 src-tauri 仍启用 mobile entry，就不存在第二份插件清单可漂移。
-  const lib = path.join(ROOT, "01-windows", "app", "src-tauri", "src", "lib.rs");
+  // Android 与 Windows 共用 le-time-management 前端；只要 src-tauri 仍启用 mobile entry，就不存在第二份插件清单可漂移。
+  const lib = path.join(ROOT, "le-time-management", "src-tauri", "src", "lib.rs");
   if (!fs.existsSync(lib) || !fs.readFileSync(lib, "utf8").includes("cfg_attr(mobile, tauri::mobile_entry_point)")) {
     fail("Android 共用 Tauri 后端关系未通过校验");
   }
@@ -156,6 +170,7 @@ function main() {
   console.log(`✓ 已同步 ${manifests.length} 个内置插件`);
   console.log(`  Windows / Android：${manifests.length} 个同源`);
   console.log(`  微信小程序原生适配：${miniNative.length} 个 (${miniNative.join(", ")})`);
+  console.log(`  插件图标：已复制为 Windows / Android / 微信三端同源 PNG`);
 }
 
 main();

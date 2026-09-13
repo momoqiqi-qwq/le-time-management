@@ -34,8 +34,17 @@ upload-keys/
 # WorkBuddy AI workspace
 .workbuddy-ai/
 
+# 覆盖前的本地备份快照（含改动前的源码）
+/.backup/
+
 # Downloaded archives
 *.zip
 
 # Old APK in root
 /Le时间管理_*.apk
+
+# 本地工具缓存与 QA 产物(不入库)
+/.workbuddy/
+/.playwright-cli/
+/output/
+cloudflare-pages/plugin-guide/.wrangler/
