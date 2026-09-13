@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt as _;
 
 mod lan;
@@ -24,6 +24,101 @@ fn plugins_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = data_dir(app)?.join("plugins");
     fs::create_dir_all(&dir).map_err(|e| format!("无法创建插件目录: {e}"))?;
     Ok(dir)
+}
+
+const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
+(function () {
+  if (window.__leSchoolImportReady) return;
+  window.__leSchoolImportReady = true;
+  const callbacks = new Map(); let callbackCounter = 0;
+  const encode = (text) => {
+    const bytes = new TextEncoder().encode(text); let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  };
+  const callback = (id, ok, value) => { const item = callbacks.get(id); if (!item) return; callbacks.delete(id); ok ? item.resolve(value) : item.reject(value); };
+  window._shiguangNativeCallback = callback;
+  const setStatus = (text) => { const node = document.querySelector('#le-school-import-toolbar')?.shadowRoot?.querySelector('[data-status]'); if (node) node.textContent = text; };
+  const bridge = async (action, payload, callbackId) => {
+    try {
+      if (action === 'showToast') { setStatus(payload.message || ''); return true; }
+      if (action === 'showAlert') return window.confirm([payload.titleText, payload.contentText].filter(Boolean).join('\n\n'));
+      if (action === 'showPrompt') return window.prompt([payload.titleText, payload.tipText].filter(Boolean).join('\n'), payload.defaultText || '');
+      if (action === 'showSingleSelection') {
+        const items = JSON.parse(payload.itemsJsonString || '[]'); const answer = window.prompt(payload.titleText + '\n' + items.map((x, i) => `${i + 1}. ${x}`).join('\n'), String((payload.defaultSelectedIndex || 0) + 1));
+        const index = Number(answer) - 1; return Number.isInteger(index) && index >= 0 && index < items.length ? index : null;
+      }
+      const raw = JSON.stringify({ action, callbackId: callbackId || null, payload: JSON.stringify(payload || {}) });
+      location.href = 'letime-import://bridge/' + encode(raw);
+      return true;
+    } catch (error) { throw String(error && error.message || error); }
+  };
+  const promises = {};
+  for (const action of ['showAlert','showPrompt','showSingleSelection','saveImportedCourses','saveCourseConfig','savePresetTimeSlots']) {
+    promises[action] = (...args) => new Promise((resolve, reject) => {
+      const id = 'cb_' + (++callbackCounter) + '_' + Date.now(); callbacks.set(id, { resolve, reject });
+      const payload = action === 'showAlert' ? {titleText:args[0]||'',contentText:args[1]||'',confirmText:args[2]||null}
+        : action === 'showPrompt' ? {titleText:args[0]||'',tipText:args[1]||'',defaultText:args[2]||'',validatorJsFunction:args[3]||''}
+        : action === 'showSingleSelection' ? {titleText:args[0]||'',itemsJsonString:typeof args[1]==='string'?args[1]:JSON.stringify(args[1]||[]),defaultSelectedIndex:args[2]??-1}
+        : action === 'saveImportedCourses' ? {coursesJsonString:args[0]||'[]'}
+        : action === 'saveCourseConfig' ? {configJsonString:args[0]||'{}'} : {timeSlotsJsonString:args[0]||'[]'};
+      Promise.resolve(bridge(action, payload, id)).then(value => callback(id, true, value), error => callback(id, false, error));
+    });
+  }
+  window.shiguangBridgePromise = window.AndroidBridgePromise = promises;
+  window.shiguangBridge = window.AndroidBridge = {
+    showToast: message => bridge('showToast', {message}),
+    notifyTaskCompletion: () => bridge('notifyTaskCompletion', {})
+  };
+  const mount = () => {
+    if (document.querySelector('#le-school-import-toolbar')) return;
+    const host = document.createElement('div'); host.id = 'le-school-import-toolbar'; host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647';
+    const shadow = host.attachShadow({mode:'open'}); shadow.innerHTML = `<style>*{box-sizing:border-box}div{font:13px system-ui;background:#162b35;color:#fff;border-radius:14px;padding:10px;box-shadow:0 8px 28px #0006;display:flex;align-items:center;gap:8px}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#fff;color:#17333e;font-weight:650}button.primary{background:#61c1d0;color:#092830}span{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style><div><span data-status>登录后进入课表页面</span><button data-back>返回</button><button class="primary" data-import>导入当前课表</button></div>`;
+    shadow.querySelector('[data-back]').onclick = () => history.back();
+    shadow.querySelector('[data-import]').onclick = () => { setStatus('正在执行学校适配脚本…'); location.href = 'letime-import://execute'; };
+    document.documentElement.appendChild(host);
+  };
+  document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', mount, {once:true}) : mount();
+})();
+"#;
+
+fn school_import_bridge(app: &AppHandle, encoded: &str) -> Result<(), String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded).map_err(|e| format!("教务回传解码失败: {e}"))?;
+    if bytes.len() > 2 * 1024 * 1024 { return Err("教务回传数据超过 2 MB".into()); }
+    let message = String::from_utf8(bytes).map_err(|e| format!("教务回传不是 UTF-8: {e}"))?;
+    let value: Value = serde_json::from_str(&message).map_err(|e| format!("教务回传 JSON 无效: {e}"))?;
+    let allowed = ["saveImportedCourses", "saveCourseConfig", "savePresetTimeSlots", "notifyTaskCompletion"];
+    let action = value.get("action").and_then(Value::as_str).unwrap_or("");
+    if !allowed.contains(&action) { return Err("教务回传操作不受支持".into()); }
+    app.emit_to("main", "school-import-message", message).map_err(|e| format!("发送教务回传失败: {e}"))
+}
+
+#[tauri::command]
+async fn school_import_open(app: AppHandle, url: String, adapter_script: String, title: String) -> Result<(), String> {
+    if adapter_script.len() > 2 * 1024 * 1024 { return Err("学校适配脚本超过 2 MB".into()); }
+    let parsed: Url = url.parse().map_err(|e| format!("教务网址无效: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https" | "about") { return Err("教务网址仅支持 http/https".into()); }
+    if let Some(existing) = app.get_webview_window("school-import") { let _ = existing.close(); }
+    let app_for_navigation = app.clone();
+    let script_for_navigation = adapter_script.clone();
+    WebviewWindowBuilder::new(&app, "school-import", WebviewUrl::External(parsed))
+        .title(format!("时光课程表 · {}", title.chars().take(60).collect::<String>()))
+        .inner_size(1100.0, 780.0)
+        .center()
+        .initialization_script(SCHOOL_IMPORT_BOOTSTRAP)
+        .on_navigation(move |target| {
+            if target.scheme() != "letime-import" { return true; }
+            match target.host_str().unwrap_or("") {
+                "execute" => if let Some(window) = app_for_navigation.get_webview_window("school-import") { let _ = window.eval(script_for_navigation.clone()); },
+                "bridge" => { let encoded = target.path().trim_start_matches('/'); let _ = school_import_bridge(&app_for_navigation, encoded); },
+                _ => {}
+            }
+            false
+        })
+        .build()
+        .map_err(|e| format!("打开教务登录窗口失败: {e}"))?;
+    Ok(())
 }
 
 
@@ -981,6 +1076,7 @@ pub fn run() {
             http_fetch,
             http_session_export,
             http_session_restore,
+            school_import_open,
             plugin_vault_set,
             plugin_vault_get,
             plugin_vault_del,

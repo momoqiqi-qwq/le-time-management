@@ -72,6 +72,18 @@ export const api = {
     window.open(url, "_blank");
   },
 
+  async schoolImportOpen(url, adapterScript, title) {
+    if (isTauri) return invoke("school_import_open", { url, adapterScript, title });
+    window.open(url, "_blank");
+    throw new Error("在线教务脚本导入需要在 Le 时间管理客户端中使用");
+  },
+
+  async schoolImportListen(handler) {
+    if (!isTauri) return () => {};
+    const { listen } = await import("@tauri-apps/api/event");
+    return listen("school-import-message", (event) => handler(event.payload));
+  },
+
   // 会话化 HTTP：Tauri 端带 Cookie Jar（登录态跨请求保持）；浏览器端用 include 凭据
   async httpSessionNew() {
     if (isTauri) return invoke("http_session_new");

@@ -1,5 +1,7 @@
 import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
-const ctx=vm.createContext({TextEncoder});vm.runInContext(fs.readFileSync(new URL('../public/plugins/shiguang-schedule/model.js',import.meta.url),'utf8'),ctx);const M=ctx.ShiguangModel;
+import * as XLSX from 'xlsx';
+import { spreadsheetFileToCsv } from '../src/spreadsheet.js';
+const ctx=vm.createContext({TextEncoder,TextDecoder});vm.runInContext(fs.readFileSync(new URL('../public/plugins/shiguang-schedule/model.js',import.meta.url),'utf8'),ctx);const M=ctx.ShiguangModel;
 const raw=M.empty('2026-09-09');raw.config.semesterStartDate='2026-09-07';raw.courses=[{id:'a',name:'课程，测试',teacher:'教师',position:'一教',day:1,startSection:1,endSection:2,weeks:[1,3,5],remark:'第一行\n第二行'},{id:'b',name:'自定义课',day:7,isCustomTime:true,customStartTime:'18:00',customEndTime:'19:00',weeks:[2]}];const table=M.normalize(raw);
 assert.equal(M.weekOf('2026-09-09','2026-09-13'),1);assert.equal(M.weekOf('2026-09-09','2026-09-14'),2);assert.equal(M.weekOf('2026-09-09','2026-09-06'),0);
 assert.equal(M.occurrences(table,1)[0].date,'2026-09-07');assert.equal(M.occurrences(table,2)[0].date,'2026-09-20');assert.equal(M.occurrences(table,1)[0].end,'09:40');
@@ -14,10 +16,23 @@ console.log('PASS: upstream JSON round-trip, sections/custom time, odd weeks, se
 const savedBlocks=[];
 const uiContext=vm.createContext({TextEncoder,modelScope:{ShiguangModel:M},tide:{ui:{registerView(){}},util:{today:()=> '2026-09-09'},notify(){},blocks:{list:date=>savedBlocks.filter(b=>b.date===date),create:b=>{const block={...b,id:'block-'+savedBlocks.length};savedBlocks.push(block);return block;},remove:id=>{const i=savedBlocks.findIndex(b=>b.id===id);if(i>=0)savedBlocks.splice(i,1);}}}});
 const ui=fs.readFileSync(new URL('../public/plugins/shiguang-schedule/ui.js',import.meta.url),'utf8');
+for(const marker of ['今日课表','课程管理','课表管理','个性化配置','rename-table','import-all','pointerdown','prefers-reduced-motion'])assert.ok(ui.includes(marker),`missing embedded Shiguang feature: ${marker}`);
+const pluginHost=fs.readFileSync(new URL('../src/pluginHost.js',import.meta.url),'utf8');
+assert.match(pluginHost,/async spreadsheetText\(file\)/);
+assert.match(ui,/\.xlsx,\.xls/);
+assert.match(ui,/tide\.assets\.spreadsheetText\(file\)/);
+for(const marker of ['选择学校','本科/专科','研究生','通用工具','school-category','school-open-adapter','tide.schoolImporter.open'])assert.ok(ui.includes(marker),`missing original online school import flow: ${marker}`);
+assert.match(pluginHost,/schoolImporter:/);
+const apiSource=fs.readFileSync(new URL('../src/api.js',import.meta.url),'utf8');
+assert.match(apiSource,/school_import_open/);
+const rustSource=fs.readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
+for(const command of ['school_import_open','school_import_bridge'])assert.ok(rustSource.includes(command),`missing native school import command: ${command}`);
+assert.ok(rustSource.includes('bridgeQueue'),'school import bridge must serialize concurrent adapter callbacks');
 vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks};\n tide.ui.registerView({'),uiContext);
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
+console.log('PASS: embedded Today/Week/My navigation, multi-table actions, personalization, all-table restore and swipe support');
 const eduBase=M.empty('2026-09-07');eduBase.config.semesterStartDate='2026-09-07';eduBase.config.semesterTotalWeeks=20;
 const eduTsv=[
   '课程名称\t任课教师\t上课地点\t星期\t周次\t节次',
@@ -32,5 +47,61 @@ assert.equal(edu2.table.courses[0].day,2);assert.equal(edu2.table.courses[0].sta
 assert.equal(edu2.table.courses[1].day,5);assert.deepEqual(Array.from(edu2.table.courses[1].weeks),[2,4,6,8,10,12,14,16,18]);assert.equal(edu2.table.courses[1].startSection,7);
 const eduTime='课程名称\t星期\t周次\t开始时间\t结束时间\n晚间讲座\t星期四\t2-4周\t18:30\t20:00';
 const edu3=M.parseAcademicText(eduTime,eduBase);assert.equal(edu3.table.courses[0].isCustomTime,true);assert.equal(edu3.table.courses[0].customStartTime,'18:30');
+const eduBom=M.parseAcademicText('\uFEFF课程名称,教师,地点,星期,周次,节次\r\n数据结构,陈老师,实验楼201,星期二,1-16周,1-2节',eduBase);
+assert.equal(eduBom.table.courses[0].name,'数据结构');
+const eduParenParity=M.parseAcademicText('课程名称\t星期\t周次\t节次\n操作系统\t星期四\t1-16周(单)\t3-4节\n形势与政策\t星期五\t2-18周（双）\t7-8节',eduBase);
+assert.deepEqual(Array.from(eduParenParity.table.courses[0].weeks),[1,3,5,7,9,11,13,15]);
+assert.deepEqual(Array.from(eduParenParity.table.courses[1].weeks),[2,4,6,8,10,12,14,16,18]);
+const eduAlternateHeaders=M.parseAcademicText('课程名,任课老师,教学场地,周星期,上课周数,起止节次\n公安学基础,周老师,阶梯教室,星期三,1-12周,5-6节',eduBase);
+assert.equal(eduAlternateHeaders.table.courses[0].teacher,'周老师');
+assert.equal(eduAlternateHeaders.table.courses[0].position,'阶梯教室');
 const merged=M.mergeTables(edu1.table,edu1.table);assert.equal(merged.courses.length,2);
+const workbook=XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([
+  ['课程名','任课老师','教学场地','周星期','上课周数','起止节次'],
+  ['刑事科学技术','刘老师','实验中心302','星期一','1-16周(单)','1-2节'],
+]),'学生课表');
+const workbookBytes=XLSX.write(workbook,{bookType:'xlsx',type:'array'});
+const eduXlsx=M.parseAcademicText(await spreadsheetFileToCsv({arrayBuffer:async()=>workbookBytes}),eduBase);
+assert.equal(eduXlsx.table.courses[0].name,'刑事科学技术');
+assert.equal(eduXlsx.table.courses[0].teacher,'刘老师');
+assert.deepEqual(Array.from(eduXlsx.table.courses[0].weeks),[1,3,5,7,9,11,13,15]);
+const eduEnglish=M.parseAcademicText('Course,Teacher,Classroom,Weekday,Weeks,Sections\nCriminology,Smith,C401,Monday,1-8,3-4',eduBase);
+assert.equal(eduEnglish.table.courses[0].day,1);
 console.log('PASS: academic-system TSV/CSV imports, combined weekday/week/section cells, odd/even weeks, custom time and dedup merge');
+
+const pbVarint=(value)=>{const out=[];let n=Number(value);do{let b=n&0x7f;n=Math.floor(n/128);if(n)b|=0x80;out.push(b);}while(n);return out;};
+const pbString=(field,value)=>{const bytes=Array.from(new TextEncoder().encode(value));return [...pbVarint(field<<3|2),...pbVarint(bytes.length),...bytes];};
+const pbMessage=(field,bytes)=>[...pbVarint(field<<3|2),...pbVarint(bytes.length),...bytes];
+const adapterBytes=[...pbString(1,'BUPT_01'),...pbString(2,'北京邮电大学本科教务'),...pbVarint(3<<3),...pbVarint(2),...pbString(4,'bupt_01.js'),...pbString(5,'https://jwgl.bupt.edu.cn/jsxsd/'),...pbString(6,'登录后导入个人课表'),...pbString(7,'cstkn')];
+const schoolBytes=[...pbString(1,'BUPT'),...pbString(2,'北京邮电大学'),...pbString(3,'B'),...pbString(4,'BUPT'),...pbMessage(5,adapterBytes)];
+const indexBytes=Uint8Array.from([...pbVarint(1<<3),...pbVarint(2),...pbString(2,'20260914'),...pbMessage(3,schoolBytes)]);
+const schoolIndex=M.decodeSchoolIndex(indexBytes);
+const bundledIndexFile=new URL('../public/plugins/shiguang-schedule/school_index.pb',import.meta.url);
+assert.ok(fs.existsSync(bundledIndexFile),'missing bundled offline school index');
+assert.equal(schoolIndex.protocolVersion,2);
+assert.equal(schoolIndex.schools[0].name,'北京邮电大学');
+assert.equal(schoolIndex.schools[0].adapters[0].category,'BACHELOR_AND_ASSOCIATE');
+assert.equal(schoolIndex.schools[0].adapters[0].importUrl,'https://jwgl.bupt.edu.cn/jsxsd/');
+assert.equal(M.filterSchools(schoolIndex.schools,'BACHELOR_AND_ASSOCIATE','北京')[0].id,'BUPT');
+assert.equal(M.filterSchools(schoolIndex.schools,'BACHELOR_AND_ASSOCIATE','B')[0].id,'BUPT');
+assert.equal(M.filterSchools(schoolIndex.schools,'POSTGRADUATE','').length,0);
+const bundledIndex=M.decodeSchoolIndex(fs.readFileSync(bundledIndexFile));
+assert.equal(bundledIndex.protocolVersion,2);
+assert.ok(bundledIndex.schools.length>=200,`bundled school index unexpectedly small: ${bundledIndex.schools.length}`);
+assert.ok(bundledIndex.schools.some(s=>s.name==='北京邮电大学'),'bundled school index missing 北京邮电大学');
+console.log('PASS: original Shiguang protocol-v2 school index can be decoded');
+const bridged=M.applySchoolImportMessage(eduBase,'saveImportedCourses',{coursesJsonString:JSON.stringify([{name:'在线导入课程',teacher:'桥接教师',position:'桥接教室',day:2,startSection:3,endSection:4,weeks:[1,2,3]}])});
+assert.equal(bridged.courses.length,1);
+assert.equal(bridged.courses[0].name,'在线导入课程');
+assert.equal(bridged.courses[0].teacher,'桥接教师');
+console.log('PASS: original Shiguang adapter course bridge imports into current table');
+const configured=M.applySchoolImportMessage(bridged,'saveCourseConfig',{configJsonString:JSON.stringify({semesterStartDate:'2026-09-07',semesterTotalWeeks:18,firstDayOfWeek:1})});
+assert.equal(configured.config.semesterTotalWeeks,18);
+assert.equal(configured.config.semesterStartDate,'2026-09-07');
+const slotted=M.applySchoolImportMessage(configured,'savePresetTimeSlots',{timeSlotsJsonString:JSON.stringify([
+  {number:1,startTime:'08:10',endTime:'08:55'},{number:2,startTime:'09:05',endTime:'09:50'},
+  {number:3,startTime:'10:10',endTime:'10:55'},{number:4,startTime:'11:05',endTime:'11:50'},
+])});
+assert.equal(slotted.timeSlots[0].startTime,'08:10');
+assert.equal(slotted.timeSlots[3].endTime,'11:50');

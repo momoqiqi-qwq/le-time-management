@@ -8,6 +8,7 @@ import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extra
 import { PROJECT_LINKS } from "./projectLinks.js";
 import { previewSchedule } from "./scheduleConflict.js";
 import { pushInbox } from "./automation.js";
+import { spreadsheetFileToCsv } from "./spreadsheet.js";
 
 const registry = new Map();   // id -> { manifest, source, enabled, error }
 const eventBus = new Map();   // event -> Set<{ pluginId, fn }>
@@ -28,6 +29,7 @@ export const PLUGIN_PERMISSION_LABELS = {
   openUrl: "打开外部链接",
   timeParse: "时间语义解析",
   vault: "加密密钥库（保存密码 / 登录票据等敏感凭据）",
+  schoolImport: "学校教务登录与课表脚本导入",
 };
 
 function isPermissionAllowed(man, pid, perm) {
@@ -196,6 +198,10 @@ function makeApi(man, source) {
         return api.readPluginFile(`${pid}/${clean}`);
       },
       async json(path) { return JSON.parse(await this.text(path)); },
+      async spreadsheetText(file) {
+        requirePermission(man, pid, "ui");
+        return spreadsheetFileToCsv(file);
+      },
     },
 
     notify: (msg, opts) => { requirePermission(man, pid, "notify"); return toast(`${man.name}：${msg}`, opts); },
@@ -220,6 +226,11 @@ function makeApi(man, source) {
       // Cookie 整体导出/恢复：插件把登录态存进密钥库，应用重启后恢复，免验证码续期。
       exportCookies: (sid, urls) => { requirePermission(man, pid, "http"); return api.httpSessionExport(sid, urls); },
       restoreCookies: (cookies) => { requirePermission(man, pid, "http"); return api.httpSessionRestore(cookies); },
+    },
+
+    schoolImporter: {
+      open: ({ url, script, title }) => { requirePermission(man, pid, "schoolImport"); return api.schoolImportOpen(url, script, title); },
+      onMessage: (handler) => { requirePermission(man, pid, "schoolImport"); return api.schoolImportListen(handler); },
     },
 
     // 加密密钥库：值只存 Rust 侧 AES-256-GCM 文件，不进 data.json / 备份 / 同步。

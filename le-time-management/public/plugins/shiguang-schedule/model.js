@@ -14,8 +14,8 @@
   function weeks(text,total=20){
     const raw=String(text??'').trim();
     if(!raw) fail('至少选择一个上课周');
-    const parity = /(?:单周|单\s*$|奇数周)/.test(raw) ? 1 : /(?:双周|双\s*$|偶数周)/.test(raw) ? 0 : null;
-    const cleaned=raw.replace(/[第周星期教学周]/g,'').replace(/[、，；;\s]+/g,',').replace(/[~～—–至]/g,'-').replace(/[单双奇偶]数?周?/g,'');
+    const parity = /(?:单周|单\s*$|奇数周|[（(]\s*单\s*[）)])/.test(raw) ? 1 : /(?:双周|双\s*$|偶数周|[（(]\s*双\s*[）)])/.test(raw) ? 0 : null;
+    const cleaned=raw.replace(/[第周星期教学周]/g,'').replace(/[、，；;\s]+/g,',').replace(/[~～—–至]/g,'-').replace(/[单双奇偶]数?周?/g,'').replace(/[()（）]/g,'');
     const result=new Set();
     for(const part of cleaned.split(',').map(s=>s.trim()).filter(Boolean)) {
       const m=part.match(/^(\d+)(?:-(\d+))?$/);if(!m) continue;
@@ -56,12 +56,12 @@
   function packs(raw){if(Array.isArray(raw?.allTables)){if(!raw.allTables.length)fail('备份中没有课表');return raw.allTables.map(x=>({name:String(x.tableName||'未命名课表'),data:x.tableData}));}return [{name:'导入课表',data:raw}];}
 
   const headerAliases={
-    name:['课程名称','课程','科目','名称','course','subject','coursename'],
-    teacher:['教师','任课教师','授课教师','老师','teacher','instructor'],
-    position:['上课地点','地点','教室','上课教室','教学地点','location','classroom','room'],
-    day:['星期','周几','上课星期','weekday','day'],
-    weeks:['周次','上课周次','教学周','授课周次','weeks','week'],
-    sections:['节次','上课节次','节数','课节','sections','section'],
+    name:['课程名称','课程名','课程','科目','科目名称','名称','course','subject','coursename'],
+    teacher:['教师','任课教师','授课教师','任课老师','授课老师','老师','teacher','instructor'],
+    position:['上课地点','地点','教室','上课教室','教学地点','教学场地','场地','location','classroom','room'],
+    day:['星期','周几','周星期','上课星期','weekday','day'],
+    weeks:['周次','上课周次','上课周数','教学周','授课周次','weeks','week'],
+    sections:['节次','上课节次','起止节次','节数','课节','sections','section'],
     start:['开始时间','上课开始时间','start','starttime'],
     end:['结束时间','下课时间','end','endtime'],
     time:['上课时间','时间','课程时间','classtime','schedule'],
@@ -85,7 +85,7 @@
     if(best>1)return csvRows(raw,delimiter);
     return raw.split(/\r?\n/).map(line=>line.trim()).filter(Boolean).map(line=>line.split(/\s{2,}/));
   }
-  function parseDay(v){const s=String(v??'').trim();if(/^\d$/.test(s)){const n=Number(s);if(n>=1&&n<=7)return n;}const chars={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':7,'天':7};const m=s.match(/(?:星期|周)?([一二三四五六日天])/);return m?chars[m[1]]:null;}
+  function parseDay(v){const s=String(v??'').trim();if(/^\d$/.test(s)){const n=Number(s);if(n>=1&&n<=7)return n;}const chars={'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'日':7,'天':7};const m=s.match(/(?:星期|周)?([一二三四五六日天])/);if(m)return chars[m[1]];const lower=s.toLowerCase();const english=[['monday','mon'],['tuesday','tue'],['wednesday','wed'],['thursday','thu'],['friday','fri'],['saturday','sat'],['sunday','sun']];const i=english.findIndex(names=>names.some(name=>lower===name||lower.startsWith(name+' ')));return i<0?null:i+1;}
   function parseSections(v){const s=String(v??'').replace(/[第节课\s]/g,'').replace(/[~～—–至]/g,'-').replace(/、/g,',');const nums=(s.match(/\d+/g)||[]).map(Number).filter(n=>n>=1&&n<=40);if(!nums.length)return null;return [Math.min(...nums),Math.max(...nums)];}
   function parseTimeRange(v){const m=String(v??'').match(/([01]?\d|2[0-3]):([0-5]\d)\s*[-~～—–至]\s*([01]?\d|2[0-3]):([0-5]\d)/);return m?[`${String(m[1]).padStart(2,'0')}:${m[2]}`,`${String(m[3]).padStart(2,'0')}:${m[4]}`]:null;}
   function extractCombined(v,total){
@@ -130,10 +130,56 @@
     return normalize({...base,config:{...base.config,...added.config},courses:[...base.courses,...incoming]});
   }
 
+  function protoFields(input){
+    const bytes=input instanceof Uint8Array?input:new Uint8Array(input||[]);let offset=0;
+    const varint=()=>{let value=0,shift=0;while(offset<bytes.length&&shift<35){const b=bytes[offset++];value+=(b&127)*2**shift;if(!(b&128))return value;shift+=7;}fail('学校索引包含无效的 varint');};
+    const fields=[];
+    while(offset<bytes.length){const tag=varint(),number=tag>>>3,wire=tag&7;if(!number)fail('学校索引字段编号无效');
+      if(wire===0)fields.push({number,wire,value:varint()});
+      else if(wire===2){const size=varint(),end=offset+size;if(end>bytes.length)fail('学校索引字段长度无效');fields.push({number,wire,value:bytes.slice(offset,end)});offset=end;}
+      else if(wire===1){offset+=8;}else if(wire===5){offset+=4;}else fail('学校索引包含不支持的字段类型');
+      if(offset>bytes.length)fail('学校索引已损坏');
+    }
+    return fields;
+  }
+  const protoText=value=>new TextDecoder().decode(value instanceof Uint8Array?value:new Uint8Array(value||[]));
+  const protoFirst=(fields,number,wire=2)=>fields.find(x=>x.number===number&&x.wire===wire)?.value;
+  function decodeSchoolIndex(input){
+    const rootFields=protoFields(input),categoryNames={1:'GENERAL_TOOL',2:'BACHELOR_AND_ASSOCIATE',3:'POSTGRADUATE'};
+    const schools=rootFields.filter(x=>x.number===3&&x.wire===2).map(item=>{const sf=protoFields(item.value);return {
+      id:protoText(protoFirst(sf,1)||[]),name:protoText(protoFirst(sf,2)||[]),initial:protoText(protoFirst(sf,3)||[]),resourceFolder:protoText(protoFirst(sf,4)||[]),
+      adapters:sf.filter(x=>x.number===5&&x.wire===2).map(row=>{const af=protoFields(row.value),category=Number(protoFirst(af,3,0)||0);return {adapterId:protoText(protoFirst(af,1)||[]),adapterName:protoText(protoFirst(af,2)||[]),category:categoryNames[category]||'UNKNOWN',assetJsPath:protoText(protoFirst(af,4)||[]),importUrl:protoText(protoFirst(af,5)||[]),description:protoText(protoFirst(af,6)||[]),maintainer:protoText(protoFirst(af,7)||[])};})
+    };}).filter(s=>s.id&&s.name);
+    return {protocolVersion:Number(protoFirst(rootFields,1,0)||0),versionId:protoText(protoFirst(rootFields,2)||[]),schools};
+  }
+  function filterSchools(schools,category,query=''){
+    const key=String(query).trim().toLowerCase();
+    return (Array.isArray(schools)?schools:[]).filter(s=>s.adapters?.some(a=>a.category===category)&&(key===''||String(s.name).toLowerCase().includes(key)||String(s.initial).toLowerCase().includes(key))).sort((a,b)=>(String(a.initial).toUpperCase()+a.name).localeCompare(String(b.initial).toUpperCase()+b.name,'zh-CN'));
+  }
+  function applySchoolImportMessage(base,action,payload={}){
+    const current=normalize(base);
+    if(action==='saveImportedCourses'){
+      const rows=JSON.parse(String(payload.coursesJsonString||'[]'));if(!Array.isArray(rows)||!rows.length)fail('在线教务没有返回课程数据');
+      const courses=rows.map((c,i)=>({...c,id:`school-${i}-${String(c.name||'course').slice(0,40)}`,remark:c.remark||'在线教务导入'}));
+      return mergeTables(current,normalize({courses,timeSlots:current.timeSlots,config:current.config}));
+    }
+    if(action==='saveCourseConfig'){
+      const incoming=JSON.parse(String(payload.configJsonString||'{}'));const maxExisting=Math.max(1,...current.courses.flatMap(c=>c.weeks));
+      const requested=Number(incoming.semesterTotalWeeks);const config={...current.config,...incoming,semesterStartDate:incoming.semesterStartDate||current.config.semesterStartDate,semesterTotalWeeks:Number.isFinite(requested)?Math.max(requested,maxExisting):current.config.semesterTotalWeeks};
+      return normalize({...current,config});
+    }
+    if(action==='savePresetTimeSlots'){
+      const incoming=JSON.parse(String(payload.timeSlotsJsonString||'[]'));if(!Array.isArray(incoming)||!incoming.length)fail('在线教务没有返回作息时间');
+      const slots=new Map(current.timeSlots.map(s=>[Number(s.number),s]));for(const slot of incoming)slots.set(Number(slot.number),slot);
+      return normalize({...current,timeSlots:[...slots.values()]});
+    }
+    fail('不支持的在线教务回传操作');
+  }
+
   const escapeIcs=s=>String(s||'').replace(/\\/g,'\\\\').replace(/\r?\n/g,'\\n').replace(/;/g,'\\;').replace(/,/g,'\\,');
   function ics(table){const lines=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Le Time Management//Schedule//ZH','CALSCALE:GREGORIAN'];
     for(let w=1;w<=table.config.semesterTotalWeeks;w++)for(const c of occurrences(table,w))lines.push('BEGIN:VEVENT','UID:'+encodeURIComponent(c.id)+'-'+c.date+'@le-time-management','DTSTAMP:'+new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''),'DTSTART:'+c.date.replace(/-/g,'')+'T'+c.start.replace(':','')+'00','DTEND:'+c.date.replace(/-/g,'')+'T'+c.end.replace(':','')+'00','SUMMARY:'+escapeIcs(c.name),'LOCATION:'+escapeIcs(c.position),'DESCRIPTION:'+escapeIcs([c.teacher,c.remark].filter(Boolean).join('\n')),'END:VEVENT');lines.push('END:VCALENDAR');
     return lines.map(line=>{let result='',bytes=0;for(const ch of line){const n=new TextEncoder().encode(ch).length;if(bytes+n>75){result+='\r\n ';bytes=1;}result+=ch;bytes+=n;}return result;}).join('\r\n')+'\r\n';
   }
-  root.ShiguangModel={empty,normalize,weeks,times,occurrences,conflicts,packs,ics,weekOf,monday,addDays,format,minutes,parseAcademicText,mergeTables,textRows};
+  root.ShiguangModel={empty,normalize,weeks,times,occurrences,conflicts,packs,ics,weekOf,monday,addDays,format,minutes,parseAcademicText,mergeTables,textRows,decodeSchoolIndex,filterSchools,applySchoolImportMessage};
 })(typeof module!=='undefined'?module.exports:globalThis);

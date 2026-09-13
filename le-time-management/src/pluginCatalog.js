@@ -3,16 +3,18 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "shiguang-schedule",
     "name": "课程表",
-    "version": "2.2.0",
+    "version": "3.1.0",
     "author": "基于 XingHeYuZhuan/shiguangschedule · Le时间管理适配",
     "icon": "calendar-days",
     "faIcon": "calendar-days",
-    "description": "保留时光课程表原版周课表栅格与课程功能，仅适配 Le 时间管理界面；支持手动课程、教务导入、JSON/ICS 备份及时间块联动，并优化重复打开速度。",
+    "description": "将时光课程表嵌入 Le 时间管理；支持选择学校并登录教务一键导入、教务 XLSX/XLS/CSV/TSV/HTML 导入、多课表、课程管理、个性化配置、JSON/ICS 备份及时间块联动。",
     "permissions": [
       "ui",
       "storage",
       "blocks",
-      "notify"
+      "notify",
+      "http",
+      "schoolImport"
     ],
     "entry": "main.js",
     "order": 1,
