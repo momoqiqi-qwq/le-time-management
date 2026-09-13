@@ -1,13 +1,13 @@
 :root {
-  --motion-fast: 120ms;
+  --motion-fast: 110ms;
   --motion-normal: 180ms;
-  --motion-layer: 220ms;
+  --motion-layer: 240ms;
   --motion-out: cubic-bezier(.22, .8, .22, 1);
   --motion-in: cubic-bezier(.4, 0, 1, 1);
   --motion-spring: cubic-bezier(.2, .9, .25, 1.18);
 }
 
-/* 按钮反馈：悬停抬起，按下回落；不改变业务组件尺寸。 */
+/* 按钮反馈：按下、释放和点击扩散使用同一套短促节奏。 */
 button:not([data-motion="off"]),
 [role="button"]:not([data-motion="off"]) {
   transform-origin: center;
@@ -19,6 +19,27 @@ button:not([data-motion="off"]),
     background-color var(--motion-normal) ease,
     color var(--motion-normal) ease,
     opacity var(--motion-normal) ease;
+}
+
+button.motion-ripple-host:not([data-motion="off"]) {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+}
+
+.motion-ripple {
+  position: absolute;
+  z-index: 2;
+  left: var(--motion-ripple-x);
+  top: var(--motion-ripple-y);
+  width: var(--motion-ripple-size);
+  height: var(--motion-ripple-size);
+  border-radius: 50%;
+  pointer-events: none;
+  background: currentColor;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.08);
+  animation: motion-ripple-spread 440ms ease-out both;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -36,6 +57,16 @@ button:not([data-motion="off"]):active:not(:disabled),
   transition-duration: 70ms;
 }
 
+button.motion-clicked:not([data-motion="off"]),
+[role="button"].motion-clicked:not([data-motion="off"]) {
+  animation: motion-button-release 240ms var(--motion-spring);
+}
+
+button.motion-close-control.motion-clicked:not([data-motion="off"]),
+[role="button"].motion-close-control.motion-clicked:not([data-motion="off"]) {
+  animation-name: motion-close-button-release;
+}
+
 button:not([data-motion="off"]):disabled,
 [role="button"]:not([data-motion="off"])[aria-disabled="true"] {
   cursor: not-allowed;
@@ -43,7 +74,7 @@ button:not([data-motion="off"]):disabled,
 }
 
 /* 背景遮罩与主要弹层共享同一节奏。 */
-:where(.drawer-mask, .cmd-mask, .cap-mask) {
+:where(.drawer-mask, .cmd-mask, .cap-mask, .motion-layer-mask) {
   animation: motion-mask-in var(--motion-normal) ease-out both;
 }
 
@@ -67,7 +98,7 @@ button:not([data-motion="off"]):disabled,
   will-change: transform, opacity;
 }
 
-.popmenu {
+:where(.popmenu, .plugin-context-menu) {
   animation: motion-menu-in 160ms var(--motion-spring) both;
   transform-origin: top left;
   will-change: transform, opacity;
@@ -82,32 +113,32 @@ button:not([data-motion="off"]):disabled,
   animation: motion-float-in var(--motion-layer) var(--motion-out) both;
 }
 
-:where(.drawer-mask, .cmd-mask, .cap-mask).motion-closing {
+:where(.drawer-mask, .cmd-mask, .cap-mask, .motion-layer-mask).motion-closing {
   pointer-events: none;
   animation: motion-mask-out var(--motion-normal) ease-in both;
 }
 
-.drawer.motion-closing {
+:where(.drawer, [data-motion-layer="side"]).motion-closing {
   pointer-events: none;
   animation: motion-drawer-out var(--motion-layer) var(--motion-in) both;
 }
 
-:where(.cmd-palette, .quick-cap).motion-closing {
+:where(.cmd-palette, .quick-cap, [data-motion-layer="top"]).motion-closing {
   pointer-events: none;
   animation: motion-top-layer-out var(--motion-normal) var(--motion-in) both;
 }
 
-:where(.cap-modal, .ai-rule-editor).motion-closing {
+:where(.cap-modal, .ai-rule-editor, [data-motion-layer="center"]).motion-closing {
   pointer-events: none;
   animation: motion-center-layer-out var(--motion-normal) var(--motion-in) both;
 }
 
-:where(.settings-modal, .wc-web-panel).motion-closing {
+:where(.settings-modal, .wc-web-panel, [data-motion-layer="full"]).motion-closing {
   pointer-events: none;
   animation: motion-full-layer-out var(--motion-normal) var(--motion-in) both;
 }
 
-:where(.popmenu, .toast, .drag-overlay).motion-closing {
+:where(.popmenu, .plugin-context-menu, .toast, .drag-overlay).motion-closing {
   pointer-events: none;
   animation: motion-float-out var(--motion-normal) var(--motion-in) both;
 }
@@ -121,12 +152,12 @@ button:not([data-motion="off"]):disabled,
   to { opacity: 0; }
 }
 @keyframes motion-drawer-in {
-  from { opacity: 0; transform: scale(.985); }
+  from { opacity: 0; transform: translate3d(20px, 0, 0) scale(.99); }
   to { opacity: 1; transform: scale(1); }
 }
 @keyframes motion-drawer-out {
   from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(.985); }
+  to { opacity: 0; transform: translate3d(22px, 0, 0) scale(.99); }
 }
 @keyframes motion-top-layer-in {
   from { opacity: 0; transform: translate3d(-50%, -8px, 0) scale(.975); }
@@ -167,6 +198,43 @@ button:not([data-motion="off"]):disabled,
 @keyframes motion-float-out {
   from { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
   to { opacity: 0; transform: translate3d(0, 5px, 0) scale(.98); }
+}
+
+@keyframes motion-ripple-spread {
+  0% { opacity: .16; transform: translate(-50%, -50%) scale(.08); }
+  72% { opacity: .08; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes motion-button-release {
+  0% { transform: translateY(1px) scale(.965); }
+  55% { transform: translateY(-1px) scale(1.018); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes motion-close-button-release {
+  0% { transform: translateY(1px) scale(.95) rotate(0); }
+  55% { transform: translateY(0) scale(1.015) rotate(3deg); }
+  100% { transform: translateY(0) scale(1) rotate(0); }
+}
+
+/* 主页面前进和返回保持相反方向，帮助用户感知导航层级。 */
+.view.page-l {
+  animation: motion-page-forward-in var(--motion-layer) var(--motion-out) both;
+}
+
+.view.page-r {
+  animation: motion-page-back-in var(--motion-layer) var(--motion-out) both;
+}
+
+@keyframes motion-page-forward-in {
+  from { opacity: .12; transform: translate3d(18px, 0, 0) scale(.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes motion-page-back-in {
+  from { opacity: .12; transform: translate3d(-18px, 0, 0) scale(.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
 :root[data-ui-motion="reduced"] *,

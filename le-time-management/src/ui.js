@@ -26,6 +26,58 @@ export function toast(msg, opts = {}) {
   setTimeout(() => removeWithMotion(t), opts.ms || 4200);
 }
 
+/* ── 应用内对话框：替代 window.prompt / window.confirm（Tauri 里原生弹窗样式突兀）── */
+function appDialog({ title, message, label, value = "", placeholder = "", confirmText = "确定", cancelText = "取消", danger = false, input = false }) {
+  return new Promise((resolve) => {
+    const close = (result) => {
+      document.removeEventListener("keydown", onKey, true);
+      mask.remove();
+      resolve(result);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close(input ? null : false);
+      }
+    };
+    const field = input
+      ? el("input", { class: "app-dialog-field", type: "text", value, placeholder, "aria-label": label || title })
+      : null;
+    const submit = () => close(input ? field.value.trim() : true);
+    const box = el("div", { class: "app-dialog", role: "dialog", "aria-modal": "true", "aria-label": title },
+      el("h3", {}, title),
+      message ? el("p", { class: "app-dialog-msg" }, message) : null,
+      field,
+      el("div", { class: "app-dialog-actions" },
+        el("button", { class: "app-dialog-btn", type: "button", onclick: () => close(input ? null : false) }, cancelText),
+        el("button", { class: `app-dialog-btn pri${danger ? " danger" : ""}`, type: "button", onclick: submit }, confirmText),
+      ),
+    );
+    const mask = el("div", { class: "drawer-mask app-dialog-mask" }, box);
+    mask.addEventListener("click", (e) => { if (e.target === mask) close(input ? null : false); });
+    if (field) {
+      field.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") submit();
+      });
+    }
+    document.addEventListener("keydown", onKey, true);
+    document.body.append(mask);
+    if (field) { field.focus(); field.select(); }
+    else box.querySelector(".app-dialog-btn.pri")?.focus();
+  });
+}
+
+/** 应用内输入对话框：确认返回输入值（已 trim），取消/Esc 返回 null */
+export function appPrompt(title, opts = {}) {
+  return appDialog({ title, input: true, ...opts });
+}
+
+/** 应用内确认对话框：确认返回 true，取消/Esc 返回 false */
+export function appConfirm(title, message, opts = {}) {
+  return appDialog({ title, message, ...opts });
+}
+
 export function popmenu(x, y, items) {
   document.querySelectorAll(".popmenu").forEach((m) => m.remove());
   const menu = el("div", { class: "popmenu" });

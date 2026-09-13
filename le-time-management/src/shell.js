@@ -2,7 +2,7 @@
 import * as S from "./store.js";
 import { appIcon } from "./icons.js";
 import { api } from "./api.js";
-import { el, toast } from "./ui.js";
+import { appConfirm, appPrompt, el, toast } from "./ui.js";
 import { renderQuadrant } from "./views/quadrant.js";
 import { renderTimeblock } from "./views/timeblock.js";
 import { renderSettings } from "./views/settings.js";
@@ -11,7 +11,7 @@ import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
 import { getUiPreferences } from "./uiPreferences.js";
-import { closeLayer } from "./motion.js";
+import { closeLayer, removeWithMotion } from "./motion.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -264,15 +264,18 @@ export function renderShell(root) {
     }
   });
 
-  function closePluginContextMenu() {
-    pluginContextMenu?.remove();
+  function closePluginContextMenu(immediate = false) {
+    const menu = pluginContextMenu;
     pluginContextMenu = null;
+    if (!menu) return;
+    if (immediate) menu.remove();
+    else removeWithMotion(menu);
   }
 
   function openPluginContextMenu(event, pluginId) {
     event.preventDefault();
     event.stopPropagation();
-    closePluginContextMenu();
+    closePluginContextMenu(true);
     const rec = getRegistry().find((item) => item.id === pluginId);
     if (!rec) return;
     const fallbackName = rec.manifest?.name || pluginViews.find((item) => item.pluginId === pluginId)?.title || pluginId;
@@ -290,12 +293,12 @@ export function renderShell(root) {
     }, label);
     const menu = el("div", { class: "plugin-context-menu", role: "menu", "aria-label": `${displayName}插件菜单` },
       el("div", { class: "plugin-context-head" }, pluginDisplayIcon(pluginId, displayName), el("span", {}, el("b", {}, displayName), el("small", {}, rec.source === "builtin" ? "内置插件" : "用户插件"))),
-      menuButton("重命名", () => {
-        const value = window.prompt("输入插件显示名称（留空恢复默认名称）", displayName);
+      menuButton("重命名", async () => {
+        const value = await appPrompt("重命名插件", { label: "输入插件显示名称（留空恢复默认名称）", value: displayName, confirmText: "保存" });
         if (value === null) return;
-        setPluginOverride(pluginId, { name: value.trim() });
+        setPluginOverride(pluginId, { name: value });
         refreshPluginPresentation();
-        toast(value.trim() ? "插件名称已更新" : "已恢复默认名称");
+        toast(value ? "插件名称已更新" : "已恢复默认名称");
       }),
       menuButton("修改图标…", () => {
         pendingPluginIconId = pluginId;
@@ -309,7 +312,7 @@ export function renderShell(root) {
       el("div", { class: "plugin-context-separator", role: "separator" }),
       menuButton("导入插件…", () => pluginZipInput.click()),
       menuButton("删除插件", async () => {
-        if (!window.confirm(`删除用户插件「${displayName}」？\n\n插件文件夹和保存状态将一并移除。`)) return;
+        if (!(await appConfirm(`删除用户插件「${displayName}」？`, "插件文件夹和保存状态将一并移除。", { confirmText: "删除", danger: true }))) return;
         try {
           await removeExternalPlugin(pluginId);
           resetPluginOverride(pluginId);
@@ -622,10 +625,11 @@ export function renderShell(root) {
         view.classList.add(dir === "left" ? "page-l" : "page-r");
         const titleCard = titleEl.closest(".topbar-title-card");
         if (titleCard?.animate && getUiPreferences().motion !== "reduced") {
+          const titleOffset = dir === "left" ? 7 : -7;
           titleCard.animate([
-            { opacity: .45, transform: "translateY(-3px) scale(.985)" },
-            { opacity: 1, transform: "translateY(0) scale(1)" },
-          ], { duration: 220, easing: "cubic-bezier(.22,.8,.22,1)" });
+            { opacity: .36, transform: `translate3d(${titleOffset}px, 0, 0) scale(.99)` },
+            { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+          ], { duration: 240, easing: "cubic-bezier(.22,.8,.22,1)" });
         }
       }
     };
@@ -633,10 +637,11 @@ export function renderShell(root) {
     const motion = getUiPreferences().motion;
     const shouldAnimateExit = prevId !== targetId && view.childElementCount > 0 && motion !== "reduced" && typeof view.animate === "function";
     if (!shouldAnimateExit) return commit();
+    const exitOffset = dir === "left" ? -12 : 12;
     const exit = view.animate([
       { opacity: 1, transform: "translate3d(0,0,0) scale(1)" },
-      { opacity: .18, transform: "translate3d(0,0,0) scale(.985)" },
-    ], { duration: 95, easing: "cubic-bezier(.4,0,1,1)" });
+      { opacity: .1, transform: `translate3d(${exitOffset}px,0,0) scale(.992)` },
+    ], { duration: 120, easing: "cubic-bezier(.4,0,1,1)" });
     exit.finished.catch(() => {}).then(commit);
   }
 

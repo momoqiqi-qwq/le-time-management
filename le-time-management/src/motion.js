@@ -1,31 +1,70 @@
 const CLOSING_CLASS = "motion-closing";
 const PRESS_CLASS = "motion-pressing";
+const CLICK_CLASS = "motion-clicked";
+const CLOSE_CONTROL_CLASS = "motion-close-control";
+let initialized = false;
+const pressedControls = new Set();
 
-function reducedMotion() {
+export function reducedMotion() {
   const setting = document.documentElement.dataset.uiMotion;
   if (setting === "full") return false;
   if (setting === "reduced") return true;
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
+function isCloseControl(control) {
+  const label = [control.getAttribute("aria-label"), control.title, control.textContent]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  return /(?:关闭|取消|收起|退出|×|✕)/.test(label);
+}
+
+function addRipple(control, clientX, clientY) {
+  if (reducedMotion() || control.tagName !== "BUTTON") return;
+  const rect = control.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  const x = Number.isFinite(clientX) && clientX > 0 ? clientX - rect.left : rect.width / 2;
+  const y = Number.isFinite(clientY) && clientY > 0 ? clientY - rect.top : rect.height / 2;
+  const radius = Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y));
+  const ripple = document.createElement("span");
+  ripple.className = "motion-ripple";
+  ripple.style.cssText = `--motion-ripple-x:${x}px;--motion-ripple-y:${y}px;--motion-ripple-size:${radius * 2}px`;
+  control.classList.add("motion-ripple-host");
+  control.append(ripple);
+  const remove = () => ripple.remove();
+  ripple.addEventListener("animationend", remove, { once: true });
+  window.setTimeout(remove, 520);
+}
+
 export function initMotionInteractions() {
-  const release = (event) => {
-    const button = event.target?.closest?.(`.${PRESS_CLASS}`);
-    button?.classList.remove(PRESS_CLASS);
+  if (initialized) return;
+  initialized = true;
+  const release = () => {
+    for (const control of pressedControls) control.classList.remove(PRESS_CLASS);
+    pressedControls.clear();
   };
   document.addEventListener("pointerdown", (event) => {
-    const button = event.target?.closest?.("button, [role='button']");
-    if (!button || button.disabled || button.getAttribute("aria-disabled") === "true") return;
-    const rect = button.getBoundingClientRect();
-    button.style.setProperty("--motion-x", `${event.clientX - rect.left}px`);
-    button.style.setProperty("--motion-y", `${event.clientY - rect.top}px`);
-    button.classList.add(PRESS_CLASS);
+    if (event.button !== 0) return;
+    const control = event.target?.closest?.("button, [role='button']");
+    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true") return;
+    control.classList.add(PRESS_CLASS);
+    pressedControls.add(control);
+    addRipple(control, event.clientX, event.clientY);
   }, { passive: true });
+  document.addEventListener("click", (event) => {
+    const control = event.target?.closest?.("button, [role='button']");
+    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true") return;
+    control.classList.toggle(CLOSE_CONTROL_CLASS, isCloseControl(control));
+    control.classList.remove(CLICK_CLASS);
+    void control.offsetWidth;
+    control.classList.add(CLICK_CLASS);
+    if (event.detail === 0) addRipple(control);
+    window.setTimeout(() => control.classList.remove(CLICK_CLASS), 280);
+  }, true);
   document.addEventListener("pointerup", release, { passive: true });
   document.addEventListener("pointercancel", release, { passive: true });
-  window.addEventListener("blur", () => {
-    document.querySelectorAll(`.${PRESS_CLASS}`).forEach((node) => node.classList.remove(PRESS_CLASS));
-  });
+  window.addEventListener("blur", release);
 }
 
 export function closeLayer(panel, mask, cleanup) {
@@ -40,11 +79,23 @@ export function closeLayer(panel, mask, cleanup) {
     panel?.remove();
     return;
   }
+  const layerKind = panel?.matches(".drawer")
+    ? "side"
+    : panel?.matches(".cmd-palette, .quick-cap")
+      ? "top"
+      : panel?.matches(".settings-modal, .wc-web-panel")
+        ? "full"
+        : "center";
+  if (panel) panel.dataset.motionLayer = layerKind;
+  mask?.classList.add("motion-layer-mask");
   panel?.classList.add(CLOSING_CLASS);
   mask?.classList.add(CLOSING_CLASS);
   panel?.setAttribute("aria-hidden", "true");
   if (panel?.contains(document.activeElement)) document.activeElement.blur();
+  let finished = false;
   const finish = () => {
+    if (finished) return;
+    finished = true;
     mask?.remove();
     panel?.remove();
   };
@@ -55,7 +106,7 @@ export function closeLayer(panel, mask, cleanup) {
     finish();
   };
   target?.addEventListener("animationend", onAnimationEnd);
-  window.setTimeout(finish, 260);
+  window.setTimeout(finish, 320);
 }
 
 export function removeWithMotion(element) {

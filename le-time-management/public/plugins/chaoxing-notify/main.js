@@ -30,6 +30,7 @@
     ignoredIds: new Set(),
     tab: "inbox",
     filter: { kw: "", category: "全部", onlyUnread: false },
+    course: { year: null, searchOpen: false },
     notice: null,
     loading: false,
     busy: "",
@@ -175,7 +176,7 @@
   function ensureStyle() {
     if (document.getElementById("cx2-style")) return;
     const s = document.createElement("style"); s.id = "cx2-style"; s.textContent = `
-      .cx2{max-width:1180px;margin:0 auto;padding:clamp(12px,2vw,24px);color:#203840}.cx2 *{box-sizing:border-box}.cx2 button,.cx2 input,.cx2 select,.cx2 textarea{font:inherit}.cx2-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.cx2 h2{margin:0;font-size:clamp(22px,3vw,30px)}.cx2-sub{font-size:12.5px;color:#6c7f86;margin:4px 0}.cx2-actions{display:flex;gap:7px;flex-wrap:wrap}.cx2 button{border:1px solid #cddadd;background:#fff;color:#24505c;border-radius:9px;min-height:40px;padding:7px 12px;cursor:pointer}.cx2 button:hover{background:#eff6f7}.cx2 button.primary{background:#155367;color:#fff;border-color:#155367;font-weight:650}.cx2 button.danger{color:#a03f3f;border-color:#e0bcbc}.cx2 button:disabled{opacity:.5;cursor:default}.cx2-nav{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 10px;padding-bottom:10px;border-bottom:1px solid #e3eaec}.cx2-nav button.on{background:#1a5a6d;color:#fff;border-color:#1a5a6d}.cx2-pill{display:inline-block;font-size:10px;border-radius:999px;padding:2px 7px;background:#e8f1f3;color:#275b68;margin-left:5px}.cx2-new{background:#ff5e66;color:#fff}.cx2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}.cx2-search{flex:1;min-width:220px;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 11px;background:#fff}.cx2-select{border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:6px 9px;background:#fff;color:#274750}.cx2-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#506b74;white-space:nowrap}.cx2-status{font-size:12px;color:#6b7f86;margin:7px 0 11px}.cx2-status.err{background:#fff1ed;border:1px solid #efc8bc;color:#924932;padding:10px;border-radius:9px}.cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.cx2-card{background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:12px;min-width:0}.cx2-card.unread{border-left:4px solid #2b889d}.cx2-title{font-weight:650;font-size:14px;line-height:1.45;overflow-wrap:anywhere}.cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:11px;color:#70838a}.cx2-tag{padding:2px 7px;border-radius:999px;background:#edf3f4;color:#42636c}.cx2-tag.作业{background:#fff1df;color:#8b5d1e}.cx2-tag.考试{background:#fde9e9;color:#9c3737}.cx2-tag.签到{background:#e7f5e9;color:#317044}.cx2-grading{display:inline-block;vertical-align:1px;margin-left:7px;padding:1px 8px;border-radius:999px;background:#fff1df;color:#8b5d1e;border:1px solid #f0dcb6;font-size:10.5px;font-weight:500;cursor:help}.cx2-body{font-size:12px;color:#556b73;line-height:1.65;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}.cx2-card.open .cx2-body{display:block;-webkit-line-clamp:unset;max-height:320px;overflow:auto}.cx2-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.cx2-card-actions button{min-height:34px;padding:5px 9px;font-size:11.5px}.cx2-empty{border:1.5px dashed #ccd9dc;border-radius:12px;padding:24px;text-align:center;color:#85969c;font-size:12.5px}.cx2-courses{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px}.cx2-course{background:#fff;border:1px solid #dce6e8;border-radius:11px;padding:11px}.cx2-course b{display:block;font-size:13px}.cx2-course span{display:block;font-size:11px;color:#70838a;margin-top:4px}.cx2-grade{margin:14px 0 4px}.cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;color:#1b3b45}.cx2-grade-sub{font-size:11px;font-weight:400;color:#7d8f96}.cx2-course{position:relative}.cx2-course.done{background:#fcfcfd;border-color:#e9edef}.cx2-course b{padding-right:64px}.cx2-course .cx2-mark{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:5px;margin:0;padding:2px 8px;border-radius:999px;font-size:10.5px;line-height:1.65;font-weight:500;letter-spacing:.2px}.cx2-course .cx2-mark::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.cx2-course .cx2-mark.done{background:#f1f2f4;color:#98a1a8;border:1px solid #e6e8eb}.cx2-course .cx2-mark.open{background:#1f2937;color:#fff;border:1px solid #1f2937}.cx2-course .cx2-termline{color:#5b6b73}.cx2-hint{margin-top:14px;font-size:11px;color:#8b9aa0;line-height:1.7}.cx2-login{max-width:650px;margin:18px auto;background:#fff;border:1px solid #dce6e8;border-radius:16px;padding:clamp(18px,3vw,28px)}.cx2-login h3{margin:0 0 4px}.cx2-tabs{display:flex;gap:6px;margin:14px 0}.cx2-tabs button.on{background:#155367;color:#fff}.cx2-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cx2 label{font-size:12px;color:#5f747c}.cx2 label span{display:block;margin-bottom:4px;font-weight:600}.cx2 input,.cx2 textarea{width:100%;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 10px}.cx2 textarea{min-height:100px;resize:vertical}.cx2-wide{grid-column:1/-1}.cx2-note{font-size:11px;color:#788a90;line-height:1.65;background:#f3f7f8;padding:9px 10px;border-radius:8px;margin-top:10px}.cx2-lookup{max-width:820px}.cx2-detail{margin-top:10px;background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:14px}.cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:12.5px;line-height:1.7;color:#435b63}.cx2-todo{display:grid;gap:9px;max-width:900px}.cx2-due{font-weight:700;color:#9a5828;font-size:12px}.cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cx2-kpi{background:#f0f6f7;border:1px solid #dbe8ea;border-radius:9px;padding:7px 10px;font-size:11.5px}.cx2 footer{margin-top:24px;border-top:1px solid #dde7e9;padding-top:12px;font-size:11px;color:#7b8d93}
+      .cx2{max-width:1180px;margin:0 auto;padding:clamp(12px,2vw,24px);color:#203840}.cx2 *{box-sizing:border-box}.cx2 button,.cx2 input,.cx2 select,.cx2 textarea{font:inherit}.cx2-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}.cx2 h2{margin:0;font-size:clamp(22px,3vw,30px)}.cx2-sub{font-size:12.5px;color:#6c7f86;margin:4px 0}.cx2-actions{display:flex;gap:7px;flex-wrap:wrap}.cx2 button{border:1px solid #cddadd;background:#fff;color:#24505c;border-radius:9px;min-height:40px;padding:7px 12px;cursor:pointer}.cx2 button:hover{background:#eff6f7}.cx2 button.primary{background:#155367;color:#fff;border-color:#155367;font-weight:650}.cx2 button.danger{color:#a03f3f;border-color:#e0bcbc}.cx2 button:disabled{opacity:.5;cursor:default}.cx2-nav{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 10px;padding-bottom:10px;border-bottom:1px solid #e3eaec}.cx2-nav button.on{background:#1a5a6d;color:#fff;border-color:#1a5a6d}.cx2-pill{display:inline-block;font-size:10px;border-radius:999px;padding:2px 7px;background:#e8f1f3;color:#275b68;margin-left:5px}.cx2-new{background:#ff5e66;color:#fff}.cx2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}.cx2-search{flex:1;min-width:220px;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 11px;background:#fff}.cx2-select{border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:6px 9px;background:#fff;color:#274750}.cx2-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#506b74;white-space:nowrap}.cx2-status{font-size:12px;color:#6b7f86;margin:7px 0 11px}.cx2-status.err{background:#fff1ed;border:1px solid #efc8bc;color:#924932;padding:10px;border-radius:9px}.cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.cx2-card{background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:12px;min-width:0}.cx2-card.unread{border-left:4px solid #2b889d}.cx2-title{font-weight:650;font-size:14px;line-height:1.45;overflow-wrap:anywhere}.cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:11px;color:#70838a}.cx2-tag{padding:2px 7px;border-radius:999px;background:#edf3f4;color:#42636c}.cx2-tag.作业{background:#fff1df;color:#8b5d1e}.cx2-tag.考试{background:#fde9e9;color:#9c3737}.cx2-tag.签到{background:#e7f5e9;color:#317044}.cx2-grading{display:inline-block;vertical-align:1px;margin-left:7px;padding:1px 8px;border-radius:999px;background:#fff1df;color:#8b5d1e;border:1px solid #f0dcb6;font-size:10.5px;font-weight:500;cursor:help}.cx2-body{font-size:12px;color:#556b73;line-height:1.65;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}.cx2-card.open .cx2-body{display:block;-webkit-line-clamp:unset;max-height:320px;overflow:auto}.cx2-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.cx2-card-actions button{min-height:34px;padding:5px 9px;font-size:11.5px}.cx2-empty{border:1.5px dashed #ccd9dc;border-radius:12px;padding:24px;text-align:center;color:#85969c;font-size:12.5px}.cx2-courses{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px}.cx2-course{background:#fff;border:1px solid #dce6e8;border-radius:11px;padding:11px}.cx2-course b{display:block;font-size:13px}.cx2-course span{display:block;font-size:11px;color:#70838a;margin-top:4px}.cx2-grade{margin:14px 0 4px}.cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;color:#1b3b45}.cx2-grade-sub{font-size:11px;font-weight:400;color:#7d8f96}.cx2-course{position:relative}.cx2-course b{padding-right:64px}.cx2-course .cx2-mark{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:5px;margin:0;padding:2px 8px;border-radius:999px;font-size:10.5px;line-height:1.65;font-weight:500;letter-spacing:.2px}.cx2-course .cx2-mark::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.cx2-course .cx2-mark.st-red{background:#dc2626;color:#fff;border:1px solid #dc2626}.cx2-course .cx2-mark.st-blue{background:#2563eb;color:#fff;border:1px solid #2563eb}.cx2-course .cx2-mark.st-green{background:#16a34a;color:#fff;border:1px solid #16a34a}.cx2-course .cx2-mark.st-gray{background:#9ca3af;color:#fff;border:1px solid #9ca3af}.cx2-course.st-red{background:#fee2e2;border-color:#f6bcbc}.cx2-course.st-red b,.cx2-course.st-red span{color:#7f1d1d}.cx2-course.st-blue{background:#dbeafe;border-color:#bfdcff}.cx2-course.st-blue b,.cx2-course.st-blue span{color:#1e3a8a}.cx2-course.st-green{background:#dcfce7;border-color:#b5ecca}.cx2-course.st-green b,.cx2-course.st-green span{color:#14532d}.cx2-course.st-gray{background:#f4f4f5;border-color:#e4e4e7}.cx2-status-sec{margin:12px 0 2px}.cx2-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}.dot-red{background:#dc2626}.dot-blue{background:#2563eb}.dot-green{background:#16a34a}.dot-gray{background:#9ca3af}.cx2-search-toggle{width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:0 11px}.cx2-course .cx2-termline{color:#5b6b73}.cx2-hint{margin-top:14px;font-size:11px;color:#8b9aa0;line-height:1.7}.cx2-login{max-width:650px;margin:18px auto;background:#fff;border:1px solid #dce6e8;border-radius:16px;padding:clamp(18px,3vw,28px)}.cx2-login h3{margin:0 0 4px}.cx2-tabs{display:flex;gap:6px;margin:14px 0}.cx2-tabs button.on{background:#155367;color:#fff}.cx2-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.cx2 label{font-size:12px;color:#5f747c}.cx2 label span{display:block;margin-bottom:4px;font-weight:600}.cx2 input,.cx2 textarea{width:100%;border:1px solid #cbd9dc;border-radius:9px;min-height:40px;padding:8px 10px}.cx2 textarea{min-height:100px;resize:vertical}.cx2-wide{grid-column:1/-1}.cx2-note{font-size:11px;color:#788a90;line-height:1.65;background:#f3f7f8;padding:9px 10px;border-radius:8px;margin-top:10px}.cx2-lookup{max-width:820px}.cx2-detail{margin-top:10px;background:#fff;border:1px solid #dce6e8;border-radius:12px;padding:14px}.cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:12.5px;line-height:1.7;color:#435b63}.cx2-todo{display:grid;gap:9px;max-width:900px}.cx2-due{font-weight:700;color:#9a5828;font-size:12px}.cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cx2-kpi{background:#f0f6f7;border:1px solid #dbe8ea;border-radius:9px;padding:7px 10px;font-size:11.5px}.cx2 footer{margin-top:24px;border-top:1px solid #dde7e9;padding-top:12px;font-size:11px;color:#7b8d93}
       .cx2-card-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
       .cx2-card-actions button{min-height:36px;padding:6px 10px;font-size:12.5px}
       @media(max-width:760px){.cx2{padding:12px}.cx2-grid{grid-template-columns:1fr}.cx2-fields{grid-template-columns:1fr}.cx2-wide{grid-column:auto}.cx2-actions{width:100%}.cx2-actions button{flex:1}.cx2-nav{overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px}.cx2-nav button{white-space:nowrap}.cx2-toolbar .cx2-search{width:100%;flex-basis:100%}}
@@ -489,48 +490,60 @@
     if (bestVotes) return best;
     return years.length ? Math.min(...years) : 0;
   }
+  // 四态：红=未完成（开课学期在未来）、蓝=正在进行（当前学期）、绿=已完成（学期已结束）、灰=未知
   const courseStatus = (c, now) => {
     const t = termOf(c?.start);
-    if (!t) return "unknown";
-    return t.rank < currentTerm(now).rank ? "done" : "open";
+    if (!t) return "gray";
+    const cur = currentTerm(now).rank;
+    if (t.rank < cur) return "green";
+    if (t.rank === cur) return "blue";
+    return "red";
   };
-  // 按年级聚合（大一 / 大二 / …），没有开课时间的归最后一组；组内保持接口返回顺序。
-  function courseGroups(courses, enrollYear, now) {
-    const buckets = new Map();
-    for (const c of courses || []) {
-      const t = termOf(c?.start);
-      const grade = t ? gradeOf(t.year, enrollYear) : "";
-      const key = t ? (grade || `学年 ${t.year}`) : "__unknown";
-      if (!buckets.has(key)) buckets.set(key, { key, label: key === "__unknown" ? "其他（无开课时间）" : key, termYear: t ? t.year : 0, list: [] });
-      buckets.get(key).list.push(c);
-    }
-    return [...buckets.values()].map((g) => {
-      const done = g.list.filter((c) => courseStatus(c, now) === "done").length;
-      const open = g.list.filter((c) => courseStatus(c, now) === "open").length;
-      const yearText = g.termYear ? `${g.termYear}-${g.termYear + 1} 学年 · ` : "";
-      const stateText = g.key === "__unknown" ? "状态未知" : `已完成 ${done} · 未完成 ${open}`;
-      return { ...g, sub: `${yearText}共 ${g.list.length} 门 · ${stateText}` };
-    }).sort((a, b) => (a.key === "__unknown" ? 1 : b.key === "__unknown" ? -1 : a.termYear - b.termYear || a.key.localeCompare(b.key)));
-  }
+  const STATUS_META = {
+    red: { label: "未完成", title: "开课学期在未来，按本地推断为未完成" },
+    blue: { label: "正在进行", title: "开课学期是当前学期，按本地推断为正在进行" },
+    green: { label: "已完成", title: "开课学期已经过去，按本地推断为已完成" },
+    gray: { label: "状态未知", title: "没有开课时间，无法推断状态" },
+  };
   function courseCardHtml(c, enrollYear, now) {
     const st = courseStatus(c, now);
     const t = termOf(c?.start);
     const g = t ? gradeOf(t.year, enrollYear) : "";
-    const mark = st === "unknown" ? ""
-      : `<span class="cx2-mark ${st}" title="${st === "done" ? "开课学期已经过去，按本地推断为已完成" : "开课学期尚未结束，按本地推断为未完成"}">${st === "done" ? "已完成" : "未完成"}</span>`;
+    const mark = `<span class="cx2-mark st-${st}" title="${STATUS_META[st].title}">${STATUS_META[st].label}</span>`;
     const termLine = t ? `${g ? g + t.half : `学年 ${t.year}${t.half}`} · 开课 ${c.start}` : "无开课时间";
-    return `<div class="cx2-course ${st}">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span></div>`;
+    return `<div class="cx2-course st-${st}">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span></div>`;
   }
   function coursesHtml() {
-    const kw = state.filter.kw.trim().toLowerCase();
     const all = state.courses;
-    const list = kw ? all.filter(c=>`${c.name} ${c.teacher} ${c.clazz}`.toLowerCase().includes(kw)) : all;
     const now = new Date();
     const enrollYear = detectEnrollYear(all);
-    const body = list.length
-      ? courseGroups(list, enrollYear, now).map((g)=>`<section class="cx2-grade"><h4 class="cx2-grade-head">${esc(g.label)}<span class="cx2-grade-sub">${esc(g.sub)}</span></h4><div class="cx2-courses">${g.list.map((c)=>courseCardHtml(c, enrollYear, now)).join('')}</div></section>`).join('')
-      : '<div class="cx2-empty">没有匹配课程。</div>';
-    return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 班级…"></div>${body}<div class="cx2-hint">年级与「已完成 / 未完成」都是本地按课程卡片里的「开课时间」推断的（${enrollYear ? `按 ${enrollYear} 级入学计算` : "未识别到入学年份，只按学年分组"}）：开课学期早于当前学期的记为已完成（灰标），当前及以后的记为未完成（黑标）。学习通接口本身不返回这两项，所以这里可能与平台显示不一致。</div>`;
+    const kw = state.filter.kw.trim().toLowerCase();
+    if (kw) state.course.searchOpen = true;
+    const list = kw ? all.filter(c=>`${c.name} ${c.teacher} ${c.clazz}`.toLowerCase().includes(kw)) : all;
+    // 第一层：按学年分 tab，最新学年在前；无开课时间的归「未知学年」排最后。每次打开默认选中最近学年。
+    const yearMap = new Map();
+    for (const c of list) {
+      const t = termOf(c?.start);
+      const y = t ? t.year : 0;
+      if (!yearMap.has(y)) yearMap.set(y, []);
+      yearMap.get(y).push(c);
+    }
+    const years = [...yearMap.keys()].sort((a, b) => ((a === 0 ? 1 : 0) - (b === 0 ? 1 : 0)) || b - a);
+    if (!years.includes(state.course.year)) state.course.year = years.find((y) => y !== 0) ?? years[0] ?? 0;
+    const inYear = yearMap.get(state.course.year) || [];
+    // 第二层：学年内按完成状态分组（红未完成 → 蓝正在进行 → 绿已完成 → 灰未知）
+    const groups = { red: [], blue: [], green: [], gray: [] };
+    for (const c of inYear) groups[courseStatus(c, now)].push(c);
+    const yearLabel = (y) => (y === 0 ? "未知学年" : `${y}-${y + 1} 学年`);
+    const tabs = `<div class="cx2-tabs" role="tablist" aria-label="按学年筛选课程">${years.map((y) => `<button class="${y === state.course.year ? "on" : ""}" data-year="${y}" role="tab" aria-selected="${y === state.course.year}">${esc(yearLabel(y))}（${yearMap.get(y).length}）</button>`).join("")}</div>`;
+    const search = state.course.searchOpen
+      ? `<input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 班级…">`
+      : `<button class="cx2-search-toggle" data-search-toggle title="搜索课程 / 教师 / 班级" aria-label="展开搜索"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg></button>`;
+    const body = inYear.length
+      ? ["red", "blue", "green", "gray"].filter((k) => groups[k].length).map((k) =>
+          `<section class="cx2-status-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-${k}"></span>${STATUS_META[k].label}<span class="cx2-grade-sub">${groups[k].length} 门</span></h4><div class="cx2-courses">${groups[k].map((c) => courseCardHtml(c, enrollYear, now)).join("")}</div></section>`).join("")
+      : '<div class="cx2-empty">这个学年没有匹配课程。</div>';
+    return `<div class="cx2-toolbar">${search}<span style="flex:1"></span></div>${tabs}${body}<div class="cx2-hint">每次打开默认显示最近学年。卡片底色与角标是本地按课程卡片里的「开课时间」推断的完成状态：红=未完成（开课学期在未来）、蓝=正在进行（当前学期）、绿=已完成（开课学期已结束）${enrollYear ? `；年级按 ${enrollYear} 级入学计算` : ""}。学习通接口本身不返回该状态，可能与平台显示不一致。</div>`;
   }
   function lookupHtml() {
     const n=state.notice;
@@ -587,6 +600,8 @@
       if(e.target.closest('[data-login]')){const u=host.querySelector('[data-u]').value.trim(),p=host.querySelector('[data-p]').value,status=host.querySelector('[data-login-status]');if(!u||!p){status.textContent='请填写账号和密码';return;}state.remember=host.querySelector('[data-remember]').checked;state.creds={uname:u,password:p};status.textContent='正在登录…';try{await cxLogin(u,p);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       if(e.target.closest('[data-cookie-login]')){const c=host.querySelector('[data-cookie]').value.trim(),status=host.querySelector('[data-login-status]');state.remember=host.querySelector('[data-remember]').checked;state.creds=null;status.textContent='正在验证 Cookie…';try{await startCookieSession(c);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
+      const yearBtn=e.target.closest('[data-year]');if(yearBtn){state.course.year=Number(yearBtn.dataset.year)||0;paintMain();return;}
+      if(e.target.closest('[data-search-toggle]')){state.course.searchOpen=true;paintMain();return;}
       if(e.target.closest('[data-refresh]')){await refreshAll();return;}
       if(e.target.closest('[data-switch]')){state.loggedIn=false;state.sid=null;state.cookie='';state.creds=null;await tide.storage.set('sessionCookie',null);await tide.storage.set('creds',null);loginHtml();return;}
       const lookup=e.target.closest('[data-lookup]');if(lookup){const input=host.querySelector('[data-code]');try{state.error='';await loadNotice(input.value);paintMain();}catch(err){state.error=err.message||String(err);paintMain();}return;}
@@ -598,7 +613,7 @@
     });
     host.addEventListener("input", (e) => { if(e.target.matches('[data-search]')){state.filter.kw=e.target.value;savePrefs();const pos=e.target.selectionStart;paintMain();const next=host.querySelector('[data-search]');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}} });
     host.addEventListener("change", (e) => { if(e.target.matches('[data-category]')){state.filter.category=e.target.value;savePrefs();paintMain();}if(e.target.matches('[data-unread]')){state.filter.onlyUnread=e.target.checked;savePrefs();paintMain();} });
-    host.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))e.stopPropagation();});
+    host.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))e.stopPropagation();if(e.target.matches('[data-search]')&&e.key==='Escape'){state.course.searchOpen=false;state.filter.kw='';paintMain();}});
   }
 
   async function render(el) {

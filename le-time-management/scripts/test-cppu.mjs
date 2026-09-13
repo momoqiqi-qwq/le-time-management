@@ -50,12 +50,12 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.3.0');
+assert.equal(cppuManifest.version, '1.3.1');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
 const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
-assert.match(cppuBlock, /"1\.3\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(cppuBlock, /"1\.3\.1"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
 assert.ok(hostSrc.includes('vault: "加密密钥库'), '插件宿主必须定义 vault 权限标签');

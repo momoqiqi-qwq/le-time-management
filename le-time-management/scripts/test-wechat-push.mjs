@@ -9,12 +9,12 @@ const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/wechat-pu
 assert.ok(source.includes('https://www.pushplus.plus/doc/guide/sdk.html'), '必须链接官方使用说明/SDK 文档');
 assert.ok(source.includes('https://www.pushplus.plus/doc/guide/api.html'), '必须链接官方消息接口文档');
 assert.ok(source.includes('tide.util.openUrl'), '文档链接必须用 openUrl 经系统浏览器打开');
-assert.equal(manifest.version, '1.2.0');
+assert.equal(manifest.version, '1.3.0');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
 const catalog = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "wechat-push"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
-assert.match(block, /"1\.2\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(block, /"1\.3\.0"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
 /* ── 2. vm 实测 pushPlus：请求体、成功判定、失败透传 ── */

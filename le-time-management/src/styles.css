@@ -478,11 +478,6 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 * { -webkit-tap-highlight-color: transparent; }
 html, body { overscroll-behavior: none; }
 button, .nav { touch-action: manipulation; }
-@keyframes pageInL { from { opacity: .35; transform: scale(.985); } to { opacity: 1; transform: none; } }
-@keyframes pageInR { from { opacity: .35; transform: scale(.985); } to { opacity: 1; transform: none; } }
-.view.page-l { animation: pageInL .14s cubic-bezier(.2, .8, .3, 1); }
-.view.page-r { animation: pageInR .14s cubic-bezier(.2, .8, .3, 1); }
-
 @media (max-width: 900px) {
   /* 用 order 排序而不是 column-reverse：反向主轴会把溢出裁切方向指向顶部，
      内容一高顶栏就被推出屏幕外（旧写法的隐藏 bug） */
@@ -1136,9 +1131,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   animation-iteration-count: 1 !important;
   transition-duration: .001ms !important;
 }
-:root[data-ui-motion="full"] .view.page-l { animation: pageInL .14s cubic-bezier(.2, .8, .3, 1) !important; }
-:root[data-ui-motion="full"] .view.page-r { animation: pageInR .14s cubic-bezier(.2, .8, .3, 1) !important; }
-
 .settings-nav-card {
   position: sticky;
   top: 0;
@@ -2221,6 +2213,12 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   color: var(--ink-2) !important;
 }
 
+/* 夜间模式保留课程状态三色卡片（深色版底色，覆盖上面的通用面板色） */
+:root[data-theme="night"] .plugview .cx2-course.st-red { background: #3a2124 !important; border-color: #5c3036 !important; color: #fecaca !important; }
+:root[data-theme="night"] .plugview .cx2-course.st-blue { background: #1f2740 !important; border-color: #32436d !important; color: #bfdbfe !important; }
+:root[data-theme="night"] .plugview .cx2-course.st-green { background: #1d3327 !important; border-color: #2f5441 !important; color: #bbf7d0 !important; }
+:root[data-theme="night"] .plugview .cx2-course.st-gray { background: #262f36 !important; border-color: #3a454d !important; color: var(--ink) !important; }
+
 :root[data-theme="night"] .plugview :where(.gx-cover, .cx2-note, .cx2-kpi) {
   background: var(--paper) !important;
   border-color: var(--line) !important;
@@ -2309,6 +2307,36 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   border-radius: 9px;
 }
 .rail-bottom > .settings-icon-button .ic .app-icon { width: 18px; height: 18px; }
+
+/* ── 应用内对话框（appPrompt / appConfirm，替代原生 window.prompt/confirm）── */
+.app-dialog-mask { z-index: 2400; display: grid; place-items: center; padding: 20px; }
+.app-dialog {
+  width: 340px; max-width: 92vw;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 20px 22px 16px;
+}
+.app-dialog h3 { font-size: 15px; margin-bottom: 10px; }
+.app-dialog-msg { font-size: 12.5px; color: var(--ink-2); line-height: 1.7; margin-bottom: 10px; white-space: pre-line; }
+.app-dialog-field {
+  width: 100%; height: 38px; box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: 9px;
+  padding: 0 11px; font-size: 13px; background: var(--paper); color: var(--ink);
+  margin-bottom: 4px;
+}
+.app-dialog-field:focus { outline: 2px solid color-mix(in srgb, var(--sea) 65%, transparent); outline-offset: 1px; }
+.app-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.app-dialog-btn {
+  min-width: 76px; height: 34px; padding: 0 14px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--ink);
+  font-size: 13px; cursor: pointer;
+}
+.app-dialog-btn:hover { border-color: var(--deep); color: var(--deep); }
+.app-dialog-btn.pri { background: var(--deep); border-color: var(--deep); color: #fff; font-weight: 600; }
+.app-dialog-btn.pri:hover { color: #fff; filter: brightness(1.08); }
+.app-dialog-btn.pri.danger { background: var(--coral); border-color: var(--coral); }
 
 .plugin-context-menu {
   position: fixed;

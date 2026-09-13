@@ -9,6 +9,8 @@ let saveFail = 0;
 let saveChain = Promise.resolve();
 let batchDepth = 0;
 let batchDirty = false;
+let blockIndexVersion = 0;
+const blockIndexByDate = new Map();
 
 export function uid(p = "id") {
   return `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
@@ -54,6 +56,10 @@ export function normalizeState(raw = {}) {
   next.automation = next.automation && typeof next.automation === "object" && !Array.isArray(next.automation) ? next.automation : {};
   return next;
 }
+function invalidateBlockIndex() {
+  blockIndexVersion++;
+  blockIndexByDate.clear();
+}
 export async function initStore(seed) {
   let loaded;
   try {
@@ -63,6 +69,7 @@ export async function initStore(seed) {
   }
   // 迁移放在 try 之外：数据来自更新版本时要显式报错，而不是静默换成种子数据
   state = normalizeState(migrateState(loaded));
+  invalidateBlockIndex();
   return state;
 }
 export function getState() { return state; }
@@ -123,6 +130,7 @@ export function removeTask(id) {
   if (i < 0) return null;
   const [t] = state.tasks.splice(i, 1);
   state.blocks = state.blocks.filter((b) => b.taskId !== id);
+  invalidateBlockIndex();
   changed(); return t;
 }
 export function toggleTask(id) {
@@ -141,6 +149,7 @@ export function deleteTaskUndoable(id) {
     if (taskById(id)) return;
     state.tasks.unshift(snapshot.task);
     state.blocks.push(...snapshot.blocks.filter((b) => !state.blocks.some((x) => x.id === b.id)));
+    invalidateBlockIndex();
     changed();
   };
 }
@@ -160,27 +169,34 @@ export function placeTask(t, date, startMin = null, cat = "work") {
   if (!Number.isFinite(cursor) || cursor < 0 || cursor + dur > 1440) throw new Error("这一天没有足够的空闲时间");
   if (busy.some((b) => cursor < mmOf(b.start) + b.durMin && cursor + dur > mmOf(b.start))) throw new Error("这个时段已有安排，请选择空闲时段");
   // 验证成功后再替换所选日期的安排，保留其他日期的记录。
-  if (t.id) state.blocks = state.blocks.filter((b) => b.taskId !== t.id || b.date !== date);
+  if (t.id) {
+    state.blocks = state.blocks.filter((b) => b.taskId !== t.id || b.date !== date);
+    invalidateBlockIndex();
+  }
   return addBlock({ date, start: hhmmOf(cursor), durMin: dur, title: t.title, taskId: t.id || null, cat });
 }
 
 /* ── 时间块 ── */
 export function blocksOf(dateStr) {
-  return state.blocks.filter((b) => b.date === dateStr).sort((a, b) => mmOf(a.start) - mmOf(b.start));
+  const cached = blockIndexByDate.get(dateStr);
+  if (cached && cached.version === blockIndexVersion) return cached.blocks.slice();
+  const blocks = state.blocks.filter((b) => b.date === dateStr).sort((a, b) => mmOf(a.start) - mmOf(b.start));
+  blockIndexByDate.set(dateStr, { version: blockIndexVersion, blocks });
+  return blocks.slice();
 }
 export function addBlock(patch) {
   const b = { id: uid("b"), date: todayStr(), start: "09:00", durMin: 30, title: "新时间块", taskId: null, cat: "work", ...patch };
-  state.blocks.push(b); changed(); return b;
+  state.blocks.push(b); invalidateBlockIndex(); changed(); return b;
 }
 export function updateBlock(id, patch) {
   const b = state.blocks.find((x) => x.id === id);
-  if (b) { Object.assign(b, patch); changed(); }
+  if (b) { Object.assign(b, patch); invalidateBlockIndex(); changed(); }
   return b;
 }
 export function removeBlock(id) {
   const i = state.blocks.findIndex((x) => x.id === id);
   if (i < 0) return null;
-  const [b] = state.blocks.splice(i, 1); changed(); return b;
+  const [b] = state.blocks.splice(i, 1); invalidateBlockIndex(); changed(); return b;
 }
 
 /* ── 派生：某天的任务池（未安排且未完成） ── */
@@ -214,6 +230,7 @@ export function removePluginState(id) {
 }
 export function replaceAll(next) {
   state = normalizeState(migrateState(next));
+  invalidateBlockIndex();
   changed();
 }
 export function saveNow() {

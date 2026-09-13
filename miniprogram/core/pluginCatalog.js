@@ -143,11 +143,11 @@ const plugins = [
   {
     "id": "chaoxing-notify",
     "name": "学习通",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "author": "基于 dsh-user/chaoxing-notify-skill v2.0.0 · Le时间管理适配",
     "icon": "graduation-cap",
     "faIcon": "graduation-cap",
-    "description": "学习通通知与待办：使用 notice.chaoxing.com 收件箱主路径（无需旧消息接口 IP 白名单），支持账号密码或 Cookie 登录、完整通知正文、分享码查询、作业/考试截止时间识别，可一键转为 Le时间管理提醒；通知支持移除（本机忽略，可恢复）与「浏览器打开（带登录态）」；课程页按开课时间推断年级分组（大一/大二/…），已完成打灰标、未完成打黑标；待办作业自动探测提交状态，已提交未批改的在标题后标「正在批改」。",
+    "description": "学习通通知与待办：使用 notice.chaoxing.com 收件箱主路径（无需旧消息接口 IP 白名单），支持账号密码或 Cookie 登录、完整通知正文、分享码查询、作业/考试截止时间识别，可一键转为 Le时间管理提醒；通知支持移除（本机忽略，可恢复）与「浏览器打开（带登录态）」；课程页按学年分tab（默认最近学年），学年内按完成状态三色卡片分组（红未完成/蓝正在进行/绿已完成），搜索框折叠为图标；待办作业自动探测提交状态，已提交未批改的在标题后标「正在批改」。",
     "permissions": [
       "ui",
       "tasks",
@@ -170,8 +170,8 @@ const plugins = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.3.0",
-    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配",
+    "version": "1.3.1",
+    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.3.1 修复自动登录凭据缺失）",
     "icon": "building-columns",
     "faIcon": "building-columns",
     "description": "智慧警大门户通知：登录一次后全程自动登录——密码与会话票据加密保存在本机密钥库，打开即恢复会话直达消息列表；票据过期时自动识别验证码（含换图重试）完成登录，无需手填。支持按月筛选、正文阅读与转为提醒。",
@@ -197,11 +197,11 @@ const plugins = [
   {
     "id": "wechat-push",
     "name": "微信提醒推送",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "author": "Le时间管理内置",
     "icon": "comment-dots",
     "faIcon": "comment-dots",
-    "description": "通过 PushPlus（推荐）把时间块与任务截止提醒推送到微信，支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口；兼容旧版 Server酱配置。",
+    "description": "通过 PushPlus（推荐）把时间块与任务截止提醒推送到微信，支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
     "permissions": [
       "ui",
       "tasks",

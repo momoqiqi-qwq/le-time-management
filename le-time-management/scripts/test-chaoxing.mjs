@@ -48,7 +48,7 @@ const context = vm.createContext({
   tide,
 });
 
-const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseGroups,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks}';
+const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks}';
 vm.runInContext(
   source.replace('  tide.ui.registerView({', `  globalThis.cx = ${EXPORTS};\n  tide.ui.registerView({`),
   context,
@@ -169,12 +169,12 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.4.0');
+assert.equal(manifest.version, '2.5.0');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步到 openUrl');
-assert.match(block, /"2\.4\.0"/, 'pluginCatalog 必须同步到插件新版本号');
+assert.match(block, /"2\.5\.0"/, 'pluginCatalog 必须同步到插件新版本号');
 
 /* ── 7. 课程页：按卡片「开课时间」推断学年与年级，灰标已完成 / 黑标未完成 ── */
 const courseLi = (name, cid, clzId, teacher, clazz, range) => `<li class="course clearfix catalog_0 learnCourse">
@@ -224,27 +224,47 @@ assert.equal(gradeOf(2025, 0), '', '认不出入学年份时不硬造年级');
 assert.equal(detectEnrollYear(courses), 2025, '从「25防火」「25英普」推出入学年份');
 assert.equal(detectEnrollYear([{ start: '2026-09-01' }]), 2026, '没有任何年级线索时退回最早开课学年');
 
-assert.equal(courseStatus({ start: '2025-09-01' }, NOW), 'done', '上学期已过去 → 已完成');
-assert.equal(courseStatus({ start: '2026-03-10' }, NOW), 'done', '今年春季学期也已过去');
-assert.equal(courseStatus({ start: '2026-09-01' }, NOW), 'open', '当前学期 → 未完成');
-assert.equal(courseStatus({ start: '' }, NOW), 'unknown', '没有开课时间就不下结论');
+/* 课程页 v2.5.0：四态状态（红=未来学期未完成 / 蓝=当前学期正在进行 / 绿=已结束 / 灰=未知） */
+assert.equal(courseStatus({ start: '2025-09-01' }, NOW), 'green', '上学期已过去 → 已完成（绿）');
+assert.equal(courseStatus({ start: '2026-03-10' }, NOW), 'green', '今年春季学期也已过去');
+assert.equal(courseStatus({ start: '2026-09-01' }, NOW), 'blue', '当前学期 → 正在进行（蓝）');
+assert.equal(courseStatus({ start: '2027-09-01' }, NOW), 'red', '未来学期 → 未完成（红）');
+assert.equal(courseStatus({ start: '' }, NOW), 'gray', '没有开课时间就不下结论');
 
-const groups = courseGroups(courses, 2025, NOW);
-// 注意：groups 来自 vm 沙箱，跨 realm 的数组原型不同，deepStrictEqual 会误判，所以比 join。
-assert.equal(groups.map((g) => g.label).join('|'), '大一|大二|其他（无开课时间）', '按年级分组，无开课时间排最后');
-assert.equal(groups[0].sub, '2025-2026 学年 · 共 2 门 · 已完成 2 · 未完成 0');
-assert.equal(groups[1].sub, '2026-2027 学年 · 共 1 门 · 已完成 0 · 未完成 1');
-assert.match(groups[2].sub, /状态未知/);
-
+/* 第一层按学年分 tab，默认最近学年；第二层学年内按状态三色分组 */
 state.filter.kw = '';
+state.course = { year: null, searchOpen: false };
 const courseHtml = coursesHtml();
-assert.match(courseHtml, /cx2-grade-head">大一</, '大一要有独立分组标题');
-assert.match(courseHtml, /cx2-grade-head">大二</);
-assert.match(courseHtml, /其他（无开课时间）/);
-assert.match(courseHtml, /class="cx2-mark done"[^>]*>已完成</, '已完成用灰标');
-assert.match(courseHtml, /class="cx2-mark open"[^>]*>未完成</, '未完成用黑标');
-assert.doesNotMatch(courseHtml, /cx2-mark unknown/, '状态未知的课程不打标，避免误导');
-assert.match(courseHtml, /按 2025 级入学计算/, '页面上要写明年级是本地推断');
+assert.match(courseHtml, /2026-2027 学年（1）/, '学年 tab 要有最近学年');
+assert.match(courseHtml, /2025-2026 学年（2）/);
+assert.match(courseHtml, /未知学年（1）/, '无开课时间的归未知学年 tab');
+assert.match(courseHtml, /class="on" data-year="2026"/, '每次打开默认选中最近学年');
+assert.match(courseHtml, /cx2-course st-blue/, '当前学期课程用蓝色卡片');
+assert.match(courseHtml, /cx2-mark st-blue"[^>]*>正在进行</);
+assert.doesNotMatch(courseHtml, /st-green/, '默认学年视图不显示其他学年的已完成课程');
+assert.match(courseHtml, /data-search-toggle/, '搜索默认折叠成图标');
+assert.doesNotMatch(courseHtml, /<input class="cx2-search"/, '折叠时不渲染搜索输入框');
+assert.match(courseHtml, /红=未完成/, '页面写明三色推断规则');
+
+state.course.year = 2025;
+const html2025 = coursesHtml();
+assert.match(html2025, /cx2-course st-green/, '过去学年课程用绿色卡片');
+assert.match(html2025, /cx2-mark st-green"[^>]*>已完成</);
+assert.match(html2025, /已完成</, '第二层状态分组标题');
+assert.doesNotMatch(html2025, /st-blue/, '切学年后不串组');
+
+state.course.year = 0;
+const htmlUnknown = coursesHtml();
+assert.match(htmlUnknown, /cx2-course st-gray/, '无开课时间用灰色卡片');
+assert.match(htmlUnknown, /状态未知/);
+
+state.course.searchOpen = true;
+assert.match(coursesHtml(), /<input class="cx2-search"/, '点图标后展开搜索框');
+state.course.searchOpen = false;
+state.filter.kw = '线代';
+assert.match(coursesHtml(), /<input class="cx2-search"/, '有关键词时搜索框自动展开');
+state.filter.kw = '';
+assert.match(coursesHtml(), /按 2025 级入学计算/, '页面上要写明年级是本地推断');
 
 /* ── 8. 已提交未批改的作业 → 标题后加「正在批改」标签 ── */
 const iframeHtml = (workId) => {

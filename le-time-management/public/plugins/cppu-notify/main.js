@@ -508,7 +508,8 @@
     let confirmed = null;
     for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
       try {
-        state.pending = { execution: await fetchLoginHtml() };
+        // pending 必须带全 username/password：submitLogin 直接从这里读取提交体字段
+        state.pending = { username: state.username, password: state.savedPassword, execution: await fetchLoginHtml() };
         await fetchCaptcha();
       } catch (e) {
         paintLogin(el, String(e.message || e));
@@ -560,6 +561,10 @@
 
   async function submitLogin(code) {
     const p = state.pending;
+    if (!p || !p.username || !p.password) {
+      // 缺凭据时绝不提交（否则 POST 体是 username=undefined，服务端会 500）
+      throw { retry: "内部错误：登录凭据未就绪，已重置流程", diag: "pending 缺少 username/password" };
+    }
     let res;
     try {
       res = await tide.http.fetch(state.sid, "POST", LOGIN_URL, {
