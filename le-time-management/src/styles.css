@@ -1965,6 +1965,51 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --radius:10px;--shadow:0 1px 2px rgba(0,0,0,.05);--shadow-lg:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.05);
 }
 
+/* 青瓷釉色：南宋龙泉窑粉青釉——雾青灰绿纸面、釉青主操作、釉里红点缀 */
+:root[data-theme="celadon"] {
+  --bg:#EDF2EE;--paper:#F5F8F5;--panel:#FFFFFF;--ink:#22332C;--ink-2:#6B7F76;--ink-3:#9AACA2;
+  --line:#D8E2DA;--line-soft:#E8EFE9;--deep:#3D6B5B;--deep-2:#24352E;--sea:#5B8A8F;--coral:#C96A5E;
+  --sun:#C09838;--grape:#7A6FA0;--mint:#58A387;
+  --q1:#C05B52;--q1-bg:#F7E4E1;--q2:#B89034;--q2-bg:#F5EDD8;--q3:#5E6FB8;--q3-bg:#E6E9F6;--q4:#4E8A6E;--q4-bg:#E1EEE5;
+  --radius:12px;--shadow:0 1px 3px rgba(36,53,46,.06),0 4px 14px rgba(36,53,46,.05);--shadow-lg:0 14px 38px rgba(36,53,46,.16);
+}
+
+/* 敦煌暮色：莫高窟矿物颜料——沙金泥面、石青主操作、朱砂与金箔点缀 */
+:root[data-theme="dunhuang"] {
+  --bg:#F4E8D5;--paper:#F9F1E1;--panel:#FFFDF6;--ink:#3B2F26;--ink-2:#85715E;--ink-3:#B3A28D;
+  --line:#E2D4BF;--line-soft:#EFE5D4;--deep:#2F5D68;--deep-2:#2B211A;--sea:#4E8A96;--coral:#C0452E;
+  --sun:#D19A2B;--grape:#8A5B7C;--mint:#5E9271;
+  --q1:#B94433;--q1-bg:#F6E2DC;--q2:#BC8B2C;--q2-bg:#F4EBD3;--q3:#4C6FA8;--q3-bg:#E3E9F4;--q4:#568B68;--q4-bg:#E2EEE3;
+  --radius:10px;--shadow:0 1px 3px rgba(59,47,38,.08),0 4px 14px rgba(59,47,38,.06);--shadow-lg:0 14px 38px rgba(59,47,38,.18);
+}
+
+/* 晒图蓝：蓝晒制图纸——靛洗白纸面、普鲁士蓝主操作、安全橙红铅笔，圆角收紧显制图感 */
+:root[data-theme="blueprint"] {
+  --bg:#EEF3F9;--paper:#F6F9FC;--panel:#FFFFFF;--ink:#17293E;--ink-2:#5E7288;--ink-3:#90A2B4;
+  --line:#D3DEEA;--line-soft:#E5ECF4;--deep:#1D4E89;--deep-2:#122840;--sea:#2B7CB8;--coral:#E15A33;
+  --sun:#D69A2D;--grape:#6E5FA8;--mint:#2E8C7A;
+  --q1:#CE4A2F;--q1-bg:#FAE3DC;--q2:#C08A26;--q2-bg:#F6EDD6;--q3:#3E63C0;--q3-bg:#E4E9F8;--q4:#2E8577;--q4-bg:#DFEFEC;
+  --radius:8px;--shadow:0 1px 2px rgba(23,41,62,.07);--shadow-lg:0 12px 32px rgba(23,41,62,.16);
+}
+
+/* 蜜柑汽水：夏日下午的橘子汽水——奶油汽水底、蜜柑橙主操作、汽水蓝与葡萄紫点缀 */
+:root[data-theme="citrus"] {
+  --bg:#FFF6E9;--paper:#FFFBF2;--panel:#FFFFFF;--ink:#33261A;--ink-2:#8A7460;--ink-3:#BCA88F;
+  --line:#F0DFC8;--line-soft:#F9EEDD;--deep:#CE5F05;--deep-2:#402A16;--sea:#2B8AC4;--coral:#D94F45;
+  --sun:#E8A013;--grape:#9A5BC4;--mint:#3FAE7E;
+  --q1:#D95444;--q1-bg:#FBE5E0;--q2:#D99226;--q2-bg:#FCF0D8;--q3:#7A5BD0;--q3-bg:#EDE8FA;--q4:#2FA377;--q4-bg:#DFF4E9;
+  --radius:14px;--shadow:0 1px 4px rgba(64,42,22,.07),0 5px 16px rgba(64,42,22,.05);--shadow-lg:0 16px 40px rgba(64,42,22,.16);
+}
+
+/* 极光晨雾：极地雪原与冻雾蓝——雪暴灰底、frost 蓝主操作、极光绿点缀 */
+:root[data-theme="frost"] {
+  --bg:#ECEFF4;--paper:#F3F5F9;--panel:#FFFFFF;--ink:#2E3440;--ink-2:#5C6A79;--ink-3:#98A5B3;
+  --line:#D5DDE7;--line-soft:#E5EAF1;--deep:#5E81AC;--deep-2:#2E3440;--sea:#6E93BE;--coral:#BF6069;
+  --sun:#D08770;--grape:#A17BA0;--mint:#5E9C74;
+  --q1:#C5726D;--q1-bg:#F1E3E3;--q2:#C08E5A;--q2-bg:#F2ECDE;--q3:#6A79B4;--q3-bg:#E6E9F2;--q4:#6FA075;--q4-bg:#E3EFE5;
+  --radius:10px;--shadow:0 1px 3px rgba(46,52,64,.07);--shadow-lg:0 12px 34px rgba(46,52,64,.16);
+}
+
 .theme-card-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .theme-selected-mark {
   position: absolute; top: 10px; right: 10px; width: 19px; height: 19px; border-radius: 50%;

@@ -13,6 +13,7 @@
   const SERVICE_PORTAL = PORTAL + "/tp_up/view?m=up";
   const SILENT_LOGIN = JW + "/tpass/login?service=" + encodeURIComponent(SERVICE_PORTAL);
   const PAGES_MAX = 10, PAGE_SIZE = 50, CHUNK = 15;
+  const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
   // Sudy CAS RSAUtils.encryptedString 忠实移植（126 字符分块，16 位小端打包，非 PKCS#1）
   const MODULUS_HEX = "008aed7e057fe8f14c73550b0e6467b023616ddc8fa91846d2613cdb7f7621e3cada4cd5d812d627af6b87727ade4e26d26208b7326815941492b2204c3167ab2d53df1e3a2c9153bdb7c8c2e968df97a5e7e01cc410f92c4c2c2fba529b3ee988ebc1fca99ff5119e036d732c368acf8beba01aa2fdafa45b21e4de4928d0d403";
@@ -38,7 +39,7 @@
   }
 
   const state = {
-    sid: null, token: "", username: "", rememberUsername: true, autoLogin: true,
+    sid: null, token: "", username: "", rememberUsername: true, autoLogin: true, autoRefresh: true,
     notices: [], page: 1, hasMore: true,
     fetching: false, error: null, fetchedAt: 0,
     expanded: new Set(),
@@ -48,7 +49,7 @@
     captcha: "", pending: null, renderedCount: CHUNK,
     savedPassword: "",     // 密钥库取出的密码（仅内存，用于自动登录与表单预填）
   };
-  let ui = null, io = null, sentinelCb = null, paintToken = 0;
+  let ui = null, io = null, sentinelCb = null, paintToken = 0, autoRefreshTimer = null;
 
   function observeSentinel(node, cb) {
     sentinelCb = cb;
@@ -177,6 +178,7 @@
     state.username = (await tide.storage.get("username", "")) || "";
     state.rememberUsername = await tide.storage.get("rememberUsername", true) !== false;
     state.autoLogin = await tide.storage.get("autoLogin", true) !== false;
+    state.autoRefresh = await tide.storage.get("autoRefresh", true) !== false;
     state.seen = new Set(await tide.storage.get("seen", []));
     if (state.autoLogin && typeof tide.vault?.get === "function") {
       try { state.savedPassword = JSON.parse((await tide.vault.get("secret")) || "null")?.password || ""; } catch { state.savedPassword = ""; }
@@ -195,14 +197,19 @@
   }
 
   async function restoreCookies() {
-    if (typeof tide.vault?.get !== "function") return;
+    if (typeof tide.vault?.get !== "function") return false;
     try {
       const raw = await tide.vault.get("cookies");
       const dump = raw ? JSON.parse(raw) : null;
       if (Array.isArray(dump) && dump.length) {
         state.sid = await tide.http.restoreCookies(dump);
+        // tp_up 本身也保存在门户 Cookie 中。先恢复它可直接复用仍有效的门户会话，
+        // 即使主 SSO 的 CASTGC 已失效，也不必立刻退回验证码登录。
+        state.token = tokenFromText(...dump.map((row) => row?.cookie));
+        return !!state.sid;
       }
     } catch { /* 票据损坏按无票据处理 */ }
+    return false;
   }
 
   async function clearSavedLogin() {
@@ -491,10 +498,16 @@
   const AUTO_ATTEMPTS = 6;
 
   async function autoLogin(el) {
-    await newSession();
     // ① 恢复上次会话票据（CASTGC 有效期内直达，不碰验证码）
-    await restoreCookies();
-    if (state.token) { buildMain(el); return true; }
+    const restored = await restoreCookies();
+    if (!restored) await newSession();
+    if (state.token) {
+      // Cookie 中的 tp_up 可能已过期：先用列表接口做真实校验，失败后继续走
+      // 主 SSO/密码兜底，不能把用户留在只有“会话过期”的空列表页。
+      if (await loadPage(1)) { buildMain(el); return true; }
+      state.token = "";
+      state.error = null;
+    }
     if (await silentRenew()) {
       await saveCookies();
       tide.notify("已自动恢复门户登录，正在打开通知");
@@ -593,14 +606,30 @@
     throw { retry: msg || `登录未通过（HTTP ${res.status}），已重置登录页，请重试`, diag };
   }
 
-  // 静默续期：当前内存 Cookie Jar 中 CASTGC 仍有效时，sso-jw 可自动换 ticket，无需验证码
+  // 静默续期：先试桥接端；若只剩主 SSO 的 CASTGC，则补走一次主 SSO → bridge 后再换门户票据。
   async function silentRenew() {
-    try {
-      const res = await getPage(SILENT_LOGIN);
-      const t = tokenFromText(res.finalUrl, res.body);
-      if (t) { state.token = t; return true; }
-    } catch { /* ignore */ }
+    for (const url of [SILENT_LOGIN, LOGIN_URL, SILENT_LOGIN]) {
+      try {
+        const res = await getPage(url);
+        const t = tokenFromText(res.finalUrl, res.body);
+        if (t) { state.token = t; return true; }
+      } catch { /* 继续尝试下一段恢复链路 */ }
+    }
     return false;
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+  }
+
+  function startAutoRefresh(el) {
+    stopAutoRefresh();
+    if (!state.autoRefresh) return;
+    autoRefreshTimer = setInterval(() => {
+      if (!el.isConnected) { stopAutoRefresh(); return; }
+      if (document.visibilityState !== "hidden" && state.token && !state.fetching) loadPage(1);
+    }, AUTO_REFRESH_MS);
   }
 
   /* ── 通知数据 ── */
@@ -654,6 +683,7 @@
     }
     state.fetching = false;
     paintAll();
+    return !state.error;
   }
 
   async function loadDetail(rid) {
@@ -1035,6 +1065,7 @@
         <button class="pp-btn pri" data-refresh>刷新</button>
         <input class="pp-kw" data-kw type="text" placeholder="关键词过滤：标题 / 发布人 / 单位 / 分类…">
         <label class="pp-toggle" data-hs><i></i>只看未读</label>
+        <label class="pp-toggle" data-ar title="打开插件期间每 10 分钟自动同步一次"><i></i>自动刷新</label>
         <span style="flex:1"></span>
         <button class="pp-btn" data-relogin>重新登录</button>
       </div>
@@ -1050,10 +1081,12 @@
       list: el.querySelector("[data-list]"),
       kw: el.querySelector("[data-kw]"),
       hs: el.querySelector("[data-hs]"),
+      ar: el.querySelector("[data-ar]"),
       count: document.createElement("b"),
     };
     ui.kw.value = state.filter.kw;
     ui.hs.classList.toggle("on", !!state.filter.hideSeen);
+    ui.ar.classList.toggle("on", !!state.autoRefresh);
     let kwTimer = null;
     ui.kw.addEventListener("input", () => {
       clearTimeout(kwTimer);
@@ -1061,8 +1094,16 @@
     });
     ui.kw.addEventListener("keydown", (e) => e.stopPropagation());
     ui.hs.addEventListener("click", () => { state.filter.hideSeen = !state.filter.hideSeen; saveFilter(); paintChips(); paintList(true); });
+    ui.ar.addEventListener("click", () => {
+      state.autoRefresh = !state.autoRefresh;
+      ui.ar.classList.toggle("on", state.autoRefresh);
+      tide.storage.set("autoRefresh", state.autoRefresh);
+      startAutoRefresh(el);
+      tide.notify(state.autoRefresh ? "已开启自动刷新：每 10 分钟同步警大通知" : "已关闭警大通知自动刷新");
+    });
     el.querySelector("[data-refresh]").addEventListener("click", () => loadPage(1));
     el.querySelector("[data-relogin]").addEventListener("click", () => {
+      stopAutoRefresh();
       state.token = ""; state.notices = []; state.details = {}; state.expanded.clear(); state.pending = null; state.captcha = ""; state.sid = null; ui = null;
       paintLogin(el);
     });
@@ -1092,15 +1133,19 @@
     });
 
     paintAll();
+    startAutoRefresh(el);
     if (!state.notices.length && !state.fetching) loadPage(1);
   }
 
   function render(el) {
+    let disposed = false;
+    stopAutoRefresh();
     ensureStyle();
     el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>';
     loadPrefs().then(async () => {
+      if (disposed) return;
+      // 每次进入都重新验证票据，避免插件在应用内放置较久后拿着过期 token 直接进空列表。
       // 自动登录三级链路：恢复票据静默续期 → 保存的密码 + 验证码识别 → 人工表单（预填）
-      if (state.token) { buildMain(el); return; }
       const ok = await autoLogin(el);
       // autoLogin 失败路径里已经 paintLogin（含预填）；这里只兜「无凭据直接表单」
       if (!ok && !el.querySelector(".pp-login")) {
@@ -1112,6 +1157,7 @@
         paintLogin(el, "");
       }
     });
+    return () => { disposed = true; stopAutoRefresh(); io?.disconnect(); };
   }
 
   tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: 'building-columns', render });

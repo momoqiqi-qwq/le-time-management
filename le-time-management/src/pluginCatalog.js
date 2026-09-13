@@ -170,11 +170,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.3.1",
-    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.3.1 修复自动登录凭据缺失）",
+    "version": "1.4.0",
+    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.4.0 自动登录增强）",
     "icon": "building-columns",
     "faIcon": "building-columns",
-    "description": "智慧警大门户通知：登录一次后全程自动登录——密码与会话票据加密保存在本机密钥库，打开即恢复会话直达消息列表；票据过期时自动识别验证码（含换图重试）完成登录，无需手填。支持按月筛选、正文阅读与转为提醒。",
+    "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。",
     "permissions": [
       "ui",
       "tasks",

@@ -84,11 +84,15 @@ async function loadManifest(id, source) {
 
 async function loadCode(man, source) {
   const entry = man.entry || "main.js";
-  const key = `${source}:${man.id}:${entry}`;
+  const version = String(man.version || "0");
+  const key = `${source}:${man.id}:${version}:${entry}`;
   if (codeCache.has(key)) return codeCache.get(key);
   const pending = (async () => {
     if (source === "builtin") {
-      const res = await fetch(`/plugins/${man.id}/${entry}`, { cache: "force-cache" });
+      // 内置插件会独立升版本。入口 URL 必须带版本，否则 WebView/浏览器会长期命中
+      // 旧的 main.js 强缓存，出现“清单已升级、实际仍运行旧插件”的错位。
+      const url = `/plugins/${man.id}/${entry}?v=${encodeURIComponent(version)}`;
+      const res = await fetch(url, { cache: "no-cache" });
       if (!res.ok) throw new Error(`入口拉取失败 (${res.status})`);
       return res.text();
     }
@@ -184,7 +188,8 @@ function makeApi(man, source) {
         const clean = String(path || "").replace(/\\/g, "/");
         if (!clean || clean.startsWith("/") || clean.includes("..")) throw new Error("资源路径必须是插件目录内的相对路径");
         if (source === "builtin") {
-          const res = await fetch(`/plugins/${pid}/${clean}`);
+          const version = encodeURIComponent(String(man.version || "0"));
+          const res = await fetch(`/plugins/${pid}/${clean}?v=${version}`, { cache: "no-cache" });
           if (!res.ok) throw new Error(`资源拉取失败 (${res.status})`);
           return res.text();
         }
