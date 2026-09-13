@@ -11,7 +11,7 @@ import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
 import { getUiPreferences } from "./uiPreferences.js";
-import { closeLayer, removeWithMotion } from "./motion.js";
+import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -611,7 +611,11 @@ export function renderShell(root) {
         view.append(box);
         try {
           const cleanup = def.pluginView.render(box, { refresh: () => switchTo(targetId) });
-          if (typeof cleanup === "function") view._unsub = cleanup;
+          const stopPluginMotion = observePluginMotion(box);
+          view._unsub = () => {
+            stopPluginMotion();
+            if (typeof cleanup === "function") cleanup();
+          };
         }
         catch (e) { box.append(el("p", { class: "desc" }, `插件视图出错：${e.message}`)); }
       } else if (targetId === "quadrant") renderQuadrant(view);
@@ -693,7 +697,7 @@ export function renderShell(root) {
         grid.append(el("div", { class: "market-empty" }, query ? `没有找到“${query}”相关插件` : "当前筛选下没有插件"));
         return;
       }
-      for (const rec of rows) {
+      for (const [rowIndex, rec] of rows.entries()) {
         const man = rec.manifest || {};
         const pluginName = pluginDisplayName(rec.id, man.name || rec.id);
         const enabled = S.pluginState(rec.id).enabled !== false;
@@ -732,7 +736,8 @@ export function renderShell(root) {
           toggle,
         );
         const card = el("div", {
-          class: `mcard market-manage-card${enabled ? "" : " disabled"}`,
+          class: `mcard market-manage-card market-card-enter${enabled ? "" : " disabled"}`,
+          style: `--market-enter-index:${Math.min(rowIndex, 8)}`,
           role: pv ? "button" : null,
           tabindex: pv ? "0" : null,
           onclick: (e) => {

@@ -67,6 +67,53 @@ export function initMotionInteractions() {
   window.addEventListener("blur", release);
 }
 
+// 插件常用 innerHTML / replaceChildren 重绘局部内容。宿主统一为新内容补上轻量反馈，
+// 让第三方插件无需依赖主应用 CSS 类，也能获得一致的状态切换动效。
+export function observePluginMotion(container) {
+  if (!container || typeof MutationObserver === "undefined") return () => {};
+  const pending = new Set();
+  let frame = 0;
+  const flush = () => {
+    frame = 0;
+    if (reducedMotion()) {
+      pending.clear();
+      return;
+    }
+    const candidates = [...pending].filter((node) => node.isConnected);
+    pending.clear();
+    const roots = candidates.filter((node) => !candidates.some((parent) => parent !== node && parent.contains(node)));
+    for (const node of roots.slice(0, 12)) {
+      if (!node.getClientRects().length) continue;
+      const topLevel = node.parentElement === container;
+      node.animate(
+        topLevel
+          ? [
+              { opacity: .18, transform: "translate3d(0, 7px, 0) scale(.997)" },
+              { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
+            ]
+          : [{ opacity: .24 }, { opacity: 1 }],
+        { duration: topLevel ? 210 : 160, easing: "cubic-bezier(.22,.8,.22,1)" },
+      );
+    }
+  };
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        if (node.matches("style, script, link, option, .motion-ripple") || node.closest('[data-motion="off"]')) continue;
+        pending.add(node);
+      }
+    }
+    if (pending.size && !frame) frame = requestAnimationFrame(flush);
+  });
+  observer.observe(container, { childList: true, subtree: true });
+  return () => {
+    observer.disconnect();
+    if (frame) cancelAnimationFrame(frame);
+    pending.clear();
+  };
+}
+
 export function closeLayer(panel, mask, cleanup) {
   if (!panel && !mask) {
     cleanup?.();

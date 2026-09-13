@@ -109,6 +109,16 @@ button:not([data-motion="off"]):disabled,
   will-change: transform, opacity;
 }
 
+/* 插件筛选结果按阅读顺序快速落位；最多错开 8 级，避免长列表拖慢反馈。 */
+.market-card-enter {
+  animation: motion-plugin-card-in 210ms var(--motion-out) both;
+  animation-delay: calc(var(--market-enter-index, 0) * 22ms);
+}
+
+.market-empty {
+  animation: motion-plugin-content-in var(--motion-normal) var(--motion-out) both;
+}
+
 .drag-overlay {
   animation: motion-float-in var(--motion-layer) var(--motion-out) both;
 }
@@ -190,6 +200,14 @@ button:not([data-motion="off"]):disabled,
 @keyframes motion-toast-in {
   from { opacity: 0; transform: translate3d(0, 12px, 0) scale(.97); }
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes motion-plugin-card-in {
+  from { opacity: .12; transform: translate3d(0, 7px, 0) scale(.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes motion-plugin-content-in {
+  from { opacity: .18; }
+  to { opacity: 1; }
 }
 @keyframes motion-float-in {
   from { opacity: 0; transform: translate3d(0, 8px, 0) scale(.98); }

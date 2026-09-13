@@ -22,15 +22,20 @@ assert.match(css, /motion-center-layer-in/);
 assert.match(css, /motion-top-layer-out/);
 assert.match(css, /motion-page-forward-in/);
 assert.match(css, /motion-page-back-in/);
+assert.match(css, /motion-plugin-card-in/);
+assert.match(css, /market-card-enter/);
 assert.match(css, /prefers-reduced-motion:\s*reduce/);
 assert.match(css, /data-ui-motion="reduced"/);
 assert.match(motion, /export function initMotionInteractions/);
+assert.match(motion, /export function observePluginMotion/);
+assert.match(motion, /new MutationObserver/);
 assert.match(motion, /export function closeLayer/);
 assert.match(motion, /function addRipple/);
 assert.match(motion, /panel\.dataset\.motionLayer = layerKind/);
 assert.match(motion, /event\.target !== target/);
 assert.match(ui, /removeWithMotion\(t\)/);
 assert.match(shell, /removeWithMotion\(menu\)/);
+assert.match(shell, /observePluginMotion\(box\)/);
 for (const source of [commandPalette, capture, drawer, timeblock, automationPanel]) {
   assert.match(source, /closeLayer\(/);
 }
