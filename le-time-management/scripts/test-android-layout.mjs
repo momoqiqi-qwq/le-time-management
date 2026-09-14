@@ -25,7 +25,7 @@ assert.match(shell, /const windowControls = desktopWindow\s*\?\s*el\(/,
   "窗口控制按钮只应在桌面端创建");
 assert.match(shell, /node\.draggable = desktopWindow/,
   "Android 顶栏控件不能启用 HTML5 拖拽");
-assert.ok(shell.includes('desktopWindow ? (pinActionBtn = createQuickDockButton("钉", "窗口置顶"'),
+assert.ok(shell.includes('desktopWindow ? (pinActionBtn = createQuickDockButton("thumbtack", "窗口置顶"'),
   "快捷入口中的窗口置顶必须由桌面运行时门控");
 assert.match(appearance, /desktopWindow\s*\?\s*windowRow\s*:\s*null/,
   "Android 设置页不应显示无效的窗口大小控件");

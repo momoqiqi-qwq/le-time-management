@@ -511,16 +511,47 @@ export function renderShell(root) {
     } catch {}
   }
 
+  // 顶栏组件可拖动换位 → 面板每次展开都重新贴着触发按钮定位，而不是固定在屏幕右侧
+  function positionQuickDockNear(node) {
+    if (!quickDock) return;
+    const rect = node.getBoundingClientRect();
+    const box = quickDock.getBoundingClientRect();
+    const margin = 12;
+    const width = box.width || 292;
+    const height = box.height || 320;
+    let x = rect.left;
+    let y = rect.bottom + 8;
+    x = Math.min(window.innerWidth - width - margin, Math.max(margin, x));
+    y = Math.min(window.innerHeight - height - margin, Math.max(margin, y));
+    quickDock.style.left = `${x}px`;
+    quickDock.style.top = `${y}px`;
+    quickDock.style.right = "auto";
+    quickDockState.left = x;
+    quickDockState.top = y;
+  }
+
   function toggleQuickDock(force) {
     quickDockState.collapsed = typeof force === "boolean" ? force : !quickDockState.collapsed;
     if (quickDock) {
       quickDock.classList.toggle("collapsed", quickDockState.collapsed);
+      if (!quickDockState.collapsed) positionQuickDockNear(quickDockToggle);
     }
     updateQuickDockToggle();
     S.persistSoon();
   }
 
-  function createQuickDockButton(symbol, label, handler, extraClass = "") {
+  // 快捷菜单图标：用打包内自带的 Font Awesome solid（插件同款根路径），别再回退成汉字/ASCII
+  function faIcon(name) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "fa-ic");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `/icons/fontawesome/solid.svg#${name}`);
+    svg.append(use);
+    return svg;
+  }
+
+  function createQuickDockButton(iconName, label, handler, extraClass = "") {
     return el("button", {
       class: `quick-dock-btn${extraClass ? ` ${extraClass}` : ""}`,
       type: "button",
@@ -532,7 +563,7 @@ export function renderShell(root) {
         if (!quickDockState.collapsed) toggleQuickDock(true);
       },
     },
-      el("span", { class: "quick-dock-glyph" }, symbol),
+      el("span", { class: "quick-dock-glyph" }, faIcon(iconName)),
       el("small", {}, label),
     );
   }
@@ -546,14 +577,14 @@ export function renderShell(root) {
         el("div", { class: "quick-dock-title" }, el("b", {}, "Yile Liang"), el("small", {}, "Plus")),
       ),
       el("div", { class: "quick-dock-grid" },
-        createQuickDockButton("＋", "快速新建", () => openQuickCapture()),
-        createQuickDockButton("⌕", "命令搜索", () => window.dispatchEvent(new CustomEvent("tide:command-palette"))),
-        createQuickDockButton("四", "四象限", () => switchTo("quadrant")),
-        createQuickDockButton("时", "时间块", () => switchTo("timeblock")),
-        createQuickDockButton("收", "收件箱", () => switchTo("inbox")),
-        createQuickDockButton("拼", "插件中心", () => switchTo("market")),
-        createQuickDockButton("设", "设置", () => openSettingsModal()),
-        desktopWindow ? (pinActionBtn = createQuickDockButton("钉", "窗口置顶", async () => {
+        createQuickDockButton("plus", "快速新建", () => openQuickCapture()),
+        createQuickDockButton("magnifying-glass", "命令搜索", () => window.dispatchEvent(new CustomEvent("tide:command-palette"))),
+        createQuickDockButton("table-cells", "四象限", () => switchTo("quadrant")),
+        createQuickDockButton("clock", "时间块", () => switchTo("timeblock")),
+        createQuickDockButton("inbox", "收件箱", () => switchTo("inbox")),
+        createQuickDockButton("puzzle-piece", "插件中心", () => switchTo("market")),
+        createQuickDockButton("gear", "设置", () => openSettingsModal()),
+        desktopWindow ? (pinActionBtn = createQuickDockButton("thumbtack", "窗口置顶", async () => {
           await withCurrentWindow(async (win) => {
             const next = !(await win.isAlwaysOnTop());
             await win.setAlwaysOnTop(next);
@@ -563,8 +594,8 @@ export function renderShell(root) {
             toast(next ? "已置顶窗口" : "已取消置顶");
           });
         }, "pin")) : null,
-        desktopWindow ? createQuickDockButton("－", "最小化", () => withCurrentWindow((win) => win.minimize())) : null,
-        desktopWindow ? createQuickDockButton("×", "关闭", () => withCurrentWindow((win) => win.close())) : null,
+        desktopWindow ? createQuickDockButton("minus", "最小化", () => withCurrentWindow((win) => win.minimize())) : null,
+        desktopWindow ? createQuickDockButton("xmark", "关闭", () => withCurrentWindow((win) => win.close())) : null,
       ),
     );
     quickDock = dock;
@@ -826,7 +857,7 @@ export function renderShell(root) {
 
   mountQuickDock();
   quickDockToggle.addEventListener("click", () => toggleQuickDock());
-  window.addEventListener("resize", () => { if (quickDock?.isConnected) positionQuickDock(quickDock); }, { passive: true });
+  window.addEventListener("resize", () => { if (quickDock?.isConnected && !quickDockState.collapsed) positionQuickDockNear(quickDockToggle); }, { passive: true });
   renderNav();
   onNavChanged(() => {
     const missingActivePlugin = activeView.startsWith("plug:") && !viewDef(activeView);

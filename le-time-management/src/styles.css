@@ -1532,7 +1532,11 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     width: auto;
     max-width: none;
   }
-  .topbar-title-card { flex: 1 1 auto; min-width: 0; }
+  .topbar-title-card { flex: 1 1 auto; min-width: 0; padding: 4px 10px 4px 6px; gap: 8px; }
+  .topbar-title-mark { width: 32px; height: 32px; border-radius: 10px; }
+  .topbar-title-mark .app-icon { width: 17px; height: 17px; }
+  .topbar h1 { font-size: 15px; }
+  .topbar-title-copy { gap: 1px; }
   .topbar-action-card {
     flex: none;
     justify-content: flex-end;
@@ -1551,12 +1555,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 @media (max-width: 560px) {
-  .quick-dock {
-    right: 12px;
-    left: auto !important;
-    top: auto !important;
-    bottom: 92px;
-  }
   .quick-dock-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2090,7 +2088,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   position: fixed;
   top: calc(58px + env(safe-area-inset-top, 0px));
   right: 20px;
-  left: auto !important;
   z-index: 70;
   width: 292px;
   padding: 10px;
@@ -2101,7 +2098,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   box-shadow: 0 18px 54px rgba(15, 23, 42, .22);
   opacity: 1;
   transform: scale(1);
-  transform-origin: top right;
+  transform-origin: top left;
   transition: opacity .16s ease, transform .16s cubic-bezier(.22,.8,.22,1), visibility .16s ease;
 }
 .quick-dock.collapsed {
@@ -2160,6 +2157,13 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   text-align: center;
   color: var(--ink-2);
   font-size: 14px;
+}
+.quick-dock-glyph .fa-ic {
+  width: 15px;
+  height: 15px;
+  display: block;
+  margin: 0 auto;
+  fill: currentColor;
 }
 .quick-dock-btn small {
   font-size: 13px;
