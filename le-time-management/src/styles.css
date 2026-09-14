@@ -941,7 +941,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* ── v0.10 · 同步与快捷键 ── */
 .sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}
 
-@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-kind{min-width:54px}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
+@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-kind{min-width:54px}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }

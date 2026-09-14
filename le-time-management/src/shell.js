@@ -827,12 +827,13 @@ export function renderShell(root) {
       },
     }, el("span", { class: "market-search-glyph", "aria-hidden": "true" }, "⌕"));
     if (marketSearchOpen) wrap.classList.add("open-search");
+    // 搜索开关与计数放在筛选按钮下面（用户反馈：顶部只留筛选档，别多占一行）
     wrap.append(
+      filterBox,
       el("div", { class: "market-head" },
         el("div", { class: "market-head-tools" }, searchToggle, count),
       ),
       el("div", { class: "market-search-row", id: "market-search-row" }, search),
-      filterBox,
       grid,
     );
     container.replaceChildren(wrap);
