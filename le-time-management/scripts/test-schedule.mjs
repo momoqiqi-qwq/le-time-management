@@ -28,6 +28,13 @@ assert.match(apiSource,/school_import_open/);
 const rustSource=fs.readFileSync(new URL('../src-tauri/src/lib.rs',import.meta.url),'utf8');
 for(const command of ['school_import_open','school_import_bridge'])assert.ok(rustSource.includes(command),`missing native school import command: ${command}`);
 assert.ok(rustSource.includes('bridgeQueue'),'school import bridge must serialize concurrent adapter callbacks');
+const nativeGridSource=fs.readFileSync(new URL('../../vendor/shiguangschedule/shared/src/commonMain/kotlin/com/xingheyuzhuan/shiguangschedule/ui/schedule/components/ScheduleGrid.kt',import.meta.url),'utf8');
+assert.match(nativeGridSource,/PointerEventPass\.Initial/,'native schedule must intercept touchpad scrolling before the horizontal pager');
+assert.match(nativeGridSource,/abs\(delta\.y\) <= abs\(delta\.x\)/,'vertical touchpad scroll must not steal horizontal week swipes');
+assert.match(nativeGridSource,/gridScrollState\.dispatchRawDelta/,'touchpad deltas must drive the native schedule scroll state');
+const nativeHostSource=fs.readFileSync(new URL('../../vendor/shiguangschedule/desktopApp/src/main/kotlin/com/xingheyuzhuan/shiguangschedule/LeHost.kt',import.meta.url),'utf8');
+assert.match(nativeHostSource,/requestFocusInWindow\(\)/,'embedded Compose panel must acquire focus for precision touchpad input');
+assert.match(pluginHost,/renderNativeSchedule/,'Tauri plugin host must retain the original native Shiguang interface');
 vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks};\n tide.ui.registerView({'),uiContext);
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
@@ -105,3 +112,33 @@ const slotted=M.applySchoolImportMessage(configured,'savePresetTimeSlots',{timeS
 ])});
 assert.equal(slotted.timeSlots[0].startTime,'08:10');
 assert.equal(slotted.timeSlots[3].endTime,'11:50');
+
+const cppuSchool=schoolIndex.schools.find(s=>s.id==='CPPU');
+assert.ok(cppuSchool,'decoded school index must always include the built-in CPPU adapter');
+assert.equal(cppuSchool.adapters[0].importUrl,'https://jw.cppu.edu.cn/index.html');
+assert.equal(M.filterSchools(schoolIndex.schools,'BACHELOR_AND_ASSOCIATE','警察大学')[0].id,'CPPU');
+const cppuAdapterFile=new URL('../../vendor/shiguangschedule/shared/assets/offline_repo/schools/resources/CPPU/cppu.js',import.meta.url);
+const cppuAdapterSource=fs.readFileSync(cppuAdapterFile,'utf8');
+const cppuWindow={__CPPU_ADAPTER_TEST__:true};
+vm.runInContext(cppuAdapterSource,vm.createContext({window:cppuWindow,console,setTimeout,clearTimeout,Date,Promise}));
+const cppuConverted=cppuWindow.CPPUCourseAdapter.convertRows([
+  {KC_ID:'course-a',KCMC:'公安学基础',JS:'张老师',DDMC:'A101',JC:'01',KXXS:'2',SKRQ:'2026-08-31',XNXQ_CODE:'20262027-1'},
+  {KC_ID:'course-a',KCMC:'公安学基础',JS:'张老师',DDMC:'A101',JC:'01',KXXS:'2',SKRQ:'2026-09-14',XNXQ_CODE:'20262027-1'},
+  {KC_ID:'course-a',KCMC:'公安学基础',JS:'张老师',DDMC:'A101',JC:'01',KXXS:'2',SKRQ:'2026-09-14',XNXQ_CODE:'20262027-1'},
+  {KC_ID:'course-b',KCMC:'刑事科学技术',JS:'李老师',DDMC:'B202',JC:'03@04',KXXS:'4',SKRQ:'2026-09-01',XNXQ_CODE:'20262027-1'},
+]);
+assert.equal(cppuConverted.config.semesterStartDate,'2026-08-31');
+assert.equal(cppuConverted.config.semesterTotalWeeks,20);
+assert.equal(cppuConverted.courses.length,2);
+assert.deepEqual(Array.from(cppuConverted.courses.find(c=>c.name==='公安学基础').weeks),[1,3]);
+assert.equal(cppuConverted.courses.find(c=>c.name==='公安学基础').day,1);
+assert.equal(cppuConverted.courses.find(c=>c.name==='刑事科学技术').startSection,5);
+assert.equal(cppuConverted.courses.find(c=>c.name==='刑事科学技术').endSection,8);
+assert.match(cppuAdapterSource,/V_JWBZK_PK_XSKBZHCX/);
+assert.match(cppuAdapterSource,/limit:\s*5000/);
+assert.match(ui,/adapters\/cppu\.js/,'embedded schedule must load the bundled CPPU adapter locally');
+const nativeSchoolRepository=fs.readFileSync(new URL('../../vendor/shiguangschedule/shared/src/commonMain/kotlin/com/xingheyuzhuan/shiguangschedule/data/repository/SchoolRepository.kt',import.meta.url),'utf8');
+const nativeResourceInitializer=fs.readFileSync(new URL('../../vendor/shiguangschedule/shared/src/commonMain/kotlin/com/xingheyuzhuan/shiguangschedule/tool/ResourceInitializerManager.kt',import.meta.url),'utf8');
+assert.match(nativeSchoolRepository,/id = "CPPU"/);
+assert.match(nativeResourceInitializer,/schools\/resources\/CPPU\/cppu\.js/,'existing native installations must receive the bundled CPPU adapter');
+console.log('PASS: CPPU is built in and its real JE course rows convert dates, block sections and duplicate occurrences correctly');

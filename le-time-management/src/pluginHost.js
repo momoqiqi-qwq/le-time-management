@@ -9,6 +9,7 @@ import { PROJECT_LINKS } from "./projectLinks.js";
 import { previewSchedule } from "./scheduleConflict.js";
 import { pushInbox } from "./automation.js";
 import { spreadsheetFileToCsv } from "./spreadsheet.js";
+import { renderNativeSchedule } from "./nativeSchedule.js";
 
 const registry = new Map();   // id -> { manifest, source, enabled, error }
 const eventBus = new Map();   // event -> Set<{ pluginId, fn }>
@@ -174,7 +175,8 @@ function makeApi(man, source) {
     ui: {
       registerView(def) {
         requirePermission(man, pid, "ui");
-        pluginViews.push({ ...def, pluginId: pid });
+        pluginViews.push({ ...def, pluginId: pid,
+          ...(pid === "shiguang-schedule" && api.isTauri ? { render: renderNativeSchedule } : {}) });
         emitNavChanged();
       },
       registerTaskAction(def) {

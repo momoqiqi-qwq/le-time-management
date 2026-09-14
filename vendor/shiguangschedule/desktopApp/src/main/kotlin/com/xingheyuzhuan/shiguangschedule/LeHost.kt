@@ -10,6 +10,8 @@ import com.sun.jna.platform.win32.WinDef.HWND
 import com.sun.jna.platform.win32.WinUser
 import kotlinx.serialization.json.*
 import java.awt.BorderLayout
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.swing.JFrame
 import javax.swing.SwingUtilities
 import kotlin.concurrent.thread
@@ -22,11 +24,20 @@ fun runLeHost(parentHandle: Long) {
     val parent = HWND(Pointer(parentHandle))
     require(User32.INSTANCE.IsWindow(parent)) { "Host window no longer exists" }
     SwingUtilities.invokeLater {
+        val composePanel = ComposePanel().apply {
+            isFocusable = true
+            focusTraversalKeysEnabled = false
+            setContent { DesktopApp() }
+            addMouseListener(object : MouseAdapter() {
+                override fun mouseEntered(event: MouseEvent) { requestFocusInWindow() }
+                override fun mousePressed(event: MouseEvent) { requestFocusInWindow() }
+            })
+        }
         val frame = JFrame("时光课程表").apply {
             isUndecorated = true
             defaultCloseOperation = JFrame.DISPOSE_ON_CLOSE
             layout = BorderLayout()
-            add(ComposePanel().apply { setContent { DesktopApp() } }, BorderLayout.CENTER)
+            add(composePanel, BorderLayout.CENTER)
             setSize(800, 600)
             addNotify()
         }

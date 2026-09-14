@@ -146,13 +146,14 @@
   }
   const protoText=value=>new TextDecoder().decode(value instanceof Uint8Array?value:new Uint8Array(value||[]));
   const protoFirst=(fields,number,wire=2)=>fields.find(x=>x.number===number&&x.wire===wire)?.value;
+  const builtInCppuSchool={id:'CPPU',name:'中国人民警察大学',initial:'Z',resourceFolder:'CPPU',adapters:[{adapterId:'CPPU_01',adapterName:'警大本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'cppu.js',importUrl:'https://jw.cppu.edu.cn/index.html',description:'登录警大教务后，自动打开课表明细并导入完整学期课程',maintainer:'Le时间管理'}]};
   function decodeSchoolIndex(input){
     const rootFields=protoFields(input),categoryNames={1:'GENERAL_TOOL',2:'BACHELOR_AND_ASSOCIATE',3:'POSTGRADUATE'};
     const schools=rootFields.filter(x=>x.number===3&&x.wire===2).map(item=>{const sf=protoFields(item.value);return {
       id:protoText(protoFirst(sf,1)||[]),name:protoText(protoFirst(sf,2)||[]),initial:protoText(protoFirst(sf,3)||[]),resourceFolder:protoText(protoFirst(sf,4)||[]),
       adapters:sf.filter(x=>x.number===5&&x.wire===2).map(row=>{const af=protoFields(row.value),category=Number(protoFirst(af,3,0)||0);return {adapterId:protoText(protoFirst(af,1)||[]),adapterName:protoText(protoFirst(af,2)||[]),category:categoryNames[category]||'UNKNOWN',assetJsPath:protoText(protoFirst(af,4)||[]),importUrl:protoText(protoFirst(af,5)||[]),description:protoText(protoFirst(af,6)||[]),maintainer:protoText(protoFirst(af,7)||[])};})
     };}).filter(s=>s.id&&s.name);
-    return {protocolVersion:Number(protoFirst(rootFields,1,0)||0),versionId:protoText(protoFirst(rootFields,2)||[]),schools};
+    return {protocolVersion:Number(protoFirst(rootFields,1,0)||0),versionId:protoText(protoFirst(rootFields,2)||[]),schools:[...schools.filter(s=>s.id!==builtInCppuSchool.id),builtInCppuSchool]};
   }
   function filterSchools(schools,category,query=''){
     const key=String(query).trim().toLowerCase();
@@ -312,7 +313,7 @@
    if(schoolIndex)return;schoolBusy=true;paint();try{const res=await fetch('/plugins/shiguang-schedule/school_index.pb');if(!res.ok)throw new Error(`内置学校索引读取失败（HTTP ${res.status}）`);const parsed=M.decodeSchoolIndex(new Uint8Array(await res.arrayBuffer()));if(parsed.protocolVersion<1||parsed.protocolVersion>2||!parsed.schools.length)throw new Error('学校索引格式不兼容');schoolIndex=parsed;}finally{schoolBusy=false;}
  }
  async function openSchoolAdapter(adapter){
-   if(!adapter)return;const folder=selectedSchool.resourceFolder,path=[folder,...String(adapter.assetJsPath||`${adapter.adapterId}.js`).split('/')].map(encodeURIComponent).join('/');const url=`https://raw.githubusercontent.com/XingHeYuZhuan/shiguang_warehouse/main/resources/${path}`;const sid=await tide.http.session(),res=await tide.http.fetch(sid,'GET',url,{});if(res.status>=400||!res.body.trim())throw new Error(`学校适配脚本读取失败（HTTP ${res.status}）`);await tide.schoolImporter.open({url:adapter.importUrl||'about:blank',script:res.body,title:adapter.adapterName||selectedSchool.name});tide.notify('教务窗口已打开：登录并进入个人课表后，点击右下角“导入当前课表”');
+   if(!adapter)return;let script;if(selectedSchool?.id==='CPPU'){const local=await fetch('/plugins/shiguang-schedule/adapters/cppu.js');if(!local.ok)throw new Error(`警大适配脚本读取失败（HTTP ${local.status}）`);script=await local.text();}else{const folder=selectedSchool.resourceFolder,path=[folder,...String(adapter.assetJsPath||`${adapter.adapterId}.js`).split('/')].map(encodeURIComponent).join('/');const url=`https://raw.githubusercontent.com/XingHeYuZhuan/shiguang_warehouse/main/resources/${path}`;const sid=await tide.http.session(),res=await tide.http.fetch(sid,'GET',url,{});if(res.status>=400||!res.body.trim())throw new Error(`学校适配脚本读取失败（HTTP ${res.status}）`);script=res.body;}if(!script.trim())throw new Error('学校适配脚本为空');await tide.schoolImporter.open({url:adapter.importUrl||'about:blank',script,title:adapter.adapterName||selectedSchool.name});tide.notify(selectedSchool?.id==='CPPU'?'警大教务已打开：完成统一身份认证后，点击右下角“导入当前课表”':'教务窗口已打开：登录并进入个人课表后，点击右下角“导入当前课表”');
  }
  async function handleSchoolMessage(raw){
    const message=typeof raw==='string'?JSON.parse(raw):raw,payload=typeof message.payload==='string'?JSON.parse(message.payload||'{}'):(message.payload||{});

@@ -144,13 +144,14 @@
   }
   const protoText=value=>new TextDecoder().decode(value instanceof Uint8Array?value:new Uint8Array(value||[]));
   const protoFirst=(fields,number,wire=2)=>fields.find(x=>x.number===number&&x.wire===wire)?.value;
+  const builtInCppuSchool={id:'CPPU',name:'中国人民警察大学',initial:'Z',resourceFolder:'CPPU',adapters:[{adapterId:'CPPU_01',adapterName:'警大本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'cppu.js',importUrl:'https://jw.cppu.edu.cn/index.html',description:'登录警大教务后，自动打开课表明细并导入完整学期课程',maintainer:'Le时间管理'}]};
   function decodeSchoolIndex(input){
     const rootFields=protoFields(input),categoryNames={1:'GENERAL_TOOL',2:'BACHELOR_AND_ASSOCIATE',3:'POSTGRADUATE'};
     const schools=rootFields.filter(x=>x.number===3&&x.wire===2).map(item=>{const sf=protoFields(item.value);return {
       id:protoText(protoFirst(sf,1)||[]),name:protoText(protoFirst(sf,2)||[]),initial:protoText(protoFirst(sf,3)||[]),resourceFolder:protoText(protoFirst(sf,4)||[]),
       adapters:sf.filter(x=>x.number===5&&x.wire===2).map(row=>{const af=protoFields(row.value),category=Number(protoFirst(af,3,0)||0);return {adapterId:protoText(protoFirst(af,1)||[]),adapterName:protoText(protoFirst(af,2)||[]),category:categoryNames[category]||'UNKNOWN',assetJsPath:protoText(protoFirst(af,4)||[]),importUrl:protoText(protoFirst(af,5)||[]),description:protoText(protoFirst(af,6)||[]),maintainer:protoText(protoFirst(af,7)||[])};})
     };}).filter(s=>s.id&&s.name);
-    return {protocolVersion:Number(protoFirst(rootFields,1,0)||0),versionId:protoText(protoFirst(rootFields,2)||[]),schools};
+    return {protocolVersion:Number(protoFirst(rootFields,1,0)||0),versionId:protoText(protoFirst(rootFields,2)||[]),schools:[...schools.filter(s=>s.id!==builtInCppuSchool.id),builtInCppuSchool]};
   }
   function filterSchools(schools,category,query=''){
     const key=String(query).trim().toLowerCase();

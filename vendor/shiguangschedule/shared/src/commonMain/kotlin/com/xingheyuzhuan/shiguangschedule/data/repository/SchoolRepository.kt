@@ -30,6 +30,24 @@ class SchoolRepository(
     @Named("FilesDir") private val filesDir: Path
 ) {
 
+    private val builtInCppuSchool = School(
+        id = "CPPU",
+        name = "中国人民警察大学",
+        initial = "Z",
+        resource_folder = "CPPU",
+        adapters = listOf(
+            Adapter(
+                adapter_id = "CPPU_01",
+                adapter_name = "警大本科教务导入",
+                category = AdapterCategory.BACHELOR_AND_ASSOCIATE,
+                asset_js_path = "cppu.js",
+                import_url = "https://jw.cppu.edu.cn/index.html",
+                description = "登录警大教务后，自动打开课表明细并导入完整学期课程",
+                maintainer = "Le时间管理"
+            )
+        )
+    )
+
     // 定义需要在一级菜单中显示的教务类别
     private val RELEVANT_MENU_CATEGORIES = setOf(
         AdapterCategory.BACHELOR_AND_ASSOCIATE,
@@ -64,10 +82,10 @@ class SchoolRepository(
      * 【一级页面数据】获取经过类别过滤的学校列表。
      */
     suspend fun getSchools(): List<School> {
-        val index = loadIndex() ?: return emptyList()
+        val index = loadIndex()
 
         // 1. 过滤：使用 Wire 生成的直接列表属性名
-        val filteredSchools = index.schools.filter { school ->
+        val filteredSchools = (index?.schools.orEmpty().filterNot { it.id == builtInCppuSchool.id } + builtInCppuSchool).filter { school ->
             school.adapters.any { adapter ->
                 adapter.category in RELEVANT_MENU_CATEGORIES
             }
@@ -81,6 +99,7 @@ class SchoolRepository(
      * 【二级页面数据】根据学校 ID 获取其所有的适配器列表。
      */
     suspend fun getAdaptersForSchool(schoolId: String): List<Adapter> {
+        if (schoolId == builtInCppuSchool.id) return builtInCppuSchool.adapters
         return withContext(Dispatchers.IO) {
             val index = loadIndex()
             val school = index?.schools?.find { it.id == schoolId }
@@ -92,6 +111,7 @@ class SchoolRepository(
      * 辅助方法：通过 ID 获取单个学校对象
      */
     suspend fun getSchoolById(id: String): School? {
+        if (id == builtInCppuSchool.id) return builtInCppuSchool
         return withContext(Dispatchers.IO) {
             val index = loadIndex()
             return@withContext index?.schools?.find { it.id == id }

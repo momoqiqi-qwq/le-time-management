@@ -46,10 +46,6 @@ class ResourceInitializerManager(
     @OptIn(ExperimentalResourceApi::class)
     suspend fun initializeOfflineRepo(forceOverwrite: Boolean = false): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            if (!forceOverwrite && fileSystem.exists(targetRepoDir / "index")) {
-                return@runCatching
-            }
-
             val zipBytes = Res.readBytes("files/offline_schools.zip")
             val tempZipFile = filesDir / "temp_offline_schools.zip"
 
@@ -60,14 +56,22 @@ class ResourceInitializerManager(
             try {
                 val zipFileSystem = fileSystem.openZip(tempZipFile)
 
-                if (fileSystem.exists(targetRepoDir)) {
-                    fileSystem.deleteRecursively(targetRepoDir)
+                if (forceOverwrite || !fileSystem.exists(targetRepoDir / "index")) {
+                    if (fileSystem.exists(targetRepoDir)) {
+                        fileSystem.deleteRecursively(targetRepoDir)
+                    }
+                    fileSystem.createDirectories(targetRepoDir)
+                    unzipDirectory(zipFileSystem, "/".toPath(), targetRepoDir)
+                } else {
+                    // 旧版用户已有下载后的仓库时不能整体覆盖，但要补入应用自带的警大适配器。
+                    copyBundledFile(
+                        zipFileSystem,
+                        "/schools/resources/CPPU/cppu.js".toPath(),
+                        targetRepoDir / "schools/resources/CPPU/cppu.js"
+                    )
                 }
-                fileSystem.createDirectories(targetRepoDir)
-
-                unzipDirectory(zipFileSystem, "/".toPath(), targetRepoDir)
             } finally {
-                fileSystem.delete(tempZipFile)
+                if (fileSystem.exists(tempZipFile)) fileSystem.delete(tempZipFile)
             }
         }
     }
@@ -118,6 +122,16 @@ class ResourceInitializerManager(
                     }
                 }
             }
+        }
+    }
+
+    private fun copyBundledFile(zipFileSystem: FileSystem, sourcePath: Path, destinationPath: Path) {
+        if (!zipFileSystem.exists(sourcePath)) {
+            throw IllegalStateException("Bundled resource missing: $sourcePath")
+        }
+        destinationPath.parent?.let { fileSystem.createDirectories(it) }
+        zipFileSystem.source(sourcePath).use { source ->
+            fileSystem.sink(destinationPath).buffer().use { sink -> sink.writeAll(source) }
         }
     }
 }

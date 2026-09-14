@@ -72,7 +72,8 @@ pub fn spawn_server(
     quit: Arc<AtomicBool>,
 ) -> Result<String, String> {
     let addr = format!("0.0.0.0:{port}");
-    let server = tiny_http::Server::http(&addr).map_err(|e| format!("端口 {port} 启动失败: {e}"))?;
+    let server =
+        tiny_http::Server::http(&addr).map_err(|e| format!("端口 {port} 启动失败: {e}"))?;
     let base = format!("http://{}:{port}", lan_ip());
     let url = format!("{base}/m?token={token}");
 
@@ -92,7 +93,9 @@ pub fn spawn_server(
             if token_in != token {
                 let resp = tiny_http::Response::from_string("{\"error\":\"token 无效\"}")
                     .with_status_code(403)
-                    .with_header(tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap());
+                    .with_header(
+                        tiny_http::Header::from_bytes("Content-Type", "application/json").unwrap(),
+                    );
                 let _ = request.respond(resp);
                 continue;
             }
@@ -100,9 +103,14 @@ pub fn spawn_server(
             let (status, headers, payload) = match (request.method(), path.as_str()) {
                 (_, "/quit") => (200, json_headers(), "{\"ok\":true}".to_string()),
                 (&tiny_http::Method::Get, "/m") => (200, html_headers(), MOBILE_HTML.to_string()),
-                (&tiny_http::Method::Get, "/qr.svg") => (200, svg_headers(), qr_svg(&format!("{base}/m?token={token_in}"))),
+                (&tiny_http::Method::Get, "/qr.svg") => (
+                    200,
+                    svg_headers(),
+                    qr_svg(&format!("{base}/m?token={token_in}")),
+                ),
                 (&tiny_http::Method::Get, "/api/state") => {
-                    let data = std::fs::read_to_string(&data_path).unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
+                    let data = std::fs::read_to_string(&data_path)
+                        .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
                     (200, json_headers(), data)
                 }
                 (&tiny_http::Method::Post, "/api/command") => {

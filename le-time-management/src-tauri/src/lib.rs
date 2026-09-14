@@ -88,34 +88,70 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
 
 fn school_import_bridge(app: &AppHandle, encoded: &str) -> Result<(), String> {
     use base64::Engine as _;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded).map_err(|e| format!("教务回传解码失败: {e}"))?;
-    if bytes.len() > 2 * 1024 * 1024 { return Err("教务回传数据超过 2 MB".into()); }
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .map_err(|e| format!("教务回传解码失败: {e}"))?;
+    if bytes.len() > 2 * 1024 * 1024 {
+        return Err("教务回传数据超过 2 MB".into());
+    }
     let message = String::from_utf8(bytes).map_err(|e| format!("教务回传不是 UTF-8: {e}"))?;
-    let value: Value = serde_json::from_str(&message).map_err(|e| format!("教务回传 JSON 无效: {e}"))?;
-    let allowed = ["saveImportedCourses", "saveCourseConfig", "savePresetTimeSlots", "notifyTaskCompletion"];
+    let value: Value =
+        serde_json::from_str(&message).map_err(|e| format!("教务回传 JSON 无效: {e}"))?;
+    let allowed = [
+        "saveImportedCourses",
+        "saveCourseConfig",
+        "savePresetTimeSlots",
+        "notifyTaskCompletion",
+    ];
     let action = value.get("action").and_then(Value::as_str).unwrap_or("");
-    if !allowed.contains(&action) { return Err("教务回传操作不受支持".into()); }
-    app.emit_to("main", "school-import-message", message).map_err(|e| format!("发送教务回传失败: {e}"))
+    if !allowed.contains(&action) {
+        return Err("教务回传操作不受支持".into());
+    }
+    app.emit_to("main", "school-import-message", message)
+        .map_err(|e| format!("发送教务回传失败: {e}"))
 }
 
 #[tauri::command]
-async fn school_import_open(app: AppHandle, url: String, adapter_script: String, title: String) -> Result<(), String> {
-    if adapter_script.len() > 2 * 1024 * 1024 { return Err("学校适配脚本超过 2 MB".into()); }
+async fn school_import_open(
+    app: AppHandle,
+    url: String,
+    adapter_script: String,
+    title: String,
+) -> Result<(), String> {
+    if adapter_script.len() > 2 * 1024 * 1024 {
+        return Err("学校适配脚本超过 2 MB".into());
+    }
     let parsed: Url = url.parse().map_err(|e| format!("教务网址无效: {e}"))?;
-    if !matches!(parsed.scheme(), "http" | "https" | "about") { return Err("教务网址仅支持 http/https".into()); }
-    if let Some(existing) = app.get_webview_window("school-import") { let _ = existing.close(); }
+    if !matches!(parsed.scheme(), "http" | "https" | "about") {
+        return Err("教务网址仅支持 http/https".into());
+    }
+    if let Some(existing) = app.get_webview_window("school-import") {
+        let _ = existing.close();
+    }
     let app_for_navigation = app.clone();
     let script_for_navigation = adapter_script.clone();
     WebviewWindowBuilder::new(&app, "school-import", WebviewUrl::External(parsed))
-        .title(format!("时光课程表 · {}", title.chars().take(60).collect::<String>()))
+        .title(format!(
+            "时光课程表 · {}",
+            title.chars().take(60).collect::<String>()
+        ))
         .inner_size(1100.0, 780.0)
         .center()
         .initialization_script(SCHOOL_IMPORT_BOOTSTRAP)
         .on_navigation(move |target| {
-            if target.scheme() != "letime-import" { return true; }
+            if target.scheme() != "letime-import" {
+                return true;
+            }
             match target.host_str().unwrap_or("") {
-                "execute" => if let Some(window) = app_for_navigation.get_webview_window("school-import") { let _ = window.eval(script_for_navigation.clone()); },
-                "bridge" => { let encoded = target.path().trim_start_matches('/'); let _ = school_import_bridge(&app_for_navigation, encoded); },
+                "execute" => {
+                    if let Some(window) = app_for_navigation.get_webview_window("school-import") {
+                        let _ = window.eval(script_for_navigation.clone());
+                    }
+                }
+                "bridge" => {
+                    let encoded = target.path().trim_start_matches('/');
+                    let _ = school_import_bridge(&app_for_navigation, encoded);
+                }
                 _ => {}
             }
             false
@@ -124,7 +160,6 @@ async fn school_import_open(app: AppHandle, url: String, adapter_script: String,
         .map_err(|e| format!("打开教务登录窗口失败: {e}"))?;
     Ok(())
 }
-
 
 #[derive(serde::Serialize, serde::Deserialize, Clone)]
 struct AiSecretConfig {
@@ -278,7 +313,12 @@ fn ai_chat_endpoint(base_url: &str) -> String {
 }
 
 #[tauri::command]
-fn ai_vault_save(app: AppHandle, base_url: String, api_key: String, model: String) -> Result<AiVaultStatus, String> {
+fn ai_vault_save(
+    app: AppHandle,
+    base_url: String,
+    api_key: String,
+    model: String,
+) -> Result<AiVaultStatus, String> {
     validate_ai_base_url(&base_url)?;
     let model = model.trim().to_string();
     if model.is_empty() {
@@ -378,7 +418,12 @@ fn save_plugin_vault(app: &AppHandle, vault: &PluginVault) -> Result<(), String>
 }
 
 #[tauri::command]
-fn plugin_vault_set(app: AppHandle, plugin_id: String, key: String, value: String) -> Result<(), String> {
+fn plugin_vault_set(
+    app: AppHandle,
+    plugin_id: String,
+    key: String,
+    value: String,
+) -> Result<(), String> {
     if !valid_plugin_id(&plugin_id) {
         return Err(format!("插件 ID 不合法: {plugin_id}"));
     }
@@ -391,11 +436,18 @@ fn plugin_vault_set(app: AppHandle, plugin_id: String, key: String, value: Strin
 }
 
 #[tauri::command]
-fn plugin_vault_get(app: AppHandle, plugin_id: String, key: String) -> Result<Option<String>, String> {
+fn plugin_vault_get(
+    app: AppHandle,
+    plugin_id: String,
+    key: String,
+) -> Result<Option<String>, String> {
     if !valid_plugin_id(&plugin_id) {
         return Err(format!("插件 ID 不合法: {plugin_id}"));
     }
-    Ok(load_plugin_vault(&app)?.get(&plugin_id).and_then(|m| m.get(&key)).cloned())
+    Ok(load_plugin_vault(&app)?
+        .get(&plugin_id)
+        .and_then(|m| m.get(&key))
+        .cloned())
 }
 
 #[tauri::command]
@@ -421,7 +473,11 @@ fn plugin_vault_del(app: AppHandle, plugin_id: String, key: String) -> Result<()
 }
 
 #[tauri::command]
-async fn ai_chat(app: AppHandle, messages: Vec<AiMessage>, temperature: Option<f64>) -> Result<String, String> {
+async fn ai_chat(
+    app: AppHandle,
+    messages: Vec<AiMessage>,
+    temperature: Option<f64>,
+) -> Result<String, String> {
     let secret = load_ai_secret(&app)?;
     validate_ai_base_url(&secret.base_url)?;
     if messages.is_empty() || messages.len() > 24 {
@@ -431,7 +487,10 @@ async fn ai_chat(app: AppHandle, messages: Vec<AiMessage>, temperature: Option<f
     if total_chars > 60_000 {
         return Err("AI 上下文过长，请减少内容后重试".into());
     }
-    if messages.iter().any(|m| !matches!(m.role.as_str(), "system" | "user" | "assistant")) {
+    if messages
+        .iter()
+        .any(|m| !matches!(m.role.as_str(), "system" | "user" | "assistant"))
+    {
         return Err("AI 消息角色不合法".into());
     }
     let client = reqwest::Client::builder()
@@ -454,12 +513,16 @@ async fn ai_chat(app: AppHandle, messages: Vec<AiMessage>, temperature: Option<f
         .await
         .map_err(|e| format!("AI 请求失败: {e}"))?;
     let status = resp.status();
-    let text = resp.text().await.map_err(|e| format!("读取 AI 响应失败: {e}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取 AI 响应失败: {e}"))?;
     if !status.is_success() {
         let brief: String = text.chars().take(900).collect();
         return Err(format!("AI 接口返回 {}：{}", status.as_u16(), brief));
     }
-    let value: Value = serde_json::from_str(&text).map_err(|e| format!("AI 响应不是有效 JSON: {e}"))?;
+    let value: Value =
+        serde_json::from_str(&text).map_err(|e| format!("AI 响应不是有效 JSON: {e}"))?;
     let content = value
         .pointer("/choices/0/message/content")
         .and_then(|v| v.as_str())
@@ -608,7 +671,9 @@ fn delete_plugin(app: AppHandle, id: String) -> Result<(), String> {
     }
     let root = plugins_dir(&app)?;
     let target = root.join(&id);
-    let canon_root = root.canonicalize().map_err(|e| format!("插件目录异常: {e}"))?;
+    let canon_root = root
+        .canonicalize()
+        .map_err(|e| format!("插件目录异常: {e}"))?;
     let canon_target = target
         .canonicalize()
         .map_err(|_| format!("用户插件不存在: {id}"))?;
@@ -624,15 +689,15 @@ fn delete_plugin(app: AppHandle, id: String) -> Result<(), String> {
     fs::remove_dir_all(&canon_target).map_err(|e| format!("删除插件失败: {e}"))
 }
 
-
-
 fn valid_plugin_id(id: &str) -> bool {
     !id.trim().is_empty()
         && id != "."
         && id != ".."
         && !id.contains('/')
         && !id.contains('\\')
-        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
 }
 
 /// 从 zip 导入一个或多个用户插件。支持 `<id>/manifest.json` 和 zip 根目录直接放 manifest.json 两种格式。
@@ -640,56 +705,92 @@ fn valid_plugin_id(id: &str) -> bool {
 fn import_plugin_zip(app: AppHandle, bytes: Vec<u8>) -> Result<Vec<String>, String> {
     use std::io::{Cursor, Read};
     let root = plugins_dir(&app)?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("ZIP 无法打开: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("ZIP 无法打开: {e}"))?;
 
     // 先定位 manifest，确定 zip 中的源前缀和最终插件 id。
     let mut plugins: Vec<(String, String)> = Vec::new(); // (source prefix, plugin id)
     for i in 0..archive.len() {
-        let mut f = archive.by_index(i).map_err(|e| format!("读取 ZIP 失败: {e}"))?;
-        let Some(path) = f.enclosed_name().map(|p| p.to_path_buf()) else { continue };
-        if path.file_name().and_then(|x| x.to_str()) != Some("manifest.json") { continue; }
+        let mut f = archive
+            .by_index(i)
+            .map_err(|e| format!("读取 ZIP 失败: {e}"))?;
+        let Some(path) = f.enclosed_name().map(|p| p.to_path_buf()) else {
+            continue;
+        };
+        if path.file_name().and_then(|x| x.to_str()) != Some("manifest.json") {
+            continue;
+        }
         let mut raw = String::new();
-        f.read_to_string(&mut raw).map_err(|e| format!("读取 manifest.json 失败: {e}"))?;
-        let man: Value = serde_json::from_str(&raw).map_err(|e| format!("manifest.json 格式错误: {e}"))?;
-        let id = man.get("id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
-        if !valid_plugin_id(&id) { return Err(format!("插件 ID 不合法: {id}")); }
-        let prefix = path.parent().map(|x| x.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        f.read_to_string(&mut raw)
+            .map_err(|e| format!("读取 manifest.json 失败: {e}"))?;
+        let man: Value =
+            serde_json::from_str(&raw).map_err(|e| format!("manifest.json 格式错误: {e}"))?;
+        let id = man
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !valid_plugin_id(&id) {
+            return Err(format!("插件 ID 不合法: {id}"));
+        }
+        let prefix = path
+            .parent()
+            .map(|x| x.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_default();
         plugins.push((prefix, id));
     }
-    if plugins.is_empty() { return Err("ZIP 中未找到 manifest.json".into()); }
+    if plugins.is_empty() {
+        return Err("ZIP 中未找到 manifest.json".into());
+    }
     plugins.sort();
     plugins.dedup();
 
     let mut imported = Vec::new();
     for (prefix, id) in &plugins {
         let dest = root.join(id);
-        if dest.exists() { fs::remove_dir_all(&dest).map_err(|e| format!("覆盖旧插件失败: {e}"))?; }
+        if dest.exists() {
+            fs::remove_dir_all(&dest).map_err(|e| format!("覆盖旧插件失败: {e}"))?;
+        }
         fs::create_dir_all(&dest).map_err(|e| format!("创建插件目录失败: {e}"))?;
 
         for i in 0..archive.len() {
-            let mut f = archive.by_index(i).map_err(|e| format!("读取 ZIP 失败: {e}"))?;
-            let Some(path) = f.enclosed_name().map(|p| p.to_path_buf()) else { continue };
+            let mut f = archive
+                .by_index(i)
+                .map_err(|e| format!("读取 ZIP 失败: {e}"))?;
+            let Some(path) = f.enclosed_name().map(|p| p.to_path_buf()) else {
+                continue;
+            };
             let norm = path.to_string_lossy().replace('\\', "/");
             let rel = if prefix.is_empty() {
                 // 根目录插件：保留 assets/data 等子目录。
                 norm.clone()
             } else {
                 let pre = format!("{prefix}/");
-                if !norm.starts_with(&pre) { continue; }
+                if !norm.starts_with(&pre) {
+                    continue;
+                }
                 norm[pre.len()..].to_string()
             };
-            if rel.is_empty() { continue; }
+            if rel.is_empty() {
+                continue;
+            }
             let out = dest.join(&rel);
             if f.is_dir() {
                 fs::create_dir_all(&out).map_err(|e| format!("创建目录失败: {e}"))?;
             } else {
-                if let Some(parent) = out.parent() { fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?; }
+                if let Some(parent) = out.parent() {
+                    fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+                }
                 let mut data = Vec::new();
-                f.read_to_end(&mut data).map_err(|e| format!("解压插件失败: {e}"))?;
+                f.read_to_end(&mut data)
+                    .map_err(|e| format!("解压插件失败: {e}"))?;
                 fs::write(&out, data).map_err(|e| format!("写入插件文件失败: {e}"))?;
             }
         }
-        if !dest.join("manifest.json").exists() { return Err(format!("插件 {id} 导入后缺少 manifest.json")); }
+        if !dest.join("manifest.json").exists() {
+            return Err(format!("插件 {id} 导入后缺少 manifest.json"));
+        }
         imported.push(id.clone());
     }
     Ok(imported)
@@ -701,26 +802,43 @@ fn export_plugins_zip(app: AppHandle, ids: Vec<String>) -> Result<String, String
     use base64::Engine as _;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
-    if ids.is_empty() { return Err("请先选择要导出的用户插件".into()); }
+    if ids.is_empty() {
+        return Err("请先选择要导出的用户插件".into());
+    }
     let root = plugins_dir(&app)?;
     let mut cur = Cursor::new(Vec::<u8>::new());
     {
         let mut writer = zip::ZipWriter::new(&mut cur);
         let opt = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
         for id in ids {
-            if !valid_plugin_id(&id) { return Err(format!("插件 ID 不合法: {id}")); }
+            if !valid_plugin_id(&id) {
+                return Err(format!("插件 ID 不合法: {id}"));
+            }
             let dir = root.join(&id);
-            if !dir.join("manifest.json").exists() { return Err(format!("用户插件不存在: {id}")); }
+            if !dir.join("manifest.json").exists() {
+                return Err(format!("用户插件不存在: {id}"));
+            }
             let mut stack = vec![dir.clone()];
             while let Some(path) = stack.pop() {
                 for entry in fs::read_dir(&path).map_err(|e| format!("读取插件失败: {e}"))? {
                     let entry = entry.map_err(|e| e.to_string())?;
                     let p = entry.path();
-                    if p.is_dir() { stack.push(p); continue; }
-                    let rel = p.strip_prefix(&dir).map_err(|e| e.to_string())?.to_string_lossy().replace('\\', "/");
-                    writer.start_file(format!("{id}/{rel}"), opt).map_err(|e| format!("创建 ZIP 失败: {e}"))?;
+                    if p.is_dir() {
+                        stack.push(p);
+                        continue;
+                    }
+                    let rel = p
+                        .strip_prefix(&dir)
+                        .map_err(|e| e.to_string())?
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    writer
+                        .start_file(format!("{id}/{rel}"), opt)
+                        .map_err(|e| format!("创建 ZIP 失败: {e}"))?;
                     let data = fs::read(&p).map_err(|e| format!("读取插件文件失败: {e}"))?;
-                    writer.write_all(&data).map_err(|e| format!("写入 ZIP 失败: {e}"))?;
+                    writer
+                        .write_all(&data)
+                        .map_err(|e| format!("写入 ZIP 失败: {e}"))?;
                 }
             }
         }
@@ -760,9 +878,14 @@ struct HttpResp {
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 fn shared_http_client() -> Result<&'static reqwest::Client, String> {
-    if let Some(c) = HTTP_CLIENT.get() { return Ok(c); }
+    if let Some(c) = HTTP_CLIENT.get() {
+        return Ok(c);
+    }
     let client = reqwest::Client::builder()
-        .user_agent(concat!("Mozilla/5.0 LeTimeManagement/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!(
+            "Mozilla/5.0 LeTimeManagement/",
+            env!("CARGO_PKG_VERSION")
+        ))
         .connect_timeout(std::time::Duration::from_secs(6))
         .timeout(std::time::Duration::from_secs(15))
         .pool_idle_timeout(std::time::Duration::from_secs(90))
@@ -770,7 +893,9 @@ fn shared_http_client() -> Result<&'static reqwest::Client, String> {
         .build()
         .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
     let _ = HTTP_CLIENT.set(client);
-    HTTP_CLIENT.get().ok_or_else(|| "HTTP 客户端初始化失败".into())
+    HTTP_CLIENT
+        .get()
+        .ok_or_else(|| "HTTP 客户端初始化失败".into())
 }
 
 /// 插件网络桥：服务端抓取，绕开 WebView 的 CORS 限制
@@ -794,8 +919,16 @@ async fn http_get(url: String) -> Result<HttpResp, String> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let body = resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?;
-    Ok(HttpResp { status, body, final_url, content_type })
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    Ok(HttpResp {
+        status,
+        body,
+        final_url,
+        content_type,
+    })
 }
 
 /// 用系统默认浏览器打开外部链接（插件点击消息详情用）
@@ -804,7 +937,9 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 链接".into());
     }
-    app.opener().open_url(url, None::<&str>).map_err(|e| format!("打开失败: {e}"))
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|e| format!("打开失败: {e}"))
 }
 
 /* ── 局域网联动：手机/小程序作为遥控端 ── */
@@ -812,11 +947,21 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
 struct LanHandle(Mutex<Option<lan::LanInstance>>);
 
 #[tauri::command]
-fn lan_start(app: AppHandle, handle: State<LanHandle>, port: u16, token: String) -> Result<String, String> {
+fn lan_start(
+    app: AppHandle,
+    handle: State<LanHandle>,
+    port: u16,
+    token: String,
+) -> Result<String, String> {
     let quit = Arc::new(AtomicBool::new(false));
     let data_path = data_dir(&app)?.join("data.json");
     let url = lan::spawn_server(app, port, token.clone(), data_path, quit.clone())?;
-    *handle.0.lock().map_err(|_| "锁占用")? = Some(lan::LanInstance { quit, url: url.clone(), port, token });
+    *handle.0.lock().map_err(|_| "锁占用")? = Some(lan::LanInstance {
+        quit,
+        url: url.clone(),
+        port,
+        token,
+    });
     Ok(url)
 }
 
@@ -827,7 +972,13 @@ fn lan_stop(handle: State<LanHandle>) -> Result<(), String> {
         // 发一个哑请求解除 recv 阻塞，让服务线程退出
         if let Ok(mut s) = std::net::TcpStream::connect(("127.0.0.1", inst.port)) {
             use std::io::Write as _;
-            let _ = s.write_all(format!("GET /quit?token={} HTTP/1.1\r\nHost: localhost\r\n\r\n", inst.token).as_bytes());
+            let _ = s.write_all(
+                format!(
+                    "GET /quit?token={} HTTP/1.1\r\nHost: localhost\r\n\r\n",
+                    inst.token
+                )
+                .as_bytes(),
+            );
         }
     }
     Ok(())
@@ -851,8 +1002,8 @@ fn des_ecb_encrypt_hex(plain: String, key: String) -> Result<String, String> {
         return Err("DES 密钥必须为 8 字节".into());
     }
     type DesEcb = Encryptor<Des>;
-    let mut cipher = DesEcb::new_from_slice(key.as_bytes())
-        .map_err(|e| format!("密钥初始化失败: {e}"))?;
+    let mut cipher =
+        DesEcb::new_from_slice(key.as_bytes()).map_err(|e| format!("密钥初始化失败: {e}"))?;
     let mut buf = plain.as_bytes().to_vec();
     let pad = 8 - (buf.len() % 8);
     buf.extend(std::iter::repeat(pad as u8).take(pad));
@@ -868,12 +1019,17 @@ fn des_ecb_encrypt_hex(plain: String, key: String) -> Result<String, String> {
 /// 留着 jar 引用是为了整体导出/恢复 Cookie（应用重启后恢复登录态，免验证码）。
 pub struct HttpSession {
     client: reqwest::Client,
+    no_redirect_client: reqwest::Client,
     jar: Arc<reqwest::cookie::Jar>,
 }
 
 impl Clone for HttpSession {
     fn clone(&self) -> Self {
-        Self { client: self.client.clone(), jar: self.jar.clone() }
+        Self {
+            client: self.client.clone(),
+            no_redirect_client: self.no_redirect_client.clone(),
+            jar: self.jar.clone(),
+        }
     }
 }
 
@@ -881,16 +1037,28 @@ pub struct HttpSessions(pub Mutex<HashMap<String, HttpSession>>);
 
 fn new_http_session() -> Result<HttpSession, String> {
     let jar = Arc::new(reqwest::cookie::Jar::default());
-    let client = reqwest::Client::builder()
-        .cookie_provider(jar.clone())
-        .user_agent(concat!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 LeTimeManagement/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(std::time::Duration::from_secs(6))
-        .timeout(std::time::Duration::from_secs(18))
-        .pool_idle_timeout(std::time::Duration::from_secs(90))
-        .pool_max_idle_per_host(8)
-        .build()
-        .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))?;
-    Ok(HttpSession { client, jar })
+    let make_client = |follow_redirects: bool| {
+        let mut builder = reqwest::Client::builder()
+            .cookie_provider(jar.clone())
+            .user_agent(concat!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 LeTimeManagement/", env!("CARGO_PKG_VERSION")))
+            .connect_timeout(std::time::Duration::from_secs(6))
+            .timeout(std::time::Duration::from_secs(18))
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .pool_max_idle_per_host(8);
+        if !follow_redirects {
+            builder = builder.redirect(reqwest::redirect::Policy::none());
+        }
+        builder
+            .build()
+            .map_err(|e| format!("HTTP 客户端初始化失败: {e}"))
+    };
+    let client = make_client(true)?;
+    let no_redirect_client = make_client(false)?;
+    Ok(HttpSession {
+        client,
+        no_redirect_client,
+        jar,
+    })
 }
 
 fn new_session_id() -> String {
@@ -911,6 +1079,7 @@ struct HttpFetchResp {
     final_url: String,
     #[serde(rename = "contentType")]
     content_type: String,
+    location: String,
     cookies: Vec<String>,
 }
 
@@ -934,7 +1103,11 @@ pub struct CookieDump {
 
 /// 导出会话在给定 URL 下的全部 Cookie（登录成功后由插件保存，重启后恢复免验证码）
 #[tauri::command]
-fn http_session_export(state: State<HttpSessions>, sid: String, urls: Vec<String>) -> Result<Vec<CookieDump>, String> {
+fn http_session_export(
+    state: State<HttpSessions>,
+    sid: String,
+    urls: Vec<String>,
+) -> Result<Vec<CookieDump>, String> {
     use reqwest::cookie::CookieStore as _;
     let session = state
         .0
@@ -958,7 +1131,10 @@ fn http_session_export(state: State<HttpSessions>, sid: String, urls: Vec<String
 
 /// 用导出的 Cookie 重建一个会话（host-only 属性与导出时一致，可直接续期）
 #[tauri::command]
-fn http_session_restore(state: State<HttpSessions>, cookies: Vec<CookieDump>) -> Result<String, String> {
+fn http_session_restore(
+    state: State<HttpSessions>,
+    cookies: Vec<CookieDump>,
+) -> Result<String, String> {
     let session = new_http_session()?;
     for dump in &cookies {
         let url = reqwest::Url::parse(&dump.url).map_err(|e| format!("URL 无法解析: {e}"))?;
@@ -987,6 +1163,7 @@ async fn http_fetch(
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
     binary: Option<bool>,
+    follow_redirects: Option<bool>,
 ) -> Result<HttpFetchResp, String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 地址".into());
@@ -998,7 +1175,11 @@ async fn http_fetch(
         .get(&sid)
         .cloned()
         .ok_or("会话不存在或已过期，请重新创建")?;
-    let client = session.client;
+    let client = if follow_redirects == Some(false) {
+        session.no_redirect_client
+    } else {
+        session.client
+    };
 
     let mut req = match method.to_uppercase().as_str() {
         "POST" => client.post(&url),
@@ -1023,6 +1204,12 @@ async fn http_fetch(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
+    let location = resp
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
     let cookies = resp
         .headers()
         .get_all(reqwest::header::SET_COOKIE)
@@ -1033,12 +1220,24 @@ async fn http_fetch(
     // binary=true 时返回 base64（验证码等图片场景）
     let resp_body = if binary.unwrap_or(false) {
         use base64::Engine as _;
-        let bytes = resp.bytes().await.map_err(|e| format!("读取响应失败: {e}"))?;
+        let bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| format!("读取响应失败: {e}"))?;
         base64::engine::general_purpose::STANDARD.encode(&bytes)
     } else {
-        resp.text().await.map_err(|e| format!("读取响应失败: {e}"))?
+        resp.text()
+            .await
+            .map_err(|e| format!("读取响应失败: {e}"))?
     };
-    Ok(HttpFetchResp { status, body: resp_body, final_url, content_type, cookies })
+    Ok(HttpFetchResp {
+        status,
+        body: resp_body,
+        final_url,
+        content_type,
+        location,
+        cookies,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1057,7 +1256,9 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
     #[cfg(target_os = "android")]
-    { builder = builder.plugin(native_schedule::init()); }
+    {
+        builder = builder.plugin(native_schedule::init());
+    }
     builder
         .plugin(tauri_plugin_opener::init())
         .manage(HttpSessions(Mutex::new(HashMap::new())))

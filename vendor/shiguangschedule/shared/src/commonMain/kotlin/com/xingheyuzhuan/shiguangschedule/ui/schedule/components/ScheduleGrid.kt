@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -33,6 +34,7 @@ import org.jetbrains.compose.resources.stringArrayResource
 import shiguangschedule.shared.generated.resources.Res
 import shiguangschedule.shared.generated.resources.week_days_short_names
 import kotlin.math.roundToInt
+import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
 @Suppress("COMPOSE_APPLIER_CALL_MISMATCH")
@@ -70,6 +72,7 @@ fun ScheduleGrid(
             calculateSingleSchedulables(viewState.mergedCourses, viewState.firstDayOfWeek, viewState.showWeekends)
         }
         val sectionHeightPx = with(density) { style.sectionHeight.toPx() }
+        val trackpadScrollUnitPx = with(density) { 52.dp.toPx() }
 
         var activeDragHour by remember { mutableStateOf<Int?>(null) }
         var activeDragMinuteStr by remember { mutableStateOf<String?>(null) }
@@ -175,6 +178,25 @@ fun ScheduleGrid(
                 modifier = Modifier
                     .fillMaxSize()
                     .onSizeChanged { state.viewportHeightPx = it.height.toFloat() }
+                    // Compose Desktop's pager can claim high-resolution touchpad wheel events
+                    // before verticalScroll sees them. Intercept only predominantly vertical
+                    // deltas at the initial pass; horizontal two-finger gestures still change week.
+                    .pointerInput(state.gridScrollState, state.expandedItem, trackpadScrollUnitPx) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                if (state.expandedItem != null) continue
+                                val delta = event.changes.fold(Offset.Zero) { total, change ->
+                                    total + change.scrollDelta
+                                }
+                                if (abs(delta.y) <= abs(delta.x) || delta.y == 0f) continue
+                                val amount = delta.y.coerceIn(-3f, 3f) * trackpadScrollUnitPx
+                                if (state.gridScrollState.dispatchRawDelta(amount) != 0f) {
+                                    event.changes.forEach { it.consume() }
+                                }
+                            }
+                        }
+                    }
                     .verticalScroll(state = state.gridScrollState, enabled = state.expandedItem == null)
             ) {
                 TimeColumn(
