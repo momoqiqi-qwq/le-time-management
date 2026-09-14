@@ -85,7 +85,7 @@ export function renderNativeSchedule(container, ctx, fallback) {
         if (key === lastBounds) return;
         lastBounds = key;
         send("show", bounds).then(() => { if (!disposed) message.textContent = ""; })
-          .catch(e => { if (!disposed) { lastBounds = ""; message.textContent = String(e); } });
+          .catch(() => { if (!disposed) { lastBounds = ""; degrade(); } });
       });
     }
     const observer = new ResizeObserver(resize);
@@ -106,7 +106,7 @@ export function renderNativeSchedule(container, ctx, fallback) {
     };
 
     if (status.platform === "android") {
-      const open = () => send("show").catch(e => { if (!disposed) message.textContent = String(e); });
+      const open = () => send("show").catch(() => { if (!disposed) degrade(); });
       message.textContent = "时光课程表";
       const button = document.createElement("button");
       button.textContent = "进入课表";

@@ -120,6 +120,38 @@ function box() {
 
 /* ④ 插件界面自己炸了 → 给出可读提示，而不是白屏 */
 {
+  calls.length = 0;
+  statusReply = { available: true, platform: 'windows' };
+  const el = box();
+  let got = null;
+  window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+    calls.push({ cmd, args });
+    if (args?.action === 'status') return statusReply;
+    if (args?.action === 'show') throw new Error('原版课表未完成启动，请检查运行时日志');
+    return { visible: true };
+  };
+  renderNativeSchedule(el, {}, (target) => {
+    got = target;
+    target.append(new FakeEl('main'));
+  });
+  await tick();
+  await tick();
+  assert.equal(got, el, '原生运行时启动失败时必须回退到插件界面');
+  assert.ok(!el.text().includes('原版课表未完成启动'), '不该把原生启动失败留成死面板');
+  assert.equal(el.style.cssText, 'height:100%;overflow-y:auto', '原生启动失败回退时必须还原 .plugview 样式');
+
+  window.__TAURI_INTERNALS__.invoke = async (cmd, args) => {
+    calls.push({ cmd, args });
+    if (args?.action === 'status') {
+      if (statusReply instanceof Error) throw statusReply;
+      return statusReply;
+    }
+    return { visible: true };
+  };
+}
+
+/* ⑤ 插件界面自己炸了 → 给出可读提示，而不是白屏 */
+{
   statusReply = { available: false, platform: 'windows' };
   const el = box();
   renderNativeSchedule(el, {}, () => { throw new Error('存储不可用'); });
@@ -127,7 +159,7 @@ function box() {
   assert.match(el.text(), /课程表界面加载失败：存储不可用/);
 }
 
-/* ⑤ 没有兜底渲染函数时也不能静默白屏 */
+/* ⑥ 没有兜底渲染函数时也不能静默白屏 */
 {
   statusReply = { available: false, platform: 'windows' };
   const el = box();
