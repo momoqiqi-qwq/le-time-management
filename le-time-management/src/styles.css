@@ -543,8 +543,13 @@ button, .nav { touch-action: manipulation; }
   .topbar .sub { display: none; }
   .topbar .pill { padding: 4px 10px; font-size: 11px; }
   .quad-wrap { padding: 12px 12px 16px; }
-  .quad-grid { grid-template-columns: 1fr; grid-template-rows: none; }
-  .q .tks { max-height: 200px; }
+  /* Android：四张象限卡必须由内容撑高，整页交给 .view 滚动。若沿用桌面的
+     height:100% + flex:1，网格会把四张卡压进一屏，卡内按钮被 overflow 裁掉，
+     触摸实际命中后面的卡片，看起来像“按钮无反应”。 */
+  .quad-wrap { height: auto; min-height: 100%; }
+  .quad-grid { flex: none; grid-template-columns: 1fr; grid-template-rows: none; grid-auto-rows: max-content; }
+  .q { width: 100%; min-width: 0; overflow: visible; }
+  .q .tks { flex: none; max-height: none; overflow: visible; }
   .tb-wrap { flex-direction: column; overflow-y: auto; }
   .pool { width: 100%; padding: 12px 14px 4px; }
   .pool .plist { flex-direction: row; overflow-x: auto; padding-bottom: 6px; }

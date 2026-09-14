@@ -122,7 +122,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value }), "例如“四象限 · 先决定，再动手”中的说明"),
     toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value }), "关闭可减少 Android / 触屏设备误触翻页"),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入"), el("small", {}, "选择固定页面，或继续上次离开的位置")), startup),
-    windowRow,
+    desktopWindow ? windowRow : null,
     el("div", { class: "data-actions pref-reset" },
       el("button", { class: "btn ghost sm", onclick: () => { resetUiPreferences(); toast("界面与交互设置已恢复默认"); rerender(); } }, "恢复界面默认"),
     ),

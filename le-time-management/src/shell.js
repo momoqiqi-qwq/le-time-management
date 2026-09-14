@@ -12,6 +12,7 @@ import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExter
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
 import { getUiPreferences } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
+import { isDesktopRuntime } from "./windowSize.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -110,6 +111,8 @@ function allViewIds() {
 
 export function renderShell(root) {
   ensureActiveView();
+  const desktopWindow = isDesktopRuntime();
+  const dragRegion = desktopWindow ? "" : null;
   const settings = S.getState().settings;
   settings.quickDock ??= { left: null, top: 92, collapsed: false, alwaysOnTop: false };
   const quickDockState = settings.quickDock;
@@ -147,21 +150,21 @@ export function renderShell(root) {
     onclick: handler,
   }, el("span", { class: `window-control-glyph window-control-glyph-${kind}`, "aria-hidden": "true" }));
 
-  const windowControls = el("div", { class: "window-controls", "data-noswipe": "", title: "拖动可调整顶栏位置" },
+  const windowControls = desktopWindow ? el("div", { class: "window-controls", "data-noswipe": "", title: "拖动可调整顶栏位置" },
     makeWindowControl("minimize", "最小化", () => withCurrentWindow((win) => win.minimize())),
     makeWindowControl("maximize", "最大化 / 还原", () => withCurrentWindow((win) => win.toggleMaximize())),
     makeWindowControl("close", "关闭", () => withCurrentWindow((win) => win.close())),
-  );
+  ) : null;
 
   const topSearch = el("button", { class: "top-search", title: "全局搜索 / 命令面板（Ctrl+K）· 拖动可调整位置", type: "button", onclick: () => window.dispatchEvent(new CustomEvent("tide:command-palette")) },
     el("span", {}, "⌕"), el("span", { class: "top-search-label" }, "搜索 / 命令"), el("kbd", {}, "Ctrl K"));
   const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
-  const topbar = el("header", { class: "topbar", "data-tauri-drag-region": "" },
-      el("div", { class: "topbar-title-card", "data-tauri-drag-region": "" },
-        el("span", { class: "topbar-title-mark", "data-tauri-drag-region": "" }, appIcon("quadrant", "Le时间管理")),
-        el("div", { class: "topbar-title-copy", "data-tauri-drag-region": "" }, titleEl, subEl),
+  const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
+      el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
+        el("span", { class: "topbar-title-mark", "data-tauri-drag-region": dragRegion }, appIcon("quadrant", "Le时间管理")),
+        el("div", { class: "topbar-title-copy", "data-tauri-drag-region": dragRegion }, titleEl, subEl),
       ),
-      el("span", { class: "window-drag-strip", "data-tauri-drag-region": "" }),
+      desktopWindow ? el("span", { class: "window-drag-strip", "data-tauri-drag-region": dragRegion }) : null,
       topbarActionCard,
     );
   const main = el("main", { class: "main" },
@@ -174,11 +177,13 @@ export function renderShell(root) {
 
   function renderTopbarOrder() {
     const parts = { search: topSearch, quick: quickDockToggle, stats: statPill, window: windowControls };
-    topbarActionCard.replaceChildren(...topbarOrderState().map((id) => parts[id]));
+    topbarActionCard.replaceChildren(...topbarOrderState().map((id) => parts[id]).filter(Boolean));
     for (const [id, node] of Object.entries(parts)) {
-      node.draggable = true;
+      if (!node) continue;
+      node.draggable = desktopWindow;
       node.dataset.topbarPart = id;
       node.classList.add("topbar-sortable");
+      if (!desktopWindow) continue;
       if (node.dataset.topbarDragBound) continue;
       node.dataset.topbarDragBound = "true";
       node.addEventListener("dragstart", (event) => {
@@ -356,7 +361,7 @@ export function renderShell(root) {
       isPlug ? el("span", { class: "pv-count" }, "插件") : null,
     );
     b.addEventListener("click", () => switchTo(id));
-    if (isPlug && def.pluginView?.pluginId) {
+    if (desktopWindow && isPlug && def.pluginView?.pluginId) {
       b.draggable = true;
       b.dataset.pluginId = def.pluginView.pluginId;
       b.title = `${def.title} · 可拖动调整插件顺序`;
@@ -418,7 +423,7 @@ export function renderShell(root) {
     document.querySelector(".settings-modal")?._close?.();
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
     const panel = el("section", { class: "settings-modal", role: "dialog", "aria-modal": "true", "aria-label": "设置" },
-      el("header", { class: "settings-modal-head", "data-tauri-drag-region": "" },
+      el("header", { class: "settings-modal-head", "data-tauri-drag-region": dragRegion },
         el("div", {}, el("h2", {}, "设置"), el("p", { class: "desc" }, "界面、插件、数据和同步集中在这里调整")),
         el("button", { class: "btn ghost sm", type: "button", onclick: close }, "关闭"),
       ),
@@ -547,7 +552,7 @@ export function renderShell(root) {
         createQuickDockButton("收", "收件箱", () => switchTo("inbox")),
         createQuickDockButton("拼", "插件中心", () => switchTo("market")),
         createQuickDockButton("设", "设置", () => openSettingsModal()),
-        pinActionBtn = createQuickDockButton("钉", "窗口置顶", async () => {
+        desktopWindow ? (pinActionBtn = createQuickDockButton("钉", "窗口置顶", async () => {
           await withCurrentWindow(async (win) => {
             const next = !(await win.isAlwaysOnTop());
             await win.setAlwaysOnTop(next);
@@ -556,9 +561,9 @@ export function renderShell(root) {
             S.persistSoon();
             toast(next ? "已置顶窗口" : "已取消置顶");
           });
-        }, "pin"),
-        createQuickDockButton("－", "最小化", () => withCurrentWindow((win) => win.minimize())),
-        createQuickDockButton("×", "关闭", () => withCurrentWindow((win) => win.close())),
+        }, "pin")) : null,
+        desktopWindow ? createQuickDockButton("－", "最小化", () => withCurrentWindow((win) => win.minimize())) : null,
+        desktopWindow ? createQuickDockButton("×", "关闭", () => withCurrentWindow((win) => win.close())) : null,
       ),
     );
     quickDock = dock;
