@@ -130,13 +130,12 @@ async fn school_import_open(
     }
     let app_for_navigation = app.clone();
     let script_for_navigation = adapter_script.clone();
-    WebviewWindowBuilder::new(&app, "school-import", WebviewUrl::External(parsed))
+    let builder = WebviewWindowBuilder::new(&app, "school-import", WebviewUrl::External(parsed))
         .title(format!(
             "时光课程表 · {}",
             title.chars().take(60).collect::<String>()
         ))
         .inner_size(1100.0, 780.0)
-        .center()
         .initialization_script(SCHOOL_IMPORT_BOOTSTRAP)
         .on_navigation(move |target| {
             if target.scheme() != "letime-import" {
@@ -155,7 +154,12 @@ async fn school_import_open(
                 _ => {}
             }
             false
-        })
+        });
+    // `center()` 在 tauri 里属于 `#[cfg(desktop)]` 门控的 impl 块，Android 上没有这个方法。
+    // 不门控的话 Windows 能编过、Android 直接 E0599 编译失败（v0.25.0 起一直如此）。
+    #[cfg(desktop)]
+    let builder = builder.center();
+    builder
         .build()
         .map_err(|e| format!("打开教务登录窗口失败: {e}"))?;
     Ok(())
