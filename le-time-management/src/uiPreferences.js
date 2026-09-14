@@ -1,4 +1,5 @@
 import * as S from "./store.js";
+import { CUSTOM_SIZE_LIMITS } from "./windowSize.js";
 
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   density: "comfortable",
@@ -9,6 +10,10 @@ export const DEFAULT_UI_PREFERENCES = Object.freeze({
   centerTopStats: false,
   showViewSubtitle: true,
   startupView: "last",
+  // 启动窗口大小：默认「跟随屏幕」——绝大多数显示器上都会比旧的固定 1280×820 更大。
+  startupWindowMode: "auto",
+  startupWindowWidth: 1440,
+  startupWindowHeight: 900,
 });
 
 export const STARTUP_VIEW_OPTIONS = Object.freeze([
@@ -19,9 +24,22 @@ export const STARTUP_VIEW_OPTIONS = Object.freeze([
   ["market", "插件中心"],
 ]);
 
+/** 启动窗口大小的可选模式。具体的像素值在 windowSize.js —— 那边才是尺寸的单一事实源。 */
+export const WINDOW_SIZE_MODES = Object.freeze(["auto", "compact", "standard", "large", "full", "custom"]);
+
+export const WINDOW_SIZE_OPTIONS = Object.freeze([
+  ["auto", "跟随屏幕（推荐）"],
+  ["compact", "小巧 · 1120 × 720"],
+  ["standard", "标准 · 1360 × 860"],
+  ["large", "宽大 · 1600 × 1000"],
+  ["full", "铺满可用区域"],
+  ["custom", "自定义尺寸"],
+]);
+
 const DENSITIES = new Set(["comfortable", "compact"]);
 const MOTIONS = new Set(["system", "full", "reduced"]);
 const STARTUP_VIEWS = new Set(STARTUP_VIEW_OPTIONS.map(([id]) => id));
+const WINDOW_SIZE_MODES_SET = new Set(WINDOW_SIZE_MODES);
 
 function clamp(v, lo, hi) {
   const n = Number(v);
@@ -38,6 +56,9 @@ export function normalizeUiPreferences(raw = {}) {
   next.showTopStats = next.showTopStats !== false;
   next.centerTopStats = next.centerTopStats === true;
   next.showViewSubtitle = next.showViewSubtitle !== false;
+  if (!WINDOW_SIZE_MODES_SET.has(next.startupWindowMode)) next.startupWindowMode = DEFAULT_UI_PREFERENCES.startupWindowMode;
+  next.startupWindowWidth = Math.round(clamp(next.startupWindowWidth, CUSTOM_SIZE_LIMITS.minWidth, CUSTOM_SIZE_LIMITS.maxWidth));
+  next.startupWindowHeight = Math.round(clamp(next.startupWindowHeight, CUSTOM_SIZE_LIMITS.minHeight, CUSTOM_SIZE_LIMITS.maxHeight));
   return next;
 }
 

@@ -1,6 +1,9 @@
-import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';
+import fs from 'node:fs';import vm from 'node:vm';import assert from 'node:assert/strict';import { spawnSync } from 'node:child_process';import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import * as XLSX from 'xlsx';
 import { spreadsheetFileToCsv } from '../src/spreadsheet.js';
+// 对比度算式复用主题工具库的那一份，别在测试里另造一套（两套算法迟早对不上）。
+const { contrastRatio } = createRequire(import.meta.url)('../../tools/lib/theme-tokens.js');
 const ctx=vm.createContext({TextEncoder,TextDecoder});vm.runInContext(fs.readFileSync(new URL('../public/plugins/shiguang-schedule/model.js',import.meta.url),'utf8'),ctx);const M=ctx.ShiguangModel;
 const raw=M.empty('2026-09-09');raw.config.semesterStartDate='2026-09-07';raw.courses=[{id:'a',name:'课程，测试',teacher:'教师',position:'一教',day:1,startSection:1,endSection:2,weeks:[1,3,5],remark:'第一行\n第二行'},{id:'b',name:'自定义课',day:7,isCustomTime:true,customStartTime:'18:00',customEndTime:'19:00',weeks:[2]}];const table=M.normalize(raw);
 assert.equal(M.weekOf('2026-09-09','2026-09-13'),1);assert.equal(M.weekOf('2026-09-09','2026-09-14'),2);assert.equal(M.weekOf('2026-09-09','2026-09-06'),0);
@@ -44,7 +47,7 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
@@ -151,3 +154,54 @@ const nativeResourceInitializer=fs.readFileSync(new URL('../../vendor/shiguangsc
 assert.match(nativeSchoolRepository,/id = "CPPU"/);
 assert.match(nativeResourceInitializer,/schools\/resources\/CPPU\/cppu\.js/,'existing native installations must receive the bundled CPPU adapter');
 console.log('PASS: CPPU is built in and its real JE course rows convert dates, block sections and duplicate occurrences correctly');
+
+/* ── v0.33.0 一、彩色课程块开关（「我的 → 个性化配置」里的滑块） ── */
+const styleDefaults = ui.match(/const defaultStyle=\{([^}]*)\}/)?.[1] || '';
+assert.match(styleDefaults, /colorful:false/, '彩色开关默认必须关：不能悄悄改掉所有老用户的观感');
+assert.match(ui, /switchRow\('彩色课程块'/, '个性化配置里缺少彩色滑块');
+assert.match(ui, /name="\$\{name\}"/, '滑块必须真的渲染出带 name 的 checkbox，否则保存时读不到值');
+assert.match(ui, /style\.colorful\?'colorful':''/, '彩色开关必须落到 .sg 的类名上，否则 CSS 不生效');
+assert.match(ui, /colorful:form\.elements\.colorful\.checked/, '保存样式时必须一并写入 colorful，否则滑块点了白点');
+assert.match(ui, /switch-row/, '个性化配置的开关要用滑块样式，不能退回原生 checkbox');
+
+// 彩色调色板：每档都必须是「浅色文字压得住」的实色。
+// 这套色刻意不跟随主题 —— 深色模式下主题强调色会被提亮，白字压上去只剩 2.4:1。
+const paletteLines = ui.split('\n').filter((l) => l.includes(':is(.sg.colorful') && l.includes('--course-accent:#') && l.includes('--course-on:#'));
+assert.equal(paletteLines.length, 8, `彩色模式应有 8 档色调，实际 ${paletteLines.length}`);
+for (const line of paletteLines) {
+  const m = line.match(/--course-accent:(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6});--course-on:(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})/);
+  assert.ok(m, `彩色色调缺少 accent/on 配对：${line.trim().slice(0, 80)}`);
+  const ratio = contrastRatio(m[1], m[2]);
+  assert.ok(ratio >= 4.5, `彩色色调 ${m[1]} 上的文字只有 ${ratio.toFixed(2)}:1，未达 WCAG AA 4.5:1`);
+  assert.ok(['#fff', '#ffffff'].includes(m[2].toLowerCase()), '彩色模式的文字色应统一为白色，混用会让对比度不受控');
+}
+
+const fx = uiContext.fixture;
+assert.equal(typeof fx.tone, 'function', 'fixture 没拿到 tone，说明 ui.js 的结构变了');
+fx.setStyle({ colorful: false });
+assert.equal(fx.tone({ name: '数字电子技术', color: 0 }), 0, '非彩色模式下未调色的课仍是 tone-0，保持 v0.32 的观感');
+assert.equal(fx.tone({ name: '数字电子技术', color: 3 }), 3, '手动选过的颜色任何模式下都不该被覆盖');
+fx.setStyle({ colorful: true });
+const toneNames = ['数字电子技术', '模拟电子技术', '线性代数A', '马克思主义基本原理', 'C语言程序设计A', '复变函数与积分变换', '智慧消防专业英语', '多旋翼无人机组装与调试', '反邪教研究', '机器人操控基础'];
+const tones = toneNames.map((n) => fx.tone({ name: n, color: 0 }));
+assert.ok(new Set(tones).size >= 5, `彩色模式下导入的课表应散到多个色调，实际只有 ${new Set(tones).size} 种`);
+assert.equal(fx.tone({ name: '数字电子技术', color: 0 }), fx.tone({ name: '数字电子技术', color: 0 }), '同一门课的颜色必须稳定');
+for (const t of tones) assert.ok(Number.isInteger(t) && t >= 0 && t < 8, `色调越界：${t}`);
+assert.equal(fx.tone({ name: '线性代数A', color: 6 }), 6, '彩色模式下手动颜色仍然优先');
+console.log('PASS: colorful course blocks — switch, name-hashed palette, all 8 tones pass WCAG AA');
+
+/* ── v0.33.0 二、课表界面滚轮上下滑动 ── */
+// .schedule-frame 是横向滚动容器。整份 overscroll-behavior:contain 会把纵向滚轮也吃掉，
+// 鼠标停在课表上时外层 .plugview 一点都滚不动 —— 只能约束 x，纵向必须允许串联。
+assert.ok(ui.includes('overscroll-behavior-x:contain'), '课表容器必须保留横向不串联');
+assert.ok(!ui.includes('overscroll-behavior:contain'), '不能再用整份 overscroll-behavior:contain：纵向滚轮会被吃掉，课表界面上滚不动');
+console.log('PASS: schedule view no longer swallows the vertical wheel');
+
+/* ── v0.33.0 三、生成物同步守卫（改了源忘了重建 main.js 是最容易漏的一步） ── */
+const buildCheck = spawnSync(process.execPath, [fileURLToPath(new URL('../../tools/build-schedule-plugin.js', import.meta.url)), '--check'], { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8' });
+assert.equal(buildCheck.status, 0, `main.js 与 model.js + ui.js 不同步：\n${buildCheck.stdout || ''}${buildCheck.stderr || ''}`);
+const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/shiguang-schedule/manifest.json', import.meta.url), 'utf8'));
+const catalogBlock = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8').split('"id": "shiguang-schedule"')[1].slice(0, 400);
+assert.ok(catalogBlock.includes(`"version": "${manifest.version}"`), 'pluginCatalog 必须同步插件版本号（改完 manifest 要跑 tools/sync-plugins.js）');
+assert.match(manifest.description, /彩色课程块/, 'manifest 描述要提到彩色课程块');
+console.log('PASS: shiguang-schedule/main.js is regenerated from model.js + ui.js and catalog version matches');

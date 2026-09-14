@@ -1215,6 +1215,12 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .pref-range { display: flex; align-items: center; gap: 9px; min-width: 230px; justify-content: flex-end; }
 .pref-range input { width: 180px; }
 .pref-range output { min-width: 38px; text-align: right; color: var(--ink-2); font-size: 11px; }
+/* 启动窗口大小（桌面端每次打开时的默认尺寸，见 src/windowSize.js） */
+.win-size-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.win-size-row select { width: auto; min-width: 172px; flex: none; }
+.win-size-row .win-size { width: 92px; flex: none; }
+.win-size-sep { color: var(--ink-2); font-size: 12px; flex: none; }
+.win-size-hint { color: var(--ink-3); font-size: 11px; line-height: 1.5; }
 .pref-reset { margin-top: 10px; }
 
 @media (max-width: 760px) {

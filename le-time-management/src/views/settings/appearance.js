@@ -5,10 +5,12 @@ import { DEFAULT_BACKGROUND, normalizeBackground, setBackground } from "../../ba
 import {
   DEFAULT_UI_PREFERENCES,
   STARTUP_VIEW_OPTIONS,
+  WINDOW_SIZE_OPTIONS,
   getUiPreferences,
   resetUiPreferences,
   setUiPreferences,
 } from "../../uiPreferences.js";
+import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
 
 function toggleRow(label, checked, onChange, note = "") {
   const input = el("input", { type: "checkbox", checked: checked ? true : null });
@@ -50,6 +52,54 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   startup.value = prefs.startupView;
   startup.addEventListener("change", () => { setUiPreferences({ startupView: startup.value }); toast("启动页设置将在下次打开应用时生效"); });
 
+  /* 启动窗口大小：桌面端启动时套用（实现见 src/windowSize.js）。 */
+  const desktopWindow = isDesktopRuntime();
+  const windowMode = el("select", {});
+  for (const [id, label] of WINDOW_SIZE_OPTIONS) windowMode.append(el("option", { value: id }, label));
+  windowMode.value = prefs.startupWindowMode;
+  const winW = el("input", { type: "number", class: "win-size", min: String(CUSTOM_SIZE_LIMITS.minWidth), max: String(CUSTOM_SIZE_LIMITS.maxWidth), step: "20", value: String(prefs.startupWindowWidth), "aria-label": "启动窗口宽度" });
+  const winH = el("input", { type: "number", class: "win-size", min: String(CUSTOM_SIZE_LIMITS.minHeight), max: String(CUSTOM_SIZE_LIMITS.maxHeight), step: "20", value: String(prefs.startupWindowHeight), "aria-label": "启动窗口高度" });
+  const customSize = el("span", { class: "win-size-row" }, winW, el("span", { class: "win-size-sep" }, "×"), winH);
+  const windowHint = el("small", { class: "win-size-hint" });
+  const syncWindowRow = () => {
+    customSize.style.display = windowMode.value === "custom" ? "" : "none";
+    windowHint.textContent = windowSizeHint(windowMode.value, {
+      startupWindowWidth: Number(winW.value),
+      startupWindowHeight: Number(winH.value),
+    }) + (desktopWindow ? "" : " 当前环境不支持调整窗口，仅桌面端安装版生效。");
+  };
+  windowMode.addEventListener("change", () => {
+    setUiPreferences({ startupWindowMode: windowMode.value });
+    syncWindowRow();
+  });
+  for (const input of [winW, winH]) {
+    input.addEventListener("change", () => {
+      setUiPreferences({ startupWindowWidth: Number(winW.value), startupWindowHeight: Number(winH.value) });
+      // 越界输入会被 normalize 夹回范围内，写回控件让用户看到真实生效值。
+      const fixed = getUiPreferences();
+      winW.value = String(fixed.startupWindowWidth);
+      winH.value = String(fixed.startupWindowHeight);
+      syncWindowRow();
+    });
+  }
+  const applyWindowNow = async () => {
+    const out = await applyWindowSize(getUiPreferences());
+    if (out.applied) toast(out.mode === "full" ? "窗口已铺满可用区域" : `窗口已调整为 ${out.width} × ${out.height}`);
+    else toast(`当前环境无法调整窗口${desktopWindow ? `：${out.reason || "未知原因"}` : ""}`);
+  };
+  const windowRow = el("div", { class: "setting-row setting-col" },
+    el("span", { class: "setting-copy" },
+      el("b", {}, "启动窗口大小"),
+      el("small", {}, "每次打开应用时的默认窗口大小；手动拖过的尺寸不会记忆")),
+    el("div", { class: "win-size-row" },
+      windowMode,
+      customSize,
+      el("button", { class: "btn ghost sm", type: "button", onclick: applyWindowNow }, "立即应用"),
+    ),
+    windowHint,
+  );
+  syncWindowRow();
+
   const applyPreset = (name, patch) => {
     setUiPreferences(patch);
     toast(`已应用「${name}」界面预设`);
@@ -72,6 +122,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value }), "例如“四象限 · 先决定，再动手”中的说明"),
     toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value }), "关闭可减少 Android / 触屏设备误触翻页"),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入"), el("small", {}, "选择固定页面，或继续上次离开的位置")), startup),
+    windowRow,
     el("div", { class: "data-actions pref-reset" },
       el("button", { class: "btn ghost sm", onclick: () => { resetUiPreferences(); toast("界面与交互设置已恢复默认"); rerender(); } }, "恢复界面默认"),
     ),

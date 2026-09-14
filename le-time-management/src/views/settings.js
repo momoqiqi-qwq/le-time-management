@@ -316,7 +316,7 @@ export function renderSettings(container) {
     const aboutCard = createAboutCard(info, regs);
 
     const settingEntries = [
-      { id: "ui", node: uiCard, label: "界面与交互", hint: "密度 / 字号 / 动效", keywords: "密度 文字 字号 动效 手势 滑动 启动页 顶部统计 副标题" },
+      { id: "ui", node: uiCard, label: "界面与交互", hint: "密度 / 字号 / 动效 / 窗口", keywords: "密度 文字 字号 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题" },
       { id: "theme", node: themeCard, label: "主题", hint: "配色与阅读模式", keywords: "颜色 夜间 深海 樱花 松林 暮光 极简" },
       { id: "background", node: bgCard, label: "自定义背景", hint: "壁纸 / 遮罩 / 毛玻璃", keywords: "壁纸 图片 纯色 透明 模糊 毛玻璃 遮罩 亮度 饱和度" },
       { id: "reminders", node: reminderCard, label: "任务提醒", hint: "预警时间与提示音", keywords: "提醒 预警 音量 提示音 音频 截止" },

@@ -5,7 +5,8 @@ import { initCapture } from "./capture.js";
 import { api } from "./api.js";
 import { initTheme } from "./theme.js";
 import { initBackground } from "./background.js";
-import { initUiPreferences } from "./uiPreferences.js";
+import { initUiPreferences, getUiPreferences } from "./uiPreferences.js";
+import { applyWindowSize } from "./windowSize.js";
 import { initTaskReminders } from "./taskReminder.js";
 import { initCommandPalette } from "./commandPalette.js";
 import { initGlobalShortcuts } from "./globalShortcuts.js";
@@ -42,6 +43,8 @@ async function boot() {
   initTheme();
   initBackground();
   initUiPreferences();
+  // 启动窗口大小：桌面端按设置套一次（不阻塞首屏，失败也不影响启动）
+  applyWindowSize(getUiPreferences()).catch(() => {});
   initMotionInteractions();
   renderShell(document.getElementById("app"));
   initCapture();
