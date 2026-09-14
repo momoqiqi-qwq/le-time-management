@@ -165,7 +165,7 @@ CSS 里凡「深色才生效」的规则一律用 `[data-theme-mode="dark"]`，*
 - 包里的测试脚本用交付包布局路径（`../app/src/...`），落到仓库里必报 `ENOENT`，
   要改回 `../src/`、`../public/`、`../src-tauri/`。
 
-详见技能 `le-time-management-source-sync`（含源码包 ↔ 工作区的逐目录映射表，
+详见技能 `letime-overlay-merge`（含源码包 ↔ 工作区的逐目录映射表，
 以及「哪些文件必须保留仓库版、只合并新增内容」的清单）。
 
 ---

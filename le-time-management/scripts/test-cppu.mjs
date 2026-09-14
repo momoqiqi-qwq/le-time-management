@@ -90,13 +90,13 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.6.0');
+assert.equal(cppuManifest.version, '1.7.0');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
 const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
-assert.match(cppuBlock, /"1\.6\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(cppuBlock, /"1\.7\.0"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
@@ -110,6 +110,20 @@ assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用�
 assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓五个站点');
 assert.match(source, /\{\s*url:\s*"https:\/\/service\.cppu\.edu\.cn\/fe\/site\/service"[^}]*icon:\s*"[a-z-]+"/, '一网通办入口必须自带语义图标，供无法读 favicon 时兜底');
 assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '侧栏必须同时绑定在登录页与通知列表页');
+
+/* ── 校园服务栏可收起 / 展开：默认收起、有动画、自左上角往右下角展开、正文随之让位 ── */
+assert.match(source, /sideOpen:\s*false/, '校园服务栏必须默认收起');
+assert.match(source, /"pp-shell side-collapsed"/, '默认渲染必须带上 side-collapsed 类');
+assert.ok((source.match(/data-side-toggle/g) || []).length >= 2, '收起与展开都要有开关（侧栏头部一个、收起后左上角把手一个）');
+assert.match(source, /applySideOpen\(root, !state\.sideOpen\)/, '开关必须真的切换收起状态');
+assert.match(source, /\.pp-side\{[^}]*transition:width/, '侧栏宽度必须有过渡，否则没有收起/展开动画');
+assert.match(source, /\.pp-shell\.side-collapsed \.pp-side\{width:0/, '收起必须是宽度归零（这样 flex:1 的正文才会跟着移动）');
+assert.match(source, /\.pp-side-inner\{width:214px/, '内层必须固定宽度，避免动画期间文字一直在重排');
+assert.match(source, /transform-origin:left top/, '展开方向必须自左上角起');
+assert.match(source, /\.pp-shell\.side-collapsed \.pp-side-inner\{transform:scale/, '内层收起时要有缩放，形成左上角到右下角的收放');
+assert.match(source, /max-height:0/, '窄屏（≤820px）侧栏是整层叠放，收起要走高度归零');
+assert.match(source, /\.pp-side\{[^}]*margin-right:16px/, '侧栏与正文的间距要挂在侧栏自身，收起时才能一起归零');
+assert.ok(!/\.pp-shell\{[^}]*gap:16px/.test(source), '外壳不能再用 gap 排版，否则侧栏收起后仍留 16px 空隙');
 assert.ok(source.includes('AUTO_REFRESH_MS') && source.includes('data-ar'), '插件必须提供低打扰的定时自动刷新开关');
 const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
 assert.ok(hostSrc.includes('vault: "加密密钥库'), '插件宿主必须定义 vault 权限标签');

@@ -62,6 +62,7 @@
     filter: { kw: "", month: "all", hideSeen: false },
     captcha: "", pending: null, renderedCount: CHUNK,
     savedPassword: "",     // 密钥库取出的密码（仅内存，用于自动登录与表单预填）
+    sideOpen: false,       // 校园服务栏：默认收起。只活在本次插件会话里，重进插件回到收起
   };
   let ui = null, io = null, sentinelCb = null, paintToken = 0, autoRefreshTimer = null;
 
@@ -192,10 +193,25 @@
       .pp-more{display:flex;justify-content:center;padding:8px 0 4px}
       .pp-more .pp-btn{padding:8px 20px;font-size:12px}
       /* ── 左侧校园服务栏：只用主题变量配色，夜里自动跟随深色 ── */
-      .pp-shell{display:flex;gap:16px;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 20px;box-sizing:border-box;width:100%}
+      .pp-shell{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 20px;box-sizing:border-box;width:100%}
       .pp-main{flex:1;min-width:0}
-      .pp-side{width:214px;flex:none;position:sticky;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:11px 11px 9px;box-shadow:0 1px 6px rgba(34,48,58,.05)}
+      /* 校园服务栏可收起：收 / 展靠 .pp-side 的 width 过渡，.pp-main 是 flex:1 会跟着一起走
+         （这就是「警大通知随收缩而动」）。内层固定 214px + 外层 overflow:hidden --
+         否则宽度动画期间文字一直在重排，看着很脏。
+         展开方向 = 内层 transform-origin:left top 的缩放，内容自左上角往右下角长出来。 */
+      .pp-side{width:214px;flex:none;position:sticky;top:16px;margin-right:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:11px 11px 9px;box-shadow:0 1px 6px rgba(34,48,58,.05);overflow:hidden;transition:width .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease}
+      .pp-side-inner{width:214px;transform-origin:left top;transition:transform .34s cubic-bezier(.22,.8,.22,1),opacity .26s ease}
+      .pp-shell.side-collapsed .pp-side{width:0;margin-right:0;padding-left:0;padding-right:0;border-left-width:0;border-right-width:0;opacity:0}
+      .pp-shell.side-collapsed .pp-side-inner{transform:scale(.88) translate(-10px,-10px);opacity:0}
+      /* 收起后留在原地的把手。它是 .pp-shell 的正经 flex 子项（不是浮层），所以永远压不住正文；
+         展开时 max-width 收到 0，与侧栏的 width 过渡同时进行 → 没有跳变。
+         sticky 保证列表滚很长时也够得着。 */
+      .pp-side-toggle{flex:none;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);position:sticky;top:8px;align-self:flex-start;z-index:4;white-space:nowrap;overflow:hidden;max-width:160px;margin-right:12px;transition:max-width .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease,background .16s ease}
+      .pp-side-toggle:hover{background:var(--paper)}
+      .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
       .pp-side-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;letter-spacing:.22em;color:var(--ink-3);padding:2px 4px 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
+      .pp-side-acts{display:flex;align-items:center;gap:1px}
       .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:13px;line-height:1;padding:3px 5px;border-radius:7px;font-family:inherit}
       .pp-side-sync:hover{background:var(--paper);color:var(--deep)}
       .pp-side-list{display:flex;flex-direction:column;gap:3px}
@@ -210,8 +226,13 @@
       .pp-side-txt small{font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
       .pp-side-note{font-size:10px;color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
       @media(max-width:820px){
-        .pp-shell{flex-direction:column;gap:12px;padding:0 14px}
-        .pp-side{width:100%;position:static;padding:10px}
+        .pp-shell{flex-direction:column;padding:0 14px}
+        /* 窄屏时侧栏是整层叠在正文上面的，收起要收"高度"而不是宽度 */
+        .pp-side{width:100%;position:static;padding:10px;margin-right:0;margin-bottom:12px;max-height:1400px;transition:max-height .34s cubic-bezier(.22,.8,.22,1),margin-bottom .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease}
+        .pp-side-inner{width:100%}
+        .pp-shell.side-collapsed .pp-side{width:100%;max-height:0;padding-top:0;padding-bottom:0;margin-bottom:0;border-top-width:0;border-bottom-width:0;opacity:0}
+        .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%}
+        .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0}
         .pp-side-list{flex-direction:row;flex-wrap:wrap}
         .pp-side-btn{width:auto;flex:1 1 132px;min-width:0;min-height:52px}
         .pp-side-txt b,.pp-side-txt small{max-width:96px}
@@ -1029,10 +1050,27 @@
         + `<span class="pp-side-txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>`
         + `</button>`;
     }).join("");
-    return `<div class="pp-side-head"><span>校园服务</span>`
-      + `<button type="button" class="pp-side-sync" data-link-sync title="重新识别标题与图标" aria-label="重新识别标题与图标">↻</button></div>`
+    return `<div class="pp-side-inner">`
+      + `<div class="pp-side-head"><span>校园服务</span>`
+      + `<span class="pp-side-acts">`
+      + `<button type="button" class="pp-side-sync" data-link-sync title="重新识别标题与图标" aria-label="重新识别标题与图标">↻</button>`
+      + `<button type="button" class="pp-side-sync" data-side-toggle aria-expanded="true" title="收起校园服务" aria-label="收起校园服务">◂</button>`
+      + `</span></div>`
       + `<div class="pp-side-list">${rows}</div>`
-      + `<div class="pp-side-note">标题与图标自动识别<br>点一下用浏览器打开</div>`;
+      + `<div class="pp-side-note">标题与图标自动识别<br>点一下用浏览器打开</div>`
+      + `</div>`;
+  }
+  // 收起/展开开关。做成 .pp-shell 的 flex 子项而不是浮层：永不压住正文，且收起时它天然落在左上角。
+  function sideToggleHtml() {
+    return `<button type="button" class="pp-side-toggle" data-side-toggle aria-expanded="${state.sideOpen ? "true" : "false"}" title="展开校园服务" aria-label="展开校园服务"><span aria-hidden="true">▸</span>校园服务</button>`;
+  }
+  function sideShellClass() { return state.sideOpen ? "pp-shell" : "pp-shell side-collapsed"; }
+  function applySideOpen(root, open) {
+    state.sideOpen = !!open;
+    const shell = root && root.querySelector ? root.querySelector(".pp-shell") : null;
+    if (shell) shell.classList.toggle("side-collapsed", !state.sideOpen);
+    const btns = root && root.querySelectorAll ? root.querySelectorAll("[data-side-toggle]") : [];
+    for (const b of btns) b.setAttribute("aria-expanded", state.sideOpen ? "true" : "false");
   }
   function paintSide(root) {
     const box = root && root.querySelector ? root.querySelector("[data-side]") : null;
@@ -1070,6 +1108,7 @@
     root.addEventListener("click", (e) => {
       const go = e.target.closest("[data-goto]");
       if (go) { tide.util.openUrl(go.dataset.goto); return; }
+      if (e.target.closest("[data-side-toggle]")) { applySideOpen(root, !state.sideOpen); return; }
       if (e.target.closest("[data-link-sync]")) {
         loadLinkMeta(root, true).then(() => tide.notify("已重新识别校园服务的标题与图标"));
       }
@@ -1080,8 +1119,8 @@
   function paintLogin(el, errMsg, opts = {}) {
     const hasSaved = !!state.username;
     const canVault = typeof tide.vault?.get === "function";
-    el.innerHTML = `<div class="pp-shell">
-      <aside class="pp-side" data-side>${sideHtml()}</aside>
+    el.innerHTML = `<div class="${sideShellClass()}">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}
       <div class="pp-main"><div class="pp-login">
       <h3>登录智慧警大门户</h3>
       <div class="d">中国人民警察大学统一门户（portal-jw.cppu.edu.cn）。系统会先自动恢复上次会话，失败后自动识别验证码完成登录；都行不通才需要在这里核对信息。</div>
@@ -1231,8 +1270,8 @@
   }
 
   function buildMain(el) {
-    el.innerHTML = `<div class="pp-shell">
-      <aside class="pp-side" data-side>${sideHtml()}</aside>
+    el.innerHTML = `<div class="${sideShellClass()}">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}
       <div class="pp-main"><div class="pp-wrap">
       <div style="font-size:11px;letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">警 大 门 户 通 知 · 内 置 插 件</div>
       <div class="pp-toolbar">
@@ -1318,7 +1357,7 @@
     let disposed = false;
     stopAutoRefresh();
     ensureStyle();
-    el.innerHTML = `<div class="pp-shell"><aside class="pp-side" data-side>${sideHtml()}</aside><div class="pp-main">`
+    el.innerHTML = `<div class="${sideShellClass()}"><aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}<div class="pp-main">`
       + `<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>`
       + `</div></div>`;
     bindSide(el);
