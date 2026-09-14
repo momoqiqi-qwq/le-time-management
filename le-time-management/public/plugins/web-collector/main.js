@@ -1,9 +1,12 @@
 (function () {
   let host = null, items = [], query = "", busy = false, openMode = "external";
   const DEFAULT_ITEMS = [
-    { url: "http://daxue.qiyemulu.cn/", title: "大学名录", host: "daxue.qiyemulu.cn", iconUrl: "http://daxue.qiyemulu.cn/favicon.ico", iconName: "school", note: "默认收集：大学名录" },
-    { url: "https://www.resource.edu.cn/", title: "国家教育资源公共服务平台", host: "resource.edu.cn", iconUrl: "https://www.resource.edu.cn/favicon.ico", iconName: "school", note: "默认收集：教育资源入口" },
+    { url: "http://daxue.qiyemulu.cn/", title: "大学名录", host: "daxue.qiyemulu.cn", iconUrl: "http://daxue.qiyemulu.cn/favicon.ico", iconName: "school", note: "默认：大学名录" },
+    { url: "https://www.resource.edu.cn/", title: "国家教育资源公共服务平台", host: "resource.edu.cn", iconUrl: "https://www.resource.edu.cn/favicon.ico", iconName: "school", note: "默认：教育资源入口" },
   ];
+  // v1.1.0 起默认条目的备注前缀由「默认收集：」改为「默认：」。老用户的条目早已存进
+  // storage，只改 DEFAULT_ITEMS 不会生效 —— 下面做一次性改写兜住老数据。
+  const LEGACY_NOTE_PREFIX = "默认收集：";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const uid = () => `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const fa = (name) => `<svg viewBox="0 0 512 512" aria-hidden="true"><use href="/icons/fontawesome/solid.svg#${esc(name || "globe")}"></use></svg>`;
@@ -25,6 +28,19 @@
       if (seen.has(item.url.replace(/\/$/, ""))) continue;
       items.push({ id: uid(), createdAt: Date.now(), updatedAt: Date.now(), ...item });
       changed = true;
+    }
+    if (changed) await save();
+  }
+  /** 只改写「默认条目」上的旧前缀，避免误伤用户自己写的、碰巧以同样文字开头的备注。 */
+  async function migrateNotes() {
+    const defaults = new Set(DEFAULT_ITEMS.map((x) => x.url.replace(/\/$/, "")));
+    let changed = false;
+    for (const item of items) {
+      if (!defaults.has(String(item.url || "").replace(/\/$/, ""))) continue;
+      if (typeof item.note === "string" && item.note.startsWith(LEGACY_NOTE_PREFIX)) {
+        item.note = "默认：" + item.note.slice(LEGACY_NOTE_PREFIX.length);
+        changed = true;
+      }
     }
     if (changed) await save();
   }
@@ -99,7 +115,7 @@
   async function render(el) {
     host = el; styles(); items = await tide.storage.get("items", []); if (!Array.isArray(items)) items = [];
     openMode = await tide.storage.get("openMode", "external"); if (!["external", "inside"].includes(openMode)) openMode = "external";
-    await ensureDefaults(); paint();
+    await ensureDefaults(); await migrateNotes(); paint();
     host.addEventListener("click", (e) => {
       if (e.target.closest("[data-add]")) return add();
       const card = e.target.closest("[data-id]"); if (!card) return; const id = card.dataset.id; const item = items.find((x) => x.id === id); if (!item) return;

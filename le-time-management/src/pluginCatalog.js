@@ -27,7 +27,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "web-collector",
     "name": "网页收集",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "Le时间管理内置",
     "icon": "bookmark",
     "faIcon": "bookmark",

@@ -1,4 +1,6 @@
 // Tauri 命令封装 —— 在纯浏览器里跑时自动降级到 localStorage（便于前端独立调试）
+import { decodeWebBody } from "./webContent.js";
+
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function invoke(cmd, args = {}) {
@@ -64,7 +66,9 @@ export const api = {
   async httpGet(url) {
     if (isTauri) return invoke("http_get", { url });
     const r = await fetch(url);
-    return { status: r.status, body: await r.text(), finalUrl: r.url, contentType: r.headers.get("content-type") || "" };
+    const contentType = r.headers.get("content-type") || "";
+    // 不能直接用 r.text()：它按规范恒按 UTF-8 解，gb2312 站点会变乱码。
+    return { status: r.status, body: decodeWebBody(new Uint8Array(await r.arrayBuffer()), contentType), finalUrl: r.url, contentType };
   },
 
   async openExternal(url) {
@@ -110,11 +114,13 @@ export const api = {
       method, headers: opts.headers, body: opts.body, credentials: "include",
       redirect: opts.followRedirects === false ? "manual" : "follow",
     });
-    const body = opts.binary ? btoa(String.fromCharCode(...new Uint8Array(await r.arrayBuffer())))
-      : await r.text();
+    const contentType = r.headers.get("content-type") || "";
+    const buf = new Uint8Array(await r.arrayBuffer());
+    // 非二进制同样按声明编码解（见 decodeWebBody），别用 r.text() 恒按 UTF-8 解。
+    const body = opts.binary ? btoa(String.fromCharCode(...buf)) : decodeWebBody(buf, contentType);
     return {
       status: r.status, body, finalUrl: r.url,
-      contentType: r.headers.get("content-type") || "",
+      contentType,
       location: r.headers.get("location") || "", cookies: [],
     };
   },

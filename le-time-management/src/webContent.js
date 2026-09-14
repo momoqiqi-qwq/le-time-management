@@ -17,6 +17,58 @@ export function resolveWebUrl(href, baseUrl) {
   } catch { return ""; }
 }
 
+// ── 响应体编码 ────────────────────────────────────────────────────────────
+// 中文站点常见做法：响应头只给 `text/html`（**不带 charset**），编码只在
+// `<meta http-equiv=Content-Type content="text/html; charset=gb2312">` 或
+// `<meta charset="gbk">` 里声明。`Response.text()` 按规范恒按 UTF-8 解，
+// 这种情况会解出满屏 `�` —— 所以自己按「响应头 → meta → UTF-8」解。
+// Rust 侧 `decode_body()` 用同一套优先级，两端行为保持一致。
+
+/** 从 Content-Type 头（或直接喂一个 `<meta>` 标签字符串）里取 charset 标签。 */
+export function charsetFromContentType(contentType) {
+  const m = String(contentType || "").match(/charset\s*=\s*["']?([\w.-]+)/i);
+  return m ? m[1].toLowerCase() : "";
+}
+
+/** 从 HTML 头部（前 4KB）的 `<meta>` 里嗅探 charset。 */
+export function charsetFromMeta(bytes) {
+  const head = new TextDecoder("utf-8").decode(bytes.slice(0, 4096));
+  for (const tag of head.match(/<meta\b[^>]*>/gi) || []) {
+    if (/charset/i.test(tag)) {
+      const v = charsetFromContentType(tag);
+      if (v) return v;
+    }
+  }
+  return "";
+}
+
+/**
+ * 正文本身是不是一份标记文档（而不是「含有标记片段的 JSON」）。
+ * 首字符必须是 `<`，且 512 字节内出现 html / doctype / head / meta / ?xml 之一。
+ * 这道判别是必要的：否则 `{"html":"<meta charset=gbk>"}` 这种 JSON 会被误判成
+ * 声明了 gbk，反而把本来正确的 UTF-8 中文解坏。
+ */
+export function looksLikeMarkup(bytes) {
+  const head = new TextDecoder("utf-8").decode(bytes.slice(0, 512)).replace(/^\uFEFF/, "");
+  return /^\s*</.test(head) && /<(?:\/?html\b|!doctype\b|head\b|meta\b|\?xml\b)/i.test(head);
+}
+
+/**
+ * 按声明编码解码响应体：响应头 charset → HTML meta charset → UTF-8 兜底。
+ * 只在 content-type 为空或 html/xml、**且正文看起来确实是标记文档**时才嗅探 meta ——
+ * JSON 按规范恒 UTF-8，不该被正文里偶然出现的 `<meta charset=...>` 带偏。
+ */
+export function decodeWebBody(bytes, contentType) {
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
+  const ct = String(contentType || "").toLowerCase();
+  const htmlish = !ct || ct.includes("html") || ct.includes("xml");
+  const label = charsetFromContentType(contentType)
+    || (htmlish && looksLikeMarkup(buf) ? charsetFromMeta(buf) : "")
+    || "utf-8";
+  try { return new TextDecoder(label).decode(buf); }
+  catch { return new TextDecoder("utf-8").decode(buf); }
+}
+
 function cleanText(value) {
   return String(value || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&amp;/gi, "&").replace(/&lt;/gi, "<").replace(/&gt;/gi, ">").replace(/&quot;/gi, '"')

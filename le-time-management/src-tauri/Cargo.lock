@@ -2169,11 +2169,12 @@ dependencies = [
 
 [[package]]
 name = "letime"
-version = "0.36.0"
+version = "0.36.1"
 dependencies = [
  "base64 0.22.1",
  "des",
  "ecb",
+ "encoding_rs",
  "hex",
  "qrcode",
  "reqwest 0.12.28",

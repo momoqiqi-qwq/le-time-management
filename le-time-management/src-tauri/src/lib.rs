@@ -920,6 +920,95 @@ fn shared_http_client() -> Result<&'static reqwest::Client, String> {
         .ok_or_else(|| "HTTP 客户端初始化失败".into())
 }
 
+/// 从 Content-Type 头里取 charset（`text/html; charset=gb2312` → `gb2312`）。
+/// 也可直接喂一个 `<meta>` 标签字符串，规则相同。
+fn charset_from_content_type(content_type: &str) -> Option<String> {
+    let lower = content_type.to_ascii_lowercase();
+    let idx = lower.find("charset")?;
+    let rest = &content_type[idx + "charset".len()..];
+    let rest = rest.trim_start().strip_prefix('=')?.trim_start();
+    let val: String = rest
+        .trim_start_matches(['"', '\''])
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect();
+    if val.is_empty() {
+        None
+    } else {
+        Some(val)
+    }
+}
+
+/// 从 HTML 头部（前 4KB）的 `<meta>` 里嗅探 charset。
+///
+/// 中文站点常见做法：响应头只给 `text/html`（**不带 charset**），编码只在
+/// `<meta http-equiv=Content-Type content="text/html; charset=gb2312">`
+/// 或 `<meta charset="gbk">` 里声明。reqwest 的 `text()` **不读 meta**，
+/// 这种情况会按 UTF-8 解，标题就成了一串 `�`。
+fn charset_from_meta(bytes: &[u8]) -> Option<String> {
+    let head_len = bytes.len().min(4096);
+    let head = String::from_utf8_lossy(&bytes[..head_len]);
+    let lower = head.to_ascii_lowercase();
+    let mut cursor = 0usize;
+    while let Some(rel) = lower[cursor..].find("<meta") {
+        let start = cursor + rel;
+        let end = lower[start..]
+            .find('>')
+            .map(|i| start + i)
+            .unwrap_or(lower.len());
+        if lower[start..end].contains("charset") {
+            if let Some(v) = charset_from_content_type(&head[start..end]) {
+                return Some(v);
+            }
+        }
+        cursor = end.max(start + "<meta".len());
+        if cursor >= lower.len() {
+            break;
+        }
+    }
+    None
+}
+
+/// 正文本身是不是一份标记文档（而不是「含有标记片段的 JSON」）。
+/// 首字符必须是 `<`，且 512 字节内出现 html / doctype / head / meta / ?xml 之一。
+/// 这道判别是必要的：否则 `{"html":"<meta charset=gbk>"}` 这种 JSON 会被误判成
+/// 声明了 gbk，反而把本来正确的 UTF-8 中文解坏。
+fn looks_like_markup(bytes: &[u8]) -> bool {
+    let head_len = bytes.len().min(512);
+    let head = String::from_utf8_lossy(&bytes[..head_len]);
+    let head = head.trim_start_matches('\u{feff}');
+    if !head.trim_start().starts_with('<') {
+        return false;
+    }
+    let lower = head.to_ascii_lowercase();
+    ["<html", "<!doctype", "<head", "<meta", "<?xml"]
+        .iter()
+        .any(|k| lower.contains(k))
+}
+
+/// 按声明编码解码响应体：**响应头 charset → HTML meta charset → UTF-8 兜底**。
+///
+/// ⚠️ 不要退回 `resp.text()` —— 它只认响应头，中文站点（老 IIS / gov / edu 站尤甚）
+/// 经常只在 meta 里声明 gb2312，用它解出来就是满屏替换字符。
+/// 只在 content-type 为空或 html/xml、**且正文看起来确实是标记文档**时才嗅探 meta ——
+/// JSON 按规范恒 UTF-8，不该被正文里偶然出现的 `<meta charset=...>` 带偏。
+fn decode_body(bytes: &[u8], content_type: &str) -> String {
+    let ct = content_type.to_ascii_lowercase();
+    let htmlish = ct.is_empty() || ct.contains("html") || ct.contains("xml");
+    let encoding = charset_from_content_type(content_type)
+        .or_else(|| {
+            if htmlish && looks_like_markup(bytes) {
+                charset_from_meta(bytes)
+            } else {
+                None
+            }
+        })
+        .and_then(|label| encoding_rs::Encoding::for_label(label.trim().as_bytes()))
+        .unwrap_or(encoding_rs::UTF_8);
+    let (text, _, _) = encoding.decode(bytes);
+    text.into_owned()
+}
+
 /// 插件网络桥：服务端抓取，绕开 WebView 的 CORS 限制
 #[tauri::command]
 async fn http_get(url: String) -> Result<HttpResp, String> {
@@ -941,10 +1030,11 @@ async fn http_get(url: String) -> Result<HttpResp, String> {
         .and_then(|v| v.to_str().ok())
         .unwrap_or("")
         .to_string();
-    let body = resp
-        .text()
+    let bytes = resp
+        .bytes()
         .await
         .map_err(|e| format!("读取响应失败: {e}"))?;
+    let body = decode_body(&bytes, &content_type);
     Ok(HttpResp {
         status,
         body,
@@ -1240,17 +1330,15 @@ async fn http_fetch(
         .map(|s| s.to_string())
         .collect();
     // binary=true 时返回 base64（验证码等图片场景）
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
     let resp_body = if binary.unwrap_or(false) {
         use base64::Engine as _;
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("读取响应失败: {e}"))?;
         base64::engine::general_purpose::STANDARD.encode(&bytes)
     } else {
-        resp.text()
-            .await
-            .map_err(|e| format!("读取响应失败: {e}"))?
+        decode_body(&bytes, &content_type)
     };
     Ok(HttpFetchResp {
         status,
