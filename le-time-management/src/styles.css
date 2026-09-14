@@ -932,7 +932,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .quick-cap-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.quick-cap-head b{display:block;font-size:16px}.quick-cap-head small{display:block;color:var(--ink-3);font-size:10.5px;margin-top:4px}.quick-cap-input{width:100%;min-height:138px;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);padding:12px;line-height:1.65;font:inherit}.quick-cap-input:focus{outline:2px solid color-mix(in srgb,var(--deep) 24%,transparent);border-color:var(--deep)}.quick-cap-actions{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
 
 /* ── v0.10 · 插件中心搜索管理 ── */
-.market-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.market-head .market-lead{margin-bottom:4px}.market-count{font-size:11px;color:var(--ink-3);white-space:nowrap;padding-top:2px}.market-search-row{display:flex;gap:8px;margin:12px 0 9px}.market-search{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:0 12px;color:var(--ink);font:inherit}.market-search:focus{outline:2px solid color-mix(in srgb,var(--deep) 18%,transparent);border-color:var(--deep)}.market-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.market-filter{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 11px;font-size:11px;color:var(--ink-2);cursor:pointer}.market-filter.on{background:var(--deep);border-color:var(--deep);color:var(--on-deep)}.market-manage-card{display:flex;flex-direction:column;align-items:stretch;gap:8px;text-align:left;cursor:default;min-height:0}.market-manage-card.disabled{opacity:.7}.market-card-head{display:flex;align-items:center;gap:9px}.market-card-title{display:flex;min-width:0;flex-direction:column}.market-card-title b{font-size:13px}.market-card-title small{font-size:10.5px;color:var(--ink-3);margin-top:2px}.market-card-desc{font-size:11.5px;line-height:1.55;color:var(--ink-2);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.market-card-meta{font-size:10.5px;color:var(--ink-3)}.market-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}.market-empty{grid-column:1/-1;padding:34px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--ink-3);font-size:12px}
+.market-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.market-head .market-lead{margin-bottom:0}.market-head-tools{display:flex;align-items:center;gap:8px}.market-count{font-size:11px;color:var(--ink-3);white-space:nowrap;padding-top:0}.market-search-toggle{display:none;width:34px;height:34px;flex:none;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);cursor:pointer;padding:0;font:inherit}.market-search-toggle:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line));color:var(--deep)}.market-search-glyph{font-size:16px;line-height:1}.market-search-row{display:flex;gap:8px;margin:12px 0 9px}.market-search{width:100%;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--panel);padding:0 12px;color:var(--ink);font:inherit}.market-search:focus{outline:2px solid color-mix(in srgb,var(--deep) 18%,transparent);border-color:var(--deep)}.market-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}.market-filter{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:5px 11px;font-size:11px;color:var(--ink-2);cursor:pointer}.market-filter.on{background:var(--deep);border-color:var(--deep);color:var(--on-deep)}.market-manage-card{display:flex;flex-direction:column;align-items:stretch;gap:8px;text-align:left;cursor:default;min-height:0}.market-manage-card.disabled{opacity:.7}.market-card-head{display:flex;align-items:center;gap:9px}.market-card-title{display:flex;min-width:0;flex-direction:column}.market-card-title b{font-size:13px}.market-card-title small{font-size:10.5px;color:var(--ink-3);margin-top:2px}.market-card-desc{font-size:11.5px;line-height:1.55;color:var(--ink-2);margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.market-card-meta{font-size:10.5px;color:var(--ink-3)}.market-card-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}.market-empty{grid-column:1/-1;padding:34px;text-align:center;border:1px dashed var(--line);border-radius:12px;color:var(--ink-3);font-size:12px}
 
 /* ── v0.10 · 插件权限与设置工具 ── */
 .plugin-search-row{display:flex;gap:8px;align-items:center;margin:10px 0}.plugin-search-input{flex:1;min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--panel);padding:0 10px;color:var(--ink);font:inherit}.plugin-filter-select{height:36px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);padding:0 8px}
@@ -943,7 +943,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* ── v0.10 · 同步与快捷键 ── */
 .sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}
 
-@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-kind{min-width:54px}.market-head{flex-direction:column}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
+@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-kind{min-width:54px}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -1519,23 +1519,32 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 @media (max-width: 760px) {
+  /* 手机端顶栏并成一行：标题卡 + 图标按钮（搜索/快捷入口），不再各自独占一行 */
   .topbar {
     gap: 8px;
-    flex-wrap: wrap;
-    height: auto;
-    padding-top: calc(12px + env(safe-area-inset-top, 0px));
-    padding-bottom: 12px;
+    flex-wrap: nowrap;
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: 0;
   }
   .topbar-title-card,
   .topbar-action-card {
-    width: 100%;
+    width: auto;
     max-width: none;
   }
+  .topbar-title-card { flex: 1 1 auto; min-width: 0; }
   .topbar-action-card {
-    justify-content: space-between;
+    flex: none;
+    justify-content: flex-end;
     margin-left: 0;
   }
   .topbar-action-card .pill { margin-left: auto; }
+  .topbar-title-copy .sub {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .quick-dock {
     width: min(156px, calc(100vw - 24px));
   }
@@ -1552,7 +1561,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .topbar-action-card {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 }
 

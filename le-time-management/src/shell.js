@@ -18,6 +18,7 @@ import { isDesktopRuntime } from "./windowSize.js";
 let activeView = null;
 let marketQuery = "";
 let marketFilter = "all";
+let marketSearchOpen = false;
 function ensureActiveView() {
   if (activeView === null) {
     const prefs = getUiPreferences();
@@ -67,7 +68,7 @@ function moveTopbarPart(source, target, after = false) {
 function viewDef(id) {
   if (id.startsWith("plug:")) {
     const v = pluginViews.find((x) => `plug:${x.id}` === id);
-    return v ? { id, icon: PLUGIN_ICONS[v.pluginId] || v.icon || "puzzle-piece", title: pluginDisplayName(v.pluginId, v.title), sub: v.pluginId, pluginView: v } : null;
+    return v ? { id, icon: PLUGIN_ICONS[v.pluginId] || v.icon || "puzzle-piece", title: pluginDisplayName(v.pluginId, v.title), sub: getRegistry().find((item) => item.id === v.pluginId)?.manifest?.description?.trim() || v.pluginId, pluginView: v } : null;
   }
   return VIEWS.find((v) => v.id === id) || VIEWS[0];
 }
@@ -771,12 +772,25 @@ export function renderShell(root) {
     }
 
     search.addEventListener("input", () => { query = search.value; marketQuery = query; paintCards(); });
+    // 手机上搜索默认收成一个图标（用户反馈：不要独占一行）；点了才展开输入框
+    const searchToggle = el("button", {
+      class: "market-search-toggle", type: "button", title: "搜索插件", "aria-label": "搜索插件",
+      "aria-expanded": String(marketSearchOpen), "aria-controls": "market-search-row",
+      onclick: () => {
+        marketSearchOpen = !marketSearchOpen;
+        searchToggle.setAttribute("aria-expanded", String(marketSearchOpen));
+        wrap.classList.toggle("open-search", marketSearchOpen);
+        if (marketSearchOpen) search.focus();
+        else if (!query) paintCards();
+      },
+    }, el("span", { class: "market-search-glyph", "aria-hidden": "true" }, "⌕"));
+    if (marketSearchOpen) wrap.classList.add("open-search");
     wrap.append(
       el("div", { class: "market-head" },
-        el("div", {}, el("p", { class: "market-lead" }, `${regs.length || pluginViews.length} 个插件 · ${builtinCount} 个内置 · ${enabledCount} 个已启用`), el("p", { class: "desc" }, "支持按名称、ID、功能和作者搜索；插件开启 / 关闭统一使用滑块开关。")),
-        count,
+        el("p", { class: "market-lead" }, `${regs.length || pluginViews.length} 个插件 · ${builtinCount} 个内置 · ${enabledCount} 个已启用`),
+        el("div", { class: "market-head-tools" }, searchToggle, count),
       ),
-      el("div", { class: "market-search-row" }, search),
+      el("div", { class: "market-search-row", id: "market-search-row" }, search),
       filterBox,
       grid,
     );
