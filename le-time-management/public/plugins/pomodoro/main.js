@@ -7,6 +7,14 @@
   ];
   const R = 86, CIRC = 2 * Math.PI * R;
 
+  // 自定义时长以「秒」为唯一事实源（storage 键 customSec）。分 / 秒两个输入框只是它的两种视图，
+  // 这样 1 分 30 秒就是 90，不必再靠 1.5 这种小数分钟去凑。
+  const CUSTOM_MAX_SEC = 240 * 60;
+  function clampCustomSec(min, sec) {
+    const total = Math.round((Number(min) || 0) * 60 + (Number(sec) || 0));
+    return Math.max(1, Math.min(CUSTOM_MAX_SEC, total));
+  }
+
   // 提醒设置：专注 / 休息各自控制「通知」与「声音」。提示音走宿主的 tide.sound，
   // 与应用设置里的「任务提醒」共用同一份音效目录（内置音效 + 自定义音频）。
   const REMINDER_DEFAULT = {
@@ -18,7 +26,7 @@
   // 自定义音频以 data URL 存进插件设置，会跟着应用数据一起备份，所以卡在 4 MB。
   const AUDIO_MAX_BYTES = 4 * 1024 * 1024;
 
-  let mode = MODES[0], left = 25 * 60, timer = null, currentTaskId = "", customMin = 25;
+  let mode = MODES[0], left = 25 * 60, timer = null, currentTaskId = "", customSec = 25 * 60;
   let box, timeText, ring, taskSel, dotsBox;
 
   let reminder = { ...REMINDER_DEFAULT };
@@ -28,6 +36,20 @@
       if (saved && typeof saved === "object") reminder = normalizeReminder(saved);
     } catch (e) { console.warn("番茄专注：提醒设置读取失败", e); }
     return reminder;
+  })();
+
+  // 老版本只存了 customMin（分钟，可能是 1.5 这种小数）。读不到 customSec 时按分钟换算过来，
+  // 用户原来设的 1 分 30 秒不会丢。
+  const customReady = (async () => {
+    try {
+      const savedSec = await tide.storage.get("customSec", null);
+      if (savedSec !== null && savedSec !== undefined && Number.isFinite(Number(savedSec))) {
+        customSec = Math.max(1, Math.min(CUSTOM_MAX_SEC, Math.round(Number(savedSec))));
+      } else {
+        customSec = clampCustomSec(Number(await tide.storage.get("customMin", 25)) || 25, 0);
+      }
+    } catch (e) { console.warn("番茄专注：自定义时长读取失败", e); }
+    return customSec;
   })();
 
   function normalizeReminder(raw) {
@@ -64,10 +86,19 @@
     return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   }
 
+  /** 当前模式的秒数。自定义走 customSec，预设按分钟换算。 */
+  function modeSeconds(m) {
+    return m.id === "custom" ? customSec : m.min * 60;
+  }
+
+  /** 累计分钟会带小数（30 秒的番茄就是 0.5 分），去掉无意义的 .0。 */
+  function fmtMin(m) {
+    return String(Math.round((Number(m) || 0) * 10) / 10);
+  }
+
   function paint() {
     timeText.textContent = fmt(left);
-    const totalMin = mode.id === "custom" ? customMin : mode.min;
-    const done = 1 - left / Math.max(1, totalMin * 60);
+    const done = 1 - left / Math.max(1, modeSeconds(mode));
     ring.style.strokeDashoffset = String(CIRC * (1 - done));
   }
 
@@ -86,16 +117,19 @@
 
   async function finish() {
     await reminderReady;
-    const isFocus = mode.id === "focus";
+    await customReady;
+    const isFocus = mode.id === "focus" || mode.id === "custom";
     const n = ((await tide.storage.get("doneCount", 0)) || 0) + (isFocus ? 1 : 0);
-    const sessionMin = mode.id === "custom" ? customMin : mode.min;
-    const mins = ((await tide.storage.get("focusMin", 0)) || 0) + (isFocus ? sessionMin : 0);
+    const sessionMin = modeSeconds(mode) / 60;
+    // 允许小数分钟（30 秒的番茄记 0.5 分），但要把浮点噪声收掉，
+    // 否则累加几次就会出现 0.30000000000000004 这种数字。
+    const mins = Math.round((((await tide.storage.get("focusMin", 0)) || 0) + (isFocus ? sessionMin : 0)) * 10) / 10;
     await tide.storage.set("doneCount", n);
     await tide.storage.set("focusMin", mins);
 
     const notifyOn = isFocus ? reminder.focusNotify : reminder.breakNotify;
     const soundOn = isFocus ? reminder.focusSound : reminder.breakSound;
-    if (notifyOn) tide.notify(isFocus ? `完成 1 个番茄！今日累计 ${n} 个 / ${mins} 分钟` : "休息结束，回来继续吧 🍃");
+    if (notifyOn) tide.notify(isFocus ? `完成 1 个番茄！今日累计 ${n} 个 / ${fmtMin(mins)} 分钟` : "休息结束，回来继续吧 🍃");
     if (soundOn) playReminderSound();
 
     tide.events.emit("pomodoro:finished", { mode: mode.id, taskId: currentTaskId || null });
@@ -107,16 +141,20 @@
   }
 
   function renderDots() {
-    tide.storage.get("doneCount", 0).then((n) => {
+    Promise.all([
+      tide.storage.get("doneCount", 0),
+      tide.storage.get("focusMin", 0),
+    ]).then(([n, mins]) => {
       dotsBox.replaceChildren();
-      for (let i = 0; i < Math.min(8, n); i++) {
+      for (let i = 0; i < Math.min(8, Number(n) || 0); i++) {
         const d = document.createElement("span");
         d.style.cssText = "width:11px;height:11px;border-radius:50%;display:inline-block;background:var(--mint,#2EC4B6);";
         dotsBox.append(d);
       }
       const lab = document.createElement("span");
       lab.style.cssText = "font-size:11px;color:var(--ink-2,#7E8B94);margin-left:8px";
-      lab.textContent = `累计 ${n} 个番茄 · ${n * 25} 分钟`;
+      // 用真实累计分钟，别拿「番茄数 × 25」估 —— 自定义时长（尤其几十秒的短番茄）会估得离谱。
+      lab.textContent = `累计 ${Number(n) || 0} 个番茄 · ${fmtMin(mins)} 分钟`;
       dotsBox.append(lab);
     });
   }
@@ -320,13 +358,13 @@
     // 模式切换
     const modes = document.createElement("div");
     modes.style.cssText = "display:flex;justify-content:center;gap:8px;margin-bottom:22px";
-    [...MODES, { id: "custom", label: "自定义", min: customMin }].forEach((m) => {
+    [...MODES, { id: "custom", label: "自定义", min: customSec / 60 }].forEach((m) => {
       const b = document.createElement("button");
       b.textContent = m.label;
       b.dataset.m = m.id;
       b.style.cssText = "font-size:12px;border-radius:16px;padding:7px 16px;border:1px solid var(--line,#E4DFD6);color:var(--ink-2,#7E8B94);background:var(--panel,#fff);cursor:pointer";
       b.addEventListener("click", () => {
-        stop(); mode = m; left = (m.id === "custom" ? customMin : m.min) * 60;
+        stop(); mode = m; left = modeSeconds(m);
         modes.querySelectorAll("button").forEach((x) => {
           const on = x.dataset.m === m.id;
           x.style.background = on ? "var(--deep,#0F4C5C)" : "var(--panel,#fff)";
@@ -339,13 +377,40 @@
     });
 
     const customRow = document.createElement("div");
-    customRow.style.cssText = "display:flex;justify-content:center;align-items:center;gap:8px;margin:-10px 0 18px;flex-wrap:wrap";
-    const customInput = document.createElement("input");
-    customInput.type = "number"; customInput.min = "1"; customInput.max = "240"; customInput.value = String(customMin);
-    customInput.style.cssText = "width:82px;height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 9px;background:var(--paper,#fff);color:var(--ink,#22303A)";
+    customRow.style.cssText = "display:flex;justify-content:center;align-items:center;gap:6px;margin:-10px 0 18px;flex-wrap:wrap";
+    const numInput = (max, value) => {
+      const el = document.createElement("input");
+      el.type = "number"; el.min = "0"; el.max = String(max); el.step = "1"; el.value = String(value);
+      el.style.cssText = "width:68px;height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 9px;background:var(--paper,#fff);color:var(--ink,#22303A)";
+      return el;
+    };
+    const unitText = (text) => {
+      const s = document.createElement("span");
+      s.textContent = text;
+      s.style.cssText = "font-size:12px;color:var(--ink-3,#8FA2A8)";
+      return s;
+    };
+    const minInput = numInput(240, Math.floor(customSec / 60));
+    const secInput = numInput(59, customSec % 60);
     const customBtn = mkBtn("设置倒计时", "var(--panel,#fff)", "var(--ink-2,#7E8B94)", true); customBtn.style.height="34px"; customBtn.style.minWidth="96px";
-    customBtn.addEventListener("click", async () => { const v=Math.max(1,Math.min(240,Number(customInput.value)||25)); customMin=v; await tide.storage.set("customMin",v); stop(); mode={id:"custom",label:"自定义",min:v}; left=v*60; paint(); });
-    customRow.append("自定义分钟", customInput, customBtn);
+    // 分 / 秒 只是 customSec 的两个视图，任何一处改了都要回来对齐，免得显示和真实倒计时对不上。
+    const syncCustomInputs = () => {
+      minInput.value = String(Math.floor(customSec / 60));
+      secInput.value = String(customSec % 60);
+    };
+    const applyCustom = async () => {
+      customSec = clampCustomSec(minInput.value, secInput.value);
+      syncCustomInputs();
+      try { await tide.storage.set("customSec", customSec); }
+      catch (e) { console.warn("番茄专注：自定义时长保存失败", e); }
+      stop();
+      mode = { id: "custom", label: "自定义", min: customSec / 60 };
+      left = customSec;
+      paint();
+    };
+    customBtn.addEventListener("click", applyCustom);
+    for (const el of [minInput, secInput]) el.addEventListener("keydown", (e) => { if (e.key === "Enter") applyCustom(); });
+    customRow.append(unitText("自定义"), minInput, unitText("分"), secInput, unitText("秒"), customBtn);
 
     // 环
     const ringWrap = document.createElement("div");
@@ -373,7 +438,7 @@
     const newTaskRow=document.createElement("div"); newTaskRow.style.cssText="display:flex;gap:8px;max-width:340px;margin:-8px auto 18px";
     const newTaskInput=document.createElement("input"); newTaskInput.placeholder="直接新建本次专注任务"; newTaskInput.style.cssText="flex:1;min-width:0;height:36px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 10px;background:var(--paper,#fff);color:var(--ink,#22303A)";
     const addTaskBtn=mkBtn("+ 新建任务","var(--panel,#fff)","var(--deep,#0F4C5C)",true); addTaskBtn.style.cssText += ";min-width:92px;height:36px";
-    addTaskBtn.addEventListener("click",()=>{ const title=newTaskInput.value.trim(); if(!title) return tide.notify("请先输入任务名称"); const t=tide.tasks.create({title,quad:2,estMin:mode.id==="custom"?customMin:mode.min,tags:["番茄专注"]}); newTaskInput.value=""; fillTasks(t.id); tide.notify(`已新建任务「${title}」`); });
+    addTaskBtn.addEventListener("click",()=>{ const title=newTaskInput.value.trim(); if(!title) return tide.notify("请先输入任务名称"); const t=tide.tasks.create({title,quad:2,estMin:modeSeconds(mode)/60,tags:["番茄专注"]}); newTaskInput.value=""; fillTasks(t.id); tide.notify(`已新建任务「${title}」`); });
     newTaskInput.addEventListener("keydown",e=>{if(e.key==="Enter") addTaskBtn.click();}); newTaskRow.append(newTaskInput,addTaskBtn);
 
     // 控制
@@ -385,7 +450,7 @@
       else { timer = setInterval(tick, 1000); startBtn.textContent = "⏸ 暂停"; }
     });
     const resetBtn = mkBtn("↺ 重置", "var(--panel,#fff)", "var(--ink-2,#7E8B94)", true);
-    resetBtn.addEventListener("click", () => { stop(); left = (mode.id === "custom" ? customMin : mode.min) * 60; paint(); startBtn.textContent = "▶ 开始"; });
+    resetBtn.addEventListener("click", () => { stop(); left = modeSeconds(mode); paint(); startBtn.textContent = "▶ 开始"; });
     ctrl.append(startBtn, resetBtn);
 
     dotsBox = document.createElement("div");
@@ -399,6 +464,12 @@
     paint();
     // 同步的 render 先按默认值画，设置读完后再对齐一次。
     reminderReady.then(() => panel.sync());
+    customReady.then(() => {
+      syncCustomInputs();
+      // 设置读完之前画出来的是默认 25 分。只有当前正好是自定义模式、且计时没在跑时才改写倒计时，
+      // 免得把用户已经开始的这一轮冲掉。
+      if (mode.id === "custom" && !timer) { left = customSec; paint(); }
+    });
   }
 
   function fillTasks(selectId = currentTaskId) {
@@ -420,8 +491,6 @@
     b.style.cssText = `min-width:110px;height:40px;border-radius:20px;font-size:13.5px;font-weight:600;cursor:pointer;background:${bg};color:${fg};border:${ghost ? "1px solid var(--line,#E4DFD6)" : "none"}`;
     return b;
   }
-
-  tide.storage.get("customMin",25).then(v=>{ customMin=Math.max(1,Math.min(240,Number(v)||25)); });
 
   tide.ui.registerView({ id: "pomodoro", title: "番茄专注", icon: 'hourglass-half', render });
   tide.events.on("tasks:changed", () => { if (taskSel) fillTasks(); });

@@ -75,6 +75,9 @@
 
 .fa-icon { width: 46rpx; height: 46rpx; display: block; }
 .custom-row{display:flex;gap:16rpx;align-items:center;margin:18rpx 0}.custom-row input{flex:1;min-width:0;height:72rpx;border:1px solid #e4dfd6;border-radius:14rpx;padding:0 18rpx;background:#fff}.custom-row .btn{margin:0;white-space:nowrap}
+/* 番茄自定义时长：分 / 秒两个窄输入框 + 单位，别让它们按 flex:1 平摊掉整行。 */
+.pomo-custom input{flex:0 0 118rpx;text-align:center;padding:0 8rpx}
+.pomo-custom .unit{font-size:24rpx;color:#8fa2a8}
 
 .exam-notice { margin-top: 18rpx; padding: 16rpx 18rpx; border-left: 6rpx solid var(--deep); background: var(--paper); border-radius: 8rpx; color: var(--ink-2); font-size: 22rpx; line-height: 1.75; }
 .exam-signup { margin: 18rpx 0 0; }

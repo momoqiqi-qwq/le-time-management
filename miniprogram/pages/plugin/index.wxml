@@ -13,7 +13,7 @@
       <view class="modes">
         <button class="mode {{item.active ? 'on' : ''}}" wx:for="{{pomodoro.modes}}" wx:key="id" data-id="{{item.id}}" bindtap="onPomoMode">{{item.label}}</button>
       </view>
-      <view class="custom-row"><input type="number" value="{{pomodoro.customMin}}" bindinput="onPomoCustomInput" placeholder="分钟"/><button class="btn ghost" bindtap="onPomoSetCustom">设置自定义倒计时</button></view>
+      <view class="custom-row pomo-custom"><input type="number" value="{{pomodoro.customMinPart}}" bindinput="onPomoCustomMinInput" placeholder="分"/><text class="unit">分</text><input type="number" value="{{pomodoro.customSecPart}}" bindinput="onPomoCustomSecInput" placeholder="秒"/><text class="unit">秒</text><button class="btn ghost" bindtap="onPomoSetCustom">设置倒计时</button></view>
       <view class="clock">{{pomodoro.timeText}}</view>
       <view class="label">专注哪个任务（可选）</view>
       <picker mode="selector" range="{{pomodoro.tasks}}" range-key="title" value="{{pomodoro.taskIndex}}" bindchange="onPomoTask">

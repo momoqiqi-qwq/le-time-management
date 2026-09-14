@@ -19,6 +19,21 @@ function normalizeTime(s) {
   return m ? pad2(+m[1]) + ":" + m[2] : "09:00";
 }
 
+/* 番茄自定义时长：以「秒」为唯一事实源（storage 键 customSec），分 / 秒两个输入框只是它的两种视图。 */
+const CUSTOM_MAX_SEC = 240 * 60;
+function clampCustomSec(min, sec) {
+  const total = Math.round((Number(min) || 0) * 60 + (Number(sec) || 0));
+  return Math.max(1, Math.min(CUSTOM_MAX_SEC, total));
+}
+/** 老数据只存了 customMin（分钟，可能是 1.5 这种小数），读不到 customSec 时按分钟换算。 */
+function readCustomSec() {
+  const savedSec = store.pluginStorageGet("pomodoro", "customSec", null);
+  if (savedSec !== null && savedSec !== undefined && Number.isFinite(Number(savedSec))) {
+    return Math.max(1, Math.min(CUSTOM_MAX_SEC, Math.round(Number(savedSec))));
+  }
+  return clampCustomSec(Number(store.pluginStorageGet("pomodoro", "customMin", 25)) || 25, 0);
+}
+
 Page({
   data: {
     id: "",
@@ -78,8 +93,9 @@ Page({
       (store.getState().tasks || []).filter((t) => !t.done).map((t) => ({ id: t.id, title: t.title }))
     );
     const rt = store.pluginStorageGet("pomodoro", "timerRuntimeMini", null) || {};
-    const customMin = Math.max(1, Math.min(240, Number(store.pluginStorageGet("pomodoro", "customMin", 25)) || 25));
-    const modes = POMO_MODES.concat([{ id: "custom", label: "自定义", min: customMin }]);
+    const customSec = readCustomSec();
+    this._customSec = customSec;
+    const modes = POMO_MODES.concat([{ id: "custom", label: "自定义", min: customSec / 60 }]);
     const mode = modes.find((m) => m.id === rt.modeId) || POMO_MODES[0];
     const taskIndex = Math.max(0, tasks.findIndex((t) => t.id === (rt.taskId || "")));
     const left = Number.isFinite(Number(rt.left)) ? Number(rt.left) : mode.min * 60;
@@ -88,7 +104,8 @@ Page({
     this.setData({
       pomodoro: {
         modes: modes.map((m) => ({ id: m.id, label: m.label, active: m.id === mode.id })),
-        customMin, newTaskTitle: "",
+        customMinPart: Math.floor(customSec / 60), customSecPart: customSec % 60,
+        newTaskTitle: "",
         timeText: secText(left),
         running: !!rt.running,
         tasks,
@@ -104,8 +121,9 @@ Page({
     if (!this._pomo) return;
     const rt = store.pluginStorageGet("pomodoro", "timerRuntimeMini", null) || {};
     if (rt.modeId) {
-      const customMin = Math.max(1, Math.min(240, Number(store.pluginStorageGet("pomodoro", "customMin", 25)) || 25));
-      const mode = POMO_MODES.concat([{ id: "custom", label: "自定义", min: customMin }]).find((m) => m.id === rt.modeId) || this._pomo.mode;
+      const customSec = readCustomSec();
+      this._customSec = customSec;
+      const mode = POMO_MODES.concat([{ id: "custom", label: "自定义", min: customSec / 60 }]).find((m) => m.id === rt.modeId) || this._pomo.mode;
       this._pomo.mode = mode;
       this._pomo.taskId = rt.taskId || "";
       this._pomo.running = !!rt.running;
@@ -139,7 +157,7 @@ Page({
     this.setData({
       "pomodoro.timeText": secText(this._pomo.left),
       "pomodoro.running": this._pomo.running,
-      "pomodoro.modes": POMO_MODES.concat([{ id: "custom", label: "自定义", min: (this.data.pomodoro.customMin || 25) }]).map((m) => ({ id: m.id, label: m.label, active: m.id === this._pomo.mode.id })),
+      "pomodoro.modes": POMO_MODES.concat([{ id: "custom", label: "自定义", min: (this._customSec || 1500) / 60 }]).map((m) => ({ id: m.id, label: m.label, active: m.id === this._pomo.mode.id })),
     });
   },
 
@@ -161,7 +179,7 @@ Page({
 
   onPomoMode(e) {
     const id = e.currentTarget.dataset.id;
-    const mode = POMO_MODES.concat([{ id: "custom", label: "自定义", min: (this.data.pomodoro && this.data.pomodoro.customMin) || 25 }]).find((m) => m.id === id);
+    const mode = POMO_MODES.concat([{ id: "custom", label: "自定义", min: (this._customSec || 1500) / 60 }]).find((m) => m.id === id);
     if (!mode || !this._pomo) return;
     this.stopTickOnly();
     this._pomo.mode = mode;
@@ -172,13 +190,16 @@ Page({
     this.paintPomodoro();
   },
 
-  onPomoCustomInput(e) { this.setData({ "pomodoro.customMin": e.detail.value }); },
+  onPomoCustomMinInput(e) { this.setData({ "pomodoro.customMinPart": e.detail.value }); },
+  onPomoCustomSecInput(e) { this.setData({ "pomodoro.customSecPart": e.detail.value }); },
   onPomoSetCustom() {
     if (!this._pomo) return;
-    const min = Math.max(1, Math.min(240, Number(this.data.pomodoro.customMin) || 25));
-    store.pluginStorageSet("pomodoro", "customMin", min);
-    this.setData({ "pomodoro.customMin": min });
-    this.stopTickOnly(); this._pomo.mode = { id: "custom", label: "自定义", min }; this._pomo.left = min * 60; this._pomo.running = false; this._pomo.endAt = 0;
+    const sec = clampCustomSec(this.data.pomodoro.customMinPart, this.data.pomodoro.customSecPart);
+    this._customSec = sec;
+    store.pluginStorageSet("pomodoro", "customSec", sec);
+    // 两个输入框回填归一化后的值：填 90 秒会被进位成 1 分 30 秒。
+    this.setData({ "pomodoro.customMinPart": Math.floor(sec / 60), "pomodoro.customSecPart": sec % 60 });
+    this.stopTickOnly(); this._pomo.mode = { id: "custom", label: "自定义", min: sec / 60 }; this._pomo.left = sec; this._pomo.running = false; this._pomo.endAt = 0;
     this.persistPomodoro(); this.paintPomodoro();
   },
   onPomoNewTaskInput(e) { this.setData({ "pomodoro.newTaskTitle": e.detail.value }); },
@@ -238,7 +259,8 @@ Page({
     this.persistPomodoro();
     if (focus) {
       const done = (Number(store.pluginStorageGet("pomodoro", "doneCount", 0)) || 0) + 1;
-      const mins = (Number(store.pluginStorageGet("pomodoro", "focusMin", 0)) || 0) + this._pomo.mode.min;
+      // 自定义时长可能是 30 秒这种，累加会产生 0.30000000000000004，收敛到 1 位小数。
+      const mins = Math.round(((Number(store.pluginStorageGet("pomodoro", "focusMin", 0)) || 0) + this._pomo.mode.min) * 10) / 10;
       store.pluginStorageSet("pomodoro", "doneCount", done);
       store.pluginStorageSet("pomodoro", "focusMin", mins);
       this.setData({ "pomodoro.doneCount": done, "pomodoro.focusMin": mins });

@@ -49,7 +49,7 @@ assert.match(settingsView, /for \(const preset of BUILTIN_SOUNDS\)/, '设置页�
 const PLUGIN = new URL('../public/plugins/pomodoro/main.js', import.meta.url);
 const manifest = JSON.parse(read('../public/plugins/pomodoro/manifest.json'));
 assert.ok(manifest.permissions.includes('sound'), '番茄专注的 manifest 必须声明 sound 权限，否则 tide.sound 会被宿主拒绝');
-assert.equal(manifest.version, '0.2.0');
+assert.equal(manifest.version, '0.3.0', '自定义时长改成按秒存之后必须升插件版本');
 
 const source = fs.readFileSync(PLUGIN, 'utf8');
 for (const marker of ['tide.sound.play', 'tide.sound.presets', 'focusNotify', 'focusSound', 'breakNotify', 'breakSound', 'AUDIO_MAX_BYTES', 'readAsDataURL']) {
@@ -102,9 +102,11 @@ const uiCtx = vm.createContext({
 
 vm.runInContext(
   source.replace('  tide.ui.registerView({',
-    '  globalThis.__fx = { render, finish, normalizeReminder, MODES,\n'
+    '  globalThis.__fx = { render, finish, normalizeReminder, MODES, clampCustomSec, fmtMin, modeSeconds, CUSTOM_MAX_SEC,\n'
     + '    get reminder() { return reminder; }, set reminder(v) { reminder = v; },\n'
-    + '    setMode(id) { if (id === "custom") { mode = { id: "custom", label: "自定义", min: customMin }; return; } mode = MODES.find((m) => m.id === id); },\n'
+    + '    get customSec() { return customSec; }, set customSec(v) { customSec = v; },\n'
+    + '    get dotsBox() { return dotsBox; },\n'
+    + '    setMode(id) { if (id === "custom") { mode = { id: "custom", label: "自定义", min: customSec / 60 }; return; } mode = MODES.find((m) => m.id === id); },\n'
     + '    setTaskId(id) { currentTaskId = id; } };\n'
     + '  tide.ui.registerView({'),
   uiCtx,
@@ -177,4 +179,56 @@ assert.equal(healed.sound, DEFAULT_SOUND_ID);
 assert.equal(healed.volume, 0.75);
 assert.equal(fx.normalizeReminder({ ...base, focusSound: false, breakNotify: false }).focusSound, false, '关闭状态必须被保留');
 
-console.log('PASS: 番茄专注的提醒开关（专注 / 休息 × 通知 / 声音）、提示音参数、配置自愈与界面构建');
+/* ── 四、自定义时长精确到秒 ── */
+// 唯一事实源是秒（storage 键 customSec）。分 / 秒两个输入框只是它的两种视图，
+// 所以这里直接压 clampCustomSec / modeSeconds，而不是去戳 DOM。
+assert.equal(fx.clampCustomSec(1, 30), 90, '1 分 30 秒就是 90 秒 —— 这正是这次改动的目的');
+assert.equal(fx.clampCustomSec('1', '30'), 90, '输入框给的是字符串，必须照样算对');
+assert.equal(fx.clampCustomSec(0, 30), 30, '0 分 30 秒必须合法，否则「自定义秒」等于没做');
+assert.equal(fx.clampCustomSec(1, 90), 150, '秒填 90 要进位成 2 分 30 秒');
+assert.equal(fx.clampCustomSec(999, 0), fx.CUSTOM_MAX_SEC, '上限仍是 240 分');
+assert.equal(fx.clampCustomSec('', ''), 1, '空输入夹到 1 秒，不能变成 0 把计时卡死');
+assert.equal(fx.clampCustomSec(-5, -5), 1, '负数同样夹到下限');
+assert.equal(fx.clampCustomSec('x', 'y'), 1, '脏输入不能算出 NaN');
+assert.ok(Number.isInteger(fx.clampCustomSec(1.4, 0.6)), '结果必须是整数秒');
+
+fx.setMode('custom');
+fx.customSec = 90;
+assert.equal(fx.modeSeconds(fx.MODES[0]), 25 * 60, '预设模式仍按分钟换算');
+assert.equal(fx.modeSeconds({ id: 'custom', label: '自定义', min: 999 }), 90,
+  '自定义模式必须读 customSec，不能被 mode.min 带偏');
+
+assert.equal(fx.fmtMin(25), '25');
+assert.equal(fx.fmtMin(1.5), '1.5');
+assert.equal(fx.fmtMin(0.5), '0.5');
+assert.equal(fx.fmtMin(2), '2', '整数分钟不带多余的 .0');
+
+/* 90 秒的番茄记 1.5 分钟，通知文案也要跟着 */
+reset();
+fx.setTaskId('');
+fx.reminder = { ...base };
+storage.delete('focusMin');
+fx.customSec = 90;
+fx.setMode('custom');
+await fx.finish();
+assert.equal(storage.get('focusMin'), 1.5, `90 秒应记 1.5 分钟，实际 ${storage.get('focusMin')}`);
+assert.ok(notified[0] && notified[0].includes('1.5 分钟'), `完成通知要报真实分钟，实际「${notified[0]}」`);
+
+/* 浮点噪声要收掉：0.1 + 0.2 不能写成 0.30000000000000004 */
+storage.set('focusMin', 0.1);
+fx.customSec = 12;
+fx.setMode('custom');
+await fx.finish();
+assert.equal(storage.get('focusMin'), 0.3, `累计分钟必须收敛到 1 位小数，实际 ${storage.get('focusMin')}`);
+
+/* 「累计」那行用真实累计分钟，不许再拿番茄数 × 25 估 */
+fx.render(fakeEl('div'));
+await tick();
+await tick();
+const dotsLabel = fx.dotsBox.children.find((c) => typeof c.textContent === 'string' && c.textContent.includes('累计'));
+assert.ok(dotsLabel, '统计行应该被渲染出来');
+assert.ok(dotsLabel.textContent.includes('0.3 分钟'),
+  `统计行必须用真实累计分钟，实际「${dotsLabel.textContent}」`);
+assert.ok(!/· 25 分钟/.test(dotsLabel.textContent), '不能再用番茄数 × 25 估算');
+
+console.log('PASS: 番茄专注的提醒开关（专注 / 休息 × 通知 / 声音）、提示音参数、自定义时长精确到秒、配置自愈与界面构建');
