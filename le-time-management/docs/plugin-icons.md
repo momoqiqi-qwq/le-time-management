@@ -1,330 +1,176 @@
 # Le时间管理插件图标说明
 
-> 适用：Le时间管理 v0.11.6+ ｜ 对应源码：`src/icons.js`、`src/shell.js`、`src/views/settings/plugins.js`、`public/icons/`
-> v0.11.6 起图标体系改为 **Icons8 / iGoutu iOS Filled 在线图标**。旧的「Magnific 随包 PNG 白名单 + 汉字字形」两层体系已废弃，本文档已按新体系重写。
+> 适用：Le时间管理 **v0.27.0+** ｜ 对应源码：`src/icons.js`、`src/pluginAppearance.js`、`public/icons/plugins/`、`public/icons/fontawesome/`
+> v0.27.0 起内置插件图标换成 **Icons8 / iGoutu 的 Color 彩色风格**（来源图标集「标志 · 色版」），随包 PNG；主导航仍是 iOS Filled 单色剪影 + 强调色。
 
 ---
 
-## 一、体系概览
+## 一、两套图标来源（别混用）
 
-v0.11.6 之后只剩**一条**图标解析链路：`appIcon(key)` → `ICONS8` 映射 → Icons8 CDN URL。
-
-| 用途 | 实现 | 数据来源 | 出现位置 |
+| 用途 | 风格 | 落地方式 | 出处 |
 |---|---|---|---|
-| 导航与插件图标 | `appIcon(key)` | `src/icons.js` 的 `ICONS8` 映射 | 侧栏导航方块、顶栏标题、插件市场卡片、设置页插件列表 |
-| 插件元数据 `icon` | manifest / `pluginCatalog.js` 的 `icon` 字段（Font Awesome 风格名，如 `hourglass-half`） | `pluginHost.js` → `pluginViews[].icon` | **当前不参与渲染**，仅作元数据保留 |
-| 小程序图标 | `miniprogram/images/{tab,plugins}/*.png` | 由 `public/icons/fontawesome/solid.svg` 离线渲染（FA 单色） | 小程序底部 tab 与插件列表 |
-| 兜底 | `appIcon()` 内部候选链 | 未知 key → `market` → 隐藏 | 不会裂图、不会报错 |
+| 主导航：四象限 / 时间块 / 收件箱 / 插件 / 设置 | **iOS Filled** 单色剪影 + 每项强调色 | 运行时走 Icons8 CDN，`img.icons8.com/ios-filled/50/<色>/<slug>.png` | `src/icons.js` → `NAV_ICONS8` |
+| 12 个内置插件 | **Color 彩色**（`wechat-push` 用 3D 微信标志） | **随包 PNG**：`public/icons/plugins/<插件ID>.png` | `tools/gen-plugin-icons.py` |
+| 未知 key（用户插件 / 外部插件） | Color 彩色 | CDN 回落：`img.icons8.com/color/96/<slug>.png` | `src/icons.js` → `PLUGIN_ICONS8` |
 
-要点：**桌面端不再读取 `public/icons/*.png`**；小程序也不读，它走 FA sprite。
-那批 PNG 现在只剩授权台账的作用（见第八、九节），`fontawesome/solid.svg` 才是小程序图标的图形源。
+要点：
+
+- **内置插件优先读随包 PNG**（离线可用、色彩可控），PNG 加载失败才回落同风格的 CDN 直链。
+- 插件图标的 key 就是**插件 ID**（不是 manifest 里的 `icon` 字段）——`appIcon(pluginId)`。
+- 主导航才需要强调色；插件图标是彩色 PNG，不再染色（`.plugin-present-icon` 已把 `opacity` 强制为 `1`）。
 
 ---
 
-## 二、`src/icons.js` 全文（v0.11.6）
+## 二、`src/icons.js` 的解析规则
 
 ```js
-import { el } from "./ui.js";
+const NAV_ICONS8   = { quadrant: ["four-squares", "grid-2"], timeblock: ["clock"], inbox: ["inbox"],
+                       market: ["puzzle", "puzzle-piece"], settings: ["settings"], capture: ["inbox"] };
+const PLUGIN_ICONS8 = { "shiguang-schedule": ["timetable", "calendar"], pomodoro: ["tomato", "hourglass"], /* … */ };
+const ICONS8        = { ...NAV_ICONS8, ...PLUGIN_ICONS8 };
 
-// Icons8 / iGoutu iOS Filled icon set.
-// The app uses the official Icons8 CDN so the navigation and plugin icons keep a
-// consistent iOS-filled visual language across desktop and Android WebView.
-// Free-use attribution is surfaced in the About / open-source notice screens.
-const ICONS8 = {
-  quadrant: ["four-squares", "grid-2"],
-  timeblock: ["clock"],
-  market: ["puzzle", "puzzle-piece"],
-  settings: ["settings"],
-  capture: ["inbox"],
-  "shiguang-schedule": ["calendar", "calendar--v1"],
-  "web-collector": ["bookmark-ribbon", "bookmark"],
-  "school-notice": ["school", "classroom"],
-  pomodoro: ["hourglass", "time-machine"],
-  "weekly-report": ["bar-chart", "combo-chart--v1"],
-  "gx-news": ["trophy"],
-  "chaoxing-notify": ["graduation-cap", "student-center"],
-  "cppu-notify": ["university", "school-building"],
-  "wechat-push": ["wechat", "comments"],
-  "cn-holiday": ["calendar", "calendar--v1"],
-  "exam-calendar": ["test-passed", "calendar-plus"],
-};
-
-function iconUrl(name) {
-  return `https://img.icons8.com/ios-filled/50/000000/${name}.png`;
-}
-
-export function appIcon(key, title = "") {
-  const candidates = ICONS8[key] || ICONS8.market;
-  let index = 0;
-  let usingFallback = false;
-  const img = el("img", {
-    class: "app-icon icons8-app-icon",
-    src: iconUrl(candidates[index]),
-    alt: title || "",
-    title: title || null,
-    loading: "eager",
-    decoding: "async",
-    draggable: "false",
-    "data-icon-source": "Icons8 iOS Filled",
-  });
-  img.addEventListener("error", () => {
-    index += 1;
-    if (index < candidates.length) {
-      img.src = iconUrl(candidates[index]);
-      return;
-    }
-    if (!usingFallback && key !== "market") {
-      usingFallback = true;
-      img.src = iconUrl(ICONS8.market[0]);
-      return;
-    }
-    img.style.visibility = "hidden";
-  }, { once: false });
-  return img;
-}
+appIcon(key)  →
+  manifestIcon = MANIFEST_ICON_KEYS[key]                  // 命中内置插件 → /icons/plugins/<key>.png
+  candidates   = manifestIcon ? [manifestIcon, ...ICONS8[key]] : (ICONS8[key] || ICONS8.market)
+  isNav        = Boolean(NAV_ICONS8[key])                 // 命中 → ios-filled，否则 color
 ```
 
-解析规则逐条：
+逐条：
 
-1. **候选数组**：`ICONS8[key]` 是**候选名数组**，不是单个名字 —— 同一个语义允许准备 1–2 个 Icons8 slug。
-2. **URL 模板**：`https://img.icons8.com/ios-filled/50/000000/<name>.png`。`50` 是 CDN 侧尺寸档位，`000000` 是黑色前景（iOS Filled 为单色剪影，靠 CSS `opacity` 调节视觉重量）。
-3. **逐级回退**：第 1 个 slug 404 → 自动试第 2 个；候选耗尽 → 回落 `ICONS8.market[0]`（`puzzle`）。
-4. **最终隐藏**：连拼图都加载失败（离线 / 被墙）→ `visibility: hidden`，只留空白占位，**不会出现裂图**。
-5. **输出元素固定为** `<img class="app-icon icons8-app-icon" data-icon-source="Icons8 iOS Filled">`，实际显示尺寸由 CSS 覆盖（见第六节）。
+1. **候选数组**：同一个语义允许写 1–2 个 slug，第 1 个 404 自动试第 2 个。
+2. **URL 模板**：主导航 `ios-filled/50/<色>/<slug>.png`；插件 `color/96/<slug>.png`。
+3. **逐级回退**：候选耗尽 → 回落 `ICONS8.market[0]`（`puzzle`，彩色拼图）；连它都失败 → `visibility: hidden`，**不出现裂图**。
+4. **输出标签**：`<img class="app-icon icons8-app-icon">`，`data-icon-source` 取值 `bundled plugin PNG (Icons8 Color)` / `Icons8 iOS Filled` / `Icons8 Color`，`data-icon-key` 便于在 DevTools 里核对解析结果。
 
 ---
 
-## 三、key → 图标映射（16 个 key）
+## 三、key → 图标映射
 
-| key | 候选 slug（按序尝试） | 用途 |
+### 主导航（`NAV_ICONS8`，iOS Filled + 强调色）
+
+| key | 候选 slug | 强调色 |
 |---|---|---|
-| quadrant | `four-squares` → `grid-2` | 四象限导航 |
-| timeblock | `clock` | 时间块导航 |
-| market | `puzzle` → `puzzle-piece` | 插件市场导航（**同时是所有未知 key 的兜底**） |
-| settings | `settings` | 设置导航 |
-| capture | `inbox` | 捕获页 / 小程序捕获 tab |
-| shiguang-schedule | `calendar` → `calendar--v1` | 时光课程表插件 |
-| web-collector | `bookmark-ribbon` → `bookmark` | 网页收集插件 |
-| school-notice | `school` → `classroom` | 校园通知插件 |
-| pomodoro | `hourglass` → `time-machine` | 番茄专注插件 |
-| weekly-report | `bar-chart` → `combo-chart--v1` | 周度报告插件 |
-| gx-news | `trophy` | 竞赛消息雷达插件 |
-| chaoxing-notify | `graduation-cap` → `student-center` | 学习通通知插件 |
-| cppu-notify | `university` → `school-building` | 警大门户通知插件 |
-| wechat-push | `wechat` → `comments` | 微信提醒推送插件 |
-| cn-holiday | `calendar` → `calendar--v1` | 节假日插件 |
-| exam-calendar | `test-passed` → `calendar-plus` | 考试日历插件 |
+| quadrant | `four-squares` → `grid-2` | `#4F46E5` |
+| timeblock | `clock` | `#0EA5E9` |
+| inbox | `inbox` | `#F59E0B` |
+| market | `puzzle` → `puzzle-piece`（**同时是所有未知 key 的兜底**） | `#8B5CF6` |
+| settings | `settings` | `#64748B` |
+| capture | `inbox` | `#F59E0B` |
 
-> `shiguang-schedule` 与 `cn-holiday` 共用同一组 slug（都是日历语义），这是刻意复用，不是笔误。
+### 内置插件（`PLUGIN_ICONS8`，Color 彩色；随包 PNG 与 slug 一一对应）
 
----
+| 插件 ID | 随包 PNG | CDN 风格 / slug | 图形 |
+|---|---|---|---|
+| `plugin-guide` | ✅ | color `help` → `question-mark` | 蓝色问号 |
+| `pomodoro` | ✅ | color `tomato` → `hourglass` | 番茄 |
+| `cppu-notify` | ✅ | color `university` → `school-building` | 柱廊建筑 |
+| `gx-news` | ✅ | color `trophy` | 金色奖杯 |
+| `exam-calendar` | ✅ | color `test-passed` → `calendar-plus` | 考核清单 |
+| `shiguang-schedule` | ✅ | color `timetable` → `calendar` | 日历 + 时钟 |
+| `web-collector` | ✅ | color `bookmark-ribbon` → `bookmark` | 红色书签 |
+| `wechat-push` | ✅（**3d-fluency** 风格） | color `speech-bubble` → `chat`（Color 风格没有微信标志） | 微信标志 |
+| `chaoxing-notify` | ✅ | color `books` → `graduation-cap` | 一摞书 |
+| `school-notice` | ✅ | color `school` → `classroom` | 校舍 |
+| `cn-holiday` | ✅ | color `lantern` → `calendar` | 中式灯笼 |
+| `weekly-report` | ✅ | color `statistics` → `combo-chart--v1` | 数据看板 |
 
-## 四、给插件加一个图标（3 步）
-
-**1. 在 Icons8 / iGoutu 找图标**
-
-打开 <https://igoutu.cn/icons/ios-filled>（或 <https://icons8.com/icons/ios-filled>），选一个 **iOS Filled** 风格的图标，从 CDN 地址里取 slug：
-
-```
-https://img.icons8.com/ios-filled/50/000000/university.png
-                                            ^^^^^^^^^^ 这就是 slug
-```
-
-**2. 登记映射**：把 key 加进 `src/icons.js` 的 `ICONS8`。有备选就写第二个：
-
-```js
-const ICONS8 = {
-  // ...
-  "my-plugin": ["university", "school-building"],
-};
-```
-
-**3. 看一眼**：`npm run tauri dev` → 侧栏、插件市场、设置 → 插件，三处确认无拼图兜底、无裂图。
-
-> 插件没有宿主侧图标开关：只要 key 出现在 `ICONS8` 里就生效；不在映射里一律回落拼图（`market`）。
-> 外部插件（数据目录 `plugins/`）走同一套 `appIcon(pluginId)`，**key 必须写进 `ICONS8`**，否则永远显示拼图。
+> 完整来源台账（slug / sha256 / 消费方 / 许可）见 **`public/icons/plugins/ATTRIBUTION.md`**（由生成脚本写出，不要手改）。
 
 ---
 
-## 五、插件元数据 `icon` 字段（当前不参与渲染）
+## 四、换一个插件的图标（3 步）
 
-`manifest.json` / `pluginCatalog.js` 里的 `icon` 仍是 **Font Awesome 风格名**，链路是：
+**1. 找图标**
 
-```js
-// src/pluginHost.js
-pluginViews.push({ id, title, icon: plugin.icon, render, pluginId });
+打开 <https://igoutu.cn/icons/set/标志--style-color>（或 <https://igoutu.cn/icons/color>），挑一个 **Color** 风格的图标，从 CDN 地址里取 slug：
+
+```
+https://img.icons8.com/color/96/tomato.png
+                                ^^^^^^ 这就是 slug
 ```
 
-```js
-// src/shell.js
-const VIEWS = [
-  { id: "quadrant", icon: "table-cells-large", title: "四象限", sub: "先决定，再动手" },
-  { id: "timeblock", icon: "clock",          title: "时间块", sub: "把任务装进一天的格子" },
-  { id: "inbox",     icon: "inbox",          title: "收件箱", sub: "自动化与待确认事项" },
-  { id: "market",    icon: "puzzle-piece",   title: "插件",   sub: "扩展能力集中在这里" },
-  { id: "settings",  icon: "gear",           title: "设置",   sub: "数据、提醒与插件" },
-];
-const PLUGIN_ICONS = {
-  "pomodoro": "hourglass-half",
-  "weekly-report": "chart-column",
-  "gx-news": "trophy",
-  "chaoxing-notify": "graduation-cap",
-  "cppu-notify": "building-columns",
-  "wechat-push": "comment-dots",
-};
+**2. 登记映射并重新生成**
+
+```bash
+# 编辑 tools/gen-plugin-icons.py 的 ICONS：
+#   "my-plugin": ("color", "tomato", "番茄专注 / 番茄"),
+"C:/Users/yile/.workbuddy/binaries/python/envs/default/Scripts/python.exe" tools/gen-plugin-icons.py
 ```
 
-`viewDef()` 会把它们组装成 `def.icon`，但**没有任何渲染代码读取 `def.icon`** —— 导航按钮实际取的是：
+脚本会一次写完三处：`le-time-management/public/icons/plugins/<id>.png`、同名台账 `ATTRIBUTION.md`、`miniprogram/images/plugins/<id>.png`。
+然后把 slug 同步进 `src/icons.js` 的 `PLUGIN_ICONS8`（做 CDN 回落与外部插件兜底）。
 
-```js
-el("span", { class: "ic" }, appIcon(def.pluginView?.pluginId || id))
-```
+**3. 看一眼**：`npm run tauri dev` → 侧栏「插件视图」、插件中心卡片、设置 → 插件，三处确认无裂图、无拼图兜底。
 
-也就是说 `VIEWS[].icon`、`PLUGIN_ICONS`、manifest 的 `icon` 三处都是**遗留元数据**，改它们不会影响界面。真要换图标，改 `ICONS8`。
-
-> 这些字段暂时保留是为了兼容旧插件清单与小程序端 `pluginCatalog.js`；将来清理时三端要一起动。
-
-**唯一的例外**：`src/views/settings/plugins.js` 里考试日历写死了一个汉字字形 ——
-
-```js
-el("div", { class: `plug-ic${rec.id === "weekly-report" ? " alt" : ""}` },
-   rec.id === "exam-calendar" ? "考" : appIcon(rec.id))
-```
-
-所以设置页的考试日历卡片显示的是「考」字，而不是 Icons8 图标。这是历史遗留分支，可以删掉。
+> 没有随包 PNG 的新插件也能显示——只要 ID 在 `PLUGIN_ICONS8` 里，就会走 CDN。
+> **ID 不在任何映射里 → 永远显示彩色拼图兜底。**
 
 ---
 
-## 六、各处的实际渲染尺寸
-
-图标源统一是 50px 档的 PNG，CSS 负责缩放到目标尺寸（`src/styles.css`）：
+## 五、渲染尺寸与样式（`src/styles.css`）
 
 | 位置 | 选择器 | 显示尺寸 | 容器 |
 |---|---|---|---|
 | 默认（`appIcon` 通用） | `.app-icon` | 30 × 30 | 行内，`object-fit: contain` |
 | 顶栏标题 | `.topbar-title-mark .app-icon` | 22 × 22 | 标题左侧 |
-| 侧栏导航图标 | `.nav button .ic` / `.nav button .ic .app-icon` | 38 × 38（方块底） | 圆角 11px，底色 `#EDF5F6`；选中 `#FFF2BD` |
-| 插件市场卡片 | `.mcard .mi .app-icon` | 40 × 40 | 卡片 `.mi` 38×38 圆角 12px，底色 `#E1EEF3` |
-| 设置页插件列表 | `.plug-ic .app-icon` | 40 × 40 | 深蓝→海蓝渐变底；`weekly-report` 用 `.alt` 紫渐变 |
-| 窄屏（≤760px）侧栏 | `.nav button .ic .app-icon` | 22 × 22 | 图标方块缩到更小 |
+| 侧栏导航 | `.nav button .ic` / `.nav button .ic .app-icon` | 30 × 30（方块 38 × 38） | 圆角 11px |
+| 插件中心卡片 | `.mcard .mi .app-icon` | 40 × 40 | 卡片 `.mi` 38 × 38，底色由 `--plugin-accent` 混出 |
+| 设置页插件列表 | `.plug-ic .app-icon` | 40 × 40 | 同上 |
+| 窄屏（≤760px）侧栏 | `.nav button .ic .app-icon` | 22 × 22 | 紧凑 |
 
-另有两条与图标观感相关的规则：
-
-```css
-.icons8-app-icon { object-fit: contain; opacity: .9; filter: none; user-select: none; -webkit-user-drag: none; }
-```
-
-- `opacity: .9` 是 iOS Filled 黑色剪影的视觉配平 —— 纯黑在浅色底上会偏重。
-- `-webkit-user-drag: none` 防止 WebView 里把图标拖出来。
-
-**为 22px 渲染做设计**：窄屏侧栏只有 22px，细笔画会糊，选图标时优先挑轮廓粗、负空间大的。
+- 插件入口的底板用 `--plugin-accent`（`pluginAppearance.js` 按插件 ID 哈希出的 8 色调色板）：`.nav .plug-list button .ic`、`.market-card-head .mi`、`.plug-card .plug-ic` 都是 `color-mix(--plugin-accent 13%, --panel)` + 内描边，浅色/夜间主题自动适配。
+- `.plugin-present-icon { filter: none !important; opacity: 1 !important; }` —— 插件图标不做灰度与透明度压缩（这条在 `styles.css` 后段，能压过前面的 `.icons8-app-icon { opacity: .9 }`）。
+- 随包 PNG 是 **81 × 81 画布、图形最长边 58px**，`object-fit: contain` 缩放到目标尺寸；**为 22px 渲染做设计**，选图标时优先挑轮廓粗、负空间大的。
 
 ---
 
-## 七、小程序图标（4 个 tab + 12 个插件）
+## 六、小程序（`miniprogram/images/`）
 
-小程序**不用 Icons8 CDN**，走离线 PNG，且是 **Font Awesome 单色**风格（不是桌面端那批彩色 Magnific PNG）。
-唯一的生成器是 `miniprogram/tools/sync-tab-icons.py`，它从随包的 FA sprite 渲染出两组图标：
-
-| 输出 | 内容 | 消费方 |
+| 输出 | 来源 | 消费方 |
 |---|---|---|
-| `miniprogram/images/tab/<name>{,-on}.png` | 4 个 tab（quadrant / timeblock / capture / settings） | `miniprogram/app.json` 的 `tabBar.list[].iconPath` / `selectedIconPath` |
-| `miniprogram/images/plugins/<id>.png` | 12 个内置插件 | `miniprogram/pages/plugins/index.js` 与 `pages/plugin/index.js` 拼 `/images/plugins/${id}.png` |
+| `images/tab/<name>{,-on}.png` | `miniprogram/tools/sync-tab-icons.py` 从 `public/icons/fontawesome/solid.svg` 渲染（常态 `#8A979E`、选中 `#0F4C5C`） | `app.json` 的 `tabBar.list[].iconPath` / `selectedIconPath` |
+| `images/plugins/<id>.png` | **直接复制** `le-time-management/public/icons/plugins/<id>.png`（同一份彩色素材，字节一致） | `pages/plugins/index.js`、`pages/plugin/index.js` 拼 `/images/plugins/${id}.png` |
 
-关键片段：
+重新生成：`python miniprogram/tools/sync-tab-icons.py`（需要 `Pillow` + `cairosvg`；tab 图标仍需 `cairosvg`，插件图标只做复制）。
 
-```python
-sprite = package_root / 'le-time-management/public/icons/fontawesome/solid.svg'
-icons = {'quadrant': 'table-cells-large', 'timeblock': 'clock', 'capture': 'inbox', 'settings': 'gear'}
-colors = {'': '#8A979E', '-on': '#0F4C5C'}          # 常态灰 / 选中深青
-# 插件图标读 manifest 的 faIcon（无则 icon）
-plugin_icons[data['id']] = data.get('faIcon') or data.get('icon') or 'puzzle-piece'
-render(symbol_id, '#0F4C5C', 50).save(plugin_out / f'{plugin_id}.png')
-```
+- 插件彩色素材缺失时脚本会退回 FA 单色渲染并打印插件 ID —— 看到那行提示就去 `tools/gen-plugin-icons.py` 的 `ICONS` 补映射。
+- tab 图标仍是单色成对（灰 / 深青），这是 tabBar 的设计要求，不跟随插件图标的彩色化。
 
-- tab 图形渲染成 58×58，画布 81×81 居中；插件图形 50×50，画布 81×81。
-- 配色是**写死的单色**：常态 `#8A979E`、选中 `#0F4C5C` —— 所以「选中态」在图形上是有区分的（不是只靠文字变色）。
-- 重新生成：`python miniprogram/tools/sync-tab-icons.py`（需要 `Pillow` + `cairosvg`）。
-- 插件 `icon` / `faIcon` 必须能在 `solid.svg` 里找到同名 `<symbol>`，否则脚本抛 `Font Awesome symbol not found`。
-- v0.11.6 已移除长辈照护，`icons` 字典里的 `'elder': 'heart'` 已删除。
-
-> **注意有两套同名脚本，别搞混**：根目录 `tools/sync-tab-icons.py` 是工作区早先自建的**彩色 Magnific 方案**（从 `public/icons/*.png` 缩放），
-> 它**不生成** `images/plugins/`，且若运行会把上面的单色 FA 图标覆盖成彩色版。小程序图标以 `miniprogram/tools/` 为准。
+> ⚠️ **别运行根目录 `tools/sync-tab-icons.py` / `tools/fetch-ui-icons.py` / `tools/gen-miniprogram-tab-icons.js`**：
+> 那是已废弃的 Magnific 彩色方案，读的是早就删除的 `public/icons/<name>.png`，跑起来只会报错或写出不一致的 tab 图标（见第九节）。
 
 ---
 
-## 八、授权与署名（硬性要求）
+## 七、授权与署名（硬性要求）
 
 | 资源 | 授权 | 署名位置 |
 |---|---|---|
-| 主导航与插件中心图标 | **Icons8 / iGoutu iOS Filled** · Icons8 License（免费使用需署名） | `src/aboutData.js` → 设置 → 关于；链接 <https://igoutu.cn/icons/ios-filled> |
-| `public/icons/*.png`（小程序 tab 素材） | Magnific（原 Freepik）Lineal Color | `public/icons/ATTRIBUTION.md` + `public/icons/credits.json` |
-
-台账文件说明：
-
-| 文件 | 作用 |
-|---|---|
-| `public/icons/credits.json` | 结构化台账：`key / author / source / cdn / sha256`（11 条） |
-| `public/icons/ATTRIBUTION.md` | 人类可读清单：`- <key>: [作者](来源页)` |
-| `src/aboutData.js` | 设置页「关于」的开源清单，Icons8 与 Font Awesome 都在这里声明 |
-
-`sha256` 记录的是**落地 PNG 文件**的哈希，用于确认素材未被意外替换：
-
-```powershell
-(Get-FileHash le-time-management/public/icons/quadrant.png -Algorithm SHA256).Hash.ToLower()
-```
+| 主导航图标 | Icons8 / iGoutu · iOS Filled | 设置 → 关于（`src/aboutData.js`），链接 <https://igoutu.cn/icons/set/标志--style-color> |
+| 内置插件图标（12 个） | Icons8 / iGoutu · Color（`wechat-push` 为 3D 风格） | 同上 + `public/icons/plugins/ATTRIBUTION.md` |
+| 小程序 tabBar 图标 / 插件图标兜底 | Font Awesome Free（Icons: CC BY 4.0） | 设置 → 关于；`public/icons/fontawesome/ATTRIBUTION.md`、`LICENSE.txt` |
 
 红线：素材遵循原作者与平台许可，**不得把素材作为独立图标库转售**；二次分发本项目时保留 `ATTRIBUTION.md` 与设置页署名。
 
 ---
 
-## 九、当前 PNG 清单（`public/icons/`，11 个）
-
-这 11 个 PNG **当前没有任何消费方**：桌面端走 Icons8 CDN，小程序走 FA sprite（第七节）。
-它们现在只剩两个作用 —— 图标授权台账（`credits.json` / `ATTRIBUTION.md`），以及将来若要改回离线图标时的素材储备。
-但 Vite 会把 `public/` 原样拷进 `dist/`，所以这 140 KB 仍会进 exe / APK。
-
-| key | 作者 | 消费方 |
-|---|---|---|
-| quadrant | Freepik | 无 |
-| timeblock | wanicon | 无 |
-| market | Freepik | 无 |
-| settings | Good Ware | 无 |
-| pomodoro | Freepik | 无 |
-| weekly-report | Freepik | 无 |
-| gx-news | Freepik | 无 |
-| chaoxing-notify | Freepik | 无 |
-| cppu-notify | Freepik | 无 |
-| wechat-push | Smashicons | 无 |
-| capture | Freepik | 无 |
-
-完整来源链接与 sha256 见 `public/icons/credits.json`。
-
-> 注意 `public/icons/fontawesome/solid.svg`（896 KB）**仍在使用** —— 小程序 tab 与插件图标的唯一图形源，别一起删。
-
----
-
-## 十、已知缺口（可直接当作待办）
+## 八、已知缺口（可直接当作待办）
 
 | 缺口 | 表现 | 修法 |
 |---|---|---|
-| `inbox` 不在 `ICONS8` | 侧栏「收件箱」显示拼图兜底 | 在 `ICONS8` 加 `inbox: ["inbox"]` |
-| 图标依赖 CDN | 离线 / 无网环境下所有图标回落拼图，最终隐藏 | 若需离线，改为随包 PNG 或内联 SVG（会重新引入构建步骤） |
-| `VIEWS[].icon` / `PLUGIN_ICONS` / manifest `icon` 是死元数据 | 改它们没有任何效果，容易误导 | 三端一起清理，或补上渲染逻辑 |
-| 设置页考试日历写死「考」 | 与 Icons8 风格不统一 | 删掉 `plugins.js` 的 `rec.id === "exam-calendar"` 分支 |
-| `public/icons/*.png` 是死资源 | 无消费方，140 KB 仍随 `dist` 进 exe / APK | 若确认不再需要离线素材，删除这 11 个 PNG（保留 `credits.json` / `ATTRIBUTION.md` / `fontawesome/`） |
-| 根 `tools/sync-tab-icons.py` 是冲突副本 | 彩色 Magnific 方案，会覆盖小程序的单色 FA 图标 | 删除它，并把 `tools/gen-miniprogram-tab-icons.js` 指向 `miniprogram/tools/sync-tab-icons.py` |
-| 图标脚本未声明依赖 | `sync-tab-icons.py` 需要 `Pillow`（+ `cairosvg`），裸 `python` 常缺 | 脚本头注明依赖，或在 README 里写明用哪个解释器 |
-| 外部插件无独立图标通道 | 只能用 `ICONS8` 里已有的 key | 若要做，需给 `appIcon()` 增加按插件 id 动态拼 slug 的分支 |
+| 主导航图标依赖 CDN | 离线 / 无网环境回落彩色拼图，最终隐藏 | 若要完全离线，需把 6 个主导航图标也做成随包 PNG（会多一处生成步骤） |
+| `manifest.json` 的 `icon` / `faIcon` 是死元数据 | 桌面端不读，改了没效果（只有小程序兜底渲染会用） | 保持现状即可；真要清理需三端一起动 |
+| Color 风格没有微信标志 | `wechat-push` 只能用 3D 风格，是 12 个图标里唯一风格不同的 | 已在 `ATTRIBUTION.md` 注明；如介意可换成 `color/speech-bubble` |
+| 根 `tools/` 三个 Magnific 脚本是死代码 | 读的是已删除的 `public/icons/*.png`，运行即报错 | 删除 `tools/fetch-ui-icons.py`、`tools/sync-tab-icons.py`、`tools/gen-miniprogram-tab-icons.js` |
+| `miniprogram/images/plugins/elder-care.png` 是历史残留 | 长辈照护在 v0.11.6 已移除，没有插件再用它 | 直接删 |
+| 图标生成脚本未进 npm scripts | 换图标要手敲 python 路径 | 在 `package.json` 加 `icons:plugins` 脚本指向 `tools/gen-plugin-icons.py` |
 
 ---
 
-## 十一、提交前自检清单
+## 九、提交前自检清单
 
-- [ ] 新 key 已加进 `src/icons.js` 的 `ICONS8`（否则拼图兜底）
-- [ ] slug 是 **iOS Filled** 风格，且在 CDN 上确实存在（`curl -I https://img.icons8.com/ios-filled/50/000000/<slug>.png` 返回 200）
-- [ ] 有备选 slug 时按「首选 → 备选」顺序书写
-- [ ] 22px（窄屏侧栏）下图形仍可辨认
-- [ ] `npm run tauri dev` 进 侧栏、插件市场、设置 → 插件 三处各看一眼，无裂图、无拼图兜底
-- [ ] 若改了插件 `icon` / `faIcon`：确认同名 `<symbol>` 在 `fontawesome/solid.svg` 里存在，再跑 `python miniprogram/tools/sync-tab-icons.py` 更新小程序图标
-- [ ] 三端图标口径一致：桌面走 `ICONS8`（Icons8 CDN），小程序走 `miniprogram/tools/` 生成的 FA 单色 PNG
+- [ ] 新插件的彩色素材已生成：`public/icons/plugins/<id>.png` 存在且**不是** FA 单色（`tools/gen-plugin-icons.py --check` 全 OK）
+- [ ] `src/icons.js` 的 `PLUGIN_ICONS8` 里有对应 ID（否则用户插件/离线回落变成拼图）
+- [ ] 小程序副本字节一致：`le-time-management/public/icons/plugins/<id>.png` ≡ `miniprogram/images/plugins/<id>.png`
+- [ ] 22px（窄屏侧栏）与 30px（桌面侧栏）下图形都可辨认，浅色 / 夜间两套主题都不糊
+- [ ] `ATTRIBUTION.md` 已重新生成，且设置 → 关于的署名条目仍指向图标集入口
+- [ ] 改了 `public/` → **按 AGENTS.md 铁律一升版本号**（`package.json` → `tools/sync-version.js` → 补 `package-lock.json` 两处 → `--check` 通过）

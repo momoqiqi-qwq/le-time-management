@@ -18,9 +18,18 @@
 
 ## 图标
 
-主导航与插件中心从 v0.11.4 起使用 **Icons8 / iGoutu · iOS Filled** 图标风格，运行时通过 Icons8 官方图片 CDN 加载。Icons8 的免费使用条款要求在产品中提供署名链接，因此“关于”页保留 `https://igoutu.cn/icons/ios-filled` / Icons8 的来源入口；正式发布前请按你的 Icons8 账户/授权方案再次核对是否需要保留署名。
+本项目的图标来自 **Icons8 / iGoutu**（igoutu.cn 是 Icons8 的中文镜像，slug 与风格完全一致），分两条线路：
 
-网页收集插件和微信小程序当前仍保留 **Font Awesome Free 6.7.2** 既有资源，项目随包继续保留：
+| 用途 | 风格 | 加载方式 |
+|---|---|---|
+| 主导航（四象限 / 时间块 / 收件箱 / 插件 / 设置） | iOS Filled 单色剪影 | 运行时走 Icons8 官方图片 CDN，`img.icons8.com/ios-filled/50/<色>/<slug>.png` |
+| 12 个内置插件 | Color 彩色（来源图标集「标志 · 色版」，`wechat-push` 用 3D 风格微信标志） | 随包 PNG，`public/icons/plugins/<插件ID>.png`，由 `tools/gen-plugin-icons.py` 生成 |
+
+内置插件图标的来源台账（风格 / slug / sha256 / 消费方）见 `public/icons/plugins/ATTRIBUTION.md`。
+
+Icons8 的免费使用条款要求在产品中提供署名链接，因此“关于”页保留 **图标集入口 `https://igoutu.cn/icons/set/标志--style-color`** 与 Icons8 的来源入口；正式发布前请按你的 Icons8 账户/授权方案再次核对是否需要保留署名。
+
+微信小程序的 tabBar 图标与「网页收集」插件的图标兜底仍使用 **Font Awesome Free 6.7.2** 既有资源，项目随包继续保留：
 
 - `public/icons/fontawesome/ATTRIBUTION.md`
 - `public/icons/fontawesome/LICENSE.txt`
