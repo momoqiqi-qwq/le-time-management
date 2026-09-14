@@ -1,19 +1,24 @@
+import { DARK_PREVIEW } from "./themeDarkPreview.js";
+
 const profile = (id, name, note, colors, colorScheme = "light") => Object.freeze({
   id,
   name,
   note,
   colors: Object.freeze(colors),
+  /** 深色模式下的预览色。由 tools/gen-theme-dark.js 按浅色调色板派生，与 theme-derived.css 同源。 */
+  darkColors: Object.freeze(DARK_PREVIEW[id] || colors),
   colorScheme,
 });
 
 /**
  * Theme metadata is kept outside the DOM layer so settings, startup and tests
- * all use the same source of truth. CSS variables live in styles.css.
+ * all use the same source of truth. CSS variables live in styles.css；
+ * 每套主题的深色变体在 styles/theme-derived.css（同样是生成的）。
  */
 export const THEMES = Object.freeze([
   profile("classic", "经典 Le时间管理", "温暖纸面，适合日常任务管理", ["#F2EFEA", "#0F4C5C", "#FF6B6B"]),
   profile("fresh", "清爽海盐", "更亮、更轻，长时间看也不累", ["#ECF7F5", "#106C72", "#28BFA9"]),
-  profile("night", "夜间护眼", "低亮度深色界面，适合夜晚使用", ["#111820", "#37A6A0", "#F0B84C"], "dark"),
+  profile("night", "夜间护眼", "低亮度深色界面；本身就是深色主题，不受显示模式影响", ["#111820", "#37A6A0", "#F0B84C"], "dark"),
   profile("ocean", "深海蓝", "冷静的蓝色系，适合学习与代码场景", ["#EAF1F8", "#174C72", "#277DA1"]),
   profile("sakura", "樱花粉", "柔和暖粉，降低大面积白色的刺眼感", ["#FBF0F3", "#8A4E65", "#E66F89"]),
   profile("forest", "松林绿", "低饱和自然绿，适合长时间规划", ["#EDF3EE", "#355E4A", "#4C9272"]),

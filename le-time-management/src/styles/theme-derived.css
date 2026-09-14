@@ -1,0 +1,108 @@
+/* 本文件由 tools/gen-theme-dark.js 生成 */
+/* ═══════════════════════════════════════════════════════════
+   Le时间管理 · 派生调色板【自动生成，请勿手改】
+
+   生成：node tools/gen-theme-dark.js        校验：node tools/gen-theme-dark.js --check
+   事实源：src/styles.css 各主题的浅色令牌 + tools/lib/theme-tokens.js 的派生规则。
+
+   第一节 · 深色变体：每套主题都有自己的深色版，所以「深色模式下切换主题」会真的变；
+     生效条件 <html data-theme="<主题>" data-theme-mode="dark">。
+     night 是原生深色主题（色板本身即深色），不参与派生。
+   第二节 · 浅色兜底：只修正低于 WCAG 门槛的文字令牌（见 LIGHT_FLOOR），达标的不出现。
+   ═══════════════════════════════════════════════════════════ */
+:root[data-theme-mode="dark"] { color-scheme: dark; }
+
+/* ── 第一节 · 每套主题的深色变体 ── */
+
+:root[data-theme="classic"][data-theme-mode="dark"] {
+  --bg: #181613; --paper: #211E1A; --panel: #2D2922; --ink: #E3E1DE; --ink-2: #AAA59D; --ink-3: #908B83; --line: #4C473D; --line-soft: #3B3730; --deep: #21A7CA; --deep-2: #0F0E0D; --sea: #14A6D6; --coral: #FF5757; --sun: #E3A008; --grape: #AE7BEA; --mint: #2DBEB0; --q1: #E07171; --q1-bg: #321D1D; --q2: #C58C26; --q2-bg: #322B1D; --q3: #7D8AED; --q3-bg: #1D2032; --q4: #659D87; --q4-bg: #242B28; --danger: #E27B7B; --on-deep: #122226; --on-accent: #1B1A18;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="fresh"][data-theme-mode="dark"] {
+  --bg: #111A18; --paper: #172321; --panel: #202F2D; --ink: #DDE4E3; --ink-2: #99ADAA; --ink-3: #7F9490; --line: #39514C; --line-soft: #2E3E3B; --deep: #1DC3CE; --deep-2: #0C100F; --sea: #1AB7D0; --coral: #F56659; --sun: #C99522; --grape: #9389EC; --mint: #29C2AC; --q1: #E17575; --q1-bg: #321D1D; --q2: #C58C26; --q2-bg: #322B1D; --q3: #828EED; --q3-bg: #1D2032; --q4: #69A08B; --q4-bg: #242B28; --danger: #E38080; --on-deep: #112527; --on-accent: #161D1B;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="ocean"][data-theme-mode="dark"] {
+  --bg: #11161A; --paper: #171D23; --panel: #20282F; --ink: #DDE0E4; --ink-2: #99A3AD; --ink-3: #7F8A94; --line: #394551; --line-soft: #2E363E; --deep: #3C97D8; --deep-2: #0C0E10; --sea: #3099C5; --coral: #EE6156; --sun: #C78D23; --grape: #9087D4; --mint: #35B5A5; --q1: #DB6E6E; --q1-bg: #311E1E; --q2: #BF862C; --q2-bg: #312A1E; --q3: #7B8BDA; --q3-bg: #1F2230; --q4: #4D9D8C; --q4-bg: #222D2B; --danger: #DE7878; --on-deep: #131E25; --on-accent: #16191D;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="sakura"][data-theme-mode="dark"] {
+  --bg: #1A1114; --paper: #23171B; --panel: #2F2024; --ink: #E4DDDF; --ink-2: #AD999F; --ink-3: #947F85; --line: #513940; --line-soft: #3E2E32; --deep: #B57D92; --deep-2: #100C0D; --sea: #7F8BBB; --coral: #E3607D; --sun: #B78634; --grape: #9F7FBD; --mint: #5D9887; --q1: #D36C82; --q1-bg: #301F23; --q2: #B68335; --q2-bg: #30291F; --q3: #8D82CF; --q3-bg: #22202F; --q4: #5E9784; --q4-bg: #242B29; --danger: #D6758B; --on-deep: #20181B; --on-accent: #1D1618;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="forest"][data-theme-mode="dark"] {
+  --bg: #131814; --paper: #1A211B; --panel: #232C25; --ink: #DFE2DF; --ink-2: #9EA99F; --ink-3: #848F86; --line: #3E4B41; --line-soft: #313A33; --deep: #5AA07E; --deep-2: #0D0F0D; --sea: #5D9D99; --coral: #D8776E; --sun: #B68C37; --grape: #988EB4; --mint: #54A17E; --q1: #D47975; --q1-bg: #30201F; --q2: #B88A37; --q2-bg: #302A1F; --q3: #878FC7; --q3-bg: #22232D; --q4: #629F80; --q4-bg: #242B27; --danger: #D7827F; --on-deep: #18201C; --on-accent: #181B18;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="lavender"][data-theme-mode="dark"] {
+  --bg: #13111A; --paper: #1A1723; --panel: #23202F; --ink: #DFDDE4; --ink-2: #9E99AD; --ink-3: #847F94; --line: #3E3951; --line-soft: #312E3E; --deep: #8D85B0; --deep-2: #0D0C10; --sea: #6D8CBB; --coral: #D76782; --sun: #B68C35; --grape: #9580BF; --mint: #5D958C; --q1: #CF6D80; --q1-bg: #302023; --q2: #B58736; --q2-bg: #302A1F; --q3: #7D85CC; --q3-bg: #21222E; --q4: #5F9689; --q4-bg: #242B29; --danger: #D27587; --on-deep: #1A191F; --on-accent: #18161D;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="mono"][data-theme-mode="dark"] {
+  --bg: #171715; --paper: #1E1E1C; --panel: #292926; --ink: #E1E1E0; --ink-2: #A5A5A1; --ink-3: #8C8C87; --line: #474743; --line-soft: #373734; --deep: #87939A; --deep-2: #0F0F0D; --sea: #7995A2; --coral: #C67E7E; --sun: #B28C3E; --grape: #948FA3; --mint: #73998D; --q1: #C47E7E; --q1-bg: #2D2222; --q2: #B18B3F; --q2-bg: #2F2A20; --q3: #8890B4; --q3-bg: #24252B; --q4: #7A978C; --q4-bg: #242B28; --danger: #C88686; --on-deep: #191D1F; --on-accent: #1B1B18;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="chatgpt"][data-theme-mode="dark"] {
+  --bg: #171714; --paper: #1F1F1C; --panel: #2A2A25; --ink: #E1E1DF; --ink-2: #A6A6A0; --ink-3: #8D8D87; --line: #484841; --line-soft: #383833; --deep: #14D7A7; --deep-2: #0F0F0D; --sea: #15D6A6; --coral: #DC7474; --sun: #C68B24; --grape: #988AC4; --mint: #15D6A6; --q1: #D67878; --q1-bg: #301F1F; --q2: #C28A29; --q2-bg: #322A1D; --q3: #838ED3; --q3-bg: #20222F; --q4: #4BA289; --q4-bg: #222D2A; --danger: #D88080; --on-deep: #112722; --on-accent: #1B1B18;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="claude"][data-theme-mode="dark"] {
+  --bg: #1A1711; --paper: #231F18; --panel: #2F2A20; --ink: #E4E1DD; --ink-2: #ADA699; --ink-3: #948D80; --line: #504939; --line-soft: #3D382E; --deep: #D27D62; --deep-2: #100F0C; --sea: #6B9C97; --coral: #CE7E61; --sun: #C08938; --grape: #978EAC; --mint: #709C8E; --q1: #CC7F73; --q1-bg: #2F2220; --q2: #BF8933; --q2-bg: #312A1E; --q3: #8A92B2; --q3-bg: #24262B; --q4: #769B87; --q4-bg: #242B27; --danger: #CF887C; --on-deep: #241814; --on-accent: #1C1A17;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="shadcn"][data-theme-mode="dark"] {
+  --bg: #171515; --paper: #1E1C1C; --panel: #292626; --ink: #E1E0E0; --ink-2: #A5A1A1; --ink-3: #8C8787; --line: #474343; --line-soft: #373434; --deep: #8E8E9A; --deep-2: #0F0D0D; --sea: #4D8DF7; --coral: #F15D5D; --sun: #E19109; --grape: #9F78F8; --mint: #13D897; --q1: #E76767; --q1-bg: #321D1D; --q2: #E47D06; --q2-bg: #32281D; --q3: #8882ED; --q3-bg: #1E1D32; --q4: #08E39F; --q4-bg: #1D322B; --danger: #E87272; --on-deep: #19191F; --on-accent: #1B1818;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="celadon"][data-theme-mode="dark"] {
+  --bg: #141815; --paper: #1B201C; --panel: #242B25; --ink: #DFE2E0; --ink-2: #9FA8A1; --ink-3: #858E87; --line: #404A42; --line-soft: #323933; --deep: #5A9E86; --deep-2: #0D0F0D; --sea: #689A9F; --coral: #CF7A70; --sun: #B69035; --grape: #958CB3; --mint: #569F84; --q1: #CD7C75; --q1-bg: #2F2120; --q2: #B78F34; --q2-bg: #302B1F; --q3: #818FC8; --q3-bg: #21242E; --q4: #5AA07F; --q4-bg: #232C28; --danger: #D0857E; --on-deep: #18201D; --on-accent: #181B19;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="dunhuang"][data-theme-mode="dark"] {
+  --bg: #1A1711; --paper: #231F17; --panel: #2F2920; --ink: #E4E1DD; --ink-2: #ADA599; --ink-3: #948C7F; --line: #514739; --line-soft: #3E372E; --deep: #4F9DB0; --deep-2: #100E0C; --sea: #5B9CAA; --coral: #DA7765; --sun: #C38F28; --grape: #AF86A3; --mint: #699E7C; --q1: #D6796B; --q1-bg: #31211F; --q2: #BE8D2C; --q2-bg: #312B1E; --q3: #7693C1; --q3-bg: #22262D; --q4: #639F77; --q4-bg: #242B26; --danger: #D98275; --on-deep: #171F21; --on-accent: #1D1A16;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="blueprint"][data-theme-mode="dark"] {
+  --bg: #11151A; --paper: #171D23; --panel: #20272F; --ink: #DDE0E4; --ink-2: #99A2AD; --ink-3: #7F8994; --line: #394451; --line-soft: #2E353E; --deep: #5592DB; --deep-2: #0C0E10; --sea: #4195D3; --coral: #E46A46; --sun: #C48C26; --grape: #9388BE; --mint: #3AB19A; --q1: #DA705B; --q1-bg: #31211E; --q2: #C48D27; --q2-bg: #322B1D; --q3: #728DD2; --q3-bg: #1F2430; --q4: #3CAE9C; --q4-bg: #202F2D; --danger: #DC7965; --on-deep: #131B25; --on-accent: #16191D;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="citrus"][data-theme-mode="dark"] {
+  --bg: #1A1611; --paper: #231E17; --panel: #2F2920; --ink: #E4E1DD; --ink-2: #ADA599; --ink-3: #948C7F; --line: #514739; --line-soft: #3E372E; --deep: #ED6D06; --deep-2: #100E0C; --sea: #3A9AD4; --coral: #E07169; --sun: #D99612; --grape: #AF7ED0; --mint: #3EAC7D; --q1: #E07264; --q1-bg: #321F1D; --q2: #C88623; --q2-bg: #322A1D; --q3: #9B84DC; --q3-bg: #231F30; --q4: #35B685; --q4-bg: #1F302A; --danger: #E27B6F; --on-deep: #271B11; --on-accent: #1D1A16;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+:root[data-theme="frost"][data-theme-mode="dark"] {
+  --bg: #121519; --paper: #191C22; --panel: #22262D; --ink: #DEE0E3; --ink-2: #9CA1AB; --ink-3: #828891; --line: #3C434D; --line-soft: #30343B; --deep: #7290B6; --deep-2: #0C0E10; --sea: #6B91BD; --coral: #C8777E; --sun: #CB7960; --grape: #A783A6; --mint: #5E9C74; --q1: #C87974; --q1-bg: #2E2121; --q2: #BA834A; --q2-bg: #2F2820; --q3: #808DBF; --q3-bg: #22242D; --q4: #659A6C; --q4-bg: #242B25; --danger: #CB807C; --on-deep: #181C21; --on-accent: #17191C;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .32), 0 2px 10px rgba(0, 0, 0, .24); --shadow-lg: 0 18px 46px rgba(0, 0, 0, .55);
+}
+
+/* ── 第二节 · 浅色可读性兜底（仅列出低于门槛的令牌） ── */
+
+:root[data-theme="classic"] { --ink-2: #626E76; --ink-3: #7D8B97; }
+:root[data-theme="fresh"] { --ink-2: #5D7479; --ink-3: #769298; }
+:root[data-theme="ocean"] { --ink-2: #5C6F81; --ink-3: #798D9E; }
+:root[data-theme="sakura"] { --ink-3: #A0858E; }
+:root[data-theme="forest"] { --ink-2: #627267; --ink-3: #7F8F83; }
+:root[data-theme="lavender"] { --ink-2: #6F6B80; --ink-3: #8C869F; }
+:root[data-theme="mono"] { --ink-2: #676E72; --ink-3: #848B8F; }
+:root[data-theme="chatgpt"] { --ink-3: #8F8F94; --deep: #0C8064; }
+:root[data-theme="claude"] { --ink-3: #94897F; --deep: #B05032; }
+:root[data-theme="shadcn"] { --ink-3: #90909A; }
+:root[data-theme="celadon"] { --ink-2: #5F7169; --ink-3: #789083; }
+:root[data-theme="dunhuang"] { --ink-2: #786654; --ink-3: #988265; }
+:root[data-theme="blueprint"] { --ink-2: #5D7186; --ink-3: #788EA4; }
+:root[data-theme="citrus"] { --ink-2: #826E5B; --ink-3: #A68B6A; --deep: #B85504; }
+:root[data-theme="frost"] { --ink-3: #7B8B9D; --deep: #4D6E96; }

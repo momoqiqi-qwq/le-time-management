@@ -1,6 +1,6 @@
 import * as S from "../../store.js";
 import { el, toast } from "../../ui.js";
-import { THEMES, getThemeMode, setTheme, setThemeMode } from "../../theme.js";
+import { THEMES, getThemeMode, resolveThemeMode, setTheme, setThemeMode } from "../../theme.js";
 import { DEFAULT_BACKGROUND, normalizeBackground, setBackground } from "../../background.js";
 import {
   DEFAULT_UI_PREFERENCES,
@@ -78,7 +78,8 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   );
 }
 
-function createSwatch(colors) {
+function createSwatch(item, dark) {
+  const colors = dark ? item.darkColors : item.colors;
   return el("span", { class: "theme-swatch", "aria-hidden": "true" },
     ...colors.map((color) => el("i", { style: `background:${color}` })),
   );
@@ -86,12 +87,13 @@ function createSwatch(colors) {
 
 export function createThemeCard() {
   const settings = S.getState().settings;
-  const selectedId = (settings.theme || "classic") === "night" ? "classic" : (settings.theme || "classic");
+  const selectedId = settings.theme || "classic";
   const selectedMode = getThemeMode();
   const themeCard = el("div", { class: "card set-card" },
     el("h2", {}, "主题"),
-    el("p", { class: "desc" }, "选择浅色、深色或跟随系统；浅色模式下仍可保留不同色板。切换会即时预览，不会刷新页面。"),
+    el("p", { class: "desc" }, "选择浅色、深色或跟随系统；每套主题都有自己的深色配色，深色模式下换主题同样会变。切换会即时预览，不会刷新页面。"),
   );
+  const modeNote = el("p", { class: "desc theme-mode-note" });
   const modeBox = el("div", { class: "theme-mode", role: "radiogroup", "aria-label": "显示模式" });
   for (const [id, label, note] of [
     ["system", "跟随系统", "自动适配系统浅深色"],
@@ -111,11 +113,30 @@ export function createThemeCard() {
           node.classList.toggle("on", active);
           node.setAttribute("aria-checked", String(active));
         }
-        toast(`已切换为${label}`);
+        paintModeNote();
+        paintSwatches();
+        toast(`已切换为${label}${id === "system" ? `（当前 ${resolveThemeMode() === "dark" ? "深色" : "浅色"}）` : ""}`);
       },
     }, el("b", {}, label), el("small", {}, note)));
   }
   const themeGrid = el("div", { class: "theme-grid", role: "radiogroup", "aria-label": "界面主题" });
+
+  // 夜间护眼本身就是深色主题，不受模式影响；其余主题按当前模式显示对应色板。
+  const isDarkPreview = (item) => item.colorScheme === "dark" || resolveThemeMode() === "dark";
+  const swatchNodes = new Map();
+  const paintSwatches = () => {
+    for (const [item, node] of swatchNodes) {
+      const colors = isDarkPreview(item) ? item.darkColors : item.colors;
+      [...node.children].forEach((dot, index) => { dot.style.background = colors[index]; });
+    }
+  };
+  const paintModeNote = () => {
+    const resolved = resolveThemeMode();
+    const system = getThemeMode() === "system";
+    modeNote.textContent = `当前生效：${resolved === "dark" ? "深色配色" : "浅色配色"}` +
+      (system ? `（跟随系统，检测到系统为${resolved === "dark" ? "深色" : "浅色"}）` : "") +
+      "；上方 ${THEMES.length} 套主题各自带深色版，深色模式下切换会即时生效。";
+  };
 
   const selectTheme = (item, button) => {
     if (button.classList.contains("on")) return;
@@ -126,11 +147,13 @@ export function createThemeCard() {
       node.setAttribute("aria-checked", String(on));
       node.tabIndex = on ? 0 : -1;
     }
-    toast(`已切换到「${item.name}」`);
+    toast(`已切换到「${item.name}」${item.colorScheme === "dark" ? "（深色主题）" : ""}`);
   };
 
-  for (const item of THEMES.filter((x) => x.id !== "night")) {
+  for (const item of THEMES) {
     const selected = selectedId === item.id;
+    const swatch = createSwatch(item, isDarkPreview(item));
+    swatchNodes.set(item, swatch);
     const button = el("button", {
       class: `theme-card theme-${item.id}${selected ? " on" : ""}`,
       type: "button",
@@ -138,13 +161,14 @@ export function createThemeCard() {
       "aria-checked": String(selected),
       tabindex: selected ? "0" : "-1",
     },
-      createSwatch(item.colors),
+      swatch,
       el("span", { class: "theme-card-copy" }, el("b", {}, item.name), el("small", {}, item.note)),
       el("span", { class: "theme-selected-mark", "aria-hidden": "true" }, "✓"),
     );
     button.addEventListener("click", () => selectTheme(item, button));
     themeGrid.append(button);
   }
+  paintModeNote();
 
   themeGrid.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
