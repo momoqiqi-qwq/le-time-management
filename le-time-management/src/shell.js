@@ -691,9 +691,6 @@ export function renderShell(root) {
     const wrap = el("div", { class: "market" });
     let query = marketQuery;
     let filter = marketFilter;
-    const regs = getRegistry();
-    const builtinCount = regs.filter((r) => r.source === "builtin").length;
-    const enabledCount = regs.filter((r) => S.pluginState(r.id).enabled !== false).length;
 
     const search = el("input", { class: "market-search", type: "search", value: query, placeholder: "搜索插件名称 / ID / 功能 / 作者…", "aria-label": "搜索插件" });
     const count = el("span", { class: "market-count" });
@@ -703,11 +700,25 @@ export function renderShell(root) {
     const filters = [
       ["all", "全部"], ["enabled", "已启用"], ["disabled", "已停用"], ["builtin", "内置"], ["user", "用户插件"],
     ];
+    // 各筛选档的数量跟随当前搜索词（忽略筛选维度本身），直接显示在按钮里
+    function countFor(id) {
+      const q = query.trim().toLowerCase();
+      return getRegistry().filter((rec) => {
+        const man = rec.manifest || {};
+        const enabled = S.pluginState(rec.id).enabled !== false;
+        if (id === "enabled" && !enabled) return false;
+        if (id === "disabled" && enabled) return false;
+        if (id === "builtin" && rec.source !== "builtin") return false;
+        if (id === "user" && rec.source === "builtin") return false;
+        if (!q) return true;
+        return `${man.name || ""} ${rec.id} ${man.description || ""} ${man.author || ""}`.toLowerCase().includes(q);
+      }).length;
+    }
     function paintFilters() {
       filterBox.replaceChildren(...filters.map(([id, label]) => el("button", {
         class: `market-filter${filter === id ? " on" : ""}`,
         onclick: () => { filter = id; marketFilter = id; paintFilters(); paintCards(); },
-      }, label)));
+      }, label, el("span", { class: "market-filter-count" }, String(countFor(id))))));
     }
     function match(rec) {
       const man = rec.manifest || {};
@@ -802,7 +813,7 @@ export function renderShell(root) {
       }
     }
 
-    search.addEventListener("input", () => { query = search.value; marketQuery = query; paintCards(); });
+    search.addEventListener("input", () => { query = search.value; marketQuery = query; paintFilters(); paintCards(); });
     // 手机上搜索默认收成一个图标（用户反馈：不要独占一行）；点了才展开输入框
     const searchToggle = el("button", {
       class: "market-search-toggle", type: "button", title: "搜索插件", "aria-label": "搜索插件",
@@ -818,7 +829,6 @@ export function renderShell(root) {
     if (marketSearchOpen) wrap.classList.add("open-search");
     wrap.append(
       el("div", { class: "market-head" },
-        el("p", { class: "market-lead" }, `${regs.length || pluginViews.length} 个插件 · ${builtinCount} 个内置 · ${enabledCount} 个已启用`),
         el("div", { class: "market-head-tools" }, searchToggle, count),
       ),
       el("div", { class: "market-search-row", id: "market-search-row" }, search),
