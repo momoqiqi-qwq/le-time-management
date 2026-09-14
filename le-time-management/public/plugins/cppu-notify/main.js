@@ -15,6 +15,19 @@
   const PAGES_MAX = 10, PAGE_SIZE = 50, CHUNK = 15;
   const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
+  // ── 左侧校园服务栏 ──
+  // 标题与图标不写死：进入插件时抓一次网页元信息（<title> / favicon / 图标名），
+  // 抓不到（内网、未登录、断网）就退回下面的 label 与 icon，因此离线也不会空着。
+  const QUICK_LINKS = [
+    { url: "https://webvpn.cppu.edu.cn/", label: "WebVPN", icon: "shield-halved" },
+    { url: "https://mail.cppu.edu.cn/", label: "教育邮箱", icon: "envelope" },
+    { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school" },
+    { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
+  ];
+  const LINK_META_TTL = 7 * 24 * 60 * 60 * 1000;   // 识别结果一周内复用，避免每次进插件都抓四个站点
+  const LINK_META_KEY = "quickLinkMeta";
+  let linkMeta = {};
+
   // Sudy CAS RSAUtils.encryptedString 忠实移植（126 字符分块，16 位小端打包，非 PKCS#1）
   const MODULUS_HEX = "008aed7e057fe8f14c73550b0e6467b023616ddc8fa91846d2613cdb7f7621e3cada4cd5d812d627af6b87727ade4e26d26208b7326815941492b2204c3167ab2d53df1e3a2c9153bdb7c8c2e968df97a5e7e01cc410f92c4c2c2fba529b3ee988ebc1fca99ff5119e036d732c368acf8beba01aa2fdafa45b21e4de4928d0d403";
   const EXPONENT_HEX = "010001";
@@ -97,6 +110,16 @@
     }
     return "";
   }
+  function redirectTarget(res, base, expectedOrigin, expectedPath) {
+    const raw = String(res?.location || "").trim();
+    if (!raw || !(res.status >= 300 && res.status < 400)) return "";
+    try {
+      const target = new URL(raw, base);
+      if (target.protocol !== "https:" || target.origin !== expectedOrigin) return "";
+      if (expectedPath && target.pathname !== expectedPath) return "";
+      return target.href;
+    } catch { return ""; }
+  }
   function explainHttpError(e) {
     const msg = String(e && (e.message || e) || "");
     if (/Failed to fetch|Load failed|NetworkError/i.test(msg)) {
@@ -167,6 +190,32 @@
       .pp-banner{background:#FFF7E8;border:1px solid #F2D9A6;color:#8A6420;border-radius:12px;padding:12px 15px;font-size:12px;line-height:1.8;margin-bottom:10px}
       .pp-more{display:flex;justify-content:center;padding:8px 0 4px}
       .pp-more .pp-btn{padding:8px 20px;font-size:12px}
+      /* ── 左侧校园服务栏：只用主题变量配色，夜里自动跟随深色 ── */
+      .pp-shell{display:flex;gap:16px;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 20px;box-sizing:border-box;width:100%}
+      .pp-main{flex:1;min-width:0}
+      .pp-side{width:214px;flex:none;position:sticky;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:11px 11px 9px;box-shadow:0 1px 6px rgba(34,48,58,.05)}
+      .pp-side-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;letter-spacing:.22em;color:var(--ink-3);padding:2px 4px 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
+      .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:13px;line-height:1;padding:3px 5px;border-radius:7px;font-family:inherit}
+      .pp-side-sync:hover{background:var(--paper);color:var(--deep)}
+      .pp-side-list{display:flex;flex-direction:column;gap:3px}
+      .pp-side-btn{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;border-radius:10px;padding:6px 8px;cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;min-height:46px;transition:background .16s ease,color .16s ease}
+      .pp-side-btn:hover{background:var(--paper);color:var(--deep)}
+      .pp-side-btn:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      .pp-side-ico{width:28px;height:28px;flex:none;border-radius:9px;background:var(--paper);border:1px solid var(--line-soft);display:grid;place-items:center;overflow:hidden}
+      .pp-side-ico img{width:17px;height:17px;object-fit:contain}
+      .pp-side-ico svg{width:14px;height:14px;fill:var(--deep)}
+      .pp-side-txt{min-width:0;display:flex;flex-direction:column;gap:1px}
+      .pp-side-txt b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
+      .pp-side-txt small{font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
+      .pp-side-note{font-size:10px;color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
+      @media(max-width:820px){
+        .pp-shell{flex-direction:column;gap:12px;padding:0 14px}
+        .pp-side{width:100%;position:static;padding:10px}
+        .pp-side-list{flex-direction:row;flex-wrap:wrap}
+        .pp-side-btn{width:auto;flex:1 1 132px;min-width:0;min-height:52px}
+        .pp-side-txt b,.pp-side-txt small{max-width:96px}
+        .pp-side-note{display:none}
+      }
       @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail{transition-duration:.01ms!important}}
     `;
     document.head.append(st);
@@ -570,16 +619,30 @@
     } catch { /* 密钥库不可用时跳过 */ }
   }
 
+  async function finishPortalTicket(loginRes) {
+    const direct = tokenFromText(loginRes?.finalUrl, loginRes?.location, loginRes?.body, ...(loginRes?.cookies || []));
+    if (direct) { state.token = direct; return true; }
+    const portalTicket = redirectTarget(loginRes, SILENT_LOGIN, PORTAL);
+    if (!portalTicket) return false;
+    const portal = await getPage(portalTicket, false, { followRedirects: false }).catch(() => null);
+    const token = tokenFromText(portal?.finalUrl, portal?.location, portal?.body, ...(portal?.cookies || []));
+    if (token) { state.token = token; return true; }
+    return false;
+  }
+
   async function finishPortalLogin(firstRes) {
-    const direct = tokenFromText(firstRes?.finalUrl, firstRes?.body);
+    const direct = tokenFromText(firstRes?.finalUrl, firstRes?.location, firstRes?.body, ...(firstRes?.cookies || []));
     if (direct) { state.token = direct; return true; }
 
-    // 对齐原 skill：主 SSO 登录成功后，显式补走 sso-jw -> 门户换 tp_up。
-    // HTTP 桥已经跟随 bridge 重定向；不要重复消费一次性 ticket。
-    const renew = await getPage(SILENT_LOGIN).catch(() => null);
-    const renewed = tokenFromText(renew?.finalUrl, renew?.body);
-    if (renewed) { state.token = renewed; return true; }
-    return false;
+    // CAS ticket 是一次性的，必须像原 skill 一样逐段消费，不能让 HTTP 客户端
+    // 自动跨 sso → sso-jw → portal 跟到底，否则桥接端会把最终 500 当登录结果。
+    const bridgeUrl = redirectTarget(firstRes, LOGIN_URL, JW, "/tpass/bridge");
+    if (!bridgeUrl) return false;
+    const bridge = await getPage(bridgeUrl, false, { followRedirects: false }).catch(() => null);
+    if (!bridge) return false;
+
+    const renew = await getPage(SILENT_LOGIN, false, { followRedirects: false }).catch(() => null);
+    return finishPortalTicket(renew);
   }
 
   async function submitLogin(code) {
@@ -598,6 +661,7 @@
         body: `username=${encodeURIComponent(p.username)}&password=${encodeURIComponent(rsaEncrypt(p.password))}` +
           `&authcode=${encodeURIComponent(code)}&execution=${encodeURIComponent(p.execution)}` +
           `&encrypted=true&_eventId=submit&loginType=1&rememberMe=true&submit=${encodeURIComponent("登 录")}`,
+        followRedirects: false,
       });
     } catch (e) {
       throw { retry: explainHttpError(e) };
@@ -625,14 +689,12 @@
 
   // 静默续期：先试桥接端；若只剩主 SSO 的 CASTGC，则补走一次主 SSO → bridge 后再换门户票据。
   async function silentRenew() {
-    for (const url of [SILENT_LOGIN, LOGIN_URL, SILENT_LOGIN]) {
-      try {
-        const res = await getPage(url);
-        const t = tokenFromText(res.finalUrl, res.body);
-        if (t) { state.token = t; return true; }
-      } catch { /* 继续尝试下一段恢复链路 */ }
-    }
-    return false;
+    // 先试 sso-jw 自己的 CASTGC；若只有主 SSO 的 CASTGC，再由 finishPortalLogin
+    // 显式完成主 SSO → bridge → sso-jw → portal，所有一次性 ticket 均只消费一次。
+    const renew = await getPage(SILENT_LOGIN, false, { followRedirects: false }).catch(() => null);
+    if (await finishPortalTicket(renew)) return true;
+    const primary = await getPage(LOGIN_URL, false, { followRedirects: false }).catch(() => null);
+    return finishPortalLogin(primary);
   }
 
   function stopAutoRefresh() {
@@ -926,11 +988,100 @@
 
   function setSeen(rid) { state.seen.add(rid); saveSeen(); }
 
+  /* ── 左侧校园服务栏：标题 / 图标自动识别 ── */
+  function faGlyph(name) {
+    return `<svg viewBox="0 0 512 512" aria-hidden="true"><use href="/icons/fontawesome/solid.svg#${esc(name || "globe")}"></use></svg>`;
+  }
+  function hostOf(url) {
+    try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+  }
+  // 站点标题的可用性判定：门户会把人重定向到 SSO，抓到「统一身份认证平台」这类
+  // 登录页标题，邮箱页甚至会返回 ' + COMPANY_NAME + ' 这种模板占位符，一律不显示。
+  function usableTitle(title) {
+    const t = String(title || "").replace(/\s+/g, " ").trim();
+    if (!t || t.length > 26) return "";
+    if (/['"+${}]|COMPANY_NAME|undefined|null|<\/?[a-z]/i.test(t)) return "";
+    if (/统一身份认证|身份认证|^登录|登录$|login|sign\s?in|首页|门户首页/i.test(t)) return "";
+    return t;
+  }
+  function linkIcon(item) {
+    const meta = linkMeta[item.url] || {};
+    // 字形兜底优先用入口自带的语义图标（shield-halved / envelope / school / id-card），
+    // 比通用推断出来的图标更好区分；没写才用网页推断结果。
+    const fallback = faGlyph(item.icon || meta.iconName || "globe");
+    if (!meta.iconUrl) return fallback;
+    // 站点 favicon 优先；读图失败（未登录 / 内网 / 跨域）时退回字形图标。
+    return `<img src="${esc(meta.iconUrl)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`
+      + `<span style="display:none">${fallback}</span>`;
+  }
+  function sideHtml() {
+    const rows = QUICK_LINKS.map((item) => {
+      const meta = linkMeta[item.url] || {};
+      const recognized = usableTitle(meta.title);
+      const host = meta.host || hostOf(item.url);
+      // 主标题用短名（稳定、可扫读），自动识别到的站点标题放副行；没写短名时才拿识别结果当主标题。
+      const name = item.label || recognized || host;
+      const sub = item.label ? (recognized || host) : host;
+      const tip = [item.label, recognized, item.url].filter(Boolean).join(" · ");
+      return `<button type="button" class="pp-side-btn" data-goto="${esc(item.url)}" title="${esc(tip)}">`
+        + `<span class="pp-side-ico">${linkIcon(item)}</span>`
+        + `<span class="pp-side-txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>`
+        + `</button>`;
+    }).join("");
+    return `<div class="pp-side-head"><span>校园服务</span>`
+      + `<button type="button" class="pp-side-sync" data-link-sync title="重新识别标题与图标" aria-label="重新识别标题与图标">↻</button></div>`
+      + `<div class="pp-side-list">${rows}</div>`
+      + `<div class="pp-side-note">标题与图标自动识别<br>点一下用浏览器打开</div>`;
+  }
+  function paintSide(root) {
+    const box = root && root.querySelector ? root.querySelector("[data-side]") : null;
+    if (box) box.innerHTML = sideHtml();
+  }
+  async function loadLinkMeta(root, force = false) {
+    if (typeof tide.util?.web?.parseSiteMeta !== "function") return;
+    try {
+      if (!force) {
+        const saved = await tide.storage.get(LINK_META_KEY, null);
+        if (saved && typeof saved === "object") linkMeta = { ...saved, ...linkMeta };
+      }
+    } catch { /* 存储不可用时用内存里的 */ }
+    let changed = false;
+    for (const item of QUICK_LINKS) {
+      const cached = linkMeta[item.url];
+      if (!force && cached && Date.now() - Number(cached.at || 0) < LINK_META_TTL) continue;
+      try {
+        const res = await tide.http.getCached(item.url, 10 * 60 * 1000);
+        if (res && Number(res.status) >= 400) throw new Error(`HTTP ${res.status}`);
+        const meta = tide.util.web.parseSiteMeta(res?.body || "", res?.finalUrl || item.url);
+        linkMeta[item.url] = { title: meta.title, host: meta.host || hostOf(item.url), iconUrl: meta.iconUrl, iconName: meta.iconName, at: Date.now() };
+      } catch {
+        // 抓不到就留旧结果（可能已有识别过的标题），至少保证 host / 图标名可用。
+        linkMeta[item.url] = { ...(cached || {}), host: cached?.host || hostOf(item.url), iconName: cached?.iconName || item.icon, at: Date.now() };
+      }
+      changed = true;
+      paintSide(root);   // 识别一条更新一条，不等四个站点全回来
+    }
+    if (changed) { try { await tide.storage.set(LINK_META_KEY, linkMeta); } catch { /* 忽略 */ } }
+  }
+  function bindSide(root) {
+    if (!root || root.dataset.ppSideBound) return;
+    root.dataset.ppSideBound = "1";
+    root.addEventListener("click", (e) => {
+      const go = e.target.closest("[data-goto]");
+      if (go) { tide.util.openUrl(go.dataset.goto); return; }
+      if (e.target.closest("[data-link-sync]")) {
+        loadLinkMeta(root, true).then(() => tide.notify("已重新识别校园服务的标题与图标"));
+      }
+    });
+  }
+
   /* ── 登录界面 ── */
   function paintLogin(el, errMsg, opts = {}) {
     const hasSaved = !!state.username;
     const canVault = typeof tide.vault?.get === "function";
-    el.innerHTML = `<div class="pp-login">
+    el.innerHTML = `<div class="pp-shell">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>
+      <div class="pp-main"><div class="pp-login">
       <h3>登录智慧警大门户</h3>
       <div class="d">中国人民警察大学统一门户（portal-jw.cppu.edu.cn）。系统会先自动恢复上次会话，失败后自动识别验证码完成登录；都行不通才需要在这里核对信息。</div>
       <div class="d"><b>自动登录状态：</b>记住账号 ${state.rememberUsername ? "✓" : "✗"} · 票据静默续期 ✓ · 加密保存密码 ${state.autoLogin && canVault ? "✓" : "✗"} · 验证码自动识别 ✓</div>
@@ -951,7 +1102,10 @@
       <button class="submit" data-go style="width:100%;height:40px;border-radius:10px;background:#0F4C5C;color:#fff;font-size:14px;font-weight:600;margin-top:14px;cursor:pointer">登 录</button>
       <div class="err" data-err>${esc(errMsg || "")}</div>
       <div class="sec">开启「记住密码并自动登录」后，密码与门户会话票据会加密保存在本机密钥库（AES-256-GCM），下次打开自动登录、直达通知列表；不会进入数据备份、同步或其他插件。关闭后只记住账号，密码仅本次内存使用。</div>
+      </div></div>
     </div>`;
+    bindSide(el);
+    loadLinkMeta(el);
 
     const errEl = el.querySelector("[data-err]");
     const codeEl = el.querySelector("[data-code]");
@@ -1076,7 +1230,9 @@
   }
 
   function buildMain(el) {
-    el.innerHTML = `<div class="pp-wrap">
+    el.innerHTML = `<div class="pp-shell">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>
+      <div class="pp-main"><div class="pp-wrap">
       <div style="font-size:11px;letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">警 大 门 户 通 知 · 内 置 插 件</div>
       <div class="pp-toolbar">
         <button class="pp-btn pri" data-refresh>刷新</button>
@@ -1090,6 +1246,7 @@
       <div class="pp-status" data-status></div>
       <div data-list></div>
       <div style="height:30px"></div>
+      </div></div>
     </div>`;
 
     ui = {
@@ -1152,13 +1309,19 @@
     paintAll();
     startAutoRefresh(el);
     if (!state.notices.length && !state.fetching) loadPage(1);
+    bindSide(el);
+    loadLinkMeta(el);
   }
 
   function render(el) {
     let disposed = false;
     stopAutoRefresh();
     ensureStyle();
-    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>';
+    el.innerHTML = `<div class="pp-shell"><aside class="pp-side" data-side>${sideHtml()}</aside><div class="pp-main">`
+      + `<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>`
+      + `</div></div>`;
+    bindSide(el);
+    loadLinkMeta(el);
     loadPrefs().then(async () => {
       if (disposed) return;
       // 每次进入都重新验证票据，避免插件在应用内放置较久后拿着过期 token 直接进空列表。

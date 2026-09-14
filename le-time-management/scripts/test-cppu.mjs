@@ -7,8 +7,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView(){}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}}}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -54,14 +54,35 @@ assert.equal(calls[0][0],'restore');
 assert.ok(source.includes('if (await loadPage(1)) { buildMain(el); return true; }'), '恢复的门户票据必须先验证，失效后继续走密码兜底');
 assert.ok(!source.includes('if (state.token) { buildMain(el); return; }'), '每次重新进入插件都必须验证内存票据，不能直接信任旧 token');
 
-// 只有主 SSO CASTGC 可用时，应走 sso-jw → 主 SSO → sso-jw 的完整静默恢复链路。
+// 只有主 SSO CASTGC 可用时，应逐段走完主 SSO → bridge → sso-jw → portal。
 state.token='';calls=[];let renewStep=0;
-response=()=>++renewStep===3
-  ? {status:200,body:'',finalUrl:'https://portal-jw.cppu.edu.cn/tp_up/view;tp_up=bridge-token?m=up'}
-  : {status:200,body:'<html>continue</html>',finalUrl:'https://sso.cppu.edu.cn/tpass/login'};
+response=()=>{
+  renewStep++;
+  if(renewStep===1) return {status:200,body:'<html>sso-jw login</html>',finalUrl:'https://sso-jw.cppu.edu.cn/tpass/login',location:'',cookies:[]};
+  if(renewStep===2) return {status:302,body:'',finalUrl:'https://sso.cppu.edu.cn/tpass/login',location:'https://sso-jw.cppu.edu.cn/tpass/bridge?ticket=ST-main',cookies:[]};
+  if(renewStep===3) return {status:200,body:'bridge ok',finalUrl:'https://sso-jw.cppu.edu.cn/tpass/bridge?ticket=ST-main',location:'',cookies:['CASTGC=TGT']};
+  if(renewStep===4) return {status:302,body:'',finalUrl:'https://sso-jw.cppu.edu.cn/tpass/login',location:'https://portal-jw.cppu.edu.cn/tp_up/view?ticket=ST-portal',cookies:[]};
+  return {status:302,body:'',finalUrl:'https://portal-jw.cppu.edu.cn/tp_up/view?ticket=ST-portal',location:'/tp_up/view;tp_up=bridge-token?m=up',cookies:['tp_up=bridge-token; Path=/tp_up']};
+};
 assert.equal(await silentRenew(),true);
 assert.equal(state.token,'bridge-token');
-assert.equal(calls.length,3,'主 SSO 票据恢复必须完整补走 bridge 链路');
+assert.equal(calls.length,5,'主 SSO 票据恢复必须显式补走完整 bridge 换票链路');
+assert.ok(calls.every(c=>c[3].followRedirects===false),'静默续期每段都必须禁止自动重定向');
+
+// 密码登录必须禁止自动重定向，并按原 skill 的四段链路逐个消费一次性 ticket。
+state.sid='sso-test';state.token='';calls=[];state.pending={username:'student',password:'secret',execution:'exec-1'};
+response=(sid,method,url,opts)=>{
+  if(method==='POST') return {status:302,body:'',finalUrl:url,location:'https://sso-jw.cppu.edu.cn/tpass/bridge?ticket=ST-1',cookies:[]};
+  if(url.includes('/tpass/bridge?ticket=')) return {status:200,body:'bridge ok',finalUrl:url,location:'',cookies:['CASTGC=TGT']};
+  if(url.includes('sso-jw.cppu.edu.cn/tpass/login')) return {status:302,body:'',finalUrl:url,location:'https://portal-jw.cppu.edu.cn/tp_up/view?ticket=ST-2',cookies:[]};
+  return {status:302,body:'',finalUrl:url,location:'/tp_up/view;tp_up=portal-token?m=up',cookies:['tp_up=portal-token; Path=/tp_up']};
+};
+await submitLogin('1234');
+assert.equal(state.token,'portal-token');
+assert.equal(calls.length,4,'密码登录应显式完成主 SSO、bridge、门户换票和门户落票四段请求');
+assert.equal(calls[0][1],'POST');
+assert.equal(calls[0][3].followRedirects,false,'登录 POST 禁止自动跨域重定向');
+assert.ok(calls.slice(1).every(c=>c[3].followRedirects===false),'一次性 ticket 的每段 GET 都禁止自动重定向');
 
 /* ── 8. 自动登录：加密凭据、会话恢复、验证码识别重试链路 ── */
 assert.ok(source.includes('tide.vault'), '插件必须通过 tide.vault 存取加密凭据');
@@ -69,13 +90,25 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.4.1');
+assert.equal(cppuManifest.version, '1.5.0');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
+assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
 const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
-assert.match(cppuBlock, /"1\.4\.1"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(cppuBlock, /"1\.5\.0"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
+assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
+
+/* ── 左侧校园服务栏：四个入口 + 标题/图标自动识别 ── */
+for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html']) {
+  assert.ok(source.includes(url), `校园服务栏必须包含 ${url}`);
+}
+assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
+assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
+assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
+assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓四个站点');
+assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '侧栏必须同时绑定在登录页与通知列表页');
 assert.ok(source.includes('AUTO_REFRESH_MS') && source.includes('data-ar'), '插件必须提供低打扰的定时自动刷新开关');
 const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
 assert.ok(hostSrc.includes('vault: "加密密钥库'), '插件宿主必须定义 vault 权限标签');
@@ -83,8 +116,11 @@ assert.ok(hostSrc.includes('requirePermission(man, pid, "vault")'), 'tide.vault 
 assert.ok(hostSrc.includes('?v=${encodeURIComponent(version)}') && hostSrc.includes('cache: "no-cache"'), '内置插件入口必须按版本破缓存，避免升级后仍运行旧代码');
 const apiSrc = fs.readFileSync(new URL('../src/api.js', import.meta.url), 'utf8');
 assert.ok(apiSrc.includes('plugin_vault_get') && apiSrc.includes('http_session_restore'), 'api 层必须接通密钥库与会话恢复命令');
+assert.ok(apiSrc.includes('followRedirects: opts.followRedirects'), 'api 层必须把重定向策略传给 Rust HTTP 会话');
 const libSrc = fs.readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 assert.ok(libSrc.includes('fn http_session_export') && libSrc.includes('fn plugin_vault_set'), 'Rust 侧必须提供会话导出与密钥库命令');
+assert.ok(libSrc.includes('Policy::none()') && libSrc.includes('follow_redirects'), 'Rust HTTP 会话必须支持禁止自动重定向');
+assert.ok(libSrc.includes('reqwest::header::LOCATION'), 'Rust HTTP 响应必须把 Location 暴露给插件逐段换票');
 
 /* ── 9. OCR 纯函数：相似度 / 分类 / 分组 / 归一化 / 阈值 ── */
 const bitsA = new Array(256).fill(0);   // 「实心环」图案，代表数字 A
