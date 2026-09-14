@@ -2207,7 +2207,12 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .theme-mode { grid-template-columns: 1fr; }
 }
 
-/* 内置插件深色兼容层。新插件应优先直接使用上面的主题变量。 */
+/* 内置插件深色兼容层。新插件应优先直接使用上面的主题变量。
+   ⚠️ 这一层是 !important 白名单，被点名的类会被强制上色：只覆盖 background 不覆盖 color，
+   就会留下「浅色文字色 + 深色底」的组合，正好是夜间模式下最看不清的那种。
+   · 学习通（.cx2-*）自 v0.30.1 起整份样式改用主题变量，已从这里移除 ——
+     它的胶囊 / 分类标签 / 课程状态色都是 color-mix 出来的语义色，进白名单只会被压成一种颜色。
+   · 其余插件（.gx-* / .pp-*）仍是浅色硬编码，保留在名单里，但标签类必须同时给出可读的文字色。 */
 .plugview {
   color: var(--ink);
 }
@@ -2219,8 +2224,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 :root[data-theme="night"] .plugview :where(
   .gx-kw, .gx-chip, .gx-card, .gx-btn,
   .pp-kw, .pp-chip, .pp-card, .pp-btn, .pp-login, .pp-login input,
-  .cx2 button, .cx2-search, .cx2-select, .cx2-card, .cx2-course,
-  .cx2-login, .cx2 input, .cx2 textarea, .cx2-detail,
   .ch-in
 ) {
   background: var(--panel) !important;
@@ -2228,39 +2231,52 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   color: var(--ink) !important;
 }
 
-:root[data-theme="night"] .plugview :where(.gx-card:hover, .pp-card:hover, .cx2 button:hover) {
+:root[data-theme="night"] .plugview :where(.pp-chip:not(.on), .pp-login .d, .pp-caprow small) {
+  color: var(--ink-2) !important;
+}
+
+:root[data-theme="night"] .plugview :where(.gx-card:hover, .pp-card:hover) {
   background: var(--paper) !important;
 }
 
 :root[data-theme="night"] .plugview :where(
   .gx-lab, .gx-toggle, .gx-status, .gx-meta, .gx-snip, .gx-empty,
-  .pp-lab, .pp-toggle, .pp-status, .pp-meta, .pp-login .d,
-  .pp-login label, .pp-caprow small, .pp-login .sec, .pp-empty,
-  .cx2-sub, .cx2-check, .cx2-status, .cx2-meta, .cx2-body,
-  .cx2-course span, .cx2 label, .cx2-detail .body, .cx2 footer
+  .pp-lab, .pp-toggle, .pp-status, .pp-meta,
+  .pp-login label, .pp-login .sec, .pp-empty
 ) {
   color: var(--ink-2) !important;
 }
 
-/* 夜间模式保留课程状态三色卡片（深色版底色，覆盖上面的通用面板色） */
-:root[data-theme="night"] .plugview .cx2-course.st-red { background: #3a2124 !important; border-color: #5c3036 !important; color: #fecaca !important; }
-:root[data-theme="night"] .plugview .cx2-course.st-blue { background: #1f2740 !important; border-color: #32436d !important; color: #bfdbfe !important; }
-:root[data-theme="night"] .plugview .cx2-course.st-green { background: #1d3327 !important; border-color: #2f5441 !important; color: #bbf7d0 !important; }
-:root[data-theme="night"] .plugview .cx2-course.st-gray { background: #262f36 !important; border-color: #3a454d !important; color: var(--ink) !important; }
-
-:root[data-theme="night"] .plugview :where(.gx-cover, .cx2-note, .cx2-kpi) {
+:root[data-theme="night"] .plugview :where(.gx-cover) {
   background: var(--paper) !important;
   border-color: var(--line) !important;
 }
 
-:root[data-theme="night"] .plugview :where(.gx-chip.on, .gx-refresh, .pp-chip.on, .pp-btn.pri, .cx2 button.primary, .cx2-nav button.on, .cx2-tabs button.on) {
+:root[data-theme="night"] .plugview :where(.gx-chip.on, .gx-refresh, .pp-chip.on, .pp-btn.pri) {
   background: var(--deep) !important;
   border-color: var(--deep) !important;
   color: #fff !important;
 }
 
-:root[data-theme="night"] .plugview :where(.gx-tag, .pp-tag, .cx2-pill, .cx2-tag) {
-  background: color-mix(in srgb, currentColor 12%, var(--panel)) !important;
+/* 标签：底色和文字色必须成对给出，只改底色会让 #0F4C5C 这类深色字留在深色底上 */
+:root[data-theme="night"] .plugview :where(.gx-tag:not(.n), .pp-tag:not(.top):not(.unread)) {
+  background: color-mix(in srgb, var(--deep) 16%, var(--panel)) !important;
+  color: var(--deep) !important;
+}
+
+:root[data-theme="night"] .plugview .gx-tag.n {
+  background: color-mix(in srgb, var(--grape) 18%, var(--panel)) !important;
+  color: var(--grape) !important;
+}
+
+:root[data-theme="night"] .plugview .pp-tag.top {
+  background: color-mix(in srgb, var(--sun) 18%, var(--panel)) !important;
+  color: color-mix(in srgb, var(--sun) 55%, var(--ink)) !important;
+}
+
+:root[data-theme="night"] .plugview .pp-tag.unread {
+  background: color-mix(in srgb, var(--coral) 18%, var(--panel)) !important;
+  color: color-mix(in srgb, var(--coral) 55%, var(--ink)) !important;
 }
 
 :root[data-theme="night"] .plugview [style*="background:#fff"] {

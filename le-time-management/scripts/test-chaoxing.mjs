@@ -169,12 +169,34 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.5.0');
+assert.equal(manifest.version, '2.5.1');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步到 openUrl');
-assert.match(block, /"2\.5\.0"/, 'pluginCatalog 必须同步到插件新版本号');
+assert.match(block, /"2\.5\.1"/, 'pluginCatalog 必须同步到插件新版本号');
+
+/* ── 6b. 配色必须走主题变量，否则夜间模式下会变成深色字压深色底 ──
+   踩过的坑：插件样式表是浅色硬编码，且由 ensureStyle() 在运行时追加到 <head> 末尾，
+   与主程序 `.plugview{color:var(--ink)}` 同权重却更靠后，于是 `.cx2{color:#203840}` 反过来压住主题色；
+   主程序那份 !important 夜间兼容层又只改 background 不改 color，于是胶囊 / 标签 / 统计条的
+   文字色停在了浅色模式那一套（实测对比度低到 1.4~1.5:1）。 */
+const styleBlock = source.slice(source.indexOf('s.textContent = `') + 's.textContent = `'.length, source.indexOf('`; document.head.append(s);'));
+assert.ok(styleBlock.length > 3000, '必须能取到插件样式表');
+for (const v of ['var(--ink)', 'var(--ink-2)', 'var(--panel)', 'var(--line)', 'var(--deep)']) {
+  assert.ok(styleBlock.includes(v), `插件样式必须使用主题变量 ${v}`);
+}
+assert.doesNotMatch(styleBlock, /color:#203840|color:#275b68|color:#6c7f86/, '深色硬编码文字色会压掉夜间主题色');
+assert.match(styleBlock, /\.cx2-kpi\{[^}]*color:var\(--ink\)/, '统计条必须自己给出文字色，不能靠继承深色');
+assert.match(styleBlock, /::placeholder\{color:var\(--ink-2\)/, '搜索框占位文字在两种主题下都要可读');
+assert.match(styleBlock, /\.cx2-pill\{[^}]*color:var\(--deep\)/, '计数胶囊底色与文字色必须成对给出');
+const appCss = fs.readFileSync(new URL('src/styles.css', root), 'utf8');
+// 切片必须从注释起始符开始，否则开头的说明文字会被当成选择器
+const nightLayer = appCss.slice(appCss.indexOf('/* 内置插件深色兼容层'), appCss.indexOf('/* v0.14 · 可定制插件入口'));
+assert.ok(nightLayer.startsWith('/*') && nightLayer.length > 500, '必须能取到夜间兼容层');
+assert.ok(nightLayer.includes('.pp-tag') && nightLayer.includes('.gx-tag'), '夜间兼容层仍要覆盖其它浅色硬编码插件');
+assert.doesNotMatch(nightLayer.replace(/\/\*[\s\S]*?\*\//g, ''), /\.cx2-/,
+  '学习通已改用主题变量，不该再进夜间兼容层白名单（那层只改 background 不改 color）');
 
 /* ── 7. 课程页：按卡片「开课时间」推断学年与年级，灰标已完成 / 黑标未完成 ── */
 const courseLi = (name, cid, clzId, teacher, clazz, range) => `<li class="course clearfix catalog_0 learnCourse">
