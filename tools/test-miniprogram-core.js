@@ -163,7 +163,11 @@ ok("考试日历适配读取桌面内嵌数据", [ex.length > 0, ex.every((x) =>
 const cet4 = pluginRuntime.futureExams("2026-09-06", 60, "cet4");
 ok("考试日历可只看 CET4 全流程", [cet4.length > 0, cet4.every((x) => ["cet4", "cet-set4"].includes(x.examId) || String(x.examId).includes("大学英语四六级"))], [true, true]);
 const cetFlow = pluginRuntime.examFlow("2026-09-06", "cet4");
-ok("CET 报名提示包含学校/考点与报名系统", [cetFlow.cetNotice.includes("学校"), cetFlow.cetNotice.includes("考点"), cetFlow.signupUrl], [true, true, "https://cet-bm.neea.edu.cn/"]);
+ok("CET 报名提示包含学校/考点与报名系统", [cetFlow.signupNotice.includes("学校"), cetFlow.signupNotice.includes("考点"), cetFlow.signupUrl], [true, true, "https://cet-bm.neea.edu.cn/"]);
+const pth = pluginRuntime.futureExams("2026-09-06", 60, "putonghua");
+ok("普通话水平测试已收录且按报名窗口标注", [pth.length >= 3, pth.every((x) => x.examId === "putonghua"), pth.some((x) => x.countdown.indexOf("报名") >= 0)], [true, true, true]);
+const pthFlow = pluginRuntime.examFlow("2026-09-06", "putonghua");
+ok("普通话报名提示说明无全国统一日期并给出官方入口", [pthFlow.signupNotice.includes("没有全国统一考试日期"), pthFlow.signupNotice.includes("bm.cltt.org"), pthFlow.signupUrl], [true, true, "https://bm.cltt.org/"]);
 const wr = pluginRuntime.weeklyReport("2026-09-08");
 ok("周度报告适配输出 7 天", wr.days.length, 7);
 

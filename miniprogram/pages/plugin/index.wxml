@@ -74,29 +74,62 @@
       <picker mode="selector" range="{{examFilters}}" range-key="label" value="{{examFilterIndex}}" bindchange="onExamFilter">
         <view class="pickerbox">{{examFilters[examFilterIndex].label}}</view>
       </picker>
-      <view class="desc hint">选择某一项后，只显示该考试从报名、准考证到口试/笔试等已收录全流程。</view>
+      <view class="exam-tools">
+        <input class="exam-search" value="{{examQuery}}" placeholder="搜索考试名称" bindinput="onExamSearch" confirm-type="search" />
+        <view class="exam-chip {{examConfirmedOnly ? 'on' : ''}}" bindtap="onToggleExamConfirmed">只看官方</view>
+      </view>
+      <view class="desc hint">选择某一项后，只显示该考试从报名、准考证到口试/笔试等已收录全流程。未来共 {{examTotal}} 场，当前显示 {{examVisible}} 场。</view>
     </view>
+
     <view class="card" wx:if="{{examFlow && examFlow.id !== 'all'}}">
       <view class="section-title">{{examFlow.label}} · 报名与全流程</view>
       <view class="desc">{{examFlow.registrationText}}</view>
-      <view class="exam-notice" wx:if="{{examFlow.cetNotice}}">{{examFlow.cetNotice}}</view>
-      <button wx:if="{{examFlow.signupUrl}}" class="btn ghost exam-signup" bindtap="onOpenExamSignup">复制 CET 报名系统网址</button>
+      <view class="exam-notice" wx:if="{{examFlow.signupNotice}}">{{examFlow.signupNotice}}</view>
+      <button wx:if="{{examFlow.signupUrl}}" class="btn ghost exam-signup" bindtap="onOpenExamSignup">{{examFlow.signupAction}}</button>
     </view>
+
     <view class="card">
       <view class="section-title">未来考试 · 同步桌面内嵌数据</view>
       <view class="desc" wx:if="{{!exams.length}}">当前筛选条件下没有更晚的考试安排。</view>
-      <view class="exam" wx:for="{{exams}}" wx:key="key">
-        <view class="exam-top">
-          <view class="exam-title">{{item.name}}</view>
-          <view class="badge {{item.confirmed ? 'ok' : 'estimate'}}">{{item.statusText}}</view>
+      <view class="exam {{item.hot ? 'hot' : ''}} {{item.confirmed ? '' : 'est'}}" wx:for="{{exams}}" wx:key="key">
+        <view class="exam-head">
+          <view class="exam-dcol">
+            <view class="exam-d1">{{item.dateTop}}</view>
+            <view class="exam-d2">{{item.dateBottom}}</view>
+          </view>
+          <view class="exam-bcol">
+            <view class="exam-l1">
+              <view class="exam-dot {{item.confirmed ? '' : 'est'}}"></view>
+              <view class="exam-title">{{item.name}}</view>
+              <view class="exam-tag" wx:if="{{item.type !== 'written'}}">{{item.typeName}}</view>
+            </view>
+            <view class="exam-l2">{{item.metaText}}</view>
+          </view>
+          <view class="exam-cd {{item.tone}}">{{item.countdown}}</view>
         </view>
-        <view class="meta">{{item.dateRange}} · {{item.typeName}} · {{item.category}} · {{item.countdown}}</view>
         <view class="exam-actions">
           <button class="btn small ghost" data-key="{{item.key}}" bindtap="onExamFullFlow">看全流程</button>
-          <button class="btn small pri" data-key="{{item.key}}" bindtap="onAddExam">排进日程</button>
-          <button wx:if="{{item.url}}" class="btn small ghost" data-key="{{item.key}}" bindtap="onCopyExamLink">复制官方链接</button>
+          <button wx:if="{{!item.scheduled}}" class="btn small pri" data-key="{{item.key}}" bindtap="onAddExam">排进日程</button>
+          <view wx:else class="exam-done">已在日程</view>
+          <button wx:if="{{item.url}}" class="btn small ghost" data-key="{{item.key}}" bindtap="onCopyExamLink">{{item.linkLabel}}</button>
         </view>
       </view>
+    </view>
+
+    <view class="card" wx:if="{{examPastTotal}}">
+      <view class="exam-hist-toggle" bindtap="onToggleExamHistory">
+        <text>{{examPastOpen ? '收起' : '展开'}}历史场次（{{examPastTotal}} 场）</text>
+        <text class="exam-hist-arrow">{{examPastOpen ? '▲' : '▼'}}</text>
+      </view>
+      <block wx:if="{{examPastOpen}}">
+        <block wx:for="{{examPast}}" wx:for-item="grp" wx:key="year">
+          <view class="exam-hist-year">{{grp.year}} 年 · {{grp.count}} 场</view>
+          <view class="exam-hist-line" wx:for="{{grp.items}}" wx:for-item="p" wx:key="key">
+            <text class="exam-hist-date">{{p.dateText}}</text>
+            <text class="exam-hist-name">{{p.nameText}}</text>
+          </view>
+        </block>
+      </block>
     </view>
   </block>
 </view>

@@ -30,6 +30,13 @@ Page({
     examFilters: runtime.EXAM_FILTERS || [],
     examFilterIndex: 0,
     examFlow: null,
+    examTotal: 0,
+    examVisible: 0,
+    examQuery: "",
+    examConfirmedOnly: false,
+    examPast: [],
+    examPastTotal: 0,
+    examPastOpen: false,
   },
 
   onLoad(options) {
@@ -253,10 +260,59 @@ Page({
     let filterIndex = Number(store.pluginStorageGet("exam-calendar", "filterIndex", 0)) || 0;
     if (filterIndex < 0 || filterIndex >= filters.length) filterIndex = 0;
     const filterId = filters[filterIndex] ? filters[filterIndex].id : "all";
-    const exams = runtime.futureExams(store.todayStr(), 60, filterId);
+    const today = store.todayStr();
+
+    const all = runtime.futureExams(today, 60, filterId).map((x) =>
+      Object.assign({}, x, { scheduled: this.isExamScheduled(x) })
+    );
+    this._examAll = all;
     this._examMap = {};
-    exams.forEach((x) => { this._examMap[x.key] = x; });
-    this.setData({ exams, examFilters: filters, examFilterIndex: filterIndex, examFlow: runtime.examFlow(store.todayStr(), filterId) });
+    all.forEach((x) => { this._examMap[x.key] = x; });
+
+    const past = runtime.pastExamGroups(today, filterId);
+    this.setData({
+      examFilters: filters,
+      examFilterIndex: filterIndex,
+      examFlow: runtime.examFlow(today, filterId),
+      examTotal: all.length,
+      examPast: past.groups,
+      examPastTotal: past.total,
+      examConfirmedOnly: !!this._examConfirmedOnly,
+      examPastOpen: !!this._examPastOpen,
+    }, () => this.applyExamFilter());
+  },
+
+  isExamScheduled(ev) {
+    const title = ev.name + "（" + ev.typeName + "）";
+    return store.blocksOf(ev.date).some((b) => b.title === title);
+  },
+
+  /* 搜索与「只看官方」只切显隐、不重新拉数据，避免输入框失焦 */
+  applyExamFilter() {
+    const q = String(this._examQuery || "").trim().toLowerCase();
+    const only = !!this._examConfirmedOnly;
+    const all = this._examAll || [];
+    const shown = all.filter((x) => {
+      if (only && !x.confirmed) return false;
+      if (q && (x.name + " " + x.category + " " + x.typeName).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    this.setData({ exams: shown, examVisible: shown.length, examQuery: this._examQuery || "" });
+  },
+
+  onExamSearch(e) {
+    this._examQuery = (e.detail && e.detail.value) || "";
+    this.applyExamFilter();
+  },
+
+  onToggleExamConfirmed() {
+    this._examConfirmedOnly = !this._examConfirmedOnly;
+    this.setData({ examConfirmedOnly: this._examConfirmedOnly }, () => this.applyExamFilter());
+  },
+
+  onToggleExamHistory() {
+    this._examPastOpen = !this._examPastOpen;
+    this.setData({ examPastOpen: this._examPastOpen });
   },
 
   onExamFilter(e) {
@@ -277,8 +333,11 @@ Page({
       wx.showToast({ title: "该项目暂不支持独立全流程筛选", icon: "none" });
       return;
     }
-    store.pluginStorageSet("exam-calendar", "filterIndex", index);
+    // 再点一次同一个项目 → 回到全部考试
+    const next = this.data.examFilterIndex === index ? 0 : index;
+    store.pluginStorageSet("exam-calendar", "filterIndex", next);
     this.loadExams();
+    wx.pageScrollTo({ scrollTop: 0, duration: 200 });
   },
 
   onOpenExamSignup() {
@@ -287,37 +346,50 @@ Page({
     wx.setClipboardData({ data: flow.signupUrl, success: () => wx.showToast({ title: "报名网址已复制", icon: "none" }) });
   },
 
+  examDays(ev) {
+    const out = [];
+    const n = runtime.dayDiff(ev.date, ev.endDate || ev.date);
+    for (let i = 0; i <= n; i++) out.push(store.addDays(ev.date, i));
+    return out;
+  },
+
+  /* 时长口径与桌面端一致：有起止时间就用实际时长，否则按类型给默认值 */
+  examDuration(ev) {
+    if (ev.startTime && ev.endTime) {
+      const d = store.mmOf(normalizeTime(ev.endTime)) - store.mmOf(normalizeTime(ev.startTime));
+      if (d > 0) return d;
+    }
+    return ev.type === "written" ? 150 : 60;
+  },
+
   onAddExam(e) {
     const ev = this._examMap && this._examMap[e.currentTarget.dataset.key];
     if (!ev) return;
     const title = ev.name + "（" + ev.typeName + "）";
-    if (store.blocksOf(ev.date).some((b) => b.title === title)) {
+    // 跨日考试（NCRE 连考 3 天、教资 2 天）整个区间都要排上，只排第一天会让后续几天凭空消失
+    const days = this.examDays(ev);
+    if (days.some((d) => store.blocksOf(d).some((b) => b.title === title))) {
       wx.showToast({ title: "这场考试已经排进日程", icon: "none" });
       return;
     }
+    const dur = this.examDuration(ev);
     const task = store.addTask({
       title,
       note: (ev.confirmed ? "官方公告已确认" : "规则推算，待官方公告确认") + (ev.url ? "\n" + ev.url : ""),
       quad: timeParser.guessQuad(ev.date),
-      estMin: ev.type === "written" ? 150 : 60,
+      estMin: dur,
       tags: ["考试"],
       project: "考试日历",
-      due: ev.date,
+      due: ev.endDate || ev.date,
     });
-    let dur = 120;
-    if (ev.startTime && ev.endTime) {
-      const d = store.mmOf(normalizeTime(ev.endTime)) - store.mmOf(normalizeTime(ev.startTime));
-      if (d > 0) dur = d;
-    }
-    store.addBlock({
-      date: ev.date,
-      start: normalizeTime(ev.startTime || "09:00"),
-      durMin: dur,
-      title,
-      taskId: task.id,
-      cat: "study",
+    const start = normalizeTime(ev.startTime || "09:00");
+    days.forEach((d) => {
+      store.addBlock({ date: d, start, durMin: dur, title, taskId: task.id, cat: "study" });
     });
-    wx.showToast({ title: "已排进日程", icon: "success" });
+    wx.showToast({ title: days.length > 1 ? "已排进连续 " + days.length + " 天" : "已排进日程", icon: "success" });
+    this._examAll = (this._examAll || []).map((x) => (x.key === ev.key ? Object.assign({}, x, { scheduled: true }) : x));
+    this._examMap[ev.key] = Object.assign({}, ev, { scheduled: true });
+    this.applyExamFilter();
   },
 
   onCopyExamLink(e) {
