@@ -92,10 +92,28 @@ versionCode = major * 10000 + minor * 100 + patch
 ```bash
 cd le-time-management
 node ../tools/sync-version.js --check   # 必须输出 ✓ 三端版本一致：vX.Y.Z
-npm test                                # 必须 12 个测试脚本全过
+node ../tools/gen-theme-dark.js --check # 主题深色变体与 styles.css 是否同步
+npm test                                # 必须 16 个测试脚本全过
 ```
 
 任何一项失败都**不要**继续构建 —— 拿着一个版本不一致的树去打包，产物会带错版本号。
+
+### 改了「事实源」，必须重跑对应生成器
+
+仓库里有几处是**生成物**，手改了会被下次生成覆盖，而改了事实源不重跑会被测试拦下：
+
+| 事实源 | 生成器 | 产物 |
+|---|---|---|
+| `public/plugins/<id>/manifest.json` | `node tools/sync-plugins.js` | 桌面 `src/pluginCatalog.js`、小程序 `core/pluginCatalog.js`、插件图标副本 |
+| `package.json` 的 `version` | `node tools/sync-version.js` | 三端版本号（**不含** `package-lock.json`，要手改两处） |
+| `src/styles.css` 的主题令牌 | `node tools/gen-theme-dark.js` | `src/styles/theme-derived.css`、`src/themeDarkPreview.js` |
+| 插件图标清单 | `python tools/gen-plugin-icons.py` | 桌面 + 小程序插件 PNG、`ATTRIBUTION.md` |
+
+**主题配色的分层**：`src/styles.css` 手写浅色 → `tools/lib/theme-tokens.js` 按 WCAG 反解派生深色 →
+`theme-derived.css`（生成物）。所以**每套主题在深色模式下都有自己的一套色板**，
+「深色模式」与「主题」是两个正交属性：`data-theme`（主题）+ `data-theme-mode`（解析后的 light/dark）。
+CSS 里凡「深色才生效」的规则一律用 `[data-theme-mode="dark"]`，**不要写 `[data-theme="night"]`**。
+详见技能 `letime-theme-tokens`。
 
 ---
 
