@@ -20,8 +20,8 @@ export const OPEN_SOURCE_PROJECTS = [
   { name: "Vite", license: "MIT", role: "前端构建工具", url: "https://github.com/vitejs/vite" },
   { name: "reqwest", license: "MIT / Apache-2.0", role: "Rust HTTP 客户端", url: "https://github.com/seanmonstar/reqwest" },
   { name: "serde / serde_json", license: "MIT / Apache-2.0", role: "Rust 数据序列化与 JSON", url: "https://github.com/serde-rs/serde" },
-  { name: "Icons8 / iGoutu iOS Filled", license: "Icons8 License · 免费使用需署名", role: "主导航与插件中心图标", url: "https://igoutu.cn/icons/ios-filled" },
-  { name: "Font Awesome Free", license: "Icons: CC BY 4.0", role: "网页收集与小程序既有图标资源", url: "https://fontawesome.com/" },
+  { name: "Icons8 / iGoutu", license: "Icons8 License · 免费使用需署名", role: "主导航图标（iOS Filled）与内置插件图标（Color 标志色版，随包 PNG）", url: "https://igoutu.cn/icons/set/%E6%A0%87%E5%BF%97--style-color" },
+  { name: "Font Awesome Free", license: "Icons: CC BY 4.0", role: "小程序 tabBar 图标与插件图标兜底", url: "https://fontawesome.com/" },
   { name: "ShiguangSchedule", license: "Apache-2.0", role: "课程表数据模型移植来源", url: "https://github.com/XingHeYuZhuan/shiguangschedule" },
   { name: "holiday-cn", license: "以其上游仓库为准", role: "中国节假日离线数据来源", url: "https://github.com/NateScarlet/holiday-cn" },
 ];

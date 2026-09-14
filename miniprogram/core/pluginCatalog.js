@@ -3,7 +3,7 @@ const plugins = [
   {
     "id": "shiguang-schedule",
     "name": "课程表",
-    "version": "3.1.0",
+    "version": "3.2.0",
     "author": "基于 XingHeYuZhuan/shiguangschedule · Le时间管理适配",
     "icon": "calendar-days",
     "faIcon": "calendar-days",
@@ -172,11 +172,11 @@ const plugins = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.4.1",
-    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.4.0 自动登录增强）",
+    "version": "1.5.0",
+    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.5.0 校园服务侧栏）",
     "icon": "building-columns",
     "faIcon": "building-columns",
-    "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。",
+    "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。左侧「校园服务」栏内置 WebVPN、教育邮箱、教务、学工四个入口，标题与图标自动识别。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。",
     "permissions": [
       "ui",
       "tasks",
@@ -185,6 +185,7 @@ const plugins = [
       "notify",
       "events",
       "http",
+      "openUrl",
       "timeParse",
       "vault"
     ],
@@ -246,11 +247,11 @@ const plugins = [
   {
     "id": "exam-calendar",
     "name": "考试日历",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "author": "your-name",
     "icon": "calendar-check",
     "faIcon": "calendar-check",
-    "description": "大学生国家级考试倒计时与全流程查看（四六级/考研/教师资格/计算机等级/专四专八）。支持按单一考试筛选报名、准考证打印、口试/笔试等流程；CET 报名会提示各学校/考点时间可能不同，并可直达全国网上报名系统。数据在构建时由官方公告采集后内嵌。",
+    "description": "大学生国家级考试倒计时与全流程查看（四六级/考研/教师资格/计算机等级/专四专八/普通话）。支持按单一考试筛选报名、准考证打印、口试/笔试等流程；CET 与普通话会提示各学校/考点/省份时间可能不同，并可直达全国报名系统。普通话水平测试无全国统一考试日期，按各省分批的报名与测试窗口标注。数据在构建时由官方公告采集后内嵌。",
     "permissions": [
       "ui",
       "tasks",
