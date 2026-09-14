@@ -506,13 +506,13 @@ button, .nav { touch-action: manipulation; }
      内容一高顶栏就被推出屏幕外（旧写法的隐藏 bug） */
   .app { flex-direction: column; }
   .main { order: 1; flex: 1 1 0; height: 100dvh; }
-  .view { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
+  .view { padding-bottom: calc(62px + env(safe-area-inset-bottom)); }
   .rail { order: 2; }
   /* 底栏：扁平单行核心入口，图标+小字，激活变色不加底 */
   .rail {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
     width: 100%; flex: none; flex-direction: row; align-items: stretch;
-    padding: 4px 6px calc(6px + env(safe-area-inset-bottom));
+    padding: 2px 6px calc(4px + env(safe-area-inset-bottom));
     border-top: 1px solid rgba(255, 255, 255, .07);
     box-shadow: 0 -8px 24px rgba(13, 31, 38, .18);
   }
@@ -520,17 +520,18 @@ button, .nav { touch-action: manipulation; }
   .nav { flex: 1; display: flex; flex-direction: row; gap: 0; overflow: visible; }
   .nav .sec { display: none; }
   .plug-list { display: none; }   /* 插件入口收进「插件市场」页 */
-  .nav button {
+  /* 特异性高于下方全局 .nav button / .ic 规则（602/605 行），否则 38px 图标与 50px 高会盖回来 */
+  .rail .nav button {
     flex: 1; min-width: 0;
-    flex-direction: column; align-items: center; justify-content: center; gap: 3px;
-    min-height: 54px; /* ≥48dp 触控目标（M3） */
-    padding: 6px 2px; border-radius: 10px;
-    font-size: 10px; line-height: 1.15; text-align: center;
+    flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 46px; /* 仍 ≥44px 触控目标 */
+    padding: 3px 2px; border-radius: 10px;
+    font-size: 10px; line-height: 1.1; text-align: center;
     background: none;
   }
-  .nav button .ic {
-    width: 26px; height: 26px; border-radius: 9px;
-    font-size: 13px; transition: transform .15s, background .15s;
+  .rail .nav button .ic {
+    width: 22px; height: 22px; border-radius: 8px;
+    font-size: 12px; transition: transform .15s, background .15s;
   }
   .nav button .lb { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav button.on { background: none; box-shadow: none; color: #fff; font-weight: 600; }
@@ -641,8 +642,8 @@ button, .nav { touch-action: manipulation; }
 .reminder-note { margin-top:10px; }
 @media (max-width: 760px) {
   .rail-bottom { border-top:0; padding-top:0; order:-1; width:20%; display:flex; }
-  .rail-bottom > button { display:flex; flex:1; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:3px; min-height:54px; padding:6px 2px; border-radius:10px; font-size:10px; line-height:1.15; }
-  .rail-bottom > button .ic { width:26px; height:26px; border-radius:9px; }
+  .rail-bottom > button { display:flex; flex:1; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:46px; padding:3px 2px; border-radius:10px; font-size:10px; line-height:1.1; }
+  .rail-bottom > button .ic { width:22px; height:22px; border-radius:8px; }
   .reminder-picks { max-width:100%; justify-content:flex-start; }
   .reminder-kv { flex-direction:column; }
   .setting-row { align-items:flex-start; flex-direction:column; }
@@ -2478,6 +2479,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     box-shadow: none;
   }
   .rail-bottom > .settings-icon-button { width: 100%; margin: 0; }
-  .rail-bottom > .settings-icon-button .ic { width: 24px; height: 24px; }
-  .rail-bottom > .settings-icon-button .ic .app-icon { width: 17px; height: 17px; }
+  .rail-bottom > .settings-icon-button .ic { width: 22px; height: 22px; }
+  .rail-bottom > .settings-icon-button .ic .app-icon { width: 15px; height: 15px; }
 }
