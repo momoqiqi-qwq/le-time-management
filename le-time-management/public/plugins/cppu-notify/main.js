@@ -23,8 +23,9 @@
     { url: "https://mail.cppu.edu.cn/", label: "教育邮箱", icon: "envelope" },
     { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school" },
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
+    { url: "https://service.cppu.edu.cn/fe/site/service", label: "一网通办", icon: "clipboard-list" },
   ];
-  const LINK_META_TTL = 7 * 24 * 60 * 60 * 1000;   // 识别结果一周内复用，避免每次进插件都抓四个站点
+  const LINK_META_TTL = 7 * 24 * 60 * 60 * 1000;   // 识别结果一周内复用，避免每次进插件都抓五个站点
   const LINK_META_KEY = "quickLinkMeta";
   let linkMeta = {};
 

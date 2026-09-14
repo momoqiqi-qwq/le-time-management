@@ -90,24 +90,25 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.5.0');
+assert.equal(cppuManifest.version, '1.6.0');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
 const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
-assert.match(cppuBlock, /"1\.5\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(cppuBlock, /"1\.6\.0"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
-/* ── 左侧校园服务栏：四个入口 + 标题/图标自动识别 ── */
-for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html']) {
+/* ── 左侧校园服务栏：五个入口（含一网通办）+ 标题/图标自动识别 ── */
+for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html', 'https://service.cppu.edu.cn/fe/site/service']) {
   assert.ok(source.includes(url), `校园服务栏必须包含 ${url}`);
 }
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
-assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓四个站点');
+assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓五个站点');
+assert.match(source, /\{\s*url:\s*"https:\/\/service\.cppu\.edu\.cn\/fe\/site\/service"[^}]*icon:\s*"[a-z-]+"/, '一网通办入口必须自带语义图标，供无法读 favicon 时兜底');
 assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '侧栏必须同时绑定在登录页与通知列表页');
 assert.ok(source.includes('AUTO_REFRESH_MS') && source.includes('data-ar'), '插件必须提供低打扰的定时自动刷新开关');
 const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
