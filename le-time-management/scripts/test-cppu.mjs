@@ -90,13 +90,14 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.7.0');
+assert.equal(cppuManifest.version, '1.7.1');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const cppuEntry = catalogSrc.slice(catalogSrc.indexOf('"id": "cppu-notify"'));
 const cppuBlock = cppuEntry.slice(0, cppuEntry.indexOf('},\n  {'));
-assert.match(cppuBlock, /"1\.7\.0"/, 'pluginCatalog 必须同步插件新版本号');
+/* 版本号只写一处：拿 manifest 的实际版本去比，避免升版本时要改两个地方 */
+assert.ok(cppuBlock.includes(`"${cppuManifest.version}"`), `pluginCatalog 必须同步插件版本号（应为 ${cppuManifest.version}）`);
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
@@ -124,6 +125,23 @@ assert.match(source, /\.pp-shell\.side-collapsed \.pp-side-inner\{transform:scal
 assert.match(source, /max-height:0/, '窄屏（≤820px）侧栏是整层叠放，收起要走高度归零');
 assert.match(source, /\.pp-side\{[^}]*margin-right:16px/, '侧栏与正文的间距要挂在侧栏自身，收起时才能一起归零');
 assert.ok(!/\.pp-shell\{[^}]*gap:16px/.test(source), '外壳不能再用 gap 排版，否则侧栏收起后仍留 16px 空隙');
+
+/* ── 手机端（Android 走同一份前端，窄屏 ≤820px 分支 + 触屏）── */
+assert.match(source, /\.pp-shell:not\(\.side-collapsed\) \.pp-side-toggle\{[^}]*max-height:0/,
+  '展开时被藏起来的把手必须连高度一起归零，否则窄屏上侧栏与正文之间会留一条看不见的空隙');
+assert.match(source, /\.pp-side-toggle\{[^}]*transition:[^}]*max-height/,
+  '把手的高度也要参与过渡，收起时才不会突然消失');
+assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-toggle\{[^}]*min-height:44px/,
+  '手机端把手的点击区必须 ≥44px，手指才点得准');
+assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-sync\{[^}]*min-height:44px/,
+  '手机端侧栏头部「收起」图标的点击区也必须 ≥44px（它是手机上的主要收起入口）');
+assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-shell:not\(\.side-collapsed\) \.pp-side-toggle\{[^}]*min-height:0/,
+  'min-height 会压过 max-height，窄屏展开时把手必须连 min-height 一起归零');
+assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-btn\{[^}]*min-height:52px[^}]*touch-action:manipulation/,
+  '手机端侧栏入口要有 ≥52px 点击区并禁用双击缩放');
+assert.ok(source.includes('-webkit-tap-highlight-color:transparent'), '触屏点击不应出现系统高亮块');
+assert.match(source, /@media\(prefers-reduced-motion:reduce\)\{[^}]*\.pp-side,[^}]*\.pp-side-toggle[^}]*transition-duration/,
+  '开了「移除动画」（Android 省电模式）时，侧栏与把手的过渡也必须跟着降级');
 assert.ok(source.includes('AUTO_REFRESH_MS') && source.includes('data-ar'), '插件必须提供低打扰的定时自动刷新开关');
 const hostSrc = fs.readFileSync(new URL('../src/pluginHost.js', import.meta.url), 'utf8');
 assert.ok(hostSrc.includes('vault: "加密密钥库'), '插件宿主必须定义 vault 权限标签');

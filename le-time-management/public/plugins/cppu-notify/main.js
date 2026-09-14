@@ -206,13 +206,14 @@
       /* 收起后留在原地的把手。它是 .pp-shell 的正经 flex 子项（不是浮层），所以永远压不住正文；
          展开时 max-width 收到 0，与侧栏的 width 过渡同时进行 → 没有跳变。
          sticky 保证列表滚很长时也够得着。 */
-      .pp-side-toggle{flex:none;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);position:sticky;top:8px;align-self:flex-start;z-index:4;white-space:nowrap;overflow:hidden;max-width:160px;margin-right:12px;transition:max-width .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease,background .16s ease}
-      .pp-side-toggle:hover{background:var(--paper)}
+      .pp-side-toggle{flex:none;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);position:sticky;top:8px;align-self:flex-start;z-index:4;white-space:nowrap;overflow:hidden;max-width:160px;max-height:52px;margin-right:12px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:max-width .34s cubic-bezier(.22,.8,.22,1),max-height .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease,background .16s ease}
+      .pp-side-toggle:hover,.pp-side-toggle:active{background:var(--paper)}
       .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
-      .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
+      .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;max-height:0;padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
       .pp-side-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;letter-spacing:.22em;color:var(--ink-3);padding:2px 4px 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
       .pp-side-acts{display:flex;align-items:center;gap:1px}
-      .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:13px;line-height:1;padding:3px 5px;border-radius:7px;font-family:inherit}
+      .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:13px;line-height:1;padding:3px 5px;border-radius:7px;font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+      .pp-side-sync:active{background:var(--line-soft)}
       .pp-side-sync:hover{background:var(--paper);color:var(--deep)}
       .pp-side-list{display:flex;flex-direction:column;gap:3px}
       .pp-side-btn{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;border-radius:10px;padding:6px 8px;cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;min-height:46px;transition:background .16s ease,color .16s ease}
@@ -231,14 +232,26 @@
         .pp-side{width:100%;position:static;padding:10px;margin-right:0;margin-bottom:12px;max-height:1400px;transition:max-height .34s cubic-bezier(.22,.8,.22,1),margin-bottom .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease}
         .pp-side-inner{width:100%}
         .pp-shell.side-collapsed .pp-side{width:100%;max-height:0;padding-top:0;padding-bottom:0;margin-bottom:0;border-top-width:0;border-bottom-width:0;opacity:0}
-        .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%}
-        .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0}
+        /* 手机上把手与头部两个小图标都得有 44px 的点击区，手指才点得准 */
+        .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%;min-height:44px;padding:10px 14px;font-size:13px}
+        .pp-side-sync{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;padding:0}
+        .pp-side-acts{gap:4px}
+        /* 展开时把手要整体藏掉：min-height 会压过 max-height，所以必须把 min-height 也归零，
+           否则窄屏上会在侧栏与正文之间留一条 44px 的隐形空隙 */
+        .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0;min-height:0}
         .pp-side-list{flex-direction:row;flex-wrap:wrap}
-        .pp-side-btn{width:auto;flex:1 1 132px;min-width:0;min-height:52px}
+        .pp-side-btn{width:auto;flex:1 1 132px;min-width:0;min-height:52px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+        /* 手机上工具栏不能靠自动换行碰运气（原来「刷新」会独占一整行）：
+           关键词搜索独占一行，其余按钮/开关挤一行，并统一给到 44px 的点击高度 */
+        .pp-toolbar{gap:8px}
+        .pp-kw{flex:1 1 100%;order:2;min-width:0;height:44px}
+        .pp-toolbar>span:not(.pp-lab){order:1}
+        .pp-toolbar>.pp-btn,.pp-toggle{order:1;min-height:44px}
+        .pp-toolbar>.pp-btn{padding:0 14px;font-size:13px}
         .pp-side-txt b,.pp-side-txt small{max-width:96px}
         .pp-side-note{display:none}
       }
-      @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail{transition-duration:.01ms!important}}
+      @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail,.pp-side,.pp-side-inner,.pp-side-toggle{transition-duration:.01ms!important}}
     `;
     document.head.append(st);
   }

@@ -70,3 +70,28 @@
 - Windows / Android：警大门户通知插件左侧校园服务栏改为默认收起，正文视区变宽。
 - 微信小程序：该插件为 `unavailable`（依赖桌面端 SSO 链路），本版无影响。
 - 其余插件无影响。
+
+## 移动端（Android）补充
+
+桌面与 Android 共用同一份前端代码（`public/plugins/cppu-notify/main.js`），收展逻辑天然一致；
+但上面那版**只验证了桌面宽屏**。补做手机尺寸实测（390×844 视口 —— Windows 上无头 Chrome 的窗口
+最小宽度被钳在 500px，所以把页面放进 390px 宽的 iframe 里逼出真实视口，`@media` 按 iframe 宽度判定）
+后发现并修掉三处：
+
+| 问题 | 实测 | 修法 |
+|---|---|---|
+| 窄屏**展开**时，被藏起来的把手仍占 44px 高度 → 侧栏与正文之间留一条看不见的空隙 | 隐身占位 `0×44` | 收起态同时归零 `max-height` 与 `min-height` —— **CSS 里 `min-height` 大于 `max-height` 时 `max-height` 会被忽略**，只写后者无效 |
+| 收起后的把手只有 92×35，低于触屏 44/48px 建议点击区 | `92×35` → `101×44` | 窄屏下把手、侧栏头部两个图标 ≥44px，侧栏入口 ≥52px |
+| `prefers-reduced-motion` 只覆盖了卡片，侧栏/把手照旧动画（Android 省电模式、系统「移除动画」无效） | — | 把 `.pp-side` / `.pp-side-inner` / `.pp-side-toggle` 一并纳入降级 |
+
+顺带修的手机端体验：
+
+- 窄屏工具栏原本纯靠自动换行碰运气，「刷新」会独占一整行；现在关键词搜索框独占一行、其余按钮与
+  开关共用一行，按钮统一 44px 点击高度。
+- 交互元素加 `touch-action: manipulation`（消除双击缩放带来的点击延迟）与
+  `-webkit-tap-highlight-color: transparent`（去掉触屏高亮块），并补 `:active` 反馈。
+
+验证：390×844 视口两态截图见 `output/preview/cppu-sidebar-phone.png`；`scripts/test-cppu.mjs`
+新增 7 条窄屏/触屏断言（含 `min-height` 与 `max-height` 的压制关系、44/52px 点击区、
+reduced-motion 覆盖面）。`npm test` 22 个脚本全部通过。
+
