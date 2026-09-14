@@ -43,6 +43,12 @@ upload-keys/
 # Old APK in root
 /Le时间管理_*.apk
 
+# 开发期抓包与调试产物（含 SSO 会话 cookie / CASTGC JWT / 个人信息，泄露可冒充登录，切勿提交）
+/le-time-management/dev/jw-*
+
+# Tesseract OCR 语言包（约 15 MB，本地识别用，不入库）
+/eng.traineddata
+
 # 本地工具缓存与 QA 产物(不入库)
 /.workbuddy/
 /.playwright-cli/
