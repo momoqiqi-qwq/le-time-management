@@ -45,6 +45,8 @@ upload-keys/
 
 # 开发期抓包与调试产物（含 SSO 会话 cookie / CASTGC JWT / 个人信息，泄露可冒充登录，切勿提交）
 /le-time-management/dev/jw-*
+# 教务门户 SPA 抓包临时目录（_nuxt_*.js / index.html 等，排查用，不入库）
+/.tmp-*/
 
 # Tesseract OCR 语言包（约 15 MB，本地识别用，不入库）
 /eng.traineddata
