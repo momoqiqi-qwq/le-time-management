@@ -13,5 +13,10 @@ assert.equal(normalizeUiPreferences({ showTopStats: false }).showTopStats, false
 assert.equal(normalizeUiPreferences({ centerTopStats: true }).centerTopStats, true);
 assert.equal(normalizeUiPreferences({ centerTopStats: "true" }).centerTopStats, false);
 assert.equal(normalizeUiPreferences({ showViewSubtitle: false }).showViewSubtitle, false);
+// 底栏高度档位：非法值回标准档，三档合法值原样保留（CSS 变量消费，见 styles.css :root[data-navbar]）
+assert.equal(normalizeUiPreferences({ navBarSize: "weird" }).navBarSize, "standard");
+for (const id of ["compact", "standard", "relaxed"]) {
+  assert.equal(normalizeUiPreferences({ navBarSize: id }).navBarSize, id);
+}
 
 console.log("PASS: UI preference normalization and compatibility defaults");

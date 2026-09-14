@@ -4,6 +4,7 @@ import { THEMES, getThemeMode, resolveThemeMode, setTheme, setThemeMode } from "
 import { DEFAULT_BACKGROUND, normalizeBackground, setBackground } from "../../background.js";
 import {
   DEFAULT_UI_PREFERENCES,
+  NAVBAR_SIZE_OPTIONS,
   STARTUP_VIEW_OPTIONS,
   WINDOW_SIZE_OPTIONS,
   getUiPreferences,
@@ -28,6 +29,15 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     densityBox.append(el("button", {
       class: `pref-choice-btn${prefs.density === id ? " on" : ""}`,
       onclick: () => { setUiPreferences({ density: id }); rerender(); },
+    }, label));
+  }
+
+  // 手机底栏高度：紧凑 / 标准 / 宽松（只影响 ≤900px 的底部导航栏，桌面端无感）
+  const navBarBox = el("div", { class: "pref-choice", role: "group", "aria-label": "底栏高度" });
+  for (const [id, label] of NAVBAR_SIZE_OPTIONS) {
+    navBarBox.append(el("button", {
+      class: `pref-choice-btn${prefs.navBarSize === id ? " on" : ""}`,
+      onclick: () => { setUiPreferences({ navBarSize: id }); rerender(); },
     }, label));
   }
 
@@ -115,6 +125,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
       el("button", { class: "btn ghost sm", onclick: () => applyPreset("低干扰", { density: "comfortable", textScale: 100, motion: "reduced", showTopStats: false, showViewSubtitle: false }) }, "低干扰"),
     ),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "界面密度"), el("small", {}, "紧凑模式会减少卡片、导航和列表留白")), densityBox),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "底栏高度"), el("small", {}, "手机端底部导航栏的按钮高度与图标大小，桌面端不受影响")), navBarBox),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "文字大小"), el("small", {}, "适合高分屏、远距离显示或更大字号需求")), el("span", { class: "pref-range" }, textScale, textScaleOut)),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "页面动效"), el("small", {}, "减少动效可降低页面切换与按钮过渡")), motion),
     toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value }), "关闭后顶部更清爽"),

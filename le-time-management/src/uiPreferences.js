@@ -10,11 +10,19 @@ export const DEFAULT_UI_PREFERENCES = Object.freeze({
   centerTopStats: false,
   showViewSubtitle: true,
   startupView: "last",
+  // 手机底栏高度档位：紧凑 40px / 标准 46px / 宽松 54px（按钮最小高，CSS 变量消费）
+  navBarSize: "standard",
   // 启动窗口大小：默认「跟随屏幕」——绝大多数显示器上都会比旧的固定 1280×820 更大。
   startupWindowMode: "auto",
   startupWindowWidth: 1440,
   startupWindowHeight: 900,
 });
+
+export const NAVBAR_SIZE_OPTIONS = Object.freeze([
+  ["compact", "紧凑"],
+  ["standard", "标准"],
+  ["relaxed", "宽松"],
+]);
 
 export const STARTUP_VIEW_OPTIONS = Object.freeze([
   ["last", "继续上次页面"],
@@ -38,6 +46,7 @@ export const WINDOW_SIZE_OPTIONS = Object.freeze([
 
 const DENSITIES = new Set(["comfortable", "compact"]);
 const MOTIONS = new Set(["system", "full", "reduced"]);
+const NAVBAR_SIZES = new Set(NAVBAR_SIZE_OPTIONS.map(([id]) => id));
 const STARTUP_VIEWS = new Set(STARTUP_VIEW_OPTIONS.map(([id]) => id));
 const WINDOW_SIZE_MODES_SET = new Set(WINDOW_SIZE_MODES);
 
@@ -50,6 +59,7 @@ export function normalizeUiPreferences(raw = {}) {
   const next = { ...DEFAULT_UI_PREFERENCES, ...(raw || {}) };
   if (!DENSITIES.has(next.density)) next.density = DEFAULT_UI_PREFERENCES.density;
   if (!MOTIONS.has(next.motion)) next.motion = DEFAULT_UI_PREFERENCES.motion;
+  if (!NAVBAR_SIZES.has(next.navBarSize)) next.navBarSize = DEFAULT_UI_PREFERENCES.navBarSize;
   if (!STARTUP_VIEWS.has(next.startupView)) next.startupView = DEFAULT_UI_PREFERENCES.startupView;
   next.textScale = Math.round(clamp(next.textScale, 90, 120) / 5) * 5;
   next.swipeNavigation = next.swipeNavigation !== false;
@@ -75,6 +85,9 @@ export function applyUiPreferences(raw = null) {
   const root = document.documentElement;
   root.dataset.uiDensity = cfg.density;
   root.dataset.uiMotion = cfg.motion;
+  // 注意：dataset.navbar 才生成 data-navbar；写成 dataset.navBar 会变成 data-nav-bar，
+  // CSS 的 :root[data-navbar=…] 选择器就匹配不上了
+  root.dataset.navbar = cfg.navBarSize;
   root.dataset.showTopStats = cfg.showTopStats ? "on" : "off";
   root.dataset.centerTopStats = cfg.centerTopStats ? "on" : "off";
   root.dataset.showViewSubtitle = cfg.showViewSubtitle ? "on" : "off";
