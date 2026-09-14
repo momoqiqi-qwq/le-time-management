@@ -5,9 +5,9 @@ module.exports = {
   "collectedForDate": "2026-09-10",
   "scope": "大学生专用国家级考试；官方公告采集，非实时数据",
   "stats": {
-    "total": 77,
+    "total": 80,
     "confirmed": 71,
-    "estimated": 6,
+    "estimated": 9,
     "mergedTicketRows": 10
   },
   "events": [
@@ -1097,6 +1097,48 @@ module.exports = {
       "publishedAt": null,
       "cycle": 2027,
       "rule": "规则推算：当月第 2 个周六（历史命中率 5/8，窗口 2023H1–2026H2）"
+    },
+    {
+      "examId": "putonghua",
+      "name": "普通话水平测试（PSC）· 下半年各省分批",
+      "type": "registration",
+      "typeName": "分批报名",
+      "category": "语言",
+      "date": "2026-09-01",
+      "endDate": "2026-12-31",
+      "confirmed": false,
+      "url": "https://bm.cltt.org/",
+      "publishedAt": null,
+      "cycle": 2026,
+      "rule": "普通话水平测试无全国统一考试日期：由各省（市）语委与测试站分批组织，频次从每年 1 次到每月开考不等，报名与测试时间各省不同。此处标注的是下半年报名与测试窗口，不是具体考试日；批次与日期以国家普通话水平测试在线报名系统 bm.cltt.org 各省测试站计划为准"
+    },
+    {
+      "examId": "putonghua",
+      "name": "普通话水平测试（PSC）· 上半年各省分批",
+      "type": "registration",
+      "typeName": "分批报名",
+      "category": "语言",
+      "date": "2027-03-01",
+      "endDate": "2027-06-30",
+      "confirmed": false,
+      "url": "https://bm.cltt.org/",
+      "publishedAt": null,
+      "cycle": 2027,
+      "rule": "按上下半年划分的报名与测试窗口推算，非具体考试日。普通话水平测试由各省（市）语委与测试站分批组织，实际批次以 bm.cltt.org 各省测试站计划为准"
+    },
+    {
+      "examId": "putonghua",
+      "name": "普通话水平测试（PSC）· 下半年各省分批",
+      "type": "registration",
+      "typeName": "分批报名",
+      "category": "语言",
+      "date": "2027-09-01",
+      "endDate": "2027-12-31",
+      "confirmed": false,
+      "url": "https://bm.cltt.org/",
+      "publishedAt": null,
+      "cycle": 2027,
+      "rule": "按上下半年划分的报名与测试窗口推算，非具体考试日。普通话水平测试由各省（市）语委与测试站分批组织，实际批次以 bm.cltt.org 各省测试站计划为准"
     }
   ]
 };
