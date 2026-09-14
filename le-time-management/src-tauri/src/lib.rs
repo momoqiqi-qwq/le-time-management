@@ -30,7 +30,7 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
 (function () {
   if (window.__leSchoolImportReady) return;
   window.__leSchoolImportReady = true;
-  const callbacks = new Map(); let callbackCounter = 0;
+  const callbacks = new Map(); let callbackCounter = 0; let bridgeQueue = Promise.resolve();
   const encode = (text) => {
     const bytes = new TextEncoder().encode(text); let binary = '';
     for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -49,7 +49,11 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
         const index = Number(answer) - 1; return Number.isInteger(index) && index >= 0 && index < items.length ? index : null;
       }
       const raw = JSON.stringify({ action, callbackId: callbackId || null, payload: JSON.stringify(payload || {}) });
-      location.href = 'letime-import://bridge/' + encode(raw);
+      bridgeQueue = bridgeQueue.then(() => new Promise(resolve => {
+        location.href = 'letime-import://bridge/' + encode(raw);
+        setTimeout(resolve, 100);
+      }));
+      await bridgeQueue;
       return true;
     } catch (error) { throw String(error && error.message || error); }
   };

@@ -172,7 +172,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.4.0",
+    "version": "1.4.1",
     "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.4.0 自动登录增强）",
     "icon": "building-columns",
     "faIcon": "building-columns",
@@ -246,7 +246,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "exam-calendar",
     "name": "考试日历",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "author": "your-name",
     "icon": "calendar-check",
     "faIcon": "calendar-check",

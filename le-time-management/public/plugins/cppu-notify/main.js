@@ -515,8 +515,13 @@
       loadPage(1);
       return true;
     }
-    // ② 票据失效：有保存的密码就走「验证码识别 + 换图重试」全自动登录
+    // ② 票据失效：有保存的密码就走「验证码识别 + 换图重试」全自动登录。
+    // 残留会话是登录 HTTP 500 的常见来源——恢复的旧 JSESSIONID / 过期票据会让 CAS
+    // 对 POST 里的 execution 校验错乱（服务端异常而非验证码错误）。登录前丢弃
+    // 恢复的会话，用全新 Cookie 走完整链路：登录页 → execution → 验证码 → 提交。
     if (!state.autoLogin || !state.username || !state.savedPassword) return false;
+    state.sid = null;
+    await newSession();
     let lastOcr = "";
     let confirmed = null;
     for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
@@ -544,6 +549,11 @@
         return true;
       } catch (e) {
         if (e && e.fatal) break;         // 密码不对：自动登录无解，转人工表单
+        if (e && e.status >= 500) {
+          // 服务端 5xx：会话可能已被污染，换全新会话再试剩余次数
+          state.sid = null;
+          await newSession();
+        }
         // 其余失败（多半是验证码）：换图重试
       }
     }
@@ -602,8 +612,15 @@
     // 失败后 execution 已失效：重置登录页（新 execution + 新验证码）
     state.pending.execution = await fetchLoginHtml();
     await fetchCaptcha();
-    const diag = `诊断：HTTP ${res.status} · 登录未建立，请核对验证码`;
-    throw { retry: msg || `登录未通过（HTTP ${res.status}），已重置登录页，请重试`, diag };
+    const isServerErr = res.status >= 500;
+    const diag = isServerErr
+      ? `诊断：HTTP ${res.status} · 服务端会话异常（残留会话或 execution 失效），自动登录会换新会话重试`
+      : `诊断：HTTP ${res.status} · 登录未建立，请核对验证码`;
+    throw {
+      retry: msg || `登录未通过（HTTP ${res.status}），已重置登录页，请重试`,
+      diag,
+      status: res.status,
+    };
   }
 
   // 静默续期：先试桥接端；若只剩主 SSO 的 CASTGC，则补走一次主 SSO → bridge 后再换门户票据。

@@ -1234,6 +1234,8 @@
       ".ecal-link{font-size:12px;opacity:.75;cursor:pointer;text-decoration:underline;background:none;border:none;color:inherit;padding:0}" +
       ".ecal-empty{opacity:.7;padding:12px 0}" +
       ".ecal-foot{margin-top:12px;font-size:12px;opacity:.6;line-height:1.7}" +
+      ".ecal-year{margin:14px 2px 6px;padding-bottom:4px;border-bottom:1px dashed var(--border,#E4DFD6);font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--muted,#7E8B94)}" +
+      ".ecal-stale{margin:10px 0;padding:9px 12px;border:1px solid var(--border,#E4DFD6);border-left:3px solid #d9a13b;border-radius:10px;font-size:12px;color:var(--muted,#7E8B94);line-height:1.7}" +
       ".ecal-select{font-size:12px;padding:4px 26px 4px 8px;border-radius:8px;border:1px solid rgba(128,128,128,.4);background:transparent;color:inherit}" +
       ".ecal-flow{margin:10px 0 12px;padding:12px;border:1px solid rgba(128,128,128,.28);border-radius:12px;background:rgba(128,128,128,.04)}" +
       ".ecal-flow-title{font-weight:700;margin-bottom:7px}" +
@@ -1343,6 +1345,15 @@
     }
     el.append(head);
 
+    // 数据陈旧提示：离线采集数据超过 90 天时明确告知，避免把过期日期当准信
+    const staleDays = DATA.collectedForDate ? dayDiff(DATA.collectedForDate, today) : 0;
+    if (staleDays >= 90) {
+      const stale = document.createElement("div");
+      stale.className = "ecal-stale";
+      stale.textContent = "离线数据采集于 " + DATA.collectedForDate + "（" + staleDays + " 天前）。考试日期可能已有调整，报名与准考证信息请以官方公告和考点通知为准。";
+      el.append(stale);
+    }
+
     if (settings.examFilter !== "all") {
       const flow = document.createElement("div");
       flow.className = "ecal-flow";
@@ -1386,7 +1397,17 @@
       el.append(empty);
     }
 
+    let lastYear = "";
     list.forEach(function (ev) {
+      // 年份分组：列表常横跨两三年，按年分段更好扫读
+      const year = ev.date.slice(0, 4);
+      if (year !== lastYear) {
+        lastYear = year;
+        const yr = document.createElement("div");
+        yr.className = "ecal-year";
+        yr.textContent = year + " 年";
+        el.append(yr);
+      }
       const row = document.createElement("div");
       row.className = "ecal-item";
 
