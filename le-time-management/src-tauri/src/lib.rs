@@ -77,8 +77,10 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
   const mount = () => {
     if (document.querySelector('#le-school-import-toolbar')) return;
     const host = document.createElement('div'); host.id = 'le-school-import-toolbar'; host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647';
-    const shadow = host.attachShadow({mode:'open'}); shadow.innerHTML = `<style>*{box-sizing:border-box}div{font:13px system-ui;background:#162b35;color:#fff;border-radius:14px;padding:10px;box-shadow:0 8px 28px #0006;display:flex;align-items:center;gap:8px}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#fff;color:#17333e;font-weight:650}button.primary{background:#61c1d0;color:#092830}span{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style><div><span data-status>登录后进入课表页面</span><button data-back>返回</button><button class="primary" data-import>导入当前课表</button></div>`;
-    shadow.querySelector('[data-back]').onclick = () => history.back();
+    const shadow = host.attachShadow({mode:'open'}); shadow.innerHTML = `<style>*{box-sizing:border-box}div{font:13px system-ui;background:#162b35;color:#fff;border-radius:14px;padding:10px;box-shadow:0 8px 28px #0006;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px)}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#fff;color:#17333e;font-weight:650}button.primary{background:#61c1d0;color:#092830}span{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style><div><span data-status>登录后进入课表页面</span><button data-back>后退</button><button data-close>关闭</button><button class="primary" data-import>导入当前课表</button></div>`;
+    const close = () => { setStatus('正在关闭…'); location.href = 'letime-import://close'; };
+    shadow.querySelector('[data-back]').onclick = () => { if (history.length > 1) history.back(); else close(); };
+    shadow.querySelector('[data-close]').onclick = close;
     shadow.querySelector('[data-import]').onclick = () => { setStatus('正在执行学校适配脚本…'); location.href = 'letime-import://execute'; };
     document.documentElement.appendChild(host);
   };
@@ -108,7 +110,16 @@ fn school_import_bridge(app: &AppHandle, encoded: &str) -> Result<(), String> {
         return Err("教务回传操作不受支持".into());
     }
     app.emit_to("main", "school-import-message", message)
-        .map_err(|e| format!("发送教务回传失败: {e}"))
+        .map_err(|e| format!("发送教务回传失败: {e}"))?;
+    // 适配器的最后一步会调 notifyTaskCompletion，收到它就说明导入流程已经走完 ——
+    // 主动把教务窗口关掉，用户不必自己去找关闭按钮（手机端尤其重要：
+    // 没有标题栏关闭按钮，只有工具栏那一个出口）。
+    if action == "notifyTaskCompletion" {
+        if let Some(window) = app.get_webview_window("school-import") {
+            let _ = window.close();
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -150,6 +161,13 @@ async fn school_import_open(
                 "bridge" => {
                     let encoded = target.path().trim_start_matches('/');
                     let _ = school_import_bridge(&app_for_navigation, encoded);
+                }
+                // 关闭教务窗口。手机端没有窗口标题栏的关闭按钮，系统返回键的行为也由
+                // Tauri 的 Activity 决定，所以必须给工具栏一条自己的退出通道。
+                "close" => {
+                    if let Some(window) = app_for_navigation.get_webview_window("school-import") {
+                        let _ = window.close();
+                    }
                 }
                 _ => {}
             }
