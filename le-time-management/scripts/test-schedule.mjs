@@ -35,6 +35,15 @@ assert.match(nativeGridSource,/gridScrollState\.dispatchRawDelta/,'touchpad delt
 const nativeHostSource=fs.readFileSync(new URL('../../vendor/shiguangschedule/desktopApp/src/main/kotlin/com/xingheyuzhuan/shiguangschedule/LeHost.kt',import.meta.url),'utf8');
 assert.match(nativeHostSource,/requestFocusInWindow\(\)/,'embedded Compose panel must acquire focus for precision touchpad input');
 assert.match(pluginHost,/renderNativeSchedule/,'Tauri plugin host must retain the original native Shiguang interface');
+// 默认安装包（tauri.conf.json）不带 native/shiguang，只有 tauri.shiguang.conf.json 才带；
+// 所以原生渲染必须把插件自带界面当兜底，否则用户只会看到一块「尚未包含运行时」的死面板。
+assert.match(pluginHost,/renderNativeSchedule\(el, ctx, def\.render\)/,
+  'native render must be given the plugin view as fallback');
+const nativeScheduleSource=fs.readFileSync(new URL('../src/nativeSchedule.js',import.meta.url),'utf8');
+assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
+  'missing native runtime must hand the view back to the embedded schedule UI');
+assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
+  'missing native runtime must degrade rather than stop at a placeholder message');
 vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks};\n tide.ui.registerView({'),uiContext);
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);

@@ -1,6 +1,7 @@
 // 任务截止提醒：每个任务可设置截止时刻与多级提前预警。
 import * as S from "./store.js";
 import { toast } from "./ui.js";
+import { playSound } from "./sound.js";
 
 export const PRESET_OFFSETS = [1440, 120, 60, 30, 10, 5, 0];
 export const DEFAULT_REMINDER_SETTINGS = {
@@ -61,28 +62,16 @@ export function dueReminderEvents(tasks, now = Date.now(), windowMs = 90000) {
   return out.sort((a, b) => a.at - b.at);
 }
 
-let audioCtx = null;
+/**
+ * 播放提醒音。音效目录与合成逻辑在 src/sound.js（插件侧的 tide.sound 走的是同一份）。
+ * @param {boolean} test 设置页的「试听」：忽略「启用提醒」开关，且音量有可听见的下限，
+ *   否则用户关着提醒点试听会毫无反应、以为坏了。
+ */
 export async function playReminderSound(test = false) {
   const c = cfg();
-  if (!c.enabled || c.volume <= 0) return;
-  if (c.sound === "custom" && c.customAudio) {
-    try {
-      const a = new Audio(c.customAudio);
-      a.volume = c.volume;
-      await a.play();
-      return;
-    } catch (e) { if (!test) console.warn("自定义提醒音播放失败", e); }
-  }
-  try {
-    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === "suspended") await audioCtx.resume();
-    const gain = audioCtx.createGain();
-    const osc = audioCtx.createOscillator();
-    gain.gain.value = Math.max(0.001, c.volume * 0.16);
-    osc.frequency.value = 880;
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + 0.18);
-  } catch (e) { if (!test) console.warn("提醒音播放失败", e); }
+  const level = test ? Math.max(c.volume, 0.3) : c.volume;
+  if ((!test && !c.enabled) || level <= 0) return "silent";
+  return playSound({ sound: c.sound, volume: level, customAudio: c.customAudio });
 }
 
 function notifyEvent(ev) {

@@ -10,6 +10,7 @@ import { previewSchedule } from "./scheduleConflict.js";
 import { pushInbox } from "./automation.js";
 import { spreadsheetFileToCsv } from "./spreadsheet.js";
 import { renderNativeSchedule } from "./nativeSchedule.js";
+import { BUILTIN_SOUNDS, playSound, resolveSound } from "./sound.js";
 
 const registry = new Map();   // id -> { manifest, source, enabled, error }
 const eventBus = new Map();   // event -> Set<{ pluginId, fn }>
@@ -31,6 +32,7 @@ export const PLUGIN_PERMISSION_LABELS = {
   timeParse: "时间语义解析",
   vault: "加密密钥库（保存密码 / 登录票据等敏感凭据）",
   schoolImport: "学校教务登录与课表脚本导入",
+  sound: "播放提醒音",
 };
 
 function isPermissionAllowed(man, pid, perm) {
@@ -175,8 +177,12 @@ function makeApi(man, source) {
     ui: {
       registerView(def) {
         requirePermission(man, pid, "ui");
+        // 课表：默认安装包不带原版 Compose 运行时，所以原生渲染只做增强 ——
+        // 探测不到运行时就把 def.render（插件自带的课表界面）顶上去，别留死面板。
         pluginViews.push({ ...def, pluginId: pid,
-          ...(pid === "shiguang-schedule" && api.isTauri ? { render: renderNativeSchedule } : {}) });
+          ...(pid === "shiguang-schedule" && api.isTauri
+            ? { render: (el, ctx) => renderNativeSchedule(el, ctx, def.render) }
+            : {}) });
         emitNavChanged();
       },
       registerTaskAction(def) {
@@ -207,6 +213,20 @@ function makeApi(man, source) {
     },
 
     notify: (msg, opts) => { requirePermission(man, pid, "notify"); return toast(`${man.name}：${msg}`, opts); },
+
+    // 提醒声音：与应用设置里的「任务提醒」共用一份音效目录（src/sound.js），
+    // 插件不需要自带音频资源，也不用自己碰 AudioContext。
+    sound: {
+      presets: () => {
+        requirePermission(man, pid, "sound");
+        return BUILTIN_SOUNDS.map(({ id, label, note }) => ({ id, label, note }));
+      },
+      play: ({ sound, volume, customAudio } = {}) => {
+        requirePermission(man, pid, "sound");
+        return playSound({ sound: resolveSound(sound), volume, customAudio });
+      },
+    },
+
     events: {
       on(name, fn) {
         requirePermission(man, pid, "events");

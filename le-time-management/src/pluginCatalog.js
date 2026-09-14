@@ -74,16 +74,17 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "pomodoro",
     "name": "番茄专注",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Le时间管理内置",
     "icon": "hourglass-half",
     "faIcon": "hourglass-half",
-    "description": "环形番茄钟：挑一个任务开始专注，25 分钟后休息。完成的番茄会计入统计，也可通过事件被其他插件感知。",
+    "description": "环形番茄钟：挑一个任务开始专注，25 分钟后休息。专注 / 休息结束可分别设置通知与提示音，提示音支持内置音效或导入自定义音频。完成的番茄会计入统计，也可通过事件被其他插件感知。",
     "permissions": [
       "ui",
       "tasks",
       "storage",
       "notify",
+      "sound",
       "events"
     ],
     "entry": "main.js",

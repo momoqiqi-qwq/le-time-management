@@ -93,7 +93,7 @@ versionCode = major * 10000 + minor * 100 + patch
 cd le-time-management
 node ../tools/sync-version.js --check   # 必须输出 ✓ 三端版本一致：vX.Y.Z
 node ../tools/gen-theme-dark.js --check # 主题深色变体与 styles.css 是否同步
-npm test                                # 必须 16 个测试脚本全过
+npm test                                # 必须全部通过（脚本数会变，看最后一行 PASS: N 个测试脚本全部通过）
 ```
 
 任何一项失败都**不要**继续构建 —— 拿着一个版本不一致的树去打包，产物会带错版本号。

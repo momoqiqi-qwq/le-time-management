@@ -51,6 +51,24 @@ Rust 库先构建，随后用原版 Gradle 工具链构建 `leAndroid`。`androi
 - 浏览器预览仍是早期 JS 原型，不代表原版原生插件。原型存储和原版 Room 存储尚未做迁移。
 - 本轮安装包：`releases/Le-shiguang-native-20260910-x64-setup.exe`、`releases/Le-shiguang-native-20260910-universal.apk`。旧 care 包和 JS 插件 ZIP 不包含本轮原生移植成果。
 
+## 插件视图的回退约定（v0.31.1 起）
+
+原生运行时**只有**走 `tauri.shiguang.conf.json` 的「含原版课表」包才在安装目录里，默认包（`tauri.conf.json`）
+不含它 —— 且 `native/shiguang/` 是 300 MB 级的 jpackage 产物，不可能默认随包分发。
+
+所以 `src/pluginHost.js` 对课表插件的接管是**增强**而不是**替代**：
+
+```js
+{ render: (el, ctx) => renderNativeSchedule(el, ctx, def.render) }
+```
+
+`src/nativeSchedule.js` 探测不到运行时（或探测本身失败）就把视图交回插件自带界面
+（`public/plugins/shiguang-schedule/`，由 `tools/build-schedule-plugin.js` 从 `model.js` + `ui.js` 生成）。
+**不要再改回无条件覆盖** —— 那会让默认包一点开课程表就只有一行提示。回归由
+`le-time-management/scripts/test-native-schedule.mjs` 守住（四条分支：运行时缺失 / 探测失败 / 运行时可用 / 插件界面自身报错）。
+
+两条路的存储**不互通**：插件界面写 `tide.storage`，原版写 Room。见下面「仍须完成的差异」。
+
 ## 合并包修复记录
 
 - Android 版本号使用 1001，可覆盖此前版本号为 1000 的Le时间管理安装，保留应用数据。
