@@ -124,6 +124,10 @@ export function renderShell(root) {
   const view = el("div", { class: "view" });
   const titleEl = el("h1", {});
   const subEl = el("span", { class: "sub" });
+  // v0.39.0：标题卡左侧恢复小框 —— 但不再是 v0.38.2 之前那颗恒装 Le 应用图标的
+  // 42px 死框，而是紧凑尺寸（22px，窄屏 20px），图标跟随当前视图：
+  // 插件页装插件自己的图标（如竞赛消息的奖杯），核心页装各视图导航图标。
+  const titleMark = el("span", { class: "topbar-title-mark", "aria-hidden": "true" });
   const statPill = el("span", { class: "pill" });
   const quickDockToggle = el("button", { class: "top-mini-btn quick-menu-trigger", title: "快捷入口", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
     el("span", { class: "quick-menu-avatar", "aria-hidden": "true" }, "YL"),
@@ -165,9 +169,9 @@ export function renderShell(root) {
   const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
   const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
-        // 标题直接写在顶栏这两条横线之间：原先左侧还有一颗 42×42 的圆角小框
-        // （内含 app 图标），用户反馈「不要小框了，直接把名字写在这里」。删掉小框后
-        // 标题卡自身仍保留边框与底色（v0.37.15「框太多」只针对右侧工具卡）。
+        // v0.39.0：小框回归（紧凑版），图标随视图切换（见 renderTitleMark）；
+        // 右侧标题仍直接写在顶栏这两条横线之间（v0.37.15「框太多」只针对右侧工具卡）。
+        titleMark,
         el("div", { class: "topbar-title-copy", "data-tauri-drag-region": dragRegion }, titleEl, subEl),
       ),
       desktopWindow ? el("span", { class: "window-drag-strip", "data-tauri-drag-region": dragRegion }) : null,
@@ -409,6 +413,20 @@ export function renderShell(root) {
     return b;
   }
 
+  // 标题卡小框的图标跟随当前视图：插件页 → 插件自己的图标（含用户自定义覆盖），
+  // 核心页 → 该视图的导航图标。图标由 pluginDisplayIcon/appIcon 每次新建，直接替换子节点即可。
+  function renderTitleMark(def) {
+    titleMark.replaceChildren();
+    if (!def) return;
+    if (def.pluginView?.pluginId) {
+      titleMark.style.setProperty("--plugin-accent", pluginAccent(def.pluginView.pluginId));
+      titleMark.append(pluginDisplayIcon(def.pluginView.pluginId, def.title));
+    } else {
+      titleMark.style.removeProperty("--plugin-accent");
+      titleMark.append(appIcon(def.id, def.title));
+    }
+  }
+
   function renderStat() {
     const t = S.getState().tasks;
     const open = t.filter((x) => !x.done).length;
@@ -644,6 +662,7 @@ export function renderShell(root) {
       if (!def) return switchTo("market", dirHint);
       titleEl.textContent = def.title;
       subEl.textContent = def.sub ? ` · ${def.sub}` : "";
+      renderTitleMark(def);
       renderNav();
       if (settingsDockBtn) settingsDockBtn.classList.remove("on");
       renderStat();

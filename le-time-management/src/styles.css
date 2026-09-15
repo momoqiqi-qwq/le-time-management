@@ -1599,12 +1599,29 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .topbar-title-card {
   max-width: min(54vw, 520px);
-  /* 原先左侧那颗 42px 小框靠 padding-right:16px 配平；小框删掉后左右对称。 */
   padding: 8px 16px;
 }
-/* 这里原先是 .topbar-title-mark（42×42 圆角小框，内含 app 图标）。
-   用户要求「不要小框了，直接把名字写在顶栏这两条横线之间」→ 已随 DOM 一起删除。
-   负向断言在 scripts/test-android-layout.mjs，别再把它加回来。 */
+/* v0.39.0 · 标题卡小框回归（紧凑版）。前史：v0.38.2 之前是一颗 42×42 死框、
+   恒装 Le 应用图标（在插件页里纯属噪音）→ v0.38.2 整颗删除 → 用户回头表示
+   「想要框，但要小、图标跟插件走」，首版 28px 仍嫌大，再收到 22px。
+   现规格：22px 桌面 / 20px 窄屏，低于标题两行文字的高度，稳稳落在顶栏
+   两条横线之间；插件页装 pluginDisplayIcon（含用户自定义图标覆盖），
+   核心页装各视图导航图标，底色跟随插件强调色。 */
+.topbar-title-mark {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--plugin-accent, var(--deep)) 13%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--plugin-accent, var(--deep)) 18%, transparent);
+}
+.topbar-title-mark .app-icon {
+  width: 15px;
+  height: 15px;
+}
 .topbar-title-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .topbar-title-copy h1 { margin: 0; }
 .topbar-title-copy .sub { display: block; }
@@ -1868,6 +1885,9 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     max-width: none;
   }
   .topbar-title-card { flex: 1 1 auto; min-width: 0; padding: 4px 12px; gap: 8px; }
+  /* 窄屏顶栏 50px：小框同步收到 20px，保证标题卡整体仍落在两条横线之间 */
+  .topbar-title-mark { width: 20px; height: 20px; border-radius: 6px; }
+  .topbar-title-mark .app-icon { width: 13px; height: 13px; }
   .topbar h1 { font-size: 15px; }
   .topbar-title-copy { gap: 1px; }
   .topbar-action-card {

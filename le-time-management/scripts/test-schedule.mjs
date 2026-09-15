@@ -47,7 +47,7 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
@@ -215,12 +215,77 @@ assert.ok(!/#[0-9a-fA-F]{3,6}/.test(icoRule), '图标配色不许硬编码色值
 assert.ok(ui.includes('const setIco=name=>'), '图标助手缺失，说明 settingsContent 里是硬写的 svg');
 console.log('PASS: 「我的」7 个设置条目各带一个主题色图标，图标名全部命中 FA 精灵');
 
+/* ── v0.39.0 一、插件二级页顶栏：返回与标题并成一行 ── */
+// 原来是「返回独占一整行（min-height:38px）+ 12px 外边距 → 标题另起一行再吃 4px」，
+// 叠上 .plugview 20px 与 .sg 20px 的内边距，正文得从约 136px 处才开始，顶上一大片空白。
+// 断言钉**渲染出来的结构**，不是源码里有没有某个字符串 —— 只查字符串会被注释命中。
+const headCount = (html) => [...html.matchAll(/class="screen-head/g)].length;
+const subHeadHtml = fx.subHead('个性化配置');
+assert.equal(headCount(subHeadHtml), 1, `subHead 只能渲染一个顶栏，实际 ${headCount(subHeadHtml)} 个`);
+assert.match(subHeadHtml, /class="screen-head sub-head"/, '顶栏必须带 sub-head 修饰类，返回按钮与标题才会排成一行');
+// 关键结构断言：从顶栏开头到 <h2> 之间不能出现 </div>。
+// 只要退回「返回单个 div + 标题另一个 div」的写法，这段里就会冒出 </div> 而变红。
+const beforeTitle = subHeadHtml.slice(0, subHeadHtml.indexOf('<h2'));
+assert.ok(subHeadHtml.includes('data-action="settings"'), '默认返回目标仍是「我的」页');
+assert.ok(beforeTitle.includes('‹ 返回'), '返回按钮必须在标题之前');
+assert.ok(!beforeTitle.includes('</div>'), '返回按钮与标题必须同处一个顶栏容器，不能各占一个块级 div');
+assert.equal([...subHeadHtml.matchAll(/<h2>/g)].length, 1, '标题只能有一个');
+assert.ok(!subHeadHtml.includes('back-row'), 'subHead 不能再输出独立的返回行');
+// 带副标题 / 自定义返回目标 / 自定义返回文案的调用（选择学校、适配器列表）也要走同一套
+const subWithSub = fx.subHead('选择学校', 'edu', '官方适配索引 · 42 所学校/工具');
+assert.match(subWithSub, /data-action="edu"/, '自定义返回目标要落到 data-action');
+assert.match(subWithSub, /官方适配索引 · 42 所学校\/工具/, '副标题要渲染出来');
+assert.equal(headCount(subWithSub), 1, '带副标题时也只能有一个顶栏');
+assert.ok(!subWithSub.slice(0, subWithSub.indexOf('<h2')).includes('</div>'), '带副标题时返回按钮与标题仍须同行');
+assert.ok(fx.subHead('备份与恢复', 'settings', '', '‹ 返回学校列表').includes('‹ 返回学校列表'), '返回按钮的文案可以自定义');
+// 源码层：旧的返回行标记与样式块要一并清干净，别留死规则
+assert.ok(!ui.includes('back-row'), 'back-row 已废弃（返回行不再独占一行），源码里不该再有它的标记或样式');
+// .sub-head 压的是 .screen-head 的 justify-content / margin，同特异性靠后生效，必须写在它之后
+const headAt = ui.indexOf('.sg .screen-head{');
+const subHeadAt = ui.indexOf('.sg .sub-head{');
+assert.ok(headAt > -1 && subHeadAt > headAt, '.sub-head 必须写在 .screen-head 之后，否则同特异性下压不住 space-between');
+const subHeadRule = ui.match(/\.sg \.sub-head\{([^}]*)\}/)?.[1] || '';
+assert.match(subHeadRule, /justify-content:flex-start/, 'sub-head 要把 space-between 改成 flex-start，否则标题会被顶到右端');
+console.log('PASS: plugin sub-page headers put 「‹ 返回」 and the title on one row');
+
 /* ── v0.33.0 二、课表界面滚轮上下滑动 ── */
 // .schedule-frame 是横向滚动容器。整份 overscroll-behavior:contain 会把纵向滚轮也吃掉，
 // 鼠标停在课表上时外层 .plugview 一点都滚不动 —— 只能约束 x，纵向必须允许串联。
 assert.ok(ui.includes('overscroll-behavior-x:contain'), '课表容器必须保留横向不串联');
 assert.ok(!ui.includes('overscroll-behavior:contain'), '不能再用整份 overscroll-behavior:contain：纵向滚轮会被吃掉，课表界面上滚不动');
 console.log('PASS: schedule view no longer swallows the vertical wheel');
+
+/* ── v0.39.0 二、手机上课表不再被「剩余空间」压扁 ── */
+// 原先 ≤900px 把 .main-stage 的 min-height 写成 0，课表只能吃到顶栏与底部导航之间的
+// 剩余空间：390×844 实测行高只有 55.6px，而用户设定的 --sg-slot-height 是 76px。
+// 改成按「表头 + 全部节次 × 格子高度」算出下限后，行高回到 69.6px、课表长 736px
+// （放不下时由外层 .plugview 正常滚动）。
+assert.match(ui, /@media\(max-width:900px\)[\s\S]*?\.sg \.main-stage\{min-height:calc\(/,
+  '窄屏 .main-stage 必须按节次数 × 格子高度给下限，不能压成 0（会把课表挤扁）');
+assert.ok(!/@media\(max-width:900px\)\{[\s\S]*?\.sg \.main-stage\{min-height:0\}/.test(ui),
+  '不能再把窄屏 .main-stage 的 min-height 写成 0');
+// 提示行已删：连同它的两条样式规则一起清掉，别留死代码
+assert.ok(!ui.includes('schedule-note'), '「左右滑动切换周次…」提示行已按用户要求删除，不应残留标记或样式');
+console.log('PASS: 手机课表按用户设定的格子高度拉长，操作提示行已移除');
+
+/* ── v0.39.0 三、课程块不再有左侧强调色竖边 ── */
+// 用户截图（16×85 的暗色窄条）指着课程块左边那条 3px 实色强调边：
+// 深色模式下它悬在近黑底上，看起来像一圈「小发光边」。按用户要求整个删掉。
+// 色调识别不受影响：还有 --course-bg 底色（强调色 18~22% 混入）和四周 1px 描边
+// （强调色 35% 混入）。彩色（实色卡）模式本来就不靠这条边，不受影响。
+// 断言钉源码字符串（这三条规则只在 styles() 模板里出现一次，无重影锚点）：
+assert.ok(!ui.includes('border-left:3px solid var(--course-accent)'),
+  '课程块 / 样式预览 demo 的 3px 左强调边必须删掉（深色模式下像发光边）');
+assert.ok(!ui.includes('border-left:4px solid var(--course-accent)'),
+  '今日卡片的 4px 左强调边必须删掉');
+assert.ok(!ui.includes('border-left-width:2px'),
+  '窄屏给左强调边配套的 border-left-width:2px 覆盖是死规则，要一并清掉');
+// 底色和描边必须还在，否则课程块失去色调区分
+assert.match(ui, /\.sg \.course-block\{[^}]*border:1px solid color-mix\(in srgb,var\(--course-accent\) 35%,var\(--sg-line\)\)[^}]*background:var\(--course-bg\)/,
+  '课程块必须保留 1px 强调色描边 + --course-bg 底色（删竖边后色调还得看得出来）');
+assert.match(ui, /\.sg \.today-card\{[^}]*background:var\(--course-bg\)/,
+  '今日卡片必须保留 --course-bg 底色');
+console.log('PASS: 课程块/今日卡片的左侧强调色竖边已删除，色调仍由底色+描边承担');
 
 /* ── v0.33.0 三、生成物同步守卫（改了源忘了重建 main.js 是最容易漏的一步） ── */
 const buildCheck = spawnSync(process.execPath, [fileURLToPath(new URL('../../tools/build-schedule-plugin.js', import.meta.url)), '--check'], { cwd: fileURLToPath(new URL('../../', import.meta.url)), encoding: 'utf8' });

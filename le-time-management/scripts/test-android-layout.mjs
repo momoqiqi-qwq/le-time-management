@@ -67,14 +67,28 @@ assert.match(overridden, /border:\s*0/, "顶栏右侧工具外层不能有边框
 assert.match(overridden, /background:\s*none/, "顶栏右侧工具外层不能有底色");
 assert.match(overridden, /box-shadow:\s*none/, "顶栏右侧工具外层不能有阴影");
 
-// v0.38.2 回归：顶栏标题左侧那颗 42×42 小框（.topbar-title-mark）已删除。
-// 用户反馈「不要小框了，直接把名字写在顶栏这两条横线之间」。那颗框里固定装着
-// Le 的四象限 app 图标 —— 在插件页里跟插件毫无关系，纯属噪音。
-assert.ok(!shell.includes("topbar-title-mark"), "顶栏标题左侧的小框已删除，不能再建回来");
-assert.ok(shell.includes('class: "topbar-title-copy"'), "标题卡里必须保留 .topbar-title-copy（标题 + 副标题）");
-assert.doesNotMatch(css, /\.topbar-title-mark\s*\{/, "styles.css 里不能再有 .topbar-title-mark 规则");
-assert.doesNotMatch(css, /\.topbar-title-mark\s+\.app-icon/, "小框删了，它内部 .app-icon 的尺寸规则也要一起走");
-// 小框在时靠 padding-right:16px 配平，现在必须左右对称，否则标题会偏左贴边。
+// v0.39.0 回归：顶栏标题左侧小框回归（紧凑版）。前史：v0.38.2 之前是一颗 42×42
+// 死框、恒装 Le 应用图标，用户嫌噪音删掉（v0.38.2）；随后用户回头表示想要框 ——
+// 但要小（不顶开顶栏两条横线），且图标必须跟随当前视图（插件页 = 插件自己的图标）。
+assert.ok(shell.includes("topbar-title-mark"), "标题卡里必须有 .topbar-title-mark 小框");
+assert.ok(shell.includes("renderTitleMark"), "小框图标必须随视图切换刷新（renderTitleMark）");
+assert.ok(shell.includes("class: \"topbar-title-copy\""), "标题卡里必须保留 .topbar-title-copy（标题 + 副标题）");
+// 紧凑尺寸：桌面 28px / 窄屏 24px。超过 30px 就会顶开标题卡、把卡推出顶栏两条横线
+// （42px 死框当年就是这么压顶的），低于 20px 图标糊成一团。
+const markSizeRules = [...css.matchAll(/\.topbar-title-mark\s*\{([^}]*)\}/g)].map((m) => m[1]);
+assert.ok(markSizeRules.length >= 2, "桌面与窄屏各应有一条 .topbar-title-mark 规则");
+for (const rule of markSizeRules) {
+  const w = Number(rule.match(/width:\s*(\d+)px/)?.[1] ?? 0);
+  const h = Number(rule.match(/height:\s*(\d+)px/)?.[1] ?? 0);
+  assert.ok(w >= 20 && w <= 30, `小框宽度必须是 20~30px 的紧凑规格，实际 ${w}px`);
+  assert.ok(h >= 20 && h <= 30, `小框高度必须是 20~30px 的紧凑规格，实际 ${h}px`);
+  assert.equal(w, h, "小框必须是正方形");
+}
+assert.match(css, /\.topbar-title-mark\s+\.app-icon/, "小框内部的 .app-icon 必须有尺寸规则（否则回落 30px 撑破小框）");
+// 图标来源：插件页走 pluginDisplayIcon（含用户自定义图标覆盖），不许再装死的 app 图标。
+assert.ok(shell.includes("pluginDisplayIcon(def.pluginView.pluginId"), "插件页小框必须装插件自己的图标");
+assert.doesNotMatch(shell, /titleMark\.append\(appIcon\("quadrant"\)\)/, "小框不许恒装四象限应用图标（回到 v0.38.2 之前的老毛病）");
+// 小框左侧占位后，标题卡内边距仍要左右对称，否则标题会偏左贴边。
 // 注意不能只看 `padding:` 简写：`padding: 8px 12px` 配上一条 `padding-right: 16px`
 // 就是不对称的，而简写本身看起来完全正常（第一版断言就是这么漏过的）。
 const titleCardRules = [...css.matchAll(/\.topbar-title-card\s*\{([^}]*)\}/g)].map((m) => m[1]);
