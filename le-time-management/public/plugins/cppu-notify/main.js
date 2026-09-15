@@ -211,7 +211,7 @@
       .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;max-height:0;padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
       .pp-side-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;letter-spacing:.22em;color:var(--ink-3);padding:2px 4px 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
-      .pp-side-acts{display:flex;align-items:center;gap:1px}
+      .pp-side-acts{display:flex;align-items:center;gap:1px;margin-right:7px}
       .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:15px;line-height:1;padding:4px 6px;border-radius:8px;font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
       /* 收起箭头是这一栏的主操作，单独放大加深（13px 灰三角小得看不见——用户实测反馈） */
       .pp-side-sync[data-side-toggle]{font-size:18px;padding:3px 8px;color:var(--ink-2)}

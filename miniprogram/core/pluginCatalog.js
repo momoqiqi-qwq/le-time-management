@@ -173,7 +173,7 @@ const plugins = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.7.2",
+    "version": "1.7.3",
     "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.7.2 校园服务收起箭头放大加深）",
     "icon": "building-columns",
     "faIcon": "building-columns",
