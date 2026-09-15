@@ -1359,26 +1359,34 @@
       // 年份分组
       ".ecal-year{display:flex;align-items:baseline;gap:8px;margin:14px 2px 8px;padding-bottom:4px;border-bottom:1px dashed var(--border,#E4DFD6);font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--muted,#7E8B94)}" +
       ".ecal-year small{font-weight:400;letter-spacing:0;opacity:.85}" +
-      // 行：固定日期列 + 主体 + 操作，三列 grid，日期列宽固定才不会让考试名参差
-      ".ecal-row{display:grid;grid-template-columns:112px minmax(0,1fr) auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--border,#E4DFD6);border-radius:10px;margin-bottom:6px}" +
+      // 行：日期列（定宽，考试名才不会参差）+ 主体 + 操作。
+      // 用 flex-wrap 而不是三列 grid：日期 87px + 间隔 24px + 操作 226px 已经 337px，
+      // 而手机上面板内容盒只有 328px —— 一行物理上装不下。旧版三列 grid 里
+      // 「主体列 minmax(0,1fr)」会被压到 0 宽，主体里的 nowrap 文字直接画到操作列上，
+      // 看起来就是文字互相压住。现在容器不够宽时操作整块换到第二行。
+      ".ecal-row{--ecal-date-w:92px;display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 12px;padding:12px;border:1px solid var(--border,#E4DFD6);border-radius:10px;margin-bottom:6px}" +
       ".ecal-row:hover{border-color:var(--ink-3,#A9B2BA)}" +
       ".ecal-row.est{border-style:dashed;opacity:.72}" +
       ".ecal-row.hot{border-left:3px solid var(--coral,#FF6B6B)}" +
       ".ecal-row.join-next{margin-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}" +
       ".ecal-row.same-day{border-top:none;border-top-left-radius:0;border-top-right-radius:0}" +
-      ".ecal-dcol{min-width:0}" +
-      ".ecal-d1{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      ".ecal-d2{font-size:12px;color:var(--muted,#7E8B94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      // 「日期 + 主体」绑成一个整体再跟操作块一起换行。
+      // 否则 360px 宽时 dcol(92)+bcol(200)+间隙(12)=304 已经超过可用的 298，
+      // flex 会把主体整列挤到第 2 行、日期孤零零占一行，行高从 96 涨到 143。
+      ".ecal-main{flex:1 1 404px;min-width:0;display:flex;align-items:flex-start;gap:12px}" +
+      ".ecal-dcol{flex:0 0 var(--ecal-date-w,92px);min-width:0}" +
+      ".ecal-d1{font-size:13px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".ecal-d2{font-size:12px;line-height:1.5;color:var(--muted,#7E8B94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
       ".ecal-d2.same{opacity:.55}" +
-      ".ecal-bcol{min-width:0}" +
-      ".ecal-l1{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px}" +
-      ".ecal-name{font:inherit;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:0;margin:0;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".ecal-bcol{flex:1 1 0;min-width:0;overflow:hidden}" +
+      ".ecal-l1{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;line-height:1.5}" +
+      ".ecal-name{font:inherit;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:0;margin:0;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}" +
       ".ecal-name:hover{text-decoration:underline;text-underline-offset:3px}" +
       ".ecal-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--mint,#2EC4B6)}" +
       ".ecal-dot.est{background:transparent;box-shadow:inset 0 0 0 1px var(--ink-3,#A9B2BA)}" +
-      ".ecal-tag{flex:none;font-size:12px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--soft,#F7F6F2);color:var(--muted,#7E8B94)}" +
-      ".ecal-l2{font-size:12px;color:var(--muted,#7E8B94);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
-      ".ecal-acts{display:flex;align-items:center;gap:8px}" +
+      ".ecal-tag{display:inline-block;vertical-align:1px;margin-right:6px;font-size:12px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--soft,#F7F6F2);color:var(--muted,#7E8B94)}" +
+      ".ecal-l2{font-size:12px;line-height:1.5;color:var(--muted,#7E8B94);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".ecal-acts{flex:0 0 auto;margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px}" +
       ".ecal-cd{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted,#7E8B94)}" +
       ".ecal-cd.urgent{color:var(--coral,#FF6B6B);font-weight:600}" +
       ".ecal-cd.soon{color:var(--sun,#E3A008);font-weight:600}" +
@@ -1745,21 +1753,22 @@
         nm.addEventListener("click", function () { void openFlow(ev, el); });
         l1.append(nm);
 
+        const l2 = document.createElement("div");
+        l2.className = "ecal-l2";
+        // 类型标签（口试 / 准考证打印 / 分批报名…）挂在 meta 行首，不跟考试名抢同一行：
+        // 标签最宽 72px，和最长 239px 的考试名同处 224px 时，名字会被挤到 134px 只显示 9 个字。
         if (ev.type !== "written") {
           const tag = document.createElement("span");
           tag.className = "ecal-tag";
           tag.textContent = ev.typeName;
-          l1.append(tag);
+          l2.append(tag);
         }
-
-        const l2 = document.createElement("div");
-        l2.className = "ecal-l2";
         const meta = [];
         if (ev.category) meta.push(ev.category);
         if (span > 1 && !isWindow(ev)) meta.push("连续 " + span + " 天");
         if (ev.startTime) meta.push(ev.startTime + "–" + (ev.endTime || ""));
         meta.push(ev.confirmed ? "官方已确认" : "规则推算");
-        l2.textContent = meta.join(" · ");
+        l2.append(document.createTextNode(meta.join(" · ")));
         bcol.append(l1, l2);
 
         const acts = document.createElement("div");
@@ -1797,7 +1806,10 @@
           acts.append(link);
         }
 
-        row.append(dcol, bcol, acts);
+        const main = document.createElement("div");
+        main.className = "ecal-main";
+        main.append(dcol, bcol);
+        row.append(main, acts);
         wrap.append(row);
         rows.push(row);
       });

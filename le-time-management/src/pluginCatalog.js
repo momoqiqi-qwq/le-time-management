@@ -273,7 +273,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "plugin-guide",
     "name": "插件使用说明",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "author": "Le时间管理内置",
     "icon": "circle-question",
     "faIcon": "circle-question",

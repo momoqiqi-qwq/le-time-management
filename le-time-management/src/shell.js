@@ -68,7 +68,9 @@ function moveTopbarPart(source, target, after = false) {
 function viewDef(id) {
   if (id.startsWith("plug:")) {
     const v = pluginViews.find((x) => `plug:${x.id}` === id);
-    return v ? { id, icon: PLUGIN_ICONS[v.pluginId] || v.icon || "puzzle-piece", title: pluginDisplayName(v.pluginId, v.title), sub: getRegistry().find((item) => item.id === v.pluginId)?.manifest?.description?.trim() || v.pluginId, pluginView: v } : null;
+    // 插件视图副标题不放 manifest.description（长简介会把桌面标题卡撑爆、名称被裁），
+    // 顶栏只保留插件名称；核心视图的短文案副标题不受影响
+    return v ? { id, icon: PLUGIN_ICONS[v.pluginId] || v.icon || "puzzle-piece", title: pluginDisplayName(v.pluginId, v.title), sub: "", pluginView: v } : null;
   }
   return VIEWS.find((v) => v.id === id) || VIEWS[0];
 }
@@ -636,7 +638,7 @@ export function renderShell(root) {
       const def = viewDef(targetId);
       if (!def) return switchTo("market", dirHint);
       titleEl.textContent = def.title;
-      subEl.textContent = ` · ${def.sub}`;
+      subEl.textContent = def.sub ? ` · ${def.sub}` : "";
       renderNav();
       if (settingsDockBtn) settingsDockBtn.classList.remove("on");
       renderStat();
