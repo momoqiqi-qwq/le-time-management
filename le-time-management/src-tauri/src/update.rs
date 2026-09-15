@@ -281,10 +281,19 @@ pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> Result<UpdateInfo, S
         return Err(format!("检查更新失败：HTTP {}", status.as_u16()));
     }
 
-    let json: serde_json::Value = response
-        .json()
+    // 🔴 用 text() + serde_json::from_str，不要用 response.json()。
+    // reqwest 的 `json` feature 未启用（Cargo.toml 里 default-features = false，
+    // features 只有 rustls-tls / charset / gzip / cookies），Response::json() 不存在，
+    // 编到这一步会 E0599 直接断构建。`.text()` 是 reqwest 的 base 能力，无需额外 feature。
+    // 这也是本仓库其它地方（lib.rs 的 AI 响应、lan.rs）一致的写法。
+    let body = response
+        .text()
         .await
-        .map_err(|e| format!("版本信息解析失败：{e}"))?;
+        .map_err(|e| format!("版本信息读取失败：{e}"))?;
+    let json: serde_json::Value = serde_json::from_str(&body).map_err(|e| {
+        let brief: String = body.chars().take(300).collect();
+        format!("版本信息解析失败：{e}（原文：{brief}）")
+    })?;
 
     let tag = json["tag_name"].as_str().unwrap_or("").trim().to_string();
     if tag.is_empty() {

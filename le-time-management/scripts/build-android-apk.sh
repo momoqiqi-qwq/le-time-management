@@ -54,7 +54,10 @@ esac
 #        「Le时间管理 · 时间块与四象限」被截断；教务窗口的 label 是有意保留的，只按 android:name 精确删）
 #      · res/xml/file_paths.xml 补 <cache-path>（更新包暂存在 app_cache_dir，要给 FileProvider 共享）
 #    细节与坑见 tools/sync-android-native.js 顶部注释。
-node "$ROOT/../tools/sync-android-native.js"
+#    🔴 用相对路径，不要写 "$ROOT/../tools/..."：上面 `cd "$ROOT"` 之后就在仓库根，
+#    而 ROOT 是 Git Bash 的 POSIX 形态（/e/E-Develop-Project/...），Node 在 Windows 上
+#    解析不了它 —— 前导 `/` 被当成盘根，`/e/E-...` 会变成 `E:\e\E-...` 报 MODULE_NOT_FOUND。
+node "../tools/sync-android-native.js"
 
 # vite emptyOutDir 已设为 false；如需清理 dist 请在构建前手动删除
 # ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）
@@ -85,7 +88,8 @@ done
 
 # 原版课表构建使用它的 AGP/Kotlin 工具链，同时把两套 Activity 放入同一 APK。
 if [ "${TIDE_NATIVE_SCHEDULE:-0}" = "1" ]; then
-  pwsh.exe -NoProfile -File "$ROOT/../tools/build-native-android.ps1" -Configuration Release
+  # 同样用相对路径：$ROOT 是 Git Bash 的 POSIX 形态，pwsh 也解析不了（详见上面 sync-android-native 那段）
+  pwsh.exe -NoProfile -File "../tools/build-native-android.ps1" -Configuration Release
   exit $?
 fi
 
