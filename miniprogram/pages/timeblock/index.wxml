@@ -1,9 +1,32 @@
 <view class="page-body tb">
-  <scroll-view class="view-tabs" scroll-x show-scrollbar="{{false}}">
-    <view class="view-tabs-inner">
-      <view wx:for="{{viewTabs}}" wx:key="id" class="view-tab {{viewMode === item.id ? 'on' : ''}}" data-mode="{{item.id}}" bindtap="onViewTap">{{item.label}}</view>
+  <!-- 视图切换收进展开菜单（v0.38.0）。
+       原来 7 个 tab 横排 + scroll-x，一屏只看得到 4 个半，
+       「卡片时间轴 / 年度甘特 / 阶段甘特」永远藏在滑动条后面。
+       改成「当前样式名 + 展开按钮」，点开列出全部 7 项并带说明。 -->
+  <view class="vt-bar">
+    <text class="vt-lead">时间视图</text>
+    <view class="vt-toggle" hover-class="press" bindtap="onViewMenuToggle">
+      <text class="vt-name">{{viewModeLabel}}</text>
+      <view class="vt-caret {{viewMenuOpen ? 'up' : ''}}"></view>
     </view>
-  </scroll-view>
+  </view>
+  <view wx:if="{{viewMenuOpen}}" class="vt-mask" bindtap="onViewMenuClose"></view>
+  <view wx:if="{{viewMenuOpen}}" class="vt-menu">
+    <view
+      wx:for="{{viewTabs}}"
+      wx:key="id"
+      class="vt-item {{viewMode === item.id ? 'on' : ''}}"
+      data-mode="{{item.id}}"
+      hover-class="press"
+      bindtap="onViewTap"
+    >
+      <view class="vt-item-main">
+        <text class="vt-item-label">{{item.label}}</text>
+        <text class="vt-item-desc">{{item.desc}}</text>
+      </view>
+      <text wx:if="{{viewMode === item.id}}" class="vt-item-check">✓</text>
+    </view>
+  </view>
 
   <view wx:if="{{viewMode === 'day'}}" class="day-view">
   <!-- 长按放置模式提示条 -->
@@ -159,59 +182,77 @@
   </view>
 
   <view wx:elif="{{viewMode === 'wakeup'}}" class="viz-panel wakeup-mini-panel">
-    <view class="viz-head"><text class="vh-title">WakeUp 课表周视图</text><text class="vh-sub">{{wakeupWeekLabel}} · 本周时间块按课表方式排列</text></view>
-    <scroll-view class="wk-mini-scroll" scroll-x>
-      <view class="wk-mini-grid">
-        <view class="wk-mini-timecol">
-          <view class="wk-mini-head">时间</view>
-          <view class="wk-hour" wx:for="{{wakeupHours}}" wx:key="label" style="top:{{item.top + 92}}rpx">{{item.label}}</view>
+    <view class="viz-head">
+      <text class="vh-title">WakeUp 课表</text>
+      <text class="vh-meta">{{wakeupWeekLabel}}</text>
+    </view>
+    <!-- 原为 7 列 × 15 时的横向网格（1740rpx 起），窄屏必须左右滑动才看得全。
+         改成「按天折叠」：默认只展开今天，其余收起。 -->
+    <view class="wk-days">
+      <view wx:for="{{wakeupDays}}" wx:key="date" class="fold {{item.today ? 'is-today' : ''}}">
+        <view class="fold-head" data-key="{{item.date}}" hover-class="press" bindtap="onFoldTap">
+          <view class="fold-title">
+            <text class="fold-name">{{item.name}}</text>
+            <text class="fold-meta">{{item.md}} · {{item.count}} 块 · {{item.sumLabel}}</text>
+          </view>
+          <view class="fold-caret {{item.open ? 'up' : ''}}"></view>
         </view>
-        <view wx:for="{{wakeupDays}}" wx:key="date" class="wk-mini-day {{item.today ? 'today' : ''}}">
-          <view class="wk-mini-head"><text>{{item.name}}</text><text>{{item.md}}</text></view>
-          <view class="wk-mini-lane">
-            <view wx:for="{{wakeupHours}}" wx:key="label" class="wk-mini-line" style="top:{{item.top}}rpx"></view>
-            <view wx:for="{{item.blocks}}" wx:key="id" class="wk-mini-course" style="top:{{item.top}}rpx;height:{{item.height}}rpx;background:{{item.color}}33;border-color:{{item.color}}">
-              <text class="wk-mini-title">{{item.title}}</text><text class="wk-mini-meta">{{item.meta}}</text>
+        <view wx:if="{{item.open}}" class="fold-body wk-days">
+          <view wx:if="{{!item.count}}" class="fold-empty">这一天没有安排</view>
+          <view wx:for="{{item.blocks}}" wx:for-item="b" wx:key="id" class="wk-row cat-{{b.cat}}">
+            <view class="wk-row-time">{{b.timeLabel}}</view>
+            <view class="wk-row-main">
+              <text class="wk-row-title">{{b.title}}</text>
+              <text class="wk-row-meta">{{b.catLabel}}{{b.meta ? ' · ' + b.meta : ''}}</text>
             </view>
           </view>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view wx:elif="{{viewMode === 'milestone'}}" class="viz-panel">
-    <view class="viz-head"><text class="vh-title">里程碑时间轴</text><text class="vh-sub">彩色箭头式阶段时间轴</text></view>
-    <scroll-view class="ms-scroll" scroll-x>
-      <view class="ms-track">
-        <view wx:for="{{visualEvents}}" wx:key="index" class="ms-cell" style="--ms:{{item.color}}">
-          <view class="ms-stage" style="border-color:{{item.color}}">{{item.catLabel}}</view>
-          <view class="ms-vline" style="background:{{item.color}}"></view>
-          <view class="ms-arrow" style="background:{{item.color}}"><text class="ms-year">{{item.year}}</text><text class="ms-md">{{item.md}}</text></view>
-          <view class="ms-pin" style="background:{{item.color}}">●</view>
-          <view class="ms-copy"><text class="ms-title">{{item.title}}</text><text class="ms-sub">{{item.sub}}</text></view>
+    <view class="viz-head"><text class="vh-title">里程碑</text></view>
+    <!-- 原为横向轨道（每格固定 250rpx）→ 纵向时间线 -->
+    <view class="ms-list">
+      <view wx:if="{{!visualEvents.length}}" class="fold-empty">添加带日期的任务或时间块后，这里会自动生成</view>
+      <view wx:for="{{visualEvents}}" wx:key="index" class="ms-item" style="--ms:{{item.color}}">
+        <view class="ms-rail">
+          <view class="ms-node"></view>
+        </view>
+        <view class="ms-card">
+          <view class="ms-row1">
+            <text class="ms-date" style="background:{{item.color}}">{{item.md}}</text>
+            <text class="ms-year-l">{{item.year}}</text>
+          </view>
+          <text class="ms-title">{{item.title}}</text>
+          <text class="ms-sub">{{item.catLabel}} · {{item.sub}}</text>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view wx:elif="{{viewMode === 'chronicle'}}" class="viz-panel">
-    <view class="viz-head"><text class="vh-title">横向时间轴</text><text class="vh-sub">高密度长期事件年表</text></view>
-    <scroll-view class="chron-scroll" scroll-x>
-      <view class="chron-track">
-        <view class="chron-axis"></view>
-        <view wx:for="{{visualEvents}}" wx:key="index" class="chron-event {{item.side}}" style="left:{{40 + index * 220}}rpx;--ec:{{item.color}}">
-          <view class="chron-card"><text class="ct-b">{{item.title}}</text><text>{{item.date}} · {{item.sub}}</text></view>
-          <view class="chron-stem" style="background:{{item.color}}"></view>
-          <view class="chron-dot" style="background:{{item.color}}"></view>
-          <view class="chron-date" style="background:{{item.color}}">{{item.md}}</view>
+    <view class="viz-head"><text class="vh-title">横向时间轴</text></view>
+    <!-- 原为 3900rpx 画布 + 绝对定位左右交错，窄屏文字叠成一团 → 纵向年表 -->
+    <view class="chron-v">
+      <view wx:if="{{!visualEvents.length}}" class="fold-empty">添加带日期的任务或时间块后，这里会自动生成</view>
+      <view wx:for="{{visualEvents}}" wx:key="index" class="chron-v-item {{item.side}}" style="--ec:{{item.color}}">
+        <view class="chron-v-card">
+          <text class="cv-title">{{item.title}}</text>
+          <text class="cv-sub">{{item.date}} · {{item.sub}}</text>
         </view>
+        <view class="chron-v-dot"></view>
+        <text class="chron-v-date" style="background:{{item.color}}">{{item.md}}</text>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view wx:elif="{{viewMode === 'cards'}}" class="viz-panel cards-mobile">
-    <view class="viz-head"><text class="vh-title">卡片时间轴</text><text class="vh-sub">左右交错的阶段说明卡片</text></view>
+    <view class="viz-head"><text class="vh-title">卡片时间轴</text></view>
+    <!-- 原为左右交错（窄屏靠 @media(max-width:340px) 降级成单列）→ 直接单列，不再按屏宽分叉 -->
     <view class="cards-axis"></view>
+    <view wx:if="{{!visualEvents.length}}" class="fold-empty">添加带日期的任务或时间块后，这里会自动生成</view>
     <view wx:for="{{visualEvents}}" wx:key="index" class="timeline-card {{item.side}}" style="--ct:{{item.color}}">
       <view class="tm-card" style="background:{{item.color}}22;border-color:{{item.color}}">
         <text class="tm-date">{{item.date}}</text><text class="tm-title">{{item.title}}</text><text class="tm-sub">{{item.sub}}</text>
@@ -221,27 +262,58 @@
   </view>
 
   <view wx:elif="{{viewMode === 'gantt'}}" class="viz-panel">
-    <view class="viz-head"><text class="vh-title">年度甘特图</text><text class="vh-sub">任务起止映射到 1-12 月</text></view>
-    <scroll-view class="gantt-mobile-scroll" scroll-x>
-      <view class="gantt-mobile">
-        <view class="gm-head"><view class="gm-label">项目 / 任务</view><view wx:for="{{12}}" wx:key="index" class="gm-month">{{index + 1}}月</view></view>
-        <view wx:for="{{visualGantt}}" wx:key="index" class="gm-row">
-          <view class="gm-label"><text class="gm-group">{{item.group}}</text><text>{{item.title}}</text></view>
-          <view class="gm-cells"><view wx:for="{{12}}" wx:key="index" class="gm-cell"></view><view class="gm-bar" style="left:{{item.left}}%;width:{{item.width}}%;background:{{item.color}}">{{item.title}}</view></view>
+    <view class="viz-head"><text class="vh-title">年度甘特</text><text class="vh-meta">{{ganttYear}} 年</text></view>
+    <!-- 原为 12 月 × 月度格 + 320rpx 标签（1900rpx 起）→ 按月折叠 -->
+    <view class="gm-folds">
+      <view wx:if="{{!visualGantt.length}}" class="fold-empty">还没有未完成的任务</view>
+      <view wx:for="{{ganttMonths}}" wx:key="m" class="fold {{item.isNow ? 'is-today' : ''}}">
+        <view class="fold-head" data-key="gm-{{item.m}}" hover-class="press" bindtap="onFoldTap">
+          <view class="fold-title">
+            <text class="fold-name">{{item.m}} 月</text>
+            <text class="fold-meta">{{item.hit.length}} 项进行中</text>
+          </view>
+          <view class="fold-caret {{item.open ? 'up' : ''}}"></view>
+        </view>
+        <view wx:if="{{item.open}}" class="fold-body">
+          <view wx:for="{{item.hit}}" wx:for-item="g" wx:key="index" class="gm-row">
+            <view class="gm-row-head">
+              <text class="gm-row-title">{{g.title}}</text>
+              <text class="gm-row-meta">{{g.group}}</text>
+            </view>
+            <view class="gm-bar-wrap">
+              <view class="gm-bar-fill" style="width:{{g.width}}%;background:{{g.color}}"></view>
+              <text class="gm-bar-range">{{g.rangeLabel}}</text>
+            </view>
+          </view>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 
   <view wx:else class="viz-panel">
-    <view class="viz-head"><text class="vh-title">阶段甘特图</text><text class="vh-sub">按工作 / 学习 / 运动 / 生活 / 休息分泳道</text></view>
-    <scroll-view class="swim-mobile-scroll" scroll-x>
-      <view class="swim-mobile">
-        <view wx:for="{{visualSwim}}" wx:key="cat" class="sm-row">
-          <view class="sm-label cat-{{item.cat}}">{{item.label}}</view>
-          <view class="sm-cells"><view wx:for="{{31}}" wx:key="index" class="sm-cell"></view><view wx:for="{{item.bars}}" wx:key="index" class="sm-bar" style="left:{{item.left}}%;width:{{item.width}}%;background:{{item.color}}">{{item.title}}</view></view>
+    <view class="viz-head"><text class="vh-title">阶段甘特</text><text class="vh-meta">{{swimMonthLabel}}</text></view>
+    <!-- 原为 31 列 × 月度格 + 220rpx 标签（2000rpx 起）→ 按分类折叠 + 占比条 -->
+    <view class="sm-folds">
+      <view wx:for="{{swimCats}}" wx:key="cat" class="fold">
+        <view class="fold-head" data-key="sm-{{item.cat}}" hover-class="press" bindtap="onFoldTap">
+          <view class="fold-title">
+            <text class="fold-name">{{item.label}}</text>
+            <text class="fold-meta">{{item.bars.length}} 块 · {{item.sumLabel}}</text>
+          </view>
+          <view class="fold-caret {{item.open ? 'up' : ''}}"></view>
+        </view>
+        <view wx:if="{{item.open}}" class="fold-body">
+          <view class="sm-meter"><view class="sm-meter-fill" style="width:{{item.pct}}%;background:{{item.color}}"></view><text class="sm-meter-pct">{{item.pct}}%</text></view>
+          <view wx:if="{{!item.bars.length}}" class="fold-empty">本月这个分类还没有安排</view>
+          <view wx:for="{{item.bars}}" wx:for-item="b" wx:key="index" class="sm-item">
+            <text class="sm-item-day">{{b.day}} 日</text>
+            <view class="sm-item-main">
+              <text class="sm-item-title">{{b.title}}</text>
+              <text class="sm-item-dur">{{b.durMin}} 分钟</text>
+            </view>
+          </view>
         </view>
       </view>
-    </scroll-view>
+    </view>
   </view>
 </view>

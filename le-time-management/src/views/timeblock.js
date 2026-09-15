@@ -317,7 +317,12 @@ export function renderTimeblock(container) {
   wrap.append(pool, timeline, aside);
   renderAll();
   const un = S.subscribe(renderAll);
-  container._unsub = () => { un(); clearTimeout(hintTimer); container.classList.remove("tb-root"); };
+  container._unsub = () => {
+    un(); clearTimeout(hintTimer); container.classList.remove("tb-root");
+    // 视图菜单挂在 body 上，离开视图必须收走，否则会残留在其他页面上（实测）。
+    switcher._closeMenu?.();
+    document.querySelectorAll(".time-viewmenu").forEach((m) => m.remove());
+  };
 }
 
 function catOf(t) {

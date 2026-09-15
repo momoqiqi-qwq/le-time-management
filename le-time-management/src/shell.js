@@ -423,7 +423,7 @@ export function renderShell(root) {
     }
   }
 
-  function openSettingsModal() {
+  function openSettingsModal(section = "") {
     document.querySelector(".settings-modal")?._close?.();
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
     const panel = el("section", { class: "settings-modal", role: "dialog", "aria-modal": "true", "aria-label": "设置" },
@@ -438,7 +438,7 @@ export function renderShell(root) {
     panel._close = close;
     document.addEventListener("keydown", onKey);
     document.body.append(mask, panel);
-    renderSettings(panel.querySelector(".settings-modal-body"));
+    renderSettings(panel.querySelector(".settings-modal-body"), { section });
   }
 
   function updateQuickDockToggle() {
@@ -879,6 +879,8 @@ export function renderShell(root) {
   });
   // 捕获/插件可请求跳转视图
   window.addEventListener("tide:navigate", (e) => switchTo(e.detail));
+  // 别处（如更新提示条的「立即更新」）可以直接点名打开设置里的某一节
+  window.addEventListener("tide:open-settings", (e) => openSettingsModal(e.detail?.section || ""));
   switchTo(activeView, undefined, { history: false });
   // Android 返回键的历史栈：必须在首屏视图定下来之后挂（readView 要读到它）。
   // 桌面端没有返回键，但浏览器/WebView 的后退（Alt+←）也走同一条逻辑。

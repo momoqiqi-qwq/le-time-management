@@ -77,7 +77,8 @@ npm run tauri android build -- --apk --target aarch64  # 产出 APK
 
 - SDK/NDK：`D:\Environment\android-sdk`（platform 34/35/36、build-tools 34/35、NDK r27、cmdline-tools）；JDK 21（Adoptium）
 - 环境变量：`JAVA_HOME` / `ANDROID_HOME` / `NDK_HOME` 指向上述路径
-- gen/android 是 gitignore 的生成目录，重新 init 后需要补两处：
+- gen/android 是 gitignore 的生成目录，重新 init 后需要补几处：
+  - **原生 Kotlin + 清单声明**：跑 `node ../tools/sync-android-native.js` 一次即可（事实源是版本化的 `android/README.md` 里说明的镜像目录；它同时会幂等补上 `REQUEST_INSTALL_PACKAGES`、去掉 MainActivity 的 label、补 `file_paths.xml` 的 cache-path）。`scripts/build-android-apk.sh` 也会自动跑，正常不用手工记。
   - `gradle.properties` 加 `android.overridePathCheck=true`（项目路径含中文）
   - release 签名：`gen/android/keystore.properties`（storeFile 指向 `tidebalance/keystore/tidebalance-release.keystore`，alias `tidebalance`，密码见本地 keystore.properties）+ `app/build.gradle.kts` 里读取该文件的 `signingConfigs`（已就位，init 覆盖后需按本文件重加）
   - Gradle 发行版走腾讯镜像：`gradle/wrapper/gradle-wrapper.properties` 的 `distributionUrl`

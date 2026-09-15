@@ -94,6 +94,7 @@ cd le-time-management
 node ../tools/sync-version.js --check   # 必须输出 ✓ 三端版本一致：vX.Y.Z
 node ../tools/gen-theme-dark.js --check # 主题深色变体与 styles.css 是否同步
 node ../tools/build-schedule-plugin.js --check # 课程表插件 main.js 是否与 model.js + ui.js 同步
+node ../tools/sync-android-native.js --check   # Android 原生 Kotlin 与清单声明是否进到 gen/android
 npm test                                # 必须全部通过（脚本数会变，看最后一行 PASS: N 个测试脚本全部通过）
 ```
 
@@ -110,6 +111,7 @@ npm test                                # 必须全部通过（脚本数会变�
 | `package.json` 的 `version` | `node tools/sync-version.js` | 三端版本号（**不含** `package-lock.json`，要手改两处） |
 | `src/styles.css` 的主题令牌 | `node tools/gen-theme-dark.js` | `src/styles/theme-derived.css`、`src/themeDarkPreview.js` |
 | 插件图标清单 | `python tools/gen-plugin-icons.py` | 桌面 + 小程序插件 PNG、`ATTRIBUTION.md` |
+| `le-time-management/android/gradle/` 的原生 Kotlin + 清单声明 | `node tools/sync-android-native.js`（`--check` 只校验） | `src-tauri/gen/android/` 里的 Kotlin、AndroidManifest 权限、`file_paths.xml`。**该目录 gitignored，`tauri android init` 会整个重建 → 手机端功能静默消失** |
 
 **主题配色的分层**：`src/styles.css` 手写浅色 → `tools/lib/theme-tokens.js` 按 WCAG 反解派生深色 →
 `theme-derived.css`（生成物）。所以**每套主题在深色模式下都有自己的一套色板**，

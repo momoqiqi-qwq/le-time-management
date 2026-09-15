@@ -41,18 +41,29 @@ Page({
     awakeLabel: "",
     quick: "",
     viewMode: "day",
+    viewMenuOpen: false,
+    viewModeLabel: "日时间轴",
+    // 说明文案与桌面端 VIEW_META 的第三列对齐（桌面菜单同样渲染 label + 说明）：
+    // 7 个名字里「横向时间轴 / 卡片时间轴 / 年度甘特 / 阶段甘特」光看名字分不清。
     viewTabs: [
-      { id: "day", label: "日时间轴" }, { id: "wakeup", label: "WakeUp课表" }, { id: "milestone", label: "里程碑" },
-      { id: "chronicle", label: "横向时间轴" }, { id: "cards", label: "卡片时间轴" },
-      { id: "gantt", label: "年度甘特" }, { id: "swimlane", label: "阶段甘特" },
+      { id: "day", label: "日时间轴", desc: "当前可拖拽编辑的日程" },
+      { id: "wakeup", label: "WakeUp课表", desc: "按天看这一周的安排" },
+      { id: "milestone", label: "里程碑", desc: "按日期排序的关键节点" },
+      { id: "chronicle", label: "横向时间轴", desc: "高密度事件年表" },
+      { id: "cards", label: "卡片时间轴", desc: "带说明与备注的卡片流" },
+      { id: "gantt", label: "年度甘特", desc: "按项目 / 任务展示跨月计划" },
+      { id: "swimlane", label: "阶段甘特", desc: "按分类查看本月时间占用" },
     ],
-    visualEvents: [], visualGantt: [], visualSwim: [], wakeupDays: [], wakeupHours: [], wakeupWeekLabel: "",
+    visualEvents: [], visualGantt: [], visualSwim: [], wakeupDays: [], wakeupWeekLabel: "",
+    // 折叠状态：key → 是否展开。key 形如 `2026-09-15`（WakeUp 某天）/ `gm-9`（9 月）/ `sm-work`（分类）
+    folds: {},
+    ganttMonths: [], ganttYear: 0, swimCats: [], swimMonthLabel: "",
   },
 
   onLoad() {
     const saved = store.getState().settings.lastDate;
     const mode = store.getState().settings.timeViewModeMini || "day";
-    this.setData({ curDate: saved || store.todayStr(), viewMode: mode });
+    this.setData({ curDate: saved || store.todayStr(), viewMode: mode, viewModeLabel: this.labelOf(mode) });
   },
   onShow() {
     // 捕获页「查看时间块」跳转：先定位到目标日期
@@ -165,6 +176,24 @@ Page({
 
     const visual = this.buildVisualData(curDate);
     const wakeup = this.buildWakeupData(curDate);
+    const gm = this.buildGanttMonths(curDate, visual.gantt);
+    const sm = this.buildSwimCats(curDate, visual.swim);
+    // 折叠默认值只在「该 key 从没被用户动过」时兜底 ——
+    // 否则每次 refresh（订阅触发、定时器触发）都会把用户手动收起的分组又弹开。
+    const folds = { ...this.data.folds };
+    for (const d of wakeup.days) if (!(d.date in folds)) folds[d.date] = d.today;
+    for (const m of gm.months) if (!("gm-" + m.m in folds)) folds["gm-" + m.m] = m.isNow;
+    // 分类默认最多展开 2 个有内容的 —— 5 个全展开在手机上滚不到底，折叠失去意义。
+    let openedCats = 0;
+    for (const c of sm.cats) {
+      if ("sm-" + c.cat in folds) { if (folds["sm-" + c.cat]) openedCats++; continue; }
+      const open = c.bars.length > 0 && openedCats < 2;
+      if (open) openedCats++;
+      folds["sm-" + c.cat] = open;
+    }
+    this._wakeupDays = wakeup.days;
+    this._ganttMonths = gm.months;
+    this._swimCats = sm.cats;
     this.setData({
       hours, blocks: list, pool, nowLine,
       dateLabel, sumLabel,
@@ -177,16 +206,59 @@ Page({
       visualEvents: visual.events,
       visualGantt: visual.gantt,
       visualSwim: visual.swim,
-      wakeupDays: wakeup.days, wakeupHours: wakeup.hours, wakeupWeekLabel: wakeup.label,
+      wakeupDays: wakeup.days, wakeupWeekLabel: wakeup.label,
+      ganttMonths: gm.months, ganttYear: gm.year,
+      swimCats: sm.cats, swimMonthLabel: sm.label,
+      folds,
     });
   },
 
 
   onViewTap(e) {
     const mode = e.currentTarget.dataset.mode || "day";
-    this.setData({ viewMode: mode });
+    this.setData({ viewMode: mode, viewMenuOpen: false, viewModeLabel: this.labelOf(mode) });
     store.getState().settings.timeViewModeMini = mode;
     store.saveNow();
+  },
+
+  labelOf(id) {
+    return (this.data.viewTabs.find((t) => t.id === id) || {}).label || "日时间轴";
+  },
+
+  onViewMenuToggle() {
+    this.setData({ viewMenuOpen: !this.data.viewMenuOpen });
+  },
+
+  onViewMenuClose() {
+    this.setData({ viewMenuOpen: false });
+  },
+
+  /* 通用折叠开关：WakeUp 按天 / 年度甘特按月 / 阶段甘特按分类共用一份状态。
+     用一个 `folds` 字典而不是给每个数组元素塞 `open` 字段 —— 后者要在
+     refresh() 里重建数据时把展开状态再搬回去，容易在重建时被清空。 */
+  onFoldTap(e) {
+    const key = e.currentTarget.dataset.key;
+    if (!key) return;
+    const folds = { ...this.data.folds, [key]: !this.data.folds[key] };
+    this.setData({ folds });
+    // 折叠状态影响的是「哪些条目要渲染成展开」，必须重算派生数据
+    this.applyFolds();
+  },
+
+  /* 把 folds 落到各视图的派生数据上（WXML 里无法读字典的任意 key，只能先摊平）。 */
+  applyFolds() {
+    const f = this.data.folds;
+    const patch = {};
+    if (this._wakeupDays) {
+      patch.wakeupDays = this._wakeupDays.map((d) => ({ ...d, open: !!f[d.date] }));
+    }
+    if (this._ganttMonths) {
+      patch.ganttMonths = this._ganttMonths.map((m) => ({ ...m, open: !!f["gm-" + m.m] }));
+    }
+    if (this._swimCats) {
+      patch.swimCats = this._swimCats.map((c) => ({ ...c, open: !!f["sm-" + c.cat] }));
+    }
+    if (Object.keys(patch).length) this.setData(patch);
   },
 
   buildWakeupData(anchorDate) {
@@ -195,19 +267,78 @@ Page({
     const monday = store.addDays(anchorDate || store.todayStr(), 1 - wd);
     const today = store.todayStr();
     const names = ["周一","周二","周三","周四","周五","周六","周日"];
-    const colors = {work:"#5B9CF6",study:"#7CC9A8",sport:"#F08E8E",life:"#F4BC72",rest:"#A89BD8"};
-    const hours = [];
-    for (let h=7; h<=23; h++) hours.push({label:String(h).padStart(2,"0")+":00", top:(h-7)*64});
     const days = [];
     for (let i=0;i<7;i++) {
-      const date = store.addDays(monday,i), md=date.slice(5).replace("-","/");
-      const blocks = store.blocksOf(date).map((b)=>{
-        const start=store.mmOf(b.start), dur=Number(b.durMin)||30;
-        return {id:b.id,title:b.title,meta:b.start+"-"+store.hhmmOf(start+dur),top:Math.max(0,(start-420)/60*64),height:Math.max(42,dur/60*64-4),color:colors[b.cat]||colors.work};
+      const date = store.addDays(monday,i), md = date.slice(5).replace("-","/");
+      const raw = store.blocksOf(date);
+      // 折叠视图是「按天看日程」，不是「按时间轴看课程格」——
+      // 所以按开始时间排序后输出成行，不再算 top/height 像素。
+      const list = raw.slice().sort((a,b)=>store.mmOf(a.start)-store.mmOf(b.start));
+      const sum = list.reduce((acc,b)=>acc+(Number(b.durMin)||0),0);
+      days.push({
+        name: names[i], date, md, today: date === today,
+        count: list.length,
+        sumLabel: store.durLabel(sum),
+        blocks: list.map((b) => {
+          const dur = Number(b.durMin) || 30;
+          return {
+            id: b.id,
+            title: b.title,
+            cat: b.cat || "work",
+            catLabel: CAT_NAMES[b.cat] || "安排",
+            timeLabel: b.start + " – " + store.hhmmOf(store.mmOf(b.start) + dur),
+            meta: (b.note || "").trim(),
+          };
+        }),
       });
-      days.push({name:names[i],date,md,today:date===today,blocks});
     }
-    return { label:monday+" ～ "+store.addDays(monday,6), hours, days };
+    return { label: monday.slice(5).replace("-","/") + " ～ " + store.addDays(monday,6).slice(5).replace("-","/"), days, monday };
+  },
+
+  /* 年度甘特：只保留有任务的月份 + 当前月，空月份不占屏。
+     12 个月全列出来时，8 个空月份的标题会把有内容的月份推出屏幕（桌面端同款问题，实测）。 */
+  buildGanttMonths(anchorDate, gantt) {
+    const year = +(anchorDate || store.todayStr()).slice(0, 4);
+    const y0 = year + "-01-01";
+    const toDay = (s) => Math.round((new Date(s + "T00:00:00") - new Date(y0 + "T00:00:00")) / 86400000);
+    const nowY = +store.todayStr().slice(0, 4), nowM = +store.todayStr().slice(5, 7);
+    const months = [];
+    for (let m = 1; m <= 12; m++) {
+      const first = toDay(year + "-" + String(m).padStart(2,"0") + "-01");
+      const dim = new Date(year, m, 0).getDate();
+      const last = toDay(year + "-" + String(m).padStart(2,"0") + "-" + String(dim).padStart(2,"0"));
+      const hit = gantt
+        .filter((g) => g._a <= last && g._b >= first)
+        .map((g) => ({ title: g.title, group: g.group, color: g.color, width: g.width, rangeLabel: g.rangeLabel }));
+      if (hit.length || (year === nowY && m === nowM)) months.push({ m, hit, isNow: year === nowY && m === nowM });
+    }
+    return { months, year };
+  },
+
+  /* 阶段甘特：按分类折叠 + 占比条。分类内按日期排序，条宽表示这一天排了多久。 */
+  buildSwimCats(anchorDate, swim) {
+    const [yy, mm] = (anchorDate || store.todayStr()).split("-").map(Number);
+    const catColors = { work:"#168f88", study:"#26b99a", sport:"#e28aa1", life:"#6b8be0", rest:"#5bbf8f" };
+    const dim = new Date(yy, mm, 0).getDate();
+    const raw = ["work", "study", "sport", "life", "rest"].map((cat) => {
+      const src = (swim || []).find((s) => s.cat === cat) || { bars: [] };
+      return { cat, src };
+    });
+    // 占比口径与桌面端一致：**该分类时长 / 当月总时长**（`sum/totalMin`）。
+    // 不要拿条宽去反推 —— 条宽是「一根条占 31 格多少」，凑出来的百分数没有意义。
+    const totalMin = raw.reduce((acc, { src }) => acc + (src.sumMin || 0), 0);
+    const cats = raw.map(({ cat, src }) => {
+      const bars = (src.bars || []).map((b) => {
+        // 折叠列表要显示日期，从 left 反推日序号（left = (d-1)/days*100）
+        const day = Math.round((b.left / 100) * dim) + 1;
+        return { title: b.title, day, color: b.color, durMin: b.durMin || 30 };
+      });
+      bars.sort((a, b) => a.day - b.day);
+      const sumMin = bars.reduce((acc, b) => acc + b.durMin, 0);
+      const pct = totalMin ? Math.round((sumMin / totalMin) * 100) : 0;
+      return { cat, label: CAT_NAMES[cat] || cat, bars, sumLabel: store.durLabel(sumMin), pct, color: catColors[cat] };
+    });
+    return { cats, label: yy + " 年 " + mm + " 月" };
   },
 
   buildVisualData(anchorDate) {
@@ -230,17 +361,27 @@ Page({
       let end = due.slice(0,4) === String(year) ? due : y1;
       const a = Math.max(0, Math.min(364, toDay(start)));
       const b = Math.max(a, Math.min(364, toDay(end)));
-      return { title: t.title, group: t.project || ((t.tags || [])[0]) || "任务", left: a / 365 * 100, width: Math.max(2, (b - a + 1) / 365 * 100), color: colors[i % colors.length] };
+      // `_a` / `_b` 是年内日序号（0~364），月份折叠时用它判断「这条和该月是否相交」。
+      // 不叫 a/b 是为了避免和下面的 left/width 计算混在一起看错。
+      return { title: t.title, group: t.project || ((t.tags || [])[0]) || "任务", left: a / 365 * 100, width: Math.max(2, (b - a + 1) / 365 * 100), color: colors[i % colors.length], _a: a, _b: b, rangeLabel: start.slice(5).replace("-","/") + " → " + end.slice(5).replace("-","/") };
     });
 
     const [yy, mm] = (anchorDate || store.todayStr()).split("-").map(Number);
     const days = new Date(yy, mm, 0).getDate();
-    const swim = ["work", "study", "sport", "life", "rest"].map((cat, ci) => ({
-      cat, label: catNames[cat], bars: (st.blocks || []).filter((b) => b.cat === cat && b.date.slice(0,7) === String(yy) + "-" + String(mm).padStart(2,"0")).map((b, i) => {
-        const d = +b.date.slice(8,10);
-        return { title: b.title, left: (d - 1) / days * 100, width: Math.max(7, Math.min(26, b.durMin / 8)), color: colors[(ci + i) % colors.length] };
-      })
-    }));
+    const swim = ["work", "study", "sport", "life", "rest"].map((cat, ci) => {
+      const bars = (st.blocks || [])
+        .filter((b) => b.cat === cat && b.date.slice(0,7) === String(yy) + "-" + String(mm).padStart(2,"0"))
+        .map((b, i) => ({
+          title: b.title,
+          left: (+b.date.slice(8,10) - 1) / days * 100,
+          width: Math.max(7, Math.min(26, b.durMin / 8)),
+          color: colors[(ci + i) % colors.length],
+          // durMin 要带上：分类占比按「时长 / 当月总时长」算（与桌面端同口径），
+          // 拿条宽反推出来的百分数没有意义。
+          durMin: Number(b.durMin) || 0,
+        }));
+      return { cat, label: catNames[cat], bars, sumMin: bars.reduce((a, b) => a + b.durMin, 0) };
+    });
     return { events: ve, gantt, swim };
   },
   calcNowLine() {

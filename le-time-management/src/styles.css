@@ -1059,24 +1059,60 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .tb-shell > .tb-wrap { flex: 1; min-height: 0; }
 .time-viewbar {
-  flex: none; display: flex; align-items: center; gap: 7px; padding: 12px 18px 0;
-  overflow-x: auto; scrollbar-width: thin; background: transparent;
+  flex: none; display: flex; align-items: center; gap: 9px; padding: 12px 18px 0;
+  background: transparent;
 }
-.time-viewbtn {
-  flex: none; border: 1px solid var(--line); background: rgba(255,255,255,.72); color: var(--ink-2);
-  border-radius: 10px 10px 4px 4px; padding: 8px 13px; font-size: 12px; font-weight: 600;
-  box-shadow: 0 1px 2px rgba(34,48,58,.04); transition: .16s ease;
+.time-viewlead { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+/* 视图切换收进「当前样式名 + 展开」按钮：7 个 chips 平铺会横向溢出，
+   手机上末尾几个永远看不见。菜单挂 body，此处只管触发器外观。 */
+.time-viewtoggle {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 7px 13px;
+  border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink);
+  font-size: 13px; font-weight: 700; box-shadow: var(--shadow); transition: .16s ease;
 }
-.time-viewbtn:hover { color: var(--ink); transform: translateY(-1px); }
-.time-viewbtn.on { color: var(--deep); background: var(--panel); border-color: color-mix(in srgb, var(--deep) 28%, var(--line)); box-shadow: inset 0 -2px 0 var(--deep); }
+.time-viewtoggle:hover { border-color: color-mix(in srgb, var(--deep) 34%, var(--line)); }
+.time-viewtoggle[aria-expanded="true"] { border-color: var(--deep); box-shadow: inset 0 -2px 0 var(--deep); }
+.time-viewcaret {
+  width: 0; height: 0; flex: none; border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-top: 6px solid var(--ink-3); transition: transform .16s ease;
+}
+.time-viewtoggle[aria-expanded="true"] .time-viewcaret { transform: rotate(180deg); border-top-color: var(--deep); }
+.time-viewmenu {
+  position: fixed; z-index: 90; width: min(268px, calc(100vw - 20px));
+  display: grid; gap: 2px; padding: 7px; border: 1px solid var(--line); border-radius: 15px;
+  background: var(--panel); box-shadow: var(--shadow-lg, 0 16px 36px rgba(18,44,54,.2));
+}
+.time-viewmenu[hidden] { display: none; }
+.time-viewitem {
+  display: grid; gap: 2px; text-align: left; padding: 9px 11px; min-height: 44px;
+  border: 0; border-radius: 11px; background: transparent; color: var(--ink);
+}
+.time-viewitem:hover { background: var(--paper); }
+.time-viewitem b { font-size: 13px; font-weight: 700; }
+.time-viewitem span { font-size: 11px; color: var(--ink-2); line-height: 1.45; }
+.time-viewitem.on { background: color-mix(in srgb, var(--deep) 10%, var(--panel)); }
+.time-viewitem.on b { color: var(--deep); }
+.time-viewitem.on::after { content: "✓"; position: absolute; }
 .time-alt-host { flex: 1; min-height: 0; overflow: auto; padding: 12px 18px 20px; }
+/* 时间视图面板的标题条：只保留「样式名」这一条信息。
+   原来下面还有一行「参考箭头阶段图：…」的说明文案，纯占位、不提供操作价值，
+   且每种视图各占一行高度 —— 已全部删除（v0.37.19）。 */
 .tv-panel { min-height: 100%; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 18px; box-shadow: var(--shadow); overflow: hidden; }
-.tv-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid var(--line-soft); }
-.tv-head h2 { font-size: 17px; margin: 0 0 4px; }
+.tv-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 22px; border-bottom: 1px solid var(--line-soft); }
+.tv-head h2 { font-size: 17px; margin: 0; }
 .tv-head p { margin: 0; font-size: 11.5px; color: var(--ink-2); line-height: 1.55; }
 .tv-empty { min-height: 360px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 7px; color: var(--ink-2); text-align: center; }
 .tv-empty-icon { font-size: 40px; color: var(--ink-3); }
 .tv-empty span { font-size: 12px; color: var(--ink-3); }
+
+/* ═══════════ 可折叠分组（.tv-fold）═══════════
+   手机端用来把「一周 7 天 / 一年 12 个月 / 5 个分类」分组收放。
+   桌面端一律强制展开，且用 display:contents 拆掉 <details>/<summary> 这层盒子 ——
+   否则 <details> 会成为 flex/grid item，把现有的年月网格布局整个改掉。
+   （桌面外观必须与改造前逐像素一致。） */
+.tv-fold { display: contents; }
+.tv-fold-head { display: none; }
+.tv-fold-body { display: contents; }
 
 /* 1. 彩色箭头式里程碑：对应参考图 1 */
 .milestone-scroll { overflow-x: auto; padding: 44px 18px 36px; }
@@ -1144,6 +1180,10 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .gantt-cells > i { border-right:1px solid var(--line-soft); }
 .gantt-bar { position:absolute; top:9px; height:29px; border-radius:2px; color:var(--on-accent); font-size:10.5px; line-height:29px; padding:0 9px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; box-shadow:0 1px 4px rgba(34,48,58,.12); min-width:12px; }
 
+/* 手机专用容器：基础态就隐藏，只在 ≤760px 打开。
+   写在媒体查询外，避免首帧（媒体查询尚未生效时）两端布局同时出现。 */
+.wakeup-mobile, .chronicle-vertical, .gantt-monthly, .swim-mobile { display: none; }
+
 /* 5. 分类泳道甘特：对应参考图 5 */
 .swim-scroll { overflow:auto; padding:22px 20px 36px; }
 .swim-grid { min-width:1250px; border:1px solid #d9e1e2; }
@@ -1156,18 +1196,179 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .swim-cells > i { border-left:1px solid #d5e0e1; }
 .swim-bar { position:absolute; top:28px; height:32px; min-width:48px; max-width:320px; color:white; font-size:10.5px; line-height:32px; padding:0 9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 3px rgba(0,0,0,.08); }
 
+/* ═══════════════════════════════════════════════════════════════
+   窄屏（≤760px）时间视图适配
+   ───────────────────────────────────────────────────────────────
+   改造前的问题：每个视图都靠硬编码 min-width 撑开、交给外层横向滚动 ——
+   WakeUp 900px / 年表 1500px / 年度甘特 1120px / 泳道 1250px。
+   横向滚动只是「能滚」，不是「适配」：年表 1500px 画布里 150px 的卡片
+   还在同一水平线上左右交错，滚到哪都是一团叠字（用户实测截图）。
+   现在按视图性质换布局：
+     · 表格式（WakeUp / 年度甘特 / 泳道）→ 按天/按月/按分类折叠的分组列表
+     · 轴式（年表）→ 横向年表改纵向年表
+     · 卡片式（卡片时间轴）→ 保留单列 + 中轴，收紧尺寸
+     · 轨道式（里程碑）→ 固定宽度轨道改纵向铺满
+   所有规则都只在这里生效，桌面端外观完全不变。 */
 @media (max-width: 760px) {
-  .time-viewbar { padding:10px 10px 0; gap:6px; }
-  .time-viewbtn { padding:8px 11px; font-size:11px; }
-  .time-alt-host { padding:10px; }
-  .tv-head { padding:15px 16px 12px; }
+  .time-viewbar { padding:10px 10px 0; }
+  .time-viewtoggle { width:100%; justify-content:space-between; }
+  .time-viewlead { display:none; }
+  .time-alt-host { padding:10px 10px calc(10px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  .tv-head { padding:12px 16px; }
   .tv-head h2 { font-size:15px; }
-  .ct-item, .ct-item.right { width:100%; margin-left:0; padding-left:58px; padding-right:0; justify-content:flex-start; }
-  .card-timeline::before { left:24px; }
-  .ct-item.left .ct-link, .ct-item.right .ct-link { left:24px; right:auto; width:34px; }
-  .ct-card { width:min(100%, 330px); }
+  .tv-head p { font-size:11px; }
+  .tv-panel { border-radius:14px; }
+  .tv-empty { min-height:240px; padding:0 18px; }
+
+  /* ── 折叠分组真正生效 ── */
+  .tv-fold { display:block; border:1px solid var(--line-soft); border-radius:12px; background:var(--panel); overflow:hidden; }
+  .tv-fold + .tv-fold { margin-top:7px; }
+  .tv-fold > summary { list-style:none; }
+  .tv-fold > summary::-webkit-details-marker { display:none; }
+  .tv-fold-head {
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    min-height:48px; padding:11px 13px; cursor:pointer; user-select:none;
+  }
+  .tv-fold-title { font-size:12.5px; font-weight:700; color:var(--ink); }
+  .tv-fold-caret {
+    width:0; height:0; flex:none; border-left:5px solid transparent; border-right:5px solid transparent;
+    border-top:6px solid var(--ink-3); transition:transform .16s ease;
+  }
+  .tv-fold[open] .tv-fold-caret { transform:rotate(180deg); }
+  .tv-fold-body { display:block; padding:0 13px 12px; }
+  .tv-fold.is-today { border-color:color-mix(in srgb, var(--deep) 38%, var(--line)); }
+  .tv-fold.is-today .tv-fold-title { color:var(--deep); }
+  .tv-fold-cat .tv-fold-title { color:var(--cat, var(--ink)); }
+
+  /* ── WakeUp 课表：网格 → 按天分组 ── */
+  .wakeup-scroll { display:none; }
+  .wakeup-mobile { display:block; padding:10px 12px 16px; }
+  .wm-item {
+    display:flex; gap:11px; align-items:flex-start; padding:9px 0;
+    border-top:1px solid var(--line-soft);
+  }
+  .wm-item:first-child { border-top:0; }
+  .wm-time {
+    flex:none; width:52px; white-space:pre-line; font-size:10.5px; font-weight:700;
+    color:var(--wk, var(--deep)); font-variant-numeric:tabular-nums; line-height:1.35;
+    border-left:3px solid var(--wk, var(--deep)); padding-left:7px;
+  }
+  .wm-copy { min-width:0; display:grid; gap:2px; }
+  .wm-copy b { font-size:12.5px; line-height:1.4; overflow-wrap:anywhere; }
+  .wm-copy span { font-size:11px; color:var(--ink-2); overflow-wrap:anywhere; }
+  .wm-none { margin:0; padding:8px 0; font-size:11.5px; color:var(--ink-3); }
+  .wk-tip { margin:0 12px 16px; font-size:11.5px; }
+
+  /* ── 里程碑：横向轨道 → 纵向铺满 ── */
+  .milestone-scroll { overflow:visible; padding:14px 14px 20px; }
+  .milestone-track { display:grid; min-width:0; gap:11px; }
+  .ms-cell { width:auto; min-height:0; text-align:left; padding-left:14px; border-left:3px solid var(--ms); }
+  .ms-stage {
+    margin:0 0 8px; min-height:0; border-radius:7px; justify-content:flex-start;
+    padding:6px 11px; font-size:12.5px; border-bottom:0;
+    border-left:0;
+  }
+  .ms-line { display:none; }
+  .ms-arrow {
+    height:40px; margin:0 0 9px; border-radius:8px; clip-path:none;
+    justify-content:flex-start; padding:0 13px; gap:8px;
+  }
+  .ms-arrow b { font-size:17px; }
+  .ms-arrow span { font-size:11px; }
+  .ms-pin { display:none; }
+  .ms-copy { padding:0; gap:4px; }
+  .ms-copy b { font-size:13px; }
+  .ms-copy span { font-size:11px; }
+
+  /* ── 年表：横向画布 → 纵向中轴 ── */
+  .chronicle-scroll { display:none; }
+  .chronicle-vertical { position:relative; display:block; padding:14px 12px 18px 22px; }
+  .chronicle-vertical::before {
+    content:""; position:absolute; left:9px; top:14px; bottom:18px; width:2px;
+    background:linear-gradient(180deg,#b70e2b,#e64f8d,#d346b0,#5944ca,#2465da,#19a45e);
+    opacity:.75; border-radius:2px;
+  }
+  .cv-item { position:relative; display:grid; gap:6px; padding:0 0 14px 0; }
+  .cv-item:last-child { padding-bottom:0; }
+  .cv-item::before {
+    content:""; position:absolute; left:-17px; top:6px; width:9px; height:9px; border-radius:50%;
+    background:var(--ec); box-shadow:0 0 0 2px var(--panel);
+  }
+  .cv-date {
+    justify-self:start; background:var(--ec); color:var(--on-accent); font-size:10px; font-weight:700;
+    padding:2px 7px; border-radius:4px; font-variant-numeric:tabular-nums;
+  }
+  .cv-card {
+    border:1px solid var(--line-soft); border-left:3px solid var(--ec); border-radius:10px;
+    background:var(--panel); padding:9px 11px; display:grid; gap:3px;
+  }
+  .cv-card b { font-size:12.5px; line-height:1.4; overflow-wrap:anywhere; }
+  .cv-card span { font-size:11px; color:var(--ink-2); overflow-wrap:anywhere; }
+
+  /* ── 卡片时间轴：收紧单列 ──
+     .card-timeline 带 `margin:34px auto`，窄屏若只覆盖左右 margin，box 会按
+     「宽度 100% + 左右 margin 14px」算出 100%+28px ⇒ 向右溢出 13px（实测）。
+     这里统一交给 padding，margin 归零，取消掉一切横向溢出源。 */
+  .card-timeline { width:auto; margin:16px 0 22px; padding:0 14px 0 0; }
+  .ct-item, .ct-item.right { width:100%; margin-left:0; padding-left:46px; padding-right:0; justify-content:flex-start; min-height:0; }
+  .card-timeline::before { left:11px; }
+  .ct-item.left .ct-link, .ct-item.right .ct-link { left:11px; right:auto; width:26px; top:30px; }
+  .ct-card { width:100%; max-width:100%; border-radius:12px; padding:12px 14px; }
+  .ct-date { font-size:11.5px; font-weight:700; letter-spacing:.02em; opacity:.85; margin-bottom:3px; }
+  .ct-card h3 { font-size:13.5px; margin:0 0 6px; overflow-wrap:anywhere; }
+  .ct-card p { font-size:11.5px; line-height:1.6; }
   .ct-item.left .ct-link i, .ct-item.right .ct-link span { left:-4px; right:auto; }
   .ct-item.left .ct-link span, .ct-item.right .ct-link i { right:-5px; left:auto; }
+
+  /* ── 年度甘特：整年网格 → 按月折叠 ── */
+  .gantt-scroll { display:none; }
+  .gantt-monthly { display:block; padding:10px 12px 16px; }
+  .gm-item { display:grid; gap:5px; padding:9px 0; border-top:1px solid var(--line-soft); }
+  .gm-item:first-child { border-top:0; }
+  .gm-copy { display:grid; gap:2px; min-width:0; }
+  .gm-copy b { font-size:10.5px; color:var(--ink-3); font-weight:700; }
+  .gm-copy span { font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+  /* 日刻度条：用色带表示起止区间，宽度用 --days 归一。
+     日期范围文字放在条**下方右侧**，不放条内 —— 条宽度随起止日期变化，
+     放到条里遇到跨满整月的长条就会压住颜色（实测「11 → 30 日」被盖住）。 */
+  .gm-track {
+    position:relative; height:24px; border-radius:6px; overflow:hidden;
+    background:color-mix(in srgb, var(--paper) 92%, var(--panel));
+    box-shadow:inset 0 0 0 1px var(--line-soft);
+  }
+  .gm-track .gm-span {
+    position:absolute; top:5px; height:13px; border-radius:3px; background:var(--gm);
+    left:calc((var(--gm-from) - 1) / var(--days) * 100%);
+    width:calc((var(--gm-to) - var(--gm-from) + 1) / var(--days) * 100%);
+    min-width:6px;
+  }
+  .gm-track small {
+    position:absolute; right:6px; bottom:1px;
+    font-size:9px; font-weight:700; color:var(--ink-2); font-variant-numeric:tabular-nums;
+    text-shadow:0 1px 2px var(--panel), 0 -1px 2px var(--panel), 1px 0 2px var(--panel), -1px 0 2px var(--panel);
+  }
+
+  /* ── 阶段甘特：泳道网格 → 分类折叠 ── */
+  .swim-scroll { display:none; }
+  .swim-mobile { display:block; padding:10px 12px 16px; }
+  .sm-meter {
+    display:flex; align-items:center; gap:8px; margin:2px 0 6px;
+    height:16px; position:relative;
+  }
+  .sm-meter > i { height:8px; border-radius:4px; min-width:3px; }
+  .sm-meter > span { font-size:10.5px; font-weight:700; color:var(--ink-2); font-variant-numeric:tabular-nums; }
+  .sm-item { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--line-soft); }
+  .sm-date {
+    flex:none; width:44px; font-size:10.5px; font-weight:700; color:var(--cat, var(--deep));
+    font-variant-numeric:tabular-nums; padding-top:1px;
+  }
+  .sm-copy { min-width:0; display:grid; gap:2px; }
+  .sm-copy b { font-size:12.5px; line-height:1.4; overflow-wrap:anywhere; }
+  .sm-copy span { font-size:11px; color:var(--ink-2); }
+}
+
+@media (min-width: 761px) {
+  .wakeup-mobile, .chronicle-vertical, .gantt-monthly, .swim-mobile { display:none !important; }
 }
 
 /* v0.11.0 数据中心 / 收件箱 / 自动化 */
@@ -1240,7 +1441,10 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .wk-course { margin:4px; padding:8px 7px; border-radius:10px; background:color-mix(in srgb,var(--wk) 24%,var(--panel)); border:1px solid color-mix(in srgb,var(--wk) 58%,transparent); border-left:4px solid var(--wk); box-shadow:0 2px 8px color-mix(in srgb,var(--wk) 12%,transparent); z-index:3; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:0; }
 .wk-course b{font-size:12px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.wk-course span{font-size:10.5px;color:var(--ink-2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.wk-course small{font-size:9.5px;color:var(--ink-3);margin-top:3px;white-space:nowrap}
 .wk-tip { margin:0 18px 20px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--sun) 9%,var(--panel));color:var(--ink-2);font-size:12px; }
-@media(max-width:760px){.wakeup-scroll{padding:12px 10px 24px}.wakeup-grid{min-width:790px;grid-template-columns:58px repeat(7,minmax(100px,1fr));grid-template-rows:58px repeat(var(--slot-count),66px)}.wk-course{margin:3px;padding:6px 5px}.wk-slot span{font-size:9px}}
+/* v0.37.20：这里原有 `@media(max-width:760px){.wakeup-scroll{...}.wakeup-grid{min-width:790px}...}`。
+   窄屏已改为「按天折叠」的手机布局（见文件上方 .wakeup-mobile），
+   .wakeup-scroll 在 ≤760px 是 display:none，这些为「横向滚动的 790px 网格」调的
+   padding / min-width 已全部作用不到，属死声明，删掉以免误导后来者。 */
 
 /* ═══════════════════════════════════════════════════════════
    v0.11.3 · 设置中心与界面偏好
@@ -2721,4 +2925,82 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .rail-bottom > .settings-icon-button { width: 100%; margin: 0; }
   .rail-bottom > .settings-icon-button .ic { width: var(--nav-ic, 22px); height: var(--nav-ic, 22px); }
   .rail-bottom > .settings-icon-button .ic .app-icon { width: 15px; height: 15px; }
+}
+
+/* v0.38.0 应用内自动更新：左下角提示条 + 「设置 › 关于 › 软件更新」面板。
+   全部走主题令牌（--panel/--ink/--line/--deep…），所以深色模式下自动成立，
+   不要再加 [data-theme-mode="dark"] 覆盖 —— 那会让「跟随系统」的主题漏掉。 */
+.update-toast {
+  position: fixed;
+  /* 左下角：右下角已被 #toasts 占用（z-index 100），挤在一起会互相盖住。
+     z-index 低于设置弹窗（1900/1901），用户打开设置后提示条自动沉到后面去。 */
+  left: 22px;
+  bottom: 22px;
+  z-index: 1890;
+  width: min(340px, calc(100vw - 44px));
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 14px 38px color-mix(in srgb, var(--deep) 22%, transparent);
+  animation: update-toast-in .22s cubic-bezier(.22,.8,.22,1);
+}
+@keyframes update-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .update-toast { animation: none; } }
+.update-toast-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.update-toast-head b { font-size: 13.5px; }
+.update-toast-x {
+  flex: none; width: 22px; height: 22px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--ink-3); font-size: 15px; line-height: 1; cursor: pointer;
+}
+.update-toast-x:hover { background: color-mix(in srgb, var(--deep) 8%, var(--panel)); color: var(--ink); }
+.update-toast-note { margin: 5px 0 11px; font-size: 12px; color: var(--ink-2); }
+.update-toast-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+
+/* 设置 › 关于 › 软件更新（面板宿主 .update-panel 无样式，
+   两个开关行复用全局 .setting-row，无需额外规则） */
+/* [hidden] 兜底：作者样式里写了 display 的元素会把 UA 的 `[hidden]{display:none}` 压过去
+   （两者同为 0,1,0 特异性，作者样式优先），于是 hidden 属性形同虚设 —— 探针实测过：
+   .update-progress 与 .setting-row 在 hidden=true 时 computed display 仍是 flex。
+   症状是「不下载也一直挂着一条空的进度条」和「没有忽略记录却显示『已忽略的版本』空行」。
+   （同类坑见 `.settings-acc[hidden]`，那里的 !important 也是这个原因。） */
+.update-progress[hidden],
+.update-notes[hidden],
+.setting-row[hidden] { display: none !important; }
+.update-status { padding: 10px 0 2px; font-size: 12.5px; color: var(--ink-2); }
+.update-status.is-error { color: var(--danger); }
+.update-progress { display: flex; align-items: center; gap: 10px; padding: 8px 0 4px; }
+.update-progress-track {
+  flex: 1; min-width: 0; height: 8px; border-radius: 99px; overflow: hidden;
+  background: color-mix(in srgb, var(--deep) 12%, var(--paper, var(--panel)));
+}
+.update-progress-fill { width: 0; height: 100%; border-radius: 99px; background: var(--deep); transition: width .18s linear; }
+.update-progress-text { flex: none; min-width: 40px; text-align: right; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.update-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 2px; }
+.update-actions .btn:disabled { opacity: .45; cursor: not-allowed; }
+.update-notes { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line-soft); }
+.update-notes summary { font-size: 12.5px; font-weight: 700; color: var(--ink-2); cursor: pointer; }
+.update-notes-body {
+  margin: 9px 0 0; padding: 10px 12px; max-height: 240px; overflow: auto;
+  border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--deep) 4%, var(--panel));
+  font: inherit; font-size: 12px; line-height: 1.65; color: var(--ink-2);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.update-skip { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
+
+@media (max-width: 760px) {
+  /* 手机上左下角会和底部导航挤在一起；改成整宽横幅。
+     ⚠️ 底距必须抬到导航上方（和 #toasts 同一高度 86px = 导航 62px + 间距），
+     原来写 bottom:12px 时横幅是**压在底部导航上**的 —— 提示条要用户点按钮才消失，
+     等于把那会儿的导航整条挡住（390px 截图实测）。sab 用双路写法：WebView 不实现 env()。 */
+  .update-toast {
+    left: 12px; right: 12px;
+    bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px)));
+    width: auto;
+    padding: 12px 13px;
+  }
+  .update-toast-actions .btn { flex: 1 1 auto; min-height: 34px; }
+  .update-actions { flex-direction: column; }
+  .update-actions .btn { width: 100%; min-height: 34px; }
 }
