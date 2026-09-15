@@ -210,6 +210,11 @@ function makeApi(man, source) {
         requirePermission(man, pid, "ui");
         return spreadsheetFileToCsv(file);
       },
+      // 文本真正落盘到系统下载目录（返回完整路径）。<a download> 在 Tauri WebView 里不可靠
+      async saveText(filename, text) {
+        requirePermission(man, pid, "ui");
+        return api.saveDownload(String(filename || ""), String(text ?? ""));
+      },
     },
 
     notify: (msg, opts) => { requirePermission(man, pid, "notify"); return toast(`${man.name}：${msg}`, opts); },

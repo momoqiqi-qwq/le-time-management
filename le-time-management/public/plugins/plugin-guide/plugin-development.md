@@ -92,9 +92,12 @@ const count = await tide.storage.get("count", 0);
 ```js
 const cfg = await tide.assets.json("data/config.json");
 const text = await tide.assets.text("README.txt");
+// 把文本真正保存到系统下载目录（重名自动加序号），返回落盘的完整路径
+const path = await tide.assets.saveText("导出说明.md", text);
 ```
 
 资源路径必须是插件目录内的相对路径，不能使用绝对路径或 `..`。
+`saveText` 需要 `ui` 权限；平台没有下载目录时保存到应用数据目录。
 
 ### 通知与事件
 

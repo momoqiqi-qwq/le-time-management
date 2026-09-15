@@ -869,6 +869,45 @@ fn export_plugins_zip(app: AppHandle, ids: Vec<String>) -> Result<String, String
     Ok(base64::engine::general_purpose::STANDARD.encode(cur.into_inner()))
 }
 
+/// 把前端给的文本保存到系统下载目录（重名自动追加 " (n)"），返回落盘的完整路径。
+/// WebView 里 <a download> 对 blob: 的下载在部分平台静默失败，统一走这里真正落盘。
+#[tauri::command]
+fn save_download(app: AppHandle, name: String, contents: String) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
+        return Err("文件名不合法".into());
+    }
+    // 优先系统下载目录；平台没有（如部分 Android）则回退应用数据目录
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().app_data_dir())
+        .map_err(|e| format!("无法定位下载目录: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("无法创建下载目录: {e}"))?;
+
+    let target = dir.join(name);
+    let stem = target
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| name.to_string());
+    let ext = target
+        .extension()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let mut final_path = target.clone();
+    let mut counter = 1u32;
+    while final_path.exists() {
+        final_path = dir.join(if ext.is_empty() {
+            format!("{stem} ({counter})")
+        } else {
+            format!("{stem} ({counter}).{ext}")
+        });
+        counter += 1;
+    }
+    fs::write(&final_path, contents.as_bytes()).map_err(|e| format!("写入文件失败: {e}"))?;
+    Ok(final_path.to_string_lossy().into_owned())
+}
+
 #[derive(serde::Serialize)]
 struct AppInfo {
     version: String,
@@ -1383,6 +1422,7 @@ pub fn run() {
             delete_plugin,
             import_plugin_zip,
             export_plugins_zip,
+            save_download,
             app_info,
             http_get,
             open_external,

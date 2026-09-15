@@ -57,6 +57,12 @@ export const api = {
     return invoke("export_plugins_zip", { ids });
   },
 
+  // 文本真正落盘到系统下载目录（<a download> 在 WebView 里对 blob: 不可靠）
+  async saveDownload(name, contents) {
+    if (!isTauri) throw new Error("保存文件仅在 Tauri 环境可用");
+    return invoke("save_download", { name, contents });
+  },
+
   async appInfo() {
     if (!isTauri) return { version: "web-dev", os: "browser", arch: navigator.platform || "web", dataDir: "localStorage（浏览器调试模式）" };
     return invoke("app_info");

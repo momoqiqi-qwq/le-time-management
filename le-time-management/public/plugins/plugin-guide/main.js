@@ -40,12 +40,21 @@
   async function downloadDevDoc(){
     try{
       const text=await tide.assets.text("plugin-development.md");
+      const filename="Le时间管理-插件开发文档.md";
+      // 优先走宿主真正落盘（<a download> 在 Tauri WebView 里对 blob: 下载不可靠）
       try{
-        const blob=new Blob([text],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="Le时间管理-插件开发文档.md";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-      }catch{/* 下载通道不可用时走剪贴板兜底 */}
-      let copied=false;
-      try{await navigator.clipboard.writeText(text);copied=true;}catch{}
-      tide.notify(copied?"开发文档已开始下载；若未弹出保存框，全文已复制到剪贴板":"开发文档已开始下载");
+        const path=await tide.assets.saveText(filename,text);
+        tide.notify("开发文档已保存："+path);
+        return;
+      }catch(e){
+        // 浏览器调试环境或平台不支持 → 退回 blob 下载
+        try{
+          const blob=new Blob([text],{type:"text/markdown;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+        }catch{/* 下载通道不可用时走剪贴板兜底 */}
+        let copied=false;
+        try{await navigator.clipboard.writeText(text);copied=true;}catch{}
+        tide.notify(copied?"已回退为复制全文到剪贴板（当前环境不支持保存文件）":"文档已开始下载；若未弹出保存框，全文已复制到剪贴板");
+      }
     }
     catch(e){tide.notify("下载失败："+(e&&e.message||e));}
   }

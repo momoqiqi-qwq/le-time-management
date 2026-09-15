@@ -26,12 +26,20 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
     class: "plugin-doc-link",
     title: "下载离线插件开发文档",
     onclick: async () => {
+      const filename = "Le时间管理-插件开发文档.md";
       try {
         const res = await fetch(PROJECT_LINKS.pluginDevDocAsset, { cache: "no-store" });
         if (!res.ok) throw new Error(`文档读取失败 (${res.status})`);
-        const blob = await res.blob();
+        const text = await res.text();
+        // 优先真正落盘到系统下载目录（<a download> 在 Tauri WebView 里对 blob: 下载不可靠）
+        try {
+          const path = await api.saveDownload(filename, text);
+          toast(`插件开发文档已保存：${path}`);
+          return;
+        } catch { /* 浏览器调试环境 → 退回 blob 下载 */ }
+        const blob = new Blob([text], { type: "text/markdown;charset=utf-8" });
         const url = URL.createObjectURL(blob);
-        const a = el("a", { href: url, download: "Le时间管理-插件开发文档.md" });
+        const a = el("a", { href: url, download: filename });
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         toast("插件开发文档已下载");
