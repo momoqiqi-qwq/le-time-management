@@ -27,7 +27,7 @@ const plugins = [
   {
     "id": "web-collector",
     "name": "网页收集",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "author": "Le时间管理内置",
     "icon": "bookmark",
     "faIcon": "bookmark",

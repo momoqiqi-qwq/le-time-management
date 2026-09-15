@@ -92,9 +92,15 @@ assert.match(src, /await ensureDefaults\(\);\s*await migrateNotes\(\);/, 'render
 
 /* ── 七、卡片编辑框不许把卡片撑爆（长标题/长备注溢出，用户实测截图）── */
 const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-collector/manifest.json', import.meta.url), 'utf8'));
-assert.equal(manifest.version, '1.1.1', '修卡片输入框溢出之后必须升插件版本');
+assert.equal(manifest.version, '1.1.2', '编辑框字号自适应之后必须升插件版本');
 assert.match(src, /\.wc-edit\{[^}]*minmax\(0,1fr\)[^}]*\}/, '.wc-edit 两列轨道必须 minmax(0,1fr) —— 1fr 的下限是 min-content，会被长值撑破卡片');
 assert.match(src, /\.wc-edit input\{[^}]*min-width:0[^}]*\}/, '.wc-edit input 必须 min-width:0，否则输入框固有宽度把卡片顶破');
 assert.match(src, /\.wc-edit input\{[^}]*width:100%[^}]*\}/, '.wc-edit input 必须 width:100% 才会老老实实缩进轨道里');
+
+/* ── 八、超长文字自动缩字号（用户反馈：字超出框了要自动缩小，但不能小到看不清）── */
+assert.match(src, /function fitInputFonts\(\)/, '必须提供 fitInputFonts 字号自适应');
+assert.match(src, /const MAX = 13, MIN = 11;/, '字号上限 13px、下限 11px —— 下限太小学起来难受');
+assert.match(src, /input\.scrollWidth > input\.clientWidth/, '缩字判定必须基于真实溢出（scrollWidth vs clientWidth）');
+assert.match(src, /fitInputFonts\(\);\s*\n?\s*\}/, 'paint() 末尾必须调用 fitInputFonts');
 
 console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移与卡片编辑框宽度约束');
