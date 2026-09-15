@@ -75,12 +75,23 @@ assert.match(
 const adapter = read('../public/plugins/shiguang-schedule/adapters/cppu.js');
 assert.match(adapter, /notifyTaskCompletion/, '适配器必须在导入结束时发 notifyTaskCompletion，否则自动关窗不会触发');
 
-/* ⑦ Android 专用 Activity：存在、注册、并被 open 指定 */
-const activityKt = read('../src-tauri/gen/android/app/src/main/java/com/yile/letime/SchoolImportActivity.kt');
+/* ⑦ Android 专用 Activity：存在、注册、并被 open 指定。
+   注意读**版本化镜像**（android/gradle/）而不是 src-tauri/gen/android ——
+   后者被 .gitignore 忽略，全新 clone 上这里会直接 ENOENT 让整个测试挂掉。
+   镜像由 tools/sync-android-native.js 同步进 gen，构建脚本每次打包前都会跑一次。 */
+const activityKt = read('../android/gradle/app/src/main/java/com/yile/letime/SchoolImportActivity.kt');
 assert.match(activityKt, /class SchoolImportActivity : TauriActivity\(\)/, 'SchoolImportActivity 必须是 TauriActivity 的具体子类（abstract 不能 startActivity）');
-const manifest = read('../src-tauri/gen/android/app/src/main/AndroidManifest.xml');
+const manifest = read('../android/gradle/app/src/main/AndroidManifest.xml');
 assert.match(manifest, /android:name="\.SchoolImportActivity"/, 'AndroidManifest 必须注册 SchoolImportActivity，否则 startActivity 直接崩');
 assert.doesNotMatch(manifest, /android:name="\.SchoolImportActivity"[^>]*android:exported="true"/, 'SchoolImportActivity 仅应用内启动，不能 exported');
+// 注册本身必须由 tools/sync-android-native.js 幂等补回 —— gen/ 是 gitignored，
+// `tauri android init` 会连这条注册一起抹掉（本仓库实测：镜像清单里就漏过它），
+// 而崩点是「点导入才崩」，没人会在 init 之后主动去比对。
+const androidSyncTool = read('../../tools/sync-android-native.js');
+assert.match(androidSyncTool, /ensureSchoolImportActivity/,
+  'Android 同步工具必须能补回教务窗口注册，否则 tauri android init 之后教务导入直接崩');
+assert.match(androidSyncTool, /android:name="\.SchoolImportActivity"/,
+  '同步工具补的活动名必须是 .SchoolImportActivity');
 assert.match(
   rust,
   /#\[cfg\(target_os = "android"\)\]\s*\n\s*let builder = builder\.activity_name\("SchoolImportActivity"\);/,

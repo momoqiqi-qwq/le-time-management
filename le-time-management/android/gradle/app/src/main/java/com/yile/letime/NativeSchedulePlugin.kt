@@ -8,6 +8,10 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
+/*
+ * 原版课程表（ShiguangSchedule）的 Android 桥。
+ * 本文件是「版本化镜像」，由 tools/sync-android-native.js 同步进 src-tauri/gen/android/。
+ */
 @TauriPlugin
 class NativeSchedulePlugin(private val host: Activity) : Plugin(host) {
     private fun originalActivity() = runCatching { Class.forName("com.xingheyuzhuan.shiguangschedule.MainActivity") }.getOrNull()

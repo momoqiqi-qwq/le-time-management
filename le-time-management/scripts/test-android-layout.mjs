@@ -68,19 +68,28 @@ assert.match(overridden, /background:\s*none/, "顶栏右侧工具外层不能�
 assert.match(overridden, /box-shadow:\s*none/, "顶栏右侧工具外层不能有阴影");
 
 // v0.37.15 回归 3：APK 桌面图标名必须是「Le时间管理」。
-// MainActivity 上的 android:label 会覆盖 application 级 app_name，图标名变成
-// 「Le时间管理 · 时间块与四象限」。构建脚本必须幂等清掉它（gen/ 是 gitignored，手改会丢）。
+// MainActivity 上的 activity 级 android:label 会覆盖 application 级 app_name，图标名变成
+// 「Le时间管理 · 时间块与四象限」，手机桌面放不下被截断。
+// gen/ 是 gitignored，手改会在下次 `tauri android init` 时丢 —— 所以这条清理逻辑
+// v0.38.0 起搬到了 tools/sync-android-native.js（幂等补丁），由构建脚本在打包前调用。
+// 断言因此落在「工具里有这条规则」+「构建脚本确实调了它」两点上。
 const androidBuild = read("../scripts/build-android-apk.sh");
-assert.match(androidBuild, /MainActivity/, "Android 构建脚本必须处理 MainActivity 的 label");
-assert.match(androidBuild, /android:name="\\\.MainActivity"/, "必须按 android:name 精确定位 MainActivity，不能误删教务窗口的 label");
-assert.match(androidBuild, /main_activity_title/, "必须移除对 main_activity_title 的引用");
+const androidSync = read("../../tools/sync-android-native.js");
+assert.match(androidBuild, /sync-android-native\.js/, "Android 构建脚本必须在打包前同步版本化的原生代码");
+assert.match(androidSync, /android:name="\\\.MainActivity"/,
+  "必须按 android:name 精确定位 MainActivity，不能误删教务窗口的 label");
+assert.match(androidSync, /main_activity_title/, "必须移除 MainActivity 对 main_activity_title 的引用");
+assert.match(androidSync, /REQUEST_INSTALL_PACKAGES/,
+  "必须幂等补上安装未知来源应用权限，否则应用内一键升级在 Android 8+ 上会被系统静默拦掉");
 
 // v0.37.16 回归：状态栏 / 设置页顶部重叠。
 // Android WebView **不实现 env(safe-area-inset-*)**（取值恒为 0，viewport-fit=cover 也没用），
 // 而 MainActivity 的 enableEdgeToEdge() 让状态栏变成透明浮层盖在网页上 ——
 // 顶栏从屏幕绝对顶部开始画，标题与关闭按钮被信号/电量图标压住。
 // 解法：原生侧读 WindowInsets 注入 --sat/--sab/--sal/--sar，前端走 var(..., env(...)) 双路。
-const mainActivity = read("../src-tauri/gen/android/app/src/main/java/com/yile/letime/MainActivity.kt");
+// 读版本化镜像而不是 gen/android —— 后者 gitignored，全新 clone 上这个测试会直接 ENOENT。
+// 镜像由 tools/sync-android-native.js 同步进 gen（--check 守两者一致）。
+const mainActivity = read("../android/gradle/app/src/main/java/com/yile/letime/MainActivity.kt");
 assert.match(mainActivity, /getInsets\(WindowInsetsCompat\.Type\.systemBars\(\)\)/,
   "MainActivity 必须读 systemBars 的真实 inset，否则 edge-to-edge 下顶栏必然压状态栏");
 assert.match(mainActivity, /setProperty\('--sat'/,
@@ -123,7 +132,8 @@ assert.match(topbarRule, /padding-right:\s*calc\([^)]*var\(--sar/,
    于是返回键完全不碰 WebView 历史、直接 finish 掉 Activity —— 用户看到「一按返回就退出软件」。
    必须覆盖回 true（wry 便成了「能回退就 goBack，不能才 finish」），
    再由前端 src/backNav.js 压历史：视图格 + 浮层格。 */
-const mainActivityBack = read("../src-tauri/gen/android/app/src/main/java/com/yile/letime/MainActivity.kt");
+// 同上：读版本化镜像（gen/android 不进 git）
+const mainActivityBack = read("../android/gradle/app/src/main/java/com/yile/letime/MainActivity.kt");
 assert.match(mainActivityBack, /override\s+val\s+handleBackNavigation\s*:\s*Boolean\s*=\s*true/,
   "MainActivity 必须把 handleBackNavigation 覆盖回 true，否则返回键绕过 WebView 直接退出应用");
 

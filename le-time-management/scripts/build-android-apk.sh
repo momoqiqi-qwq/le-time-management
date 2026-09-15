@@ -44,39 +44,17 @@ case "$(uname -s)" in
     ;;
 esac
 
-# ⓪ 桌面图标名必须是「Le时间管理」
-#    MainActivity 上的 android:label="@string/main_activity_title" 会覆盖 application 级
-#    android:label="@string/app_name"，launcher 显示的是 activity 的 label —— 于是图标名变成
-#    「Le时间管理 · 时间块与四象限」（手机桌面放不下、被截断）。
-#    gen/ 是 gitignored 的生成目录，手改会在下次 `tauri android init` 时丢失，所以在这里做
-#    幂等补丁：删掉 activity 级 label，让图标回落到 app_name。
-MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
-if [ -f "$MANIFEST" ]; then
-  # 只删 MainActivity 块里的 label（launcher 图标取名用的就是它）。
-  # 注意两种写法：MainActivity 是 <activity ...>...</activity>（内含 intent-filter），
-  # SchoolImportActivity 是自闭合 <activity ... />。教务窗口的 label 是有意保留的应用内标题，
-  # 所以这里必须按 android:name 精确定位，不能笼统删所有 activity 的 label。
-  python - "$MANIFEST" <<'PY'
-import re, sys, pathlib
-p = pathlib.Path(sys.argv[1])
-src = p.read_text(encoding="utf-8")
-# 匹配 MainActivity 的 <activity ...> 开标签（到第一个 '>' 为止），删掉其中的 label 属性行
-pat = re.compile(r'(<activity\b(?:(?!>).)*?android:name="\.MainActivity")((?:(?!>).)*?>)', re.S)
-
-def fix(m):
-    head, tail = m.group(1), m.group(2)
-    head = re.sub(r'\n\s*android:label="@string/main_activity_title"', '', head)
-    tail = re.sub(r'\n\s*android:label="@string/main_activity_title"', '', tail)
-    return head + tail
-
-out = pat.sub(fix, src)
-if out != src:
-    p.write_text(out, encoding="utf-8", newline="")
-    print("── 已移除 MainActivity 的 label，桌面图标名回落为 app_name ──")
-else:
-    print("── MainActivity 无 label，已是干净状态 ──")
-PY
-fi
+# ⓪ 把版本化的 Android 原生代码同步进 gen/android，并补齐只能靠补丁生效的声明
+#    手机端真正干活的 Kotlin（安全区注入 / 返回键 / 双指缩放 / 教务窗口 / APK 安装桥）只存在于
+#    **gitignored 的 src-tauri/gen/android 里**，重新 `tauri android init` 会把它整个重建、全部丢失。
+#    事实源是版本化的镜像 android/gradle/，这里构建前先同步一次（set -e：同步失败直接中止，
+#    宁可不出包也不要出一个缺原生桥的包）。同一个脚本还幂等处理三件事：
+#      · AndroidManifest 补 REQUEST_INSTALL_PACKAGES（应用内升级要拉起系统安装器）
+#      · 去掉 MainActivity 的 label（activity 级 label 会盖掉 app_name，桌面图标名变成
+#        「Le时间管理 · 时间块与四象限」被截断；教务窗口的 label 是有意保留的，只按 android:name 精确删）
+#      · res/xml/file_paths.xml 补 <cache-path>（更新包暂存在 app_cache_dir，要给 FileProvider 共享）
+#    细节与坑见 tools/sync-android-native.js 顶部注释。
+node "$ROOT/../tools/sync-android-native.js"
 
 # vite emptyOutDir 已设为 false；如需清理 dist 请在构建前手动删除
 # ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）

@@ -1,6 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  参考副本（版本化）。手机上真正生效的那份是
+  src-tauri/gen/android/app/src/main/AndroidManifest.xml —— 它被 .gitignore 忽略，
+  重新 `tauri android init` 会整个重建，所以本文件只作「init 之后人工比对」的基准。
+
+  真正的执行者是 tools/sync-android-native.js，它对 gen 里那份做**只加不删的补丁**
+  （刻意不整份覆盖，免得将来 Tauri 模板新增条目被这份旧副本吃掉）：
+    ① 补 REQUEST_INSTALL_PACKAGES —— 应用内一键升级要拉起系统安装器。Android 8.0 起
+       「安装未知来源应用」是按应用授权的，用户没开时安装界面会被系统静默拦掉，
+       所以前端先用 ApkInstallerPlugin.installReady 探一次再引导去授权页。
+    ② 注册 .SchoolImportActivity（v0.37.12 手加，不是 Tauri 模板内容）—— 教务导入窗口
+       专用 Activity。没注册就 startActivity 直接崩。
+    ③ 去掉 .MainActivity 的 activity 级 android:label —— launcher 图标取的是 activity 级
+       label，留着会变成「Le时间管理 · 时间块与四象限」被手机桌面截断。
+       教务窗口（.SchoolImportActivity）的 label 是有意保留的应用内标题。
+    ④ 确保 res/xml/file_paths.xml 里有 cache-path（更新包暂存在 app_cache_dir，即内部
+       getCacheDir；要交给 FileProvider 共享就得声明这个根）。
+
+  改本文件不影响构建；要改行为请改上面那个脚本里的补丁函数。
+-->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -14,7 +35,6 @@
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
-            android:label="@string/main_activity_title"
             android:name=".MainActivity"
             android:exported="true">
             <intent-filter>
@@ -24,6 +44,15 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 教务导入窗口（school_import_open 在 Android 上指定 activity_name）：
+             仅应用内启动，不 exported；singleTop 避免重复实例堆栈 -->
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="@string/main_activity_title"
+            android:launchMode="singleTop"
+            android:name=".SchoolImportActivity"
+            android:exported="false" />
 
         <provider
           android:name="androidx.core.content.FileProvider"
