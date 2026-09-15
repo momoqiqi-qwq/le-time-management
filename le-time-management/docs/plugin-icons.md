@@ -112,7 +112,7 @@ https://img.icons8.com/color/96/tomato.png
 | 位置 | 选择器 | 显示尺寸 | 容器 |
 |---|---|---|---|
 | 默认（`appIcon` 通用） | `.app-icon` | 30 × 30 | 行内，`object-fit: contain` |
-| 顶栏标题 | `.topbar-title-mark .app-icon` | 22 × 22 | 标题左侧 |
+| ~~顶栏标题~~ | ~~`.topbar-title-mark .app-icon`~~ | — | **已删**（v0.38.2：顶栏不再有那颗 42×42 小框，标题直接写在顶栏内） |
 | 侧栏导航 | `.nav button .ic` / `.nav button .ic .app-icon` | 30 × 30（方块 38 × 38） | 圆角 11px |
 | 插件中心卡片 | `.mcard .mi .app-icon` | 40 × 40 | 卡片 `.mi` 38 × 38，底色由 `--plugin-accent` 混出 |
 | 设置页插件列表 | `.plug-ic .app-icon` | 40 × 40 | 同上 |

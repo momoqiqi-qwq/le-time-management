@@ -165,7 +165,9 @@ export function renderShell(root) {
   const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
   const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
-        el("span", { class: "topbar-title-mark", "data-tauri-drag-region": dragRegion }, appIcon("quadrant", "Le时间管理")),
+        // 标题直接写在顶栏这两条横线之间：原先左侧还有一颗 42×42 的圆角小框
+        // （内含 app 图标），用户反馈「不要小框了，直接把名字写在这里」。删掉小框后
+        // 标题卡自身仍保留边框与底色（v0.37.15「框太多」只针对右侧工具卡）。
         el("div", { class: "topbar-title-copy", "data-tauri-drag-region": dragRegion }, titleEl, subEl),
       ),
       desktopWindow ? el("span", { class: "window-drag-strip", "data-tauri-drag-region": dragRegion }) : null,

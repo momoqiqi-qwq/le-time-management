@@ -67,6 +67,25 @@ assert.match(overridden, /border:\s*0/, "顶栏右侧工具外层不能有边框
 assert.match(overridden, /background:\s*none/, "顶栏右侧工具外层不能有底色");
 assert.match(overridden, /box-shadow:\s*none/, "顶栏右侧工具外层不能有阴影");
 
+// v0.38.2 回归：顶栏标题左侧那颗 42×42 小框（.topbar-title-mark）已删除。
+// 用户反馈「不要小框了，直接把名字写在顶栏这两条横线之间」。那颗框里固定装着
+// Le 的四象限 app 图标 —— 在插件页里跟插件毫无关系，纯属噪音。
+assert.ok(!shell.includes("topbar-title-mark"), "顶栏标题左侧的小框已删除，不能再建回来");
+assert.ok(shell.includes('class: "topbar-title-copy"'), "标题卡里必须保留 .topbar-title-copy（标题 + 副标题）");
+assert.doesNotMatch(css, /\.topbar-title-mark\s*\{/, "styles.css 里不能再有 .topbar-title-mark 规则");
+assert.doesNotMatch(css, /\.topbar-title-mark\s+\.app-icon/, "小框删了，它内部 .app-icon 的尺寸规则也要一起走");
+// 小框在时靠 padding-right:16px 配平，现在必须左右对称，否则标题会偏左贴边。
+// 注意不能只看 `padding:` 简写：`padding: 8px 12px` 配上一条 `padding-right: 16px`
+// 就是不对称的，而简写本身看起来完全正常（第一版断言就是这么漏过的）。
+const titleCardRules = [...css.matchAll(/\.topbar-title-card\s*\{([^}]*)\}/g)].map((m) => m[1]);
+assert.ok(titleCardRules.length >= 2, "桌面与窄屏各应有一条 .topbar-title-card 规则");
+for (const rule of titleCardRules) {
+  const parts = (rule.match(/(?:^|;)\s*padding:\s*([^;]+)/)?.[1] ?? "0").trim().split(/\s+/).filter(Boolean);
+  const base = { top: parts[0] ?? "0", right: parts[1] ?? parts[0] ?? "0", bottom: parts[2] ?? parts[0] ?? "0", left: parts[3] ?? parts[1] ?? parts[0] ?? "0" };
+  const long = (side) => rule.match(new RegExp(`(?:^|;)\\s*padding-${side}:\\s*([^;]+)`))?.[1]?.trim() ?? base[side];
+  assert.equal(long("left"), long("right"), `标题卡内边距要左右对称，实际 left=${long("left")} right=${long("right")}`);
+}
+
 // v0.37.15 回归 3：APK 桌面图标名必须是「Le时间管理」。
 // MainActivity 上的 activity 级 android:label 会覆盖 application 级 app_name，图标名变成
 // 「Le时间管理 · 时间块与四象限」，手机桌面放不下被截断。

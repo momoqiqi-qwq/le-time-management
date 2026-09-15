@@ -11,6 +11,10 @@
  const button=(label,action,extra='')=>`<button data-action="${action}" ${extra}>${label}</button>`;
  const field=(label,name,value,type='text',extra='')=>`<label><span>${label}</span><input name="${name}" aria-label="${label}" type="${type}" value="${esc(value)}" ${extra}></label>`;
  const textArea=(label,name,value,extra='')=>`<label class="wide"><span>${label}</span><textarea name="${name}" aria-label="${label}" ${extra}>${esc(value)}</textarea></label>`;
+ // 条目图标：复用打包内的 Font Awesome solid 精灵，与设置页分类导航同一个根绝对路径
+ // （`/icons/...`，相对路径在插件里会 404）。<use> 找不到 symbol 是**静默空白**，
+ // 所以 scripts/test-schedule.mjs 会把每个图标名拿回精灵核对存在性。
+ const setIco=name=>`<svg class="set-ico" viewBox="0 0 512 512" aria-hidden="true"><use href="/icons/fontawesome/solid.svg#${name}"></use></svg>`;
  function styles(){
    if(document.getElementById('sg-style'))return;
    const s=document.createElement('style');s.id='sg-style';s.textContent=`
@@ -52,8 +56,15 @@
 .sg .more-menu .sep{height:1px;background:var(--sg-line-soft);margin:3px 6px}
 .sg .more-menu .label{padding:6px 10px 2px;color:var(--sg-faint);font-size:10.5px;font-weight:700;letter-spacing:.04em}.sg .screen-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 14px}.sg .screen-head h2{font-size:24px}.sg .screen-head p{margin:2px 0 0}
  .sg .settings-list,.sg .table-list,.sg .course-list{display:grid;gap:9px;max-width:900px}.sg .settings-item,.sg .table-card,.sg .course-row{width:100%;display:flex;align-items:center;justify-content:space-between;gap:14px;text-align:left;padding:13px 15px;border-radius:14px;background:var(--sg-card);border:1px solid var(--sg-line)}.sg .settings-item span,.sg .table-card span,.sg .course-row span{display:block;color:var(--sg-sub);font-size:11px;margin-top:2px}.sg .settings-item b,.sg .table-card b,.sg .course-row b{font-size:13px}.sg .settings-item::after{content:"›";font-size:20px;color:var(--sg-faint)}.sg .table-card.active{border-color:var(--sg-accent);box-shadow:inset 3px 0 var(--sg-accent)}.sg .inline-actions{display:flex;gap:6px;flex-wrap:wrap}.sg .inline-actions button{min-height:32px;padding:4px 8px}.sg .style-preview{margin:10px 0 16px}.sg .back-row{margin-bottom:12px}.sg .back-row button{border:0;background:transparent;padding-left:0}
+ /* 「我的」设置条目图标。布局要点：条目原先是 justify-content:space-between 撑开两段，
+    加了图标就成三段、中间那段会被挤到正中；改成 flex-start 并让文字块 flex:1 吃掉余量，
+    右端的 › 箭头才不会跑位。具体规则写在本行之后，同特异性靠后生效。
+    图标是 <svg>，刻意不套 <span> —— 上面 .settings-item span 那条会把 span 刷成 11px 灰字。 */
+ .sg .settings-item{justify-content:flex-start;gap:12px}.sg .settings-item>div{flex:1;min-width:0}
+ .sg .settings-item>.set-ico{flex:none;width:32px;height:32px;padding:8px;border-radius:10px;background:color-mix(in srgb,var(--sg-accent) 8%,transparent);color:var(--sg-accent);fill:currentColor}
+ .sg .settings-item:hover>.set-ico{background:color-mix(in srgb,var(--sg-accent) 16%,transparent)}
  .sg .school-hero{display:flex;align-items:center;justify-content:space-between;gap:14px;background:linear-gradient(135deg,color-mix(in srgb,var(--sg-accent) 12%,var(--sg-card)),var(--sg-card));border:1px solid var(--sg-line);border-radius:14px;padding:16px;margin-bottom:14px}.sg .school-hero h3{margin:0 0 4px}.sg .school-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;border-bottom:1px solid var(--sg-line);margin-bottom:12px}.sg .school-tabs button{border:0;border-radius:0;background:transparent}.sg .school-tabs button.on{color:var(--sg-accent);font-weight:750;border-bottom:3px solid var(--sg-accent)}.sg .school-search{margin-bottom:12px}.sg .school-list{display:grid;gap:8px;max-width:920px}.sg .school-letter{font-size:18px;font-weight:800;color:var(--sg-accent);padding:8px 5px 1px}.sg .school-card{width:100%;display:flex;align-items:center;gap:11px;text-align:left;padding:15px;border-radius:13px;background:var(--sg-card)}.sg .school-card::before{content:"◆";color:var(--sg-faint);font-size:12px}.sg .adapter-card{display:block;width:100%;text-align:left;padding:16px;border-radius:13px}.sg .adapter-card b,.sg .adapter-card span{display:block}.sg .adapter-card span{font-size:12px;color:var(--sg-sub);margin-top:5px;line-height:1.55}.sg .school-empty{padding:28px;text-align:center;color:var(--sg-sub)}
- .sg footer{margin-top:18px;border-top:1px solid var(--sg-line);padding-top:11px;font-size:10.5px;color:var(--sg-sub)}.sg footer a{color:inherit}.sg .file{padding:8px;background:var(--sg-card)}
+ .sg footer{margin-top:10px;border-top:1px solid var(--sg-line);padding-top:8px;font-size:10.5px;color:var(--sg-sub)}.sg footer a{color:inherit}.sg .file{padding:8px;background:var(--sg-card)}
  .sg .switch-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--sg-card);border:1px solid var(--sg-line);border-radius:12px;padding:10px 13px}
  .sg .switch-row .switch-copy{min-width:0}.sg .switch-row .switch-copy b{display:block;font-size:13px}.sg .switch-row .switch-copy small{display:block;color:var(--sg-sub);font-size:11.5px;line-height:1.5;margin-top:2px}
  .sg .switch{position:relative;display:inline-flex;align-items:center;gap:9px;flex:none;cursor:pointer;color:var(--sg-sub);font-size:12px;font-weight:600}
@@ -92,7 +103,7 @@
  :is(.sg.colorful) :is(.course-block,.today-card).conflict::after{box-shadow:0 0 0 2px var(--course-on)}
  .sg .style-preview-note{margin:9px 0 0}
  @media(max-width:900px){.sg{--sg-label-w:52px;--sg-head-h:46px;padding:8px}.sg .schedule-frame{border-radius:13px}.sg .schedule-top{position:static}.sg .main-stage{min-height:0}.sg .transfer-grid{grid-template-columns:1fr}.sg .hero{align-items:flex-start}.sg .brand-badge{display:none}}
- @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:30px;padding:6px}.sg .hero-copy h2{font-size:19px}.sg .hero-copy .muted{font-size:11px}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:13px}.sg .slot-label span{font-size:8px}.sg .day-head{font-size:11px;gap:1px}.sg .day-head .date{font-size:9px}.sg .course-block{margin:1px;padding:4px 3px;border-left-width:2px}.sg .course-block b{font-size:10px;-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:8.5px;margin-bottom:1px}.sg .course-block span{font-size:8.5px}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:17px}.sg .week-title small{font-size:9.5px}.sg .schedule-note{margin:5px 2px 0}.sg .schedule-note .muted{font-size:10.5px}.sg footer{margin-top:8px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
+ @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:30px;padding:6px}.sg .hero-copy h2{font-size:19px}.sg .hero-copy .muted{font-size:11px}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:13px}.sg .slot-label span{font-size:8px}.sg .day-head{font-size:11px;gap:1px}.sg .day-head .date{font-size:9px}.sg .course-block{margin:1px;padding:4px 3px;border-left-width:2px}.sg .course-block b{font-size:10px;-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:8.5px;margin-bottom:1px}.sg .course-block span{font-size:8.5px}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:17px}.sg .week-title small{font-size:9.5px}.sg .schedule-note{margin:4px 2px 0}.sg .schedule-note .muted{font-size:10.5px}.sg footer{margin-top:6px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
  @media(pointer:coarse){.sg button,.sg input,.sg select{min-height:42px}.sg .course-block{min-height:0}}
  @media(prefers-reduced-motion:reduce){.sg *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
  `;document.head.append(s);
@@ -172,15 +183,15 @@ function bindMoreDismiss(){
    const overlap=M.conflicts(visible);
    return `${screenHead('今日课表',`${today} · ${todayWeek>=1&&todayWeek<=table.config.semesterTotalWeeks?'第 '+todayWeek+' 周':'非教学周'}`,moreMenu('today'))}<div class="today">${visible.map(c=>todayCard(c,overlap.has(c.id))).join('')||'<div class="panel muted today-empty">今天没有课程。</div>'}</div>`;
  }
- function settingsContent(){return `${screenHead('我的',activePack()?.name||'我的课表',moreMenu('settings'))}<div class="settings-list">
-   <button class="settings-item" data-action="courses"><div><b>课程管理</b><span>查看、添加和编辑全部课程</span></div></button>
-   <button class="settings-item" data-action="tables"><div><b>课表管理</b><span>新建、复制、重命名和切换课表</span></div></button>
-   <button class="settings-item" data-action="config"><div><b>时间与学期</b><span>开学日期、学期周数和节次时间</span></div></button>
-   <button class="settings-item" data-action="style"><div><b>个性化配置</b><span>格子高度、圆角、间距、透明度和显示内容</span></div></button>
-   <button class="settings-item" data-action="edu"><div><b>教务导入</b><span>从教务表格导入课程和作息</span></div></button>
-   <button class="settings-item" data-action="transfer"><div><b>备份与恢复</b><span>JSON 全量备份与 ICS 日历导出</span></div></button>
-   <button class="settings-item" data-action="blocks"><div><b>同步到时间块</b><span>把当前周课程加入 Le 时间管理</span></div></button>
- </div>`;}
+function settingsContent(){return `${screenHead('我的',activePack()?.name||'我的课表',moreMenu('settings'))}<div class="settings-list">
+  <button class="settings-item" data-action="courses">${setIco('list-ul')}<div><b>课程管理</b><span>查看、添加和编辑全部课程</span></div></button>
+  <button class="settings-item" data-action="tables">${setIco('table-cells-large')}<div><b>课表管理</b><span>新建、复制、重命名和切换课表</span></div></button>
+  <button class="settings-item" data-action="config">${setIco('calendar-week')}<div><b>时间与学期</b><span>开学日期、学期周数和节次时间</span></div></button>
+  <button class="settings-item" data-action="style">${setIco('palette')}<div><b>个性化配置</b><span>格子高度、圆角、间距、透明度和显示内容</span></div></button>
+  <button class="settings-item" data-action="edu">${setIco('school')}<div><b>教务导入</b><span>从教务表格导入课程和作息</span></div></button>
+  <button class="settings-item" data-action="transfer">${setIco('box-archive')}<div><b>备份与恢复</b><span>JSON 全量备份与 ICS 日历导出</span></div></button>
+  <button class="settings-item" data-action="blocks">${setIco('arrows-down-to-line')}<div><b>同步到时间块</b><span>把当前周课程加入 Le 时间管理</span></div></button>
+</div>`;}
  function subHead(title){return `<div class="back-row">${button('‹ 返回','settings','class="ghost"')}</div>${screenHead(title,'')}`;}
  function weekPickerContent(){return `${subHead('选择周次')}<div class="seg">${Array.from({length:table.config.semesterTotalWeeks},(_,i)=>button('第 '+(i+1)+' 周','pick-week',`data-week="${i+1}" class="${week===i+1?'on':''}"`)).join('')}</div>`;}
  function coursesContent(){const rows=[...table.courses].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN')||a.day-b.day);return `${subHead('课程管理')}<div class="tools">${button('添加课程','add','class="primary"')}</div><div class="course-list">${rows.map(c=>`<button class="course-row" data-edit="${esc(c.id)}"><div><b>${esc(c.name)}</b><span>${days[c.day-1]} · ${c.isCustomTime?`${esc(c.customStartTime)}–${esc(c.customEndTime)}`:`第 ${c.startSection}–${c.endSection} 节`} · ${esc(c.position||'地点未填写')}</span></div><strong>编辑</strong></button>`).join('')||'<div class="panel muted">还没有课程，点击“添加课程”开始。</div>'}</div>`;}

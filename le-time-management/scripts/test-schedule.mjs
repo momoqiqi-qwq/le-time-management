@@ -190,6 +190,31 @@ for (const t of tones) assert.ok(Number.isInteger(t) && t >= 0 && t < 8, `色调
 assert.equal(fx.tone({ name: '线性代数A', color: 6 }), 6, '彩色模式下手动颜色仍然优先');
 console.log('PASS: colorful course blocks — switch, name-hashed palette, all 8 tones pass WCAG AA');
 
+/* ── v0.38.2 三、「我的」设置条目加图标 ── */
+// 图标引用打包内的 FA solid 精灵。`<use>` 指到不存在的 symbol 是**静默空白**
+// （不抛错、不触发 onerror、console 也没提示），所以每个图标名都要拿回精灵核对。
+const itemActions = [...ui.matchAll(/<button class="settings-item" data-action="([a-z]+)">/g)].map((m) => m[1]);
+const setIcoNames = [...ui.matchAll(/setIco\('([a-z0-9-]+)'\)/g)].map((m) => m[1]);
+assert.equal(itemActions.length, 7, `「我的」应有 7 个设置条目，实际 ${itemActions.length}`);
+assert.equal(setIcoNames.length, 7, `7 个条目必须各带一个图标，实际只有 ${setIcoNames.length} 个`);
+assert.equal(new Set(setIcoNames).size, 7, `图标不能重复使用：${setIcoNames.join(', ')}`);
+const spriteSource = fs.readFileSync(new URL('../public/icons/fontawesome/solid.svg', import.meta.url), 'utf8');
+const spriteIds = new Set([...spriteSource.matchAll(/<symbol[^>]*id="([^"]+)"/g)].map((m) => m[1]));
+for (const name of setIcoNames) assert.ok(spriteIds.has(name), `精灵里没有 ${name} 这个 symbol，图标会静默空白`);
+assert.ok(ui.includes('href="/icons/fontawesome/solid.svg#${name}"'), '图标要用「根绝对路径」引用精灵；相对路径在插件视图里会 404');
+assert.ok(!ui.includes('href="icons/fontawesome'), '图标不能写相对路径（插件视图的基地址不是站点根）');
+// 布局：条目原先是「文字 + ›」两段，加图标变三段 —— justify-content:space-between 会把
+// 中间那段挤到正中，必须改 flex-start 并让文字块 flex:1 吃掉余量，› 才回到右端。
+assert.match(ui, /\.sg \.settings-item\{justify-content:flex-start;gap:12px\}/, '加图标后条目要改 flex-start，否则文字块被挤到正中');
+assert.match(ui, /\.sg \.settings-item>div\{flex:1;min-width:0\}/, '文字块要吃满余量，右端 › 才贴边');
+const icoRule = ui.match(/\.sg \.settings-item>\.set-ico\{([^}]*)\}/)?.[1] || '';
+assert.match(icoRule, /width:32px;height:32px/, '图标盒子要有固定尺寸，否则被文字挤扁');
+assert.match(icoRule, /fill:currentColor/, '精灵 symbol 不带 fill 属性，不给 currentColor 会渲染成纯黑');
+assert.match(icoRule, /var\(--sg-accent\)/, '图标配色要跟随主题变量');
+assert.ok(!/#[0-9a-fA-F]{3,6}/.test(icoRule), '图标配色不许硬编码色值（深色模式下会糊）');
+assert.ok(ui.includes('const setIco=name=>'), '图标助手缺失，说明 settingsContent 里是硬写的 svg');
+console.log('PASS: 「我的」7 个设置条目各带一个主题色图标，图标名全部命中 FA 精灵');
+
 /* ── v0.33.0 二、课表界面滚轮上下滑动 ── */
 // .schedule-frame 是横向滚动容器。整份 overscroll-behavior:contain 会把纵向滚轮也吃掉，
 // 鼠标停在课表上时外层 .plugview 一点都滚不动 —— 只能约束 x，纵向必须允许串联。
