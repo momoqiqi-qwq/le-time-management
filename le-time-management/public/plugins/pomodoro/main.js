@@ -188,7 +188,8 @@
     toggle.append(toggleText, summary);
 
     const body = document.createElement("div");
-    body.style.cssText = "margin-top:11px;display:grid;gap:9px";
+    // 默认收起：面板占位太大，收起时 toggle 右侧的摘要就是当前配置的一行速览
+    body.style.cssText = "margin-top:11px;display:none;gap:9px";
 
     const controls = {};
     const presetLabels = { custom: "自定义音频" };

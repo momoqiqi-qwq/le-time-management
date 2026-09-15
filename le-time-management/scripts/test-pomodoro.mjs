@@ -49,7 +49,7 @@ assert.match(settingsView, /for \(const preset of BUILTIN_SOUNDS\)/, '设置页�
 const PLUGIN = new URL('../public/plugins/pomodoro/main.js', import.meta.url);
 const manifest = JSON.parse(read('../public/plugins/pomodoro/manifest.json'));
 assert.ok(manifest.permissions.includes('sound'), '番茄专注的 manifest 必须声明 sound 权限，否则 tide.sound 会被宿主拒绝');
-assert.equal(manifest.version, '0.3.1', '提示音改成可见按钮组之后必须升插件版本');
+assert.equal(manifest.version, '0.3.2', '提醒面板默认收起之后必须升插件版本');
 
 const source = fs.readFileSync(PLUGIN, 'utf8');
 for (const marker of ['tide.sound.play', 'tide.sound.presets', 'focusNotify', 'focusSound', 'breakNotify', 'breakSound', 'AUDIO_MAX_BYTES', 'readAsDataURL']) {
@@ -62,6 +62,9 @@ assert.match(source, /var\(--on-deep,#fff\)/);
 assert.ok(!/soundSel/.test(source), '提示音不许退回 <select> 下拉 —— 手机上不展开看不到内置音效');
 assert.match(source, /syncSoundChips/, '音效按钮组缺少选中态同步');
 assert.match(source, /soundChips\.style\.cssText = "display:flex;flex-wrap:wrap;gap:6px"/, '音效按钮组要可换行（390px 手机视口）');
+/* 提醒面板默认收起：body 初始 display:none，展开走 toggle 的 grid */
+assert.match(source, /margin-top:11px;display:none;gap:9px/, '提醒面板必须默认收起 —— 平常不该占一大屏');
+assert.ok(!/margin-top:11px;display:grid/.test(source), '提醒面板不许默认展开');
 
 /* 极简 DOM：够 render() 跑起来即可 */
 function fakeEl(tag = 'div') {
