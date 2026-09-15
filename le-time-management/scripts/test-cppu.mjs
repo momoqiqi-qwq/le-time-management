@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../public/plugins/cppu-notify/main.js',import.meta.url),'utf8');
-let response, calls=[], vaultData={};
+let response, calls=[], vaultData={}, opened=[], notices=[];
 const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeout,setInterval,clearInterval,
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
-  tide:{ui:{registerView(){}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}}}
+  tide:{ui:{registerView(){}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url)},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,openSideLink}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -90,7 +90,7 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.7.3');
+assert.equal(cppuManifest.version, '1.8.0');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
@@ -188,5 +188,51 @@ const hist = new Array(256).fill(0);
 for (let i = 0; i < 100; i++) { hist[30]++; hist[220]++; } // 双峰直方图
 const th = OCR.otsu(hist, 200);
 assert.ok(th > 30 && th <= 220, 'Otsu 阈值必须落在两峰之间（暗峰右移一位）');
+
+/* ── 10. 「教务」等需登录入口：用统一身份认证会话现场换一次性 ticket，交系统浏览器 ──
+   裸开 https://jw.cppu.edu.cn/index.html 只会 302 到统一身份认证登录页，所以入口不能直接开它，
+   也不能把 token 写死进链接（那是个人凭据，会随公开仓库泄露且必然过期）。 */
+assert.ok(source.includes('TICKET_LINKS'), '需登录的入口必须声明换票信息');
+assert.ok(source.includes('/tpass/bridge'), 'sso-jw 域没会话时必须能补走 bridge 换票');
+assert.ok(!/["'`]token=/.test(source), '插件不得把任何 token 写死进链接');
+const jwEntry = { setAttribute(){}, removeAttribute(){} };
+
+// ① 会话有效：一次要票就够，且必须禁止自动重定向（跟着重定向跑到底就是自己把票吃掉）
+state.sid='sso-test'; opened=[]; notices=[]; calls=[];
+response=(sid,method,url,opts)=>({status:302,body:'',finalUrl:url,location:'https://jw.cppu.edu.cn/cas_callback?ticket=ST-jw',cookies:[]});
+await openSideLink('https://jw.cppu.edu.cn/index.html', jwEntry);
+assert.equal(calls.length,1,'会话有效时只该向 sso-jw 要一次票');
+assert.equal(calls[0][2],'https://sso-jw.cppu.edu.cn/tpass/login?service='+encodeURIComponent('https://jw.cppu.edu.cn/cas_callback'));
+assert.equal(calls[0][3].followRedirects,false,'换票请求必须禁止自动重定向');
+assert.equal(opened[0],'https://jw.cppu.edu.cn/cas_callback?ticket=ST-jw','必须把带 ticket 的链接交给浏览器');
+assert.equal(notices.length,0);
+
+// ② sso-jw 没会话：用主 SSO 的 CASTGC 补走 bridge 落会话后再要一次票
+opened=[]; notices=[]; calls=[]; let mintStep=0;
+response=(sid,method,url,opts)=>{
+  mintStep++;
+  if(mintStep===1) return {status:200,body:'<html>sso-jw login</html>',finalUrl:url,location:'',cookies:[]};
+  if(mintStep===2) return {status:302,body:'',finalUrl:url,location:'https://sso-jw.cppu.edu.cn/tpass/bridge?ticket=ST-main',cookies:[]};
+  if(mintStep===3) return {status:200,body:'bridge ok',finalUrl:url,location:'',cookies:['CASTGC=TGT']};
+  return {status:302,body:'',finalUrl:url,location:'https://jw.cppu.edu.cn/cas_callback?ticket=ST-jw2',cookies:[]};
+};
+await openSideLink('https://jw.cppu.edu.cn/index.html', jwEntry);
+assert.equal(calls.length,4,'要不到票时必须是「要票 → bridge → 落票 → 再要票」四段');
+assert.ok(calls[1][2].includes('bridge'),'第二段必须走主 SSO 换 bridge 票');
+assert.ok(calls.every(c=>c[3].followRedirects===false),'换票链路每一段都必须禁止自动重定向');
+assert.equal(opened[0],'https://jw.cppu.edu.cn/cas_callback?ticket=ST-jw2');
+
+// ③ 彻底换不到票：退回裸链接并提示，入口不能点了没反应
+opened=[]; notices=[];
+response={status:200,body:'<html>login</html>',finalUrl:'https://sso-jw.cppu.edu.cn/tpass/login',location:'',cookies:[]};
+await openSideLink('https://jw.cppu.edu.cn/index.html', jwEntry);
+assert.equal(opened[0],'https://jw.cppu.edu.cn/index.html','换不到票必须退回裸链接');
+assert.equal(notices.length,1,'退回裸链接时要告诉用户可能得先登录');
+
+// ④ 换票只作用于声明过的入口，其余四个照旧直开
+opened=[]; calls=[];
+await openSideLink('https://webvpn.cppu.edu.cn/');
+assert.deepEqual(opened,['https://webvpn.cppu.edu.cn/'],'未声明换票的入口必须仍然直开裸地址');
+assert.equal(calls.length,0,'未声明换票的入口不应发起任何请求');
 
 console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths and bounded renewal');

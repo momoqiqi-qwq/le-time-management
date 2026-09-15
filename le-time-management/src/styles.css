@@ -1987,7 +1987,10 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .settings-content {
   min-height: min(680px, calc(100vh - 205px));
 }
-.settings-content > .settings-section {
+/* v0.37.17 起设置分区被 navigator 包进 .settings-acc，直接子元素不再一定是 .settings-section，
+   所以两种层级都覆盖。 */
+.settings-content > .settings-section,
+.settings-acc-body > .settings-section {
   width: 100%;
   margin: 0;
 }
@@ -2017,6 +2020,105 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 @media (max-width: 980px) {
   .settings-content { min-height: 0; }
   .settings-nav-chevron { display: none; }
+}
+
+/* v0.37.17 · 设置页手风琴（窄屏 / Android）。
+   手机上原来是「横向分类 chip 行 + 一次只显示一块内容」：11 个分类要横着滑才看得全，
+   而且当前分类下面还有什么完全看不见。现在窄屏改成手风琴 —— 每个分类一行标题（图标 + 名称 +
+   提示 + 可旋转的方向箭头），点标题就地展开 / 收起，全部分区在同一页里纵向排列。
+   桌面（>980px）保持原有「左侧分类 + 右侧单页」不变：标题行整体隐藏，切换仍交给左栏。
+   类结构与 src/views/settings/navigator.js 的 panels 一一对应，改那边记得同步这里。 */
+.settings-acc { display: block; }
+/* 桌面靠 hidden 属性隐藏非当前分类；上面那句 display:block 是作者样式，会盖掉 UA 的 [hidden]，
+   所以必须显式补一条 !important，否则 11 个分区会全部堆到页面上。 */
+.settings-acc[hidden] { display: none !important; }
+.settings-acc-head { display: none; }
+.settings-acc-body { min-width: 0; }
+
+@media (max-width: 980px) {
+  /* 窄屏的分类切换已由标题行承担，横向 chip 行是重复入口，收掉它腾出首屏。 */
+  .settings-catalog { display: none; }
+  .settings-acc { scroll-margin-top: 82px; }
+  .settings-acc + .settings-acc { margin-top: 8px; }
+
+  .settings-acc-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 52px;              /* ≥44px 触控区，拇指点得住 */
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .18s ease, background .18s ease;
+  }
+  .settings-acc-head:hover,
+  .settings-acc-head:focus-visible {
+    border-color: color-mix(in srgb, var(--deep) 30%, var(--line));
+    background: color-mix(in srgb, var(--deep) 6%, var(--panel));
+  }
+  .settings-acc-head:focus-visible { outline: 2px solid var(--deep); outline-offset: 2px; }
+
+  .settings-acc-ico {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--deep) 7%, transparent);
+    color: var(--ink-2);
+    transition: color .18s ease, background .18s ease;
+  }
+  .settings-acc-ico .fa-ic { width: 13px; height: 13px; fill: currentColor; display: block; }
+  .settings-acc-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .settings-acc-copy b { font-size: 13px; }
+  .settings-acc-copy small { color: var(--ink-3); font-size: 11px; }
+
+  /* 方向箭头：纯 CSS 画的 V 形（不依赖图标字体），收起朝下、展开转 180° 朝上。 */
+  .settings-acc-arrow {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--deep) 8%, transparent);
+    color: var(--ink-3);
+    transition: transform .22s cubic-bezier(.22,.8,.22,1), color .18s ease, background .18s ease;
+  }
+  .settings-acc-arrow::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translate(-1px, -1px);
+  }
+  .settings-acc-open .settings-acc-arrow {
+    transform: rotate(180deg);
+    color: var(--deep);
+    background: color-mix(in srgb, var(--deep) 14%, transparent);
+  }
+  .settings-acc-open > .settings-acc-head {
+    border-color: color-mix(in srgb, var(--deep) 28%, var(--line));
+    background: color-mix(in srgb, var(--deep) 8%, var(--panel));
+  }
+  .settings-acc-open .settings-acc-ico { color: var(--deep); background: color-mix(in srgb, var(--deep) 14%, transparent); }
+  .settings-acc-open .settings-acc-copy b { color: var(--deep); }
+
+  /* 展开的内容跟标题行贴成一张卡：上圆角收掉，露出下面那块内容。 */
+  .settings-acc-body { padding-top: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-acc-arrow { transition: none; }
 }
 
 @media (max-width: 760px) {

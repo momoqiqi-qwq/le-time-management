@@ -333,7 +333,8 @@ export function renderSettings(container) {
       entry.node.id = `settings-${entry.id}`;
     }
     const settingsNavigator = createSettingsNavigator(settingEntries, settingsNavState);
-    const content = el("div", { class: "settings-content" }, ...settingEntries.map((x) => x.node));
+    // 窄屏走手风琴：分区由 navigator 包成「标题行 + 可收放内容」，这里按它给的顺序渲染
+    const content = el("div", { class: "settings-content" }, ...settingsNavigator.panels);
     const layout = el("div", { class: "settings-layout" }, settingsNavigator.node, content);
     // 设置中心头卡已移除：纯展示内容占掉首屏空间，左侧分类导航本身已承担引导职责。
     wrap.replaceChildren(layout);

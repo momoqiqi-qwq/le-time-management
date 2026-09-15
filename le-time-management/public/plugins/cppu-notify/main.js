@@ -25,6 +25,18 @@
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
     { url: "https://service.cppu.edu.cn/fe/site/service", label: "一网通办", icon: "clipboard-list" },
   ];
+  // 需要登录才能进的入口：点一下不直接开裸地址（那样只会落到统一身份认证登录页），
+  // 而是用插件自身那份统一身份认证会话（sso.cppu.edu.cn 的 CASTGC，随 rememberMe 保 5 天）
+  // 现场换一张一次性 ticket，交给系统浏览器消费 —— 「教务」因此不需要手填任何 token。
+  // 刻意不存 token、也不设「粘贴 token」的输入位：票据只活在这一次点击的内存里，不落盘。
+  const TICKET_LINKS = {
+    // service 就是裸开 https://jw.cppu.edu.cn/index.html 时 302 里的 cas_callback
+    "https://jw.cppu.edu.cn/index.html": {
+      service: "https://jw.cppu.edu.cn/cas_callback",
+      origin: "https://jw.cppu.edu.cn",
+      path: "/cas_callback",
+    },
+  };
   const LINK_META_TTL = 7 * 24 * 60 * 60 * 1000;   // 识别结果一周内复用，避免每次进插件都抓五个站点
   const LINK_META_KEY = "quickLinkMeta";
   let linkMeta = {};
@@ -221,6 +233,8 @@
       .pp-side-btn{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;border-radius:10px;padding:6px 8px;cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;min-height:46px;transition:background .16s ease,color .16s ease}
       .pp-side-btn:hover{background:var(--paper);color:var(--deep)}
       .pp-side-btn:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      /* 换票要往返 1~3 次请求，期间给出「正在处理」的视觉反馈，避免点了像没反应 */
+      .pp-side-btn[aria-busy="1"]{opacity:.55;cursor:progress}
       .pp-side-ico{width:28px;height:28px;flex:none;border-radius:9px;background:var(--paper);border:1px solid var(--line-soft);display:grid;place-items:center;overflow:hidden}
       .pp-side-ico img{width:17px;height:17px;object-fit:contain}
       .pp-side-ico svg{width:14px;height:14px;fill:var(--deep)}
@@ -1059,7 +1073,8 @@
       // 主标题用短名（稳定、可扫读），自动识别到的站点标题放副行；没写短名时才拿识别结果当主标题。
       const name = item.label || recognized || host;
       const sub = item.label ? (recognized || host) : host;
-      const tip = [item.label, recognized, item.url].filter(Boolean).join(" · ");
+      const tip = [item.label, recognized, item.url].filter(Boolean).join(" · ")
+        + (TICKET_LINKS[item.url] ? " · 用统一身份认证自动换票，免密直达" : "");
       return `<button type="button" class="pp-side-btn" data-goto="${esc(item.url)}" title="${esc(tip)}">`
         + `<span class="pp-side-ico">${linkIcon(item)}</span>`
         + `<span class="pp-side-txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>`
@@ -1117,12 +1132,47 @@
     }
     if (changed) { try { await tide.storage.set(LINK_META_KEY, linkMeta); } catch { /* 忽略 */ } }
   }
+  /* ── 需要登录的入口：现场换一张一次性 ticket，交给系统浏览器消费 ──
+     ① 会话还在时，直接向 sso-jw 要票，一次请求就够；
+     ② 要不到说明 sso-jw 域没会话，就用主 SSO 的 CASTGC 补走一次 bridge 落会话，再要一次。
+     全程 followRedirects:false —— ticket 是一次性的，跟着重定向跑到底就等于把票吃了，
+     浏览器拿到的反而是一张废票。所以只取 Location，绝不消费。 */
+  async function mintTicket(entry) {
+    const ask = () => {
+      const url = JW + "/tpass/login?service=" + encodeURIComponent(entry.service);
+      return getPage(url, false, { followRedirects: false }).then((res) => ({ res, url }));
+    };
+    const pick = ({ res, url }) => redirectTarget(res, url, entry.origin, entry.path);
+    try {
+      const direct = pick(await ask());
+      if (direct) return direct;
+      const bridge = SSO + "/tpass/login?service=" + encodeURIComponent(JW + "/tpass/bridge");
+      const hop = await getPage(bridge, false, { followRedirects: false }).catch(() => null);
+      const bridgeTicket = hop ? redirectTarget(hop, bridge, JW, "/tpass/bridge") : "";
+      if (!bridgeTicket) return "";
+      await getPage(bridgeTicket, false, { followRedirects: false }).catch(() => null);
+      return pick(await ask());
+    } catch { return ""; }
+  }
+
+  async function openSideLink(url, btn) {
+    const entry = TICKET_LINKS[url];
+    if (!entry || !state.sid) { tide.util.openUrl(url); return; }
+    if (btn && btn.setAttribute) btn.setAttribute("aria-busy", "1");
+    const ticket = await mintTicket(entry);
+    if (btn && btn.removeAttribute) btn.removeAttribute("aria-busy");
+    if (ticket) { tide.util.openUrl(ticket); return; }
+    // 换不到票就退回裸链接（会落到统一身份认证登录页），不能让入口点了没反应
+    tide.util.openUrl(url);
+    tide.notify("没换到免登票据，已按普通方式打开，可能需要先登录一次");
+  }
+
   function bindSide(root) {
     if (!root || root.dataset.ppSideBound) return;
     root.dataset.ppSideBound = "1";
     root.addEventListener("click", (e) => {
       const go = e.target.closest("[data-goto]");
-      if (go) { tide.util.openUrl(go.dataset.goto); return; }
+      if (go) { openSideLink(go.dataset.goto, go); return; }
       if (e.target.closest("[data-side-toggle]")) { applySideOpen(root, !state.sideOpen); return; }
       if (e.target.closest("[data-link-sync]")) {
         loadLinkMeta(root, true).then(() => tide.notify("已重新识别校园服务的标题与图标"));

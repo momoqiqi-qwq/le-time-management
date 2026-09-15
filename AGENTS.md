@@ -151,6 +151,31 @@ CSS 里凡「深色才生效」的规则一律用 `[data-theme-mode="dark"]`，*
 - **`src-tauri/gen/` 是生成目录**（gitignored）。改了 `tauri.conf.json` 的 identifier 或
   productName 后必须重新 `tauri android init`，否则包名目录、Theme 名、`lib*.so` 名全对不上。
 
+### 🔴 安全区：Android WebView 不认 `env(safe-area-inset-*)`
+
+**这条会反复踩，写死在前面。**
+
+`MainActivity` 调了 `enableEdgeToEdge()` ⇒ 状态栏/导航栏变成**透明浮层**盖在 WebView 之上，
+按 Android 约定应用必须自己消费 `WindowInsets`。而 **WebView 里
+`env(safe-area-inset-*)` 取值恒为 0**，`viewport-fit=cover` 写了也没用。
+
+⇒ 任何「贴顶/贴底」的布局（顶栏、底栏、抽屉、吸底输入框、toast）**不能裸用 `env()`**，
+必须走双路：
+
+```css
+/* 对 */  padding-top: var(--sat, env(safe-area-inset-top, 0px));
+/* 错 */  padding-top: env(safe-area-inset-top, 0px);   /* 手机上 = 0，直接压状态栏 */
+```
+
+四个变量 `--sat / --sab / --sal / --sar` 由 `MainActivity` 读真实 `WindowInsets` 后注入
+（详见类注释）。改这一块时注意：**四方向都要取**（横屏挖孔在侧边）、
+底部要 `max(systemBars.bottom, ime.bottom)`、`onPageFinished` 得**补注入一次**
+（新文档会重置内联样式）。
+
+> ⚠️ **`:root` 里绝不要给 `--sat` 等写"兜底默认值"。** 变量一旦在 `:root` 被定义为有效值，
+> `var()` 的**第二个参数永远不会生效** —— iOS / 桌面的原生 `env()` 会被彻底废掉。
+> 这条有回归断言守着（`scripts/test-android-layout.mjs`），别绕过它。
+
 ---
 
 ## 🔴 铁律五：合并外部交付包要分层，不要整体覆盖

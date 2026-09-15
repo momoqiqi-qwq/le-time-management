@@ -101,16 +101,104 @@ const satUses = [...css.matchAll(/var\(--s(?:at|ab|al|ar),\s*env\(safe-area-inse
 assert.ok(satUses >= 15, `安全区必须统一走 var(--s…, env(…)) 双路，当前只匹配到 ${satUses} 处`);
 // 🔴 :root 里绝不能给 --sat/--sab/… 定义默认值：变量一旦有有效值，
 // var() 的第二参数永不生效，iOS / 桌面的原生 env() 会被彻底废掉。
-const rootBlock = css.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+// 先剥掉注释再判定，否则本文件的说明性注释会被自己误伤。
+const cssNoComment = css.replace(/\/\*[\s\S]*?\*\//g, "");
+const rootBlock = cssNoComment.match(/:root\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
 assert.doesNotMatch(rootBlock, /--s(?:at|ab|al|ar)\s*:/,
   ":root 不能定义 --sat/--sab/--sal/--sar 默认值，否则 var() 的 env() 兜底永远不生效");
 // 手机端顶栏必须同时吃 top 与左右：竖屏补 top，横屏挖孔在侧边。
-const mobileTopbar = css.split("@media (max-width: 760px)")[1]?.split("@media")[0] ?? "";
-assert.match(mobileTopbar, /padding-top:\s*var\(--sat/,
+// 注意：全文件有 8 个 max-width:760px 查询，必须按「哪一块里有 .topbar」来定位，
+// 不能取第一个 —— 否则断言落在错误的块上（本回归的第一次写法就踩了这个坑）。
+const topbarRule = css.match(
+  /\.topbar\s*\{[^}]*?padding-left:\s*calc\([^}]*?var\(--sal[^}]*?\}/,
+)?.[0] ?? "";
+assert.ok(topbarRule, "窄屏顶栏必须有一条同时含 padding-left: calc(… var(--sal …)) 的规则");
+assert.match(topbarRule, /padding-top:\s*var\(--sat/,
   "窄屏顶栏必须吃掉 --sat，否则标题压状态栏");
-assert.match(mobileTopbar, /padding-left:\s*calc\([^)]*var\(--sal/,
-  "窄屏顶栏必须吃掉 --sal（横屏刘海）");
-assert.match(mobileTopbar, /padding-right:\s*calc\([^)]*var\(--sar/,
+assert.match(topbarRule, /padding-right:\s*calc\([^)]*var\(--sar/,
   "窄屏顶栏必须吃掉 --sar（横屏刘海）");
 
-console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label and status-bar safe-area insets");
+/* ───────────── v0.37.17 回归 1：Android 返回键 ─────────────
+   Tauri 的 TauriActivity 把 wry 的 handleBackNavigation 固定成了 false（wry 自己是 true），
+   于是返回键完全不碰 WebView 历史、直接 finish 掉 Activity —— 用户看到「一按返回就退出软件」。
+   必须覆盖回 true（wry 便成了「能回退就 goBack，不能才 finish」），
+   再由前端 src/backNav.js 压历史：视图格 + 浮层格。 */
+const mainActivityBack = read("../src-tauri/gen/android/app/src/main/java/com/yile/letime/MainActivity.kt");
+assert.match(mainActivityBack, /override\s+val\s+handleBackNavigation\s*:\s*Boolean\s*=\s*true/,
+  "MainActivity 必须把 handleBackNavigation 覆盖回 true，否则返回键绕过 WebView 直接退出应用");
+
+const backNav = read("../src/backNav.js");
+assert.match(backNav, /export\s+function\s+initBackNav/, "必须存在返回键历史栈模块");
+assert.match(backNav, /export\s+function\s+noteViewChange/, "切视图要能给历史栈压一格");
+// 遮罩类名清单是这份文件唯一要跟着浮层一起维护的地方，漏一个就有浮层关不掉。
+assert.match(backNav, /const OVERLAY_SELECTOR = "[^"]*\.drawer-mask[^"]*\.cmd-mask[^"]*\.cap-mask[^"]*"/,
+  "浮层遮罩类名清单要齐全：命令面板 .cmd-mask、捕获浮层 .cap-mask 最容易漏");
+assert.match(backNav, /ltmGuard/, "浮层格标记不能丢，否则返回键会连视图一起退掉");
+assert.match(shell, /initBackNav\(\{[\s\S]{0,160}applyView/, "外壳必须在首屏视图定下来后挂上历史栈");
+assert.match(shell, /if \(opts\.history !== false\) noteViewChange\(targetId\)/,
+  "只有真正切视图才压历史；程序性重渲染压栈会让返回键要多按好几下");
+assert.ok((shell.match(/switchTo\([^)]*\{ history: false \}/g) || []).length >= 4,
+  "程序性重渲染的几处调用都要带 { history: false }（刷新视图 / 注册表回正 / 首屏）");
+
+/* ───────────── v0.37.17 回归 2：双指缩放 ─────────────
+   Android WebView 默认 builtInZoomControls = false，叠加 index.html 里 viewport 的
+   user-scalable=no，双指缩放完全没反应。原生侧打开缩放机制，前端只在手持设备上
+   放开 user-scalable —— 两边缺一不可，桌面必须保持原样。 */
+assert.match(mainActivityBack, /setSupportZoom\(true\)/, "原生必须显式 setSupportZoom(true)");
+assert.match(mainActivityBack, /builtInZoomControls\s*=\s*true/, "必须打开 WebView 的内置缩放机制");
+assert.match(mainActivityBack, /displayZoomControls\s*=\s*false/,
+  "内置缩放自带的 +/- 悬浮件要藏起来，否则会浮在界面上");
+
+const mobileViewport = read("../src/mobileViewport.js");
+assert.match(mobileViewport, /maximum-scale=5\.0/, "手机 viewport 要把放大上限放开");
+// 剥掉注释再判定 —— 本模块的说明性注释里就写着旧的 user-scalable=no，否则会误伤自己。
+const mobileViewportCode = mobileViewport
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^\s*\/\/.*$/gm, "");
+assert.doesNotMatch(mobileViewportCode, /user-scalable=no/, "手机上不能再写 user-scalable=no");
+assert.match(mobileViewport, /Android\|iPhone\|iPad\|iPod/, "只有手持设备才放开缩放");
+const mainJs = read("../src/main.js");
+assert.match(mainJs, /applyTouchZoomViewport\(\);\s*\n\s*await initStore/,
+  "必须在首屏渲染前改 viewport，否则第一帧仍按旧的 user-scalable=no 排版");
+// 桌面 index.html 保持原样：窗口缩放交给应用自己的「启动窗口大小」设置，
+// Ctrl+滚轮放大只会让用户以为界面坏了。
+assert.match(read("../index.html"), /name="viewport"[^>]*user-scalable=no/,
+  "桌面的 viewport 不能顺手放开，缩放只对手机生效");
+
+/* ───────────── v0.37.17 回归 3：窄屏设置页手风琴 ─────────────
+   手机上原来是「横向分类 chip 行 + 一次只显示一块内容」：11 个分类要横着滑才看得全，
+   当前分类下面还有什么完全看不见。窄屏改成手风琴（标题行 + 方向箭头，可就地收放），
+   桌面仍用左栏分类，标题行必须隐藏。 */
+// 作者样式里 .settings-acc 有 display:block，会盖掉 UA 的 [hidden] ——
+// 少了这条 !important，11 个分区会全部堆在设置页上。
+assert.match(css, /\.settings-acc\[hidden\]\s*\{\s*display:\s*none\s*!important/,
+  "必须显式写 .settings-acc[hidden] { display:none !important }，否则隐藏属性失效");
+
+const narrowBlocks = css
+  .split(/@media \(max-width: 980px\)/)
+  .slice(1)
+  .map((chunk) => chunk.split(/\n@/)[0]);
+// 按「哪一块里有 .settings-acc-open」定位手风琴块 —— 基础规则（.settings-acc-head 的
+// display:none）落在前一个 980px 块之后，按 .settings-acc-head 找会落在错误的块上。
+const accordion = narrowBlocks.find((block) => block.includes(".settings-acc-open")) ?? "";
+assert.ok(accordion, "必须存在窄屏手风琴的媒体块");
+assert.match(accordion, /\.settings-acc-head\s*\{[^}]*display:\s*flex/, "窄屏要把分类标题行显示出来");
+assert.match(accordion, /\.settings-acc-head\s*\{[^}]*min-height:\s*52px/,
+  "标题行触控区要够高（≥44px），拇指才点得住");
+assert.match(accordion, /\.settings-acc-open \.settings-acc-arrow\s*\{[^}]*transform:\s*rotate\(180deg\)/,
+  "展开时方向箭头要掉头，否则看不出可收放");
+assert.match(accordion, /\.settings-catalog\s*\{\s*display:\s*none/,
+  "窄屏要收掉横向 chip 行：分类切换已由标题行承担，两个入口重复又占首屏");
+
+// 桌面：标题行隐藏，仍是「左侧分类 + 右侧单页」。
+const accHeadBase = css.match(/\.settings-acc-head\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(accHeadBase, /display:\s*none/, "桌面必须隐藏标题行，分类切换仍交给左栏");
+
+const navigatorSrc = read("../src/views/settings/navigator.js");
+assert.match(navigatorSrc, /class:\s*"settings-acc-arrow"/, "每个分区标题行都要有方向箭头");
+assert.match(navigatorSrc, /return \{ node, apply, select, panels \}/,
+  "navigator 必须把 panels 暴露出去");
+assert.match(read("../src/views/settings.js"), /\.\.\.settingsNavigator\.panels/,
+  "设置视图要渲染 navigator 给的 panels，否则手风琴结构根本不生效");
+
+console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, back-key history stack, pinch zoom and the narrow-screen settings accordion");

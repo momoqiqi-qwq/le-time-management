@@ -13,6 +13,7 @@ import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, 
 import { getUiPreferences } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
+import { initBackNav, noteViewChange } from "./backNav.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -227,7 +228,7 @@ export function renderShell(root) {
 
   function refreshPluginPresentation() {
     renderNav();
-    if (activeView === "market" || activeView.startsWith("plug:")) switchTo(activeView);
+    if (activeView === "market" || activeView.startsWith("plug:")) switchTo(activeView, undefined, { history: false });
   }
 
   pluginZipInput.addEventListener("change", async () => {
@@ -613,7 +614,9 @@ export function renderShell(root) {
     syncWindowPinState();
   }
 
-  function switchTo(id, dirHint) {
+  // opts.history=false：程序性重渲染（刷新当前视图、注册表变化后回正、首屏）不该压历史栈，
+  // 否则 Android 返回键要多按好几下才退得出去（见 backNav.js）。
+  function switchTo(id, dirHint, opts = {}) {
     if (id === "settings") {
       openSettingsModal();
       return;
@@ -649,7 +652,7 @@ export function renderShell(root) {
         });
         view.append(box);
         try {
-          const cleanup = def.pluginView.render(box, { refresh: () => switchTo(targetId) });
+          const cleanup = def.pluginView.render(box, { refresh: () => switchTo(targetId, undefined, { history: false }) });
           const stopPluginMotion = observePluginMotion(box);
           view._unsub = () => {
             stopPluginMotion();
@@ -675,6 +678,8 @@ export function renderShell(root) {
           ], { duration: 240, easing: "cubic-bezier(.22,.8,.22,1)" });
         }
       }
+      // 用户真的换了界面才压历史：返回键据此回到上一个界面
+      if (opts.history !== false) noteViewChange(targetId);
     };
 
     // 「弹 2 下」修复：切视图只保留入场动画，不再先播放旧页滑出——
@@ -869,11 +874,17 @@ export function renderShell(root) {
   onNavChanged(() => {
     const missingActivePlugin = activeView.startsWith("plug:") && !viewDef(activeView);
     renderNav();
-    if (missingActivePlugin) switchTo("market");
-    else if (activeView.startsWith("plug:") || activeView === "market") switchTo(activeView);
+    if (missingActivePlugin) switchTo("market", undefined, { history: false });
+    else if (activeView.startsWith("plug:") || activeView === "market") switchTo(activeView, undefined, { history: false });
   });
   // 捕获/插件可请求跳转视图
   window.addEventListener("tide:navigate", (e) => switchTo(e.detail));
-  switchTo(activeView);
+  switchTo(activeView, undefined, { history: false });
+  // Android 返回键的历史栈：必须在首屏视图定下来之后挂（readView 要读到它）。
+  // 桌面端没有返回键，但浏览器/WebView 的后退（Alt+←）也走同一条逻辑。
+  initBackNav({
+    readView: () => activeView,
+    applyView: (id) => switchTo(id, undefined, { history: false }),
+  });
   S.subscribe(renderStat);
 }
