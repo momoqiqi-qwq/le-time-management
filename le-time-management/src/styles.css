@@ -670,6 +670,53 @@ button, .nav { touch-action: manipulation; }
   .volume-row, .audio-actions { justify-content:flex-start; width:100%; }
 }
 
+/* ═══ v0.37.18 · 任务抽屉「提前预警」窄屏重叠修复 ═══
+   现象（Android 竖屏）：标签「提前预警」独占上面一行，chips 行与下一行「所属项目」
+   的输入框（placeholder「无」）压在一起，「到点」按钮叠在输入框上。
+
+   🔴 真根因（实测定位，别再猜）：`.drawer .dbody` 是 `display:flex; flex-direction:column`
+   的纵向容器，而 `.kv` 作为 flex item **默认 `flex-shrink:1`**。窄屏把 `.reminder-kv`
+   改成竖排后，它需要的高度从「单行 74px」涨到「label 行 + 4 行 chips ≈ 130px」，
+   但纵向 flex 容器空间不够时会把每个 item 按 shrink 比例**压回**可用高度 ——
+   实测 `.reminder-kv` 自身只有 58.36px，而里面的 chips 实占 104px（画出盒子外 77.6px），
+   于是 chips 直接糊到下一行「所属项目」上。
+
+   ⚠️ 所以 `min-height:0` 是**反效果**：它解除了下限，item 被压得更扁。真正要的是
+   `flex: none`（`flex:0 0 auto`）—— 禁止收缩、高度由内容撑开。配套还要 `height:auto`
+   （`.kv` 没设 height，但抽屉里别的规则可能给固定高度，显式写死更稳）。
+
+   次要因素（都已一并处理）：
+   - `.kv { justify-content:space-between }` 是给单行横排用的，竖排后主轴变纵向，
+     要显式改成 `flex-start`；
+   - 标签行的内联 `padding-top:7px` 是「单行时假装垂直居中」，竖排后纯属多余。 */
+@media (max-width: 760px) {
+  .drawer .dbody .reminder-kv {
+    flex: none;                    /* 🔴 关键：禁止被纵向 flex 容器压缩，高度由内容决定 */
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;          /* 让 chips 撑满可用宽 */
+    justify-content: flex-start;   /* 干掉继承自 .kv 的 space-between（竖排下会变成纵向均分） */
+    min-height: 0;                 /* 不再死守桌面单行的 74px */
+    gap: 8px;                      /* label 行与 chips 行之间留出明确间距 */
+    padding-bottom: 10px;          /* 与下一条虚线分隔线留呼吸 */
+  }
+  /* 标签行不再用内联 padding-top 假装垂直居中（那是给单行横排用的）。 */
+  .drawer .dbody .reminder-kv > .reminder-kv-lab {
+    padding-top: 0;
+  }
+  .drawer .dbody .reminder-picks {
+    width: 100%;
+    max-width: 100%;
+    justify-content: flex-start;
+    row-gap: 7px;                  /* 换行后行间不留 0，避免 chips 视觉粘连 */
+  }
+  /* 「自定义分钟」在窄屏收窄，让「添加」按钮能与它同排，而不是被挤到单独一行。 */
+  .drawer .dbody .reminder-custom {
+    width: 96px !important;
+    flex: 0 1 auto;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════
    v0.9 · tauri-app-template inspired UI layer
    关键词：中性表面 / 细边框 / 低阴影 / 统一圆角 / 清晰焦点 / 紧凑桌面密度

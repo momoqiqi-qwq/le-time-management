@@ -105,7 +105,7 @@ export function openTaskDrawer(taskId) {
     el("div", { class: "kv" }, el("span", {}, "截止日期"), dueInput),
     el("div", { class: "kv" }, el("span", {}, "截止时间"), dueTimeInput),
     el("div", { class: "kv" }, el("span", {}, "任务提醒"), el("label", { class: "reminder-toggle" }, reminderSwitch, el("span", {}, "启用"))),
-    el("div", { class: "kv reminder-kv", style: "align-items:flex-start" }, el("span", { style: "padding-top:7px" }, "提前预警"), reminderBox),
+    el("div", { class: "kv reminder-kv" }, el("span", { class: "reminder-kv-lab" }, "提前预警"), reminderBox),
     el("div", { class: "kv" }, el("span", {}, "所属项目"), projInput),
     el("div", { class: "kv", style: "align-items:flex-start" }, el("span", { style: "padding-top:8px" }, "备注"), noteInput),
     attBox,

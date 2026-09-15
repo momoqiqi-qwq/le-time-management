@@ -181,26 +181,14 @@ function saveNow() {
   persist();
 }
 
-/* ── 首次启动示例数据（与桌面端一致） ── */
+/* ── 首次启动初始数据 —— 刻意全空，与桌面端 seed_data() 对齐 ──
+   v0.37.17 起不再预置「示例任务」：首启四象限该是干净的，由空状态引导用户自己建。
+   想要样例请走设置里的显式入口，别塞回这里。 */
 function seed() {
-  const d = todayStr();
   return {
     version: 1,
-    tasks: [
-      { id: "t1", title: "回复导师：开题修改稿", note: "", quad: 1, done: true, estMin: 15, tags: ["论文"], project: "毕业设计", due: d, createdAt: Date.now() },
-      { id: "t2", title: "修复登录页线上 bug", note: "疑似 token 过期逻辑", quad: 1, done: false, estMin: 60, tags: ["线上"], project: "毕业设计平台", due: d, createdAt: Date.now() },
-      { id: "t3", title: "答辩 PPT · 第 3 章图表重绘", note: "", quad: 1, done: false, estMin: 120, tags: ["答辩"], project: "毕业设计", due: d, createdAt: Date.now() },
-      { id: "t4", title: "精读《深度工作》第 4 章", note: "", quad: 2, done: false, estMin: 45, tags: ["读书"], project: "读书计划", due: null, createdAt: Date.now() },
-      { id: "t5", title: "每周健身 3 次 · 第 2 次", note: "背 + 二头", quad: 2, done: false, estMin: 40, tags: ["运动"], project: "", due: null, createdAt: Date.now() },
-      { id: "t6", title: "回飞书群消息 12 条", note: "", quad: 3, done: false, estMin: 10, tags: [], project: "", due: d, createdAt: Date.now() },
-      { id: "t7", title: "取快递 + 缴水电费", note: "", quad: 3, done: false, estMin: 20, tags: ["生活"], project: "", due: d, createdAt: Date.now() },
-      { id: "t8", title: "整理相册 · 6 月旅行", note: "", quad: 4, done: false, estMin: 30, tags: [], project: "", due: null, createdAt: Date.now() },
-    ],
-    blocks: [
-      { id: "b1", date: d, start: "09:00", durMin: 120, title: "论文写作 · 第 3 章", taskId: null, cat: "work" },
-      { id: "b2", date: d, start: "11:00", durMin: 45, title: "整理参考文献", taskId: null, cat: "work" },
-      { id: "b3", date: d, start: "11:45", durMin: 75, title: "午餐 + 散步", taskId: null, cat: "life" },
-    ],
+    tasks: [],
+    blocks: [],
     settings: {},
     plugins: {},
   };
