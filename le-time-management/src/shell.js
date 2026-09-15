@@ -428,7 +428,7 @@ export function renderShell(root) {
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
     const panel = el("section", { class: "settings-modal", role: "dialog", "aria-modal": "true", "aria-label": "设置" },
       el("header", { class: "settings-modal-head", "data-tauri-drag-region": dragRegion },
-        el("div", {}, el("h2", {}, "设置"), el("p", { class: "desc" }, "界面、插件、数据和同步集中在这里调整")),
+        el("div", {}, el("h2", {}, "设置")),
         el("button", { class: "btn ghost sm", type: "button", onclick: close }, "关闭"),
       ),
       el("div", { class: "settings-modal-body" }),

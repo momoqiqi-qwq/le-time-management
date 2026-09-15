@@ -50,9 +50,6 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
 
   const plugCard = el("div", { class: "card set-card" },
     el("div", { class: "plugin-title-row" }, el("h2", {}, "插件"), resourceLinks),
-    el("p", { class: "desc" },
-      "插件可以往侧边栏加视图，也能给任务加自定义动作。内置插件随应用分发；用户插件可通过 ZIP 导入，或放到数据目录下的 plugins/ 文件夹。"),
-    el("p", { class: "plugin-security-note" }, "安全提示：插件现在只保留总开关；开启即允许插件使用 manifest 中已声明的能力。外部 ZIP 插件只导入你自己编写、审核过或来源可信的版本。"),
   );
   const regs = getRegistry();
   const userRegs = regs.filter((r) => r.source !== "builtin");

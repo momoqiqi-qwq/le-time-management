@@ -167,8 +167,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 input, select, textarea { font-family: inherit; font-size: 13px; color: var(--ink); }
 /* 深色配色下页面里那些硬编码 background:#fff 的输入框要压掉。按「解析后的模式」判断，
-   而不是按 data-theme="night" —— 否则跟随系统变深、或换到别的深色主题时全部漏掉。 */
-:root[data-theme-mode="dark"] input,
+   而不是按 data-theme="night" —— 否则跟随系统变深、或换到别的深色主题时全部漏掉。
+   注意排除 .switch：滑块开关是纯图形控件，轨道/滑块头的颜色是它自己按令牌算好的
+   （见上方 .switch 定义），被这条 !important 连坐的话深色下整个开关都变成 --panel 色，
+   开与关只剩滑块头位置、颜色完全分不出来。 */
+:root[data-theme-mode="dark"] input:not(.switch),
 :root[data-theme-mode="dark"] select,
 :root[data-theme-mode="dark"] textarea {
   background: var(--panel) !important;
@@ -455,10 +458,54 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .plug-info .pd { font-size: 12px; color: var(--ink-2); margin-top: 4px; line-height: 1.6; }
 .plug-info .pm { font-size: 10.5px; color: var(--ink-3); margin-top: 5px; }
 .plug-info .perr { font-size: 11px; color: var(--danger); margin-top: 5px; }
-.switch { position: relative; width: 40px; height: 22px; border-radius: 12px; background: #D8D2C6; transition: .15s; flex: none; margin-top: 3px; }
-.switch.on { background: var(--mint); }
-.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: .15s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
-.switch.on::after { left: 20px; }
+/* ═══════════ 滑块开关（.switch）═══════════
+   一处定义，两种宿主共用：
+   ① `<button class="switch">` + `.on` —— 插件中心 / 插件市场，状态靠类名
+   ② `<input type="checkbox" class="switch">` —— 设置页 / 任务抽屉，状态靠 :checked
+      （② 由 src/switchControl.js 产出；改外观只改这里）
+
+   配色必须走主题令牌，且这里的两块颜色是按 16 套主题 × 浅/深共 32 组算过的
+   （回归见 scripts/test-switch-control.mjs）：
+     · 轨道（关）= color-mix(in srgb, var(--ink) 55%, var(--panel)) —— --ink 会随模式翻转，
+       于是两种模式下都落在「中性中灰」，既能和面板拉开，又不会亮得像开着；
+     · 轨道（开）= var(--deep)，滑块头一律 var(--panel)（浅色下白、深色下深）。
+   滑块头 vs 轨道最低 3.24:1（浅）/ 4.43:1（深），开态最低 4.61:1，都过 WCAG 1.4.11 的 3:1。
+   反例：旧版轨道写死 #D8D2C6、滑块头写死 #fff，深色下白点几乎看不见。
+   尺寸走 --switch-* 变量，窄屏只改变量，不再手写滑块头的 left 距离。 */
+.switch {
+  --switch-w: 36px;
+  --switch-h: 20px;
+  --switch-pad: 2px;
+  position: relative;
+  flex: none;
+  margin-top: 3px;
+  width: var(--switch-w);
+  height: var(--switch-h);
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 55%, var(--panel));
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: background-color .24s cubic-bezier(.22, .8, .22, 1), box-shadow .24s ease, transform .18s ease;
+}
+:is(.switch.on, .switch:checked) { background: var(--deep); }
+.switch::after {
+  content: "";
+  position: absolute;
+  top: var(--switch-pad);
+  left: var(--switch-pad);
+  width: calc(var(--switch-h) - var(--switch-pad) * 2);
+  height: calc(var(--switch-h) - var(--switch-pad) * 2);
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: transform .24s cubic-bezier(.22, .8, .22, 1);
+}
+:is(.switch.on, .switch:checked)::after {
+  transform: translateX(calc(var(--switch-w) - var(--switch-h)));
+}
 
 /* ═══════════ 插件视图容器 ═══════════ */
 .plugview { height: 100%; overflow-y: auto; padding: 22px 28px; }
@@ -906,9 +953,6 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, te
 .plugin-toolbar { padding: 10px 0; gap: 7px; }
 .plug-card { border-bottom-style: solid; padding: 13px 0; }
 .plug-ic { border-radius: 9px; background: color-mix(in srgb, var(--deep) 10%, var(--panel)); color: var(--deep); }
-.switch { height: 20px; width: 36px; }
-.switch::after { width: 16px; height: 16px; }
-.switch.on::after { left: 18px; }
 
 .drawer-mask { background: rgba(2, 6, 23, .38); backdrop-filter: blur(2px); }
 .drawer {
@@ -1306,21 +1350,15 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .setting-copy small { max-width: 36em; }
 }
 
-/* v0.11.4 · 插件中心简化：开启/关闭统一使用滑块，不再展示逐项权限管理。 */
-.switch {
-  appearance: none;
-  -webkit-appearance: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-  transition: background-color .24s cubic-bezier(.22,.8,.22,1), box-shadow .24s ease, transform .18s ease;
-}
-.switch::after {
-  transition: left .24s cubic-bezier(.22,.8,.22,1), transform .24s cubic-bezier(.22,.8,.22,1), box-shadow .24s ease;
-}
+/* v0.11.4 · 插件中心简化：开启/关闭统一使用滑块，不再展示逐项权限管理。
+   v0.37.19 起基础外观、尺寸与配色统一由上方 `.switch` 主定义提供（设置页滑块同源），
+   这里只保留交互态，避免同一套开关出现两份互相打架的样式。 */
 .switch:hover { box-shadow: 0 0 0 4px color-mix(in srgb, var(--deep) 8%, transparent); }
 .switch:active { transform: scale(.97); }
 .switch:focus-visible { outline: 3px solid color-mix(in srgb, var(--mint) 42%, transparent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .switch, .switch::after { transition: none; }
+}
 
 .market-card-actions { align-items: center; justify-content: space-between; }
 .market-switch-control,

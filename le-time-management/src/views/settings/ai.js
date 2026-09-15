@@ -25,14 +25,12 @@ export async function createAiSettingsCard() {
     spellcheck: "false",
   });
   const state = el("span", { class: `ai-vault-state${status.configured ? " ok" : ""}` }, status.configured ? "已加密保存" : "未配置");
-  const testOut = el("p", { class: "desc ai-test-result" }, "AI 仅获得应用内任务、时间块和收件箱摘要，不提供任何本地文件操作能力。");
+  // 初始留空：这是「测试连接」的结果回显区，不再预置说明文字（v0.37.19）。
+  const testOut = el("p", { class: "desc ai-test-result" });
 
   const card = el("div", { class: "card set-card ai-settings-card" },
     el("div", { class: "ai-card-title-row" },
-      el("div", {},
-        el("h2", {}, "AI 与自动任务"),
-        el("p", { class: "desc" }, "配置 OpenAI 兼容接口。Base URL 与 API Key 不写入 data.json，也不会进入普通备份；凭据由 Rust 后端使用随机本地密钥加密保存。"),
-      ),
+      el("div", {}, el("h2", {}, "AI 与自动任务")),
       state,
     ),
     el("div", { class: "ai-settings-grid" },
@@ -84,10 +82,6 @@ export async function createAiSettingsCard() {
       } }, "清除凭据"),
     ),
     testOut,
-    el("div", { class: "ai-security-note" },
-      el("b", {}, "安全边界"),
-      el("span", {}, "AI 自动任务只能创建/修改应用内任务、创建时间块、添加收件箱事项；没有读取、写入、删除本地文件或执行系统命令的接口。"),
-    ),
   );
   return card;
 }

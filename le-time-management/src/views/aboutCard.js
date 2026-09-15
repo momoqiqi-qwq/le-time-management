@@ -21,10 +21,7 @@ export function createAboutCard(info, registry = []) {
 
   const card = el("div", { class: "card set-card about-card" },
     el("div", { class: "about-head" },
-      el("div", {},
-        el("h2", {}, "关于 Le时间管理"),
-        el("p", { class: "desc" }, "本地优先的时间管理工具：四象限、时间块与插件扩展共用一套数据模型。"),
-      ),
+      el("div", {}, el("h2", {}, "关于 Le时间管理")),
       el("span", { class: "about-version" }, `v${currentVersion}`),
     ),
     el("div", { class: "about-meta-grid" },

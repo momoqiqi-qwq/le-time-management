@@ -12,13 +12,13 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
+import { toggleSwitch } from "../../switchControl.js";
 
-function toggleRow(label, checked, onChange, note = "") {
-  const input = el("input", { type: "checkbox", checked: checked ? true : null });
-  input.addEventListener("change", () => onChange(input.checked));
+/* 开关行：左侧只有名称，右侧一个滑块开关（说明文字已按要求全部去掉，见 v0.37.19）。 */
+function toggleRow(label, checked, onChange) {
   return el("div", { class: "setting-row" },
-    el("span", { class: "setting-copy" }, el("b", {}, label), note ? el("small", {}, note) : null),
-    input,
+    el("span", { class: "setting-copy" }, el("b", {}, label)),
+    toggleSwitch({ checked, onChange }),
   );
 }
 
@@ -98,9 +98,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     else toast(`当前环境无法调整窗口${desktopWindow ? `：${out.reason || "未知原因"}` : ""}`);
   };
   const windowRow = el("div", { class: "setting-row setting-col" },
-    el("span", { class: "setting-copy" },
-      el("b", {}, "启动窗口大小"),
-      el("small", {}, "每次打开应用时的默认窗口大小；手动拖过的尺寸不会记忆")),
+    el("span", { class: "setting-copy" }, el("b", {}, "启动窗口大小")),
     el("div", { class: "win-size-row" },
       windowMode,
       customSize,
@@ -118,21 +116,20 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
 
   return el("div", { class: "card set-card" },
     el("h2", {}, "界面与交互"),
-    el("p", { class: "desc" }, "控制信息密度、文字、动效、手势和启动行为。这里只改变显示与交互，不会修改任务或时间块数据。"),
     el("div", { class: "pref-presets", "aria-label": "界面预设" },
       el("button", { class: "btn ghost sm", onclick: () => applyPreset("舒适", { ...DEFAULT_UI_PREFERENCES }) }, "舒适预设"),
       el("button", { class: "btn ghost sm", onclick: () => applyPreset("高密度", { density: "compact", textScale: 95, motion: "system", showTopStats: true, showViewSubtitle: false }) }, "高密度"),
       el("button", { class: "btn ghost sm", onclick: () => applyPreset("低干扰", { density: "comfortable", textScale: 100, motion: "reduced", showTopStats: false, showViewSubtitle: false }) }, "低干扰"),
     ),
-    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "界面密度"), el("small", {}, "紧凑模式会减少卡片、导航和列表留白")), densityBox),
-    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "底栏高度"), el("small", {}, "手机端底部导航栏的按钮高度与图标大小，桌面端不受影响")), navBarBox),
-    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "文字大小"), el("small", {}, "适合高分屏、远距离显示或更大字号需求")), el("span", { class: "pref-range" }, textScale, textScaleOut)),
-    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "页面动效"), el("small", {}, "减少动效可降低页面切换与按钮过渡")), motion),
-    toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value }), "关闭后顶部更清爽"),
-    toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value }), "让“待办 / 已完成”固定显示在窗口顶部中央"),
-    toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value }), "例如“四象限 · 先决定，再动手”中的说明"),
-    toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value }), "关闭可减少 Android / 触屏设备误触翻页"),
-    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入"), el("small", {}, "选择固定页面，或继续上次离开的位置")), startup),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "界面密度")), densityBox),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "底栏高度")), navBarBox),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "文字大小")), el("span", { class: "pref-range" }, textScale, textScaleOut)),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "页面动效")), motion),
+    toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value })),
+    toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value })),
+    toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value })),
+    toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
+    el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入")), startup),
     desktopWindow ? windowRow : null,
     el("div", { class: "data-actions pref-reset" },
       el("button", { class: "btn ghost sm", onclick: () => { resetUiPreferences(); toast("界面与交互设置已恢复默认"); rerender(); } }, "恢复界面默认"),
@@ -153,14 +150,13 @@ export function createThemeCard() {
   const selectedMode = getThemeMode();
   const themeCard = el("div", { class: "card set-card" },
     el("h2", {}, "主题"),
-    el("p", { class: "desc" }, "选择浅色、深色或跟随系统；每套主题都有自己的深色配色，深色模式下换主题同样会变。切换会即时预览，不会刷新页面。"),
   );
   const modeNote = el("p", { class: "desc theme-mode-note" });
   const modeBox = el("div", { class: "theme-mode", role: "radiogroup", "aria-label": "显示模式" });
-  for (const [id, label, note] of [
-    ["system", "跟随系统", "自动适配系统浅深色"],
-    ["light", "浅色模式", "明亮纸面界面"],
-    ["dark", "深色模式", "低亮度夜间界面"],
+  for (const [id, label] of [
+    ["system", "跟随系统"],
+    ["light", "浅色模式"],
+    ["dark", "深色模式"],
   ]) {
     const on = selectedMode === id;
     modeBox.append(el("button", {
@@ -179,7 +175,7 @@ export function createThemeCard() {
         paintSwatches();
         toast(`已切换为${label}${id === "system" ? `（当前 ${resolveThemeMode() === "dark" ? "深色" : "浅色"}）` : ""}`);
       },
-    }, el("b", {}, label), el("small", {}, note)));
+    }, el("b", {}, label)));
   }
   const themeGrid = el("div", { class: "theme-grid", role: "radiogroup", "aria-label": "界面主题" });
 
@@ -195,9 +191,9 @@ export function createThemeCard() {
   const paintModeNote = () => {
     const resolved = resolveThemeMode();
     const system = getThemeMode() === "system";
+    // 只报「现在实际生效的是哪套配色」这一个状态，不再附带主题数量之类的说明（v0.37.19）。
     modeNote.textContent = `当前生效：${resolved === "dark" ? "深色配色" : "浅色配色"}` +
-      (system ? `（跟随系统，检测到系统为${resolved === "dark" ? "深色" : "浅色"}）` : "") +
-      "；上方 ${THEMES.length} 套主题各自带深色版，深色模式下切换会即时生效。";
+      (system ? `（跟随系统，检测到系统为${resolved === "dark" ? "深色" : "浅色"}）` : "");
   };
 
   const selectTheme = (item, button) => {
@@ -224,7 +220,7 @@ export function createThemeCard() {
       tabindex: selected ? "0" : "-1",
     },
       swatch,
-      el("span", { class: "theme-card-copy" }, el("b", {}, item.name), el("small", {}, item.note)),
+      el("span", { class: "theme-card-copy" }, el("b", {}, item.name)),
       el("span", { class: "theme-selected-mark", "aria-hidden": "true" }, "✓"),
     );
     button.addEventListener("click", () => selectTheme(item, button));
@@ -253,9 +249,8 @@ export function createBackgroundCard({ rerender = () => {} } = {}) {
   const bg = settings.background;
   const bgCard = el("div", { class: "card set-card" },
     el("h2", {}, "自定义背景"),
-    el("p", { class: "desc" }, "支持图片（PNG / JPG / WebP / GIF / BMP / SVG / AVIF / ICO）/ 纯色、填充方式、九宫格位置、平铺、透明度、模糊、亮度、饱和度、遮罩、卡片与组件透明度、毛玻璃——调低「组件透明度」可让侧栏、顶栏和任务卡透出背景。窄屏会自动关闭 fixed 背景，避免 Android WebView 滚动抖动。"),
   );
-  const bgEnabled = el("input", { type: "checkbox", checked: bg.enabled ? true : null });
+  const bgEnabled = toggleSwitch({ checked: bg.enabled });
   const bgImage = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/avif,image/x-icon,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif,.ico", style: "display:none" });
   const bgColor = el("input", { type: "color", value: bg.baseColor || DEFAULT_BACKGROUND.baseColor });
   const fit = el("select", {},
@@ -266,8 +261,8 @@ export function createBackgroundCard({ rerender = () => {} } = {}) {
   const repeat = el("select", {}, el("option", { value:"no-repeat" }, "不平铺"), el("option", { value:"repeat" }, "双向平铺"), el("option", { value:"repeat-x" }, "横向平铺"), el("option", { value:"repeat-y" }, "纵向平铺")); repeat.value = bg.repeat;
   const attachment = el("select", {}, el("option", { value:"fixed" }, "固定背景"), el("option", { value:"scroll" }, "随页面滚动")); attachment.value = bg.attachment;
   const overlayColor = el("input", { type:"color", value:bg.overlayColor || "#000000" });
-  const textShadow = el("input", { type:"checkbox", checked:bg.textShadow ? true : null });
-  const preview = el("div", { class:"bg-preview" }, el("div", { class:"bg-preview-card" }, el("b", {}, "背景适配预览"), el("div", { class:"desc" }, "卡片透明度与文字可读性会同时预览")));
+  const textShadow = toggleSwitch({ checked: bg.textShadow });
+  const preview = el("div", { class:"bg-preview" }, el("div", { class:"bg-preview-card" }, el("b", {}, "背景适配预览")));
   const mkRange = (label, key, min, max, suffix="%") => {
     const input = el("input", { type:"range", min:String(min), max:String(max), value:String(bg[key]) });
     const out = el("output", {}, `${bg[key]}${suffix}`);

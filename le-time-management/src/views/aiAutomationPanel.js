@@ -61,7 +61,7 @@ function openRuleEditor(raw, onSaved) {
 
   panel.append(
     el("div", { class: "ai-rule-editor-head" },
-      el("div", {}, el("h3", {}, raw?.id ? "编辑 AI 自动任务" : "新建 AI 自动任务"), el("p", { class: "desc" }, "到点后 AI 只会执行时间管理白名单操作，不具备本地文件权限。")),
+      el("div", {}, el("h3", {}, raw?.id ? "编辑 AI 自动任务" : "新建 AI 自动任务")),
       el("button", { class: "btn ghost sm", onclick: close }, "关闭"),
     ),
     el("div", { class: "ai-rule-editor-body" },
@@ -71,10 +71,6 @@ function openRuleEditor(raw, onSaved) {
         el("label", { class: "ai-field" }, el("span", {}, "频率"), type),
         el("label", { class: "ai-field" }, el("span", {}, "时间"), time),
         scheduleExtra,
-      ),
-      el("div", { class: "ai-security-note compact" },
-        el("b", {}, "不会操作本地文件"),
-        el("span", {}, "允许：创建/更新任务、创建时间块、添加收件箱。禁止：读写/删除文件、执行命令、打开任意本地路径。"),
       ),
     ),
     el("div", { class: "ai-rule-editor-foot" },
@@ -108,7 +104,7 @@ function openRuleEditor(raw, onSaved) {
 export function createAiAutomationCard({ rerender = () => {} } = {}) {
   const card = el("section", { class: "card set-card ai-automation-card" },
     el("div", { class: "ai-automation-head" },
-      el("div", {}, el("h3", {}, "AI 自动任务"), el("p", { class: "desc" }, "可以创建多个定时 AI 任务。也可以直接用一句话让 AI 帮你设置执行时间和规则。")),
+      el("div", {}, el("h3", {}, "AI 自动任务")),
       el("button", { class: "btn ghost sm", onclick: () => openRuleEditor(null, rerender) }, "手动添加"),
     ),
   );

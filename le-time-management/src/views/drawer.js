@@ -4,6 +4,7 @@ import { el, QUADS, toast } from "../ui.js";
 import { taskActions } from "../pluginHost.js";
 import { PRESET_OFFSETS, normalizeOffsets, reminderLabel } from "../taskReminder.js";
 import { closeLayer } from "../motion.js";
+import { toggleSwitch } from "../switchControl.js";
 
 export function openTaskDrawer(taskId) {
   document.querySelector(".drawer")?._close?.();
@@ -39,8 +40,11 @@ export function openTaskDrawer(taskId) {
   dueInput.addEventListener("change", () => { S.updateTask(t.id, { due: dueInput.value || null }); refresh(); });
   const dueTimeInput = el("input", { type: "time", value: t.dueTime || "23:59" });
   dueTimeInput.addEventListener("change", () => { S.updateTask(t.id, { dueTime: dueTimeInput.value || "23:59" }); refresh(); });
-  const reminderSwitch = el("input", { type: "checkbox", checked: t.reminderEnabled !== false ? true : null });
-  reminderSwitch.addEventListener("change", () => { S.updateTask(t.id, { reminderEnabled: reminderSwitch.checked }); refresh(); });
+  const reminderSwitch = toggleSwitch({
+    checked: t.reminderEnabled !== false,
+    ariaLabel: "启用此任务的提醒",
+    onChange: (value) => { S.updateTask(t.id, { reminderEnabled: value }); refresh(); },
+  });
   const reminderBox = el("div", { class: "reminder-picks" });
   const customOffset = el("input", { type: "number", min: "0", max: "43200", placeholder: "自定义分钟", class: "reminder-custom" });
   const renderReminderPicks = () => {

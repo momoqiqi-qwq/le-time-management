@@ -13,6 +13,7 @@ import { createInterfaceCard, createThemeCard, createBackgroundCard } from "./se
 import { createSettingsNavigator } from "./settings/navigator.js";
 import { createPluginSettingsCard } from "./settings/plugins.js";
 import { createAiSettingsCard } from "./settings/ai.js";
+import { toggleSwitch } from "../switchControl.js";
 
 let info = null;
 let navUnsub = null;
@@ -41,9 +42,8 @@ export function renderSettings(container) {
     rc.defaultOffsets = normalizeOffsets(rc.defaultOffsets || DEFAULT_REMINDER_SETTINGS.defaultOffsets);
     const reminderCard = el("div", { class: "card set-card" },
       el("h2", {}, "任务提醒"),
-      el("p", { class: "desc" }, "设置任务截止提醒的默认预警时间、提示音和音量。每个任务仍可在任务详情里覆盖默认预警。"),
     );
-    const enabled = el("input", { type: "checkbox", checked: rc.enabled !== false ? true : null });
+    const enabled = toggleSwitch({ checked: rc.enabled !== false });
     enabled.addEventListener("change", () => { rc.enabled = enabled.checked; S.saveNow(); });
     const vol = el("input", { type: "range", min: "0", max: "100", step: "1", value: Math.round((Number(rc.volume) || 0) * 100) });
     const volText = el("b", {}, `${vol.value}%`);
@@ -83,7 +83,6 @@ export function renderSettings(container) {
       el("div", { class: "setting-row" }, el("span", {}, "自定义音频"), el("span", { class: "audio-actions" }, audioName, el("button", { class: "btn ghost sm", onclick: () => audioInput.click() }, "导入音频"), el("button", { class: "btn ghost sm", onclick: () => playReminderSound(true) }, "试听"))),
       audioInput,
       el("div", { class: "setting-row setting-col" }, el("span", {}, "默认提前预警"), defaultBox),
-      el("p", { class: "desc reminder-note" }, "提醒在 Le时间管理运行期间触发；任务完成后不会继续提醒。"),
     );
 
     /* 数据中心：完整备份 + CSV / Excel / ICS + 自动备份 */
@@ -91,7 +90,6 @@ export function renderSettings(container) {
     const ab = settings.autoBackup;
     const dataCard = el("div", { class: "card set-card" },
       el("h2", {}, "数据中心"),
-      el("p", { class: "desc" }, "完整备份、表格交换、日历交换和自动恢复点集中在这里。导入前会先创建恢复点；密码、Cookie 和 WebDAV 密码不会进入普通备份。"),
       el("div", { style: "margin:10px 0" }, el("div", { class: "path-code" }, info ? (info.data_dir || info.dataDir || "未知") : "读取中…")),
     );
     const backupInput = el("input", { type: "file", accept: ".json,application/json", style: "display:none" });
@@ -133,7 +131,7 @@ export function renderSettings(container) {
       ),
       backupInput, csvInput, xlsxInput, icsInput,
     );
-    const abEnabled = el("input", { type: "checkbox", checked: ab.enabled !== false ? true : null });
+    const abEnabled = toggleSwitch({ checked: ab.enabled !== false });
     const abFreq = el("select", {}, el("option", { value: "daily" }, "每天"), el("option", { value: "weekly" }, "每周")); abFreq.value = ab.frequency || "daily";
     const abKeep = el("input", { type: "number", min: "3", max: "30", value: ab.keep || 7, style: "width:84px" });
     const backupList = el("div", { class: "backup-list" });
@@ -156,7 +154,8 @@ export function renderSettings(container) {
     const syncUrl = el("input", { type: "url", value: syncCfg.url || "", placeholder: "https://dav.example.com/LeTime/data.json", autocomplete: "off" });
     const syncUser = el("input", { type: "text", value: syncCfg.username || "", placeholder: "WebDAV 用户名", autocomplete: "username" });
     const syncPass = el("input", { type: "password", value: "", placeholder: "仅本次使用，不保存", autocomplete: "current-password" });
-    const syncStatus = el("div", { class: "shortcut-status" }, "同步为手动操作：本地数据仍是事实源，应用不会在后台自动上传。密码不会写入 data.json。");
+    // 初始留空：这是操作结果回显区，不再预先塞一段说明（v0.37.19）。
+    const syncStatus = el("div", { class: "shortcut-status" });
     const persistSyncProfile = async () => {
       syncCfg.url = syncUrl.value.trim();
       syncCfg.username = syncUser.value.trim();
@@ -164,7 +163,6 @@ export function renderSettings(container) {
     };
     const syncCard = el("div", { class: "card set-card" },
       el("h2", {}, "可选同步"),
-      el("p", { class: "desc" }, "v0.10.0 提供 WebDAV 快照同步。适合 Nextcloud / 坚果云兼容 WebDAV 等服务；无需 Le时间管理账号，也不会改变本地优先的数据模型。"),
       el("div", { class: "sync-fields" },
         el("span", {}, "远端 JSON 地址"), syncUrl,
         el("span", {}, "用户名"), syncUser,
@@ -206,7 +204,7 @@ export function renderSettings(container) {
 
     /* 全局快捷键 */
     const shortcutCfg = getShortcutConfig();
-    const shortcutEnabled = el("input", { type: "checkbox", checked: shortcutCfg.enabled !== false ? true : null });
+    const shortcutEnabled = toggleSwitch({ checked: shortcutCfg.enabled !== false });
     const commandShortcut = el("input", { type: "text", value: shortcutCfg.commandPalette || DEFAULT_GLOBAL_SHORTCUTS.commandPalette, placeholder: DEFAULT_GLOBAL_SHORTCUTS.commandPalette, spellcheck: "false" });
     const captureShortcut = el("input", { type: "text", value: shortcutCfg.quickCapture || DEFAULT_GLOBAL_SHORTCUTS.quickCapture, placeholder: DEFAULT_GLOBAL_SHORTCUTS.quickCapture, spellcheck: "false" });
     const shortcutStatus = el("div", { class: "shortcut-status" });
@@ -217,7 +215,6 @@ export function renderSettings(container) {
     paintShortcutStatus();
     const shortcutCard = el("div", { class: "card set-card" },
       el("h2", {}, "全局快捷键"),
-      el("p", { class: "desc" }, "桌面端即使应用不在前台也能呼出命令面板或快速捕获。应用内 Ctrl+K 始终打开全局搜索。"),
       el("div", { class: "setting-row" }, el("span", {}, "启用系统级快捷键"), shortcutEnabled),
       el("div", { class: "shortcut-grid" },
         el("span", {}, "命令面板"), commandShortcut,
@@ -261,8 +258,6 @@ export function renderSettings(container) {
 
     const lanCard = el("div", { class: "card set-card" },
       el("h2", {}, "局域网联动"),
-      el("p", { class: "desc" },
-        "启动后，手机连同一 Wi-Fi，用相机扫码或浏览器打开链接，即可查看今日时间块/任务、勾选完成、快速添加——改动实时回写Le时间管理。配对令牌用于防蹭访问。"),
     );
     const lanBody = el("div", { style: "margin-top:10px" });
     lanCard.append(lanBody);
@@ -275,7 +270,6 @@ export function renderSettings(container) {
           el("div", { style: "display:flex;gap:14px;margin-top:12px;align-items:center" },
             el("img", { src: `${lanStatus.url.replace("/m?", "/qr.svg?")}`, style: "width:132px;height:132px;border-radius:10px;border:1px solid var(--line);background:#fff" }),
             el("div", { style: "flex:1" },
-              el("p", { class: "desc" }, "手机相机扫码 → 浏览器打开即可使用；也可把链接发到手机。"),
               el("div", { style: "display:flex;gap:8px;margin-top:10px" },
                 el("button", { class: "btn ghost sm", onclick: () => { navigator.clipboard?.writeText(lanStatus.url); toast("链接已复制"); } }, "复制链接"),
                 el("button", {
@@ -305,7 +299,6 @@ export function renderSettings(container) {
                 } catch (e) { toast(`启动失败：${e.message || e}`); }
               },
             }, "启动服务"),
-            el("span", { style: "font-size:11px;color:var(--ink-2)" }, "令牌已自动生成，随链接/二维码分发"),
           ),
         );
       }
