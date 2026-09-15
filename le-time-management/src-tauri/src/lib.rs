@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt as _;
@@ -78,7 +78,17 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
     if (document.querySelector('#le-school-import-toolbar')) return;
     const host = document.createElement('div'); host.id = 'le-school-import-toolbar'; host.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647';
     const shadow = host.attachShadow({mode:'open'}); shadow.innerHTML = `<style>*{box-sizing:border-box}div{font:13px system-ui;background:#162b35;color:#fff;border-radius:14px;padding:10px;box-shadow:0 8px 28px #0006;display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:calc(100vw - 32px)}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#fff;color:#17333e;font-weight:650}button.primary{background:#61c1d0;color:#092830}span{max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}</style><div><span data-status>登录后进入课表页面</span><button data-back>后退</button><button data-close>关闭</button><button class="primary" data-import>导入当前课表</button></div>`;
-    const close = () => { setStatus('正在关闭…'); location.href = 'letime-import://close'; };
+    // 关闭走三条重试：Android WebView 对「同一 URL 的重复导航」不再触发
+    // shouldOverrideUrlLoading，只发一次可能被吞（历史教训：状态停在「正在关闭…」）。
+    // 带随机 query 保证每次 URL 都不同；关成功了页面销毁，后续 setTimeout 自然不执行。
+    const close = () => {
+      setStatus('正在关闭…');
+      let n = 0;
+      const go = () => { location.href = 'letime-import://close?r=' + (++n) + '-' + Date.now(); };
+      go();
+      setTimeout(go, 600);
+      setTimeout(go, 1600);
+    };
     shadow.querySelector('[data-back]').onclick = () => { if (history.length > 1) history.back(); else close(); };
     shadow.querySelector('[data-close]').onclick = close;
     shadow.querySelector('[data-import]').onclick = () => { setStatus('正在执行学校适配脚本…'); location.href = 'letime-import://execute'; };
@@ -88,7 +98,29 @@ const SCHOOL_IMPORT_BOOTSTRAP: &str = r#"
 })();
 "#;
 
-fn school_import_bridge(app: &AppHandle, encoded: &str) -> Result<(), String> {
+/// 关闭教务导入窗口。
+///
+/// **Android 上的坑（v0.37.12 修复）**：tauri 的 `window.close()` 在 Android 只是
+/// 丢弃 Rust 侧引用（tao 的 Android Window 没有 Drop/finish 逻辑，runtime 也永远
+/// 收不到 Destroyed 事件），承载教务页面的 Activity 会一直留在返回栈上 —— 用户点
+/// 「关闭」只看到状态停在「正在关闭…」。所以 Android 必须经 wry 的 `JniHandle`
+/// 对承载 Activity 直接调 `finish()`；随后的 `destroy()` 负责清掉 tauri/runtime
+/// 层的引用。桌面端 `destroy()` 等价于原来的 `close()`（不等 closeRequested，更干脆）。
+fn school_import_close(app: &AppHandle, label: &str) {
+  if let Some(window) = app.get_webview_window(label) {
+    #[cfg(target_os = "android")]
+    {
+      let _ = window.with_webview(|webview| {
+        webview.jni_handle().exec(|env, activity, _webview| {
+          let _ = env.call_method(activity, "finish", "()V", &[]);
+        });
+      });
+    }
+    let _ = window.destroy();
+  }
+}
+
+fn school_import_bridge(app: &AppHandle, label: &str, encoded: &str) -> Result<(), String> {
     use base64::Engine as _;
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(encoded)
@@ -115,12 +147,17 @@ fn school_import_bridge(app: &AppHandle, encoded: &str) -> Result<(), String> {
     // 主动把教务窗口关掉，用户不必自己去找关闭按钮（手机端尤其重要：
     // 没有标题栏关闭按钮，只有工具栏那一个出口）。
     if action == "notifyTaskCompletion" {
-        if let Some(window) = app.get_webview_window("school-import") {
-            let _ = window.close();
-        }
+        school_import_close(app, label);
     }
     Ok(())
 }
+
+/// 教务导入窗口的 label 序号。
+///
+/// label 必须每次递增：Android 上 runtime 收不到 Destroyed 事件，tauri manager 里的
+/// 窗口/webview 注册表条目关不掉，第二次用相同 label build 会直接报
+/// 「a webview with label … already exists」。递增 label 让每次导入都是全新注册。
+static IMPORT_WINDOW_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[tauri::command]
 async fn school_import_open(
@@ -136,12 +173,15 @@ async fn school_import_open(
     if !matches!(parsed.scheme(), "http" | "https" | "about") {
         return Err("教务网址仅支持 http/https".into());
     }
-    if let Some(existing) = app.get_webview_window("school-import") {
-        let _ = existing.close();
+    let seq = IMPORT_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed);
+    let label = format!("school-import-{seq}");
+    // 上一扇教务窗还开着就先关掉（桌面端真的关；Android 端 finish Activity + 清引用）
+    if seq > 1 {
+        school_import_close(&app, &format!("school-import-{}", seq - 1));
     }
     let app_for_navigation = app.clone();
     let script_for_navigation = adapter_script.clone();
-    let builder = WebviewWindowBuilder::new(&app, "school-import", WebviewUrl::External(parsed))
+    let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
         .title(format!(
             "时光课程表 · {}",
             title.chars().take(60).collect::<String>()
@@ -154,27 +194,33 @@ async fn school_import_open(
             }
             match target.host_str().unwrap_or("") {
                 "execute" => {
-                    if let Some(window) = app_for_navigation.get_webview_window("school-import") {
+                    if let Some(window) = app_for_navigation.get_webview_window(&label) {
                         let _ = window.eval(script_for_navigation.clone());
                     }
                 }
                 "bridge" => {
                     let encoded = target.path().trim_start_matches('/');
-                    let _ = school_import_bridge(&app_for_navigation, encoded);
+                    let _ = school_import_bridge(&app_for_navigation, &label, encoded);
                 }
                 // 关闭教务窗口。手机端没有窗口标题栏的关闭按钮，系统返回键的行为也由
                 // Tauri 的 Activity 决定，所以必须给工具栏一条自己的退出通道。
+                // 注意 query 带 seq：Android WebView 对相同 URL 的重复导航不再回调，
+                // 工具栏的重试按钮靠它保证每次都触发 on_navigation。
                 "close" => {
-                    if let Some(window) = app_for_navigation.get_webview_window("school-import") {
-                        let _ = window.close();
-                    }
+                    school_import_close(&app_for_navigation, &label);
                 }
                 _ => {}
             }
             false
         });
+    // Android 上必须指定我们自己的 Activity 类：tauri 默认路径拿不到独立 Activity，
+    // close 时也没有可 finish 的目标。SchoolImportActivity 在 gen/android 的
+    // AndroidManifest.xml 注册（gen/ 不入 git，内容备份在 docs/CHANGELOG-v0.37.12.md，
+    // scripts/test-school-import.mjs 会守）。
     // `center()` 在 tauri 里属于 `#[cfg(desktop)]` 门控的 impl 块，Android 上没有这个方法。
     // 不门控的话 Windows 能编过、Android 直接 E0599 编译失败（v0.25.0 起一直如此）。
+    #[cfg(target_os = "android")]
+    let builder = builder.activity_name("SchoolImportActivity");
     #[cfg(desktop)]
     let builder = builder.center();
     builder

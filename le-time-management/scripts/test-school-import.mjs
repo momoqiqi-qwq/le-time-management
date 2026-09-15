@@ -4,13 +4,17 @@ import assert from 'node:assert/strict';
 /*
  * 教务导入窗口的退出通道。
  *
- * 背景（用户反馈）：手机端导入课表后无法返回，点「返回」也没用。
- * 根因：手机端这个教务窗口没有标题栏关闭按钮，而注入工具栏里唯一的「返回」
- * 只是 history.back() —— 停在教务站首屏（没有站内历史）时它是个死按钮，
- * 用户被卡在教务页里出不来。桌面端有窗口的关闭按钮所以一直没暴露。
+ * 背景（用户反馈）：手机端导入课表后无法返回，点「关闭」只显示「正在关闭…」。
+ * 根因（v0.37.12 查实）：tauri 的 window.close() 在 Android 只是丢弃 Rust 侧引用
+ * （tao 的 Android Window 没有 Drop/finish 逻辑，runtime 也收不到 Destroyed 事件），
+ * 承载教务页面的 Activity 永远留在返回栈上。桌面端有窗口关闭按钮所以一直没暴露。
  *
- * 这里守三条：① 工具栏有真正的关闭通道；② Rust 侧真的处理它；
- * ③ 导入流程走完后自动关窗（适配器最后一步会发 notifyTaskCompletion）。
+ * 这里守：
+ * ① 工具栏有真正的关闭通道（带随机 query 重试，防 Android「同 URL 不再回调」）；
+ * ② Rust 侧 close 走「JNI finish Activity + destroy」；
+ * ③ 导入完成后自动关窗（notifyTaskCompletion）；
+ * ④ Android 专用 SchoolImportActivity 存在、注册、并被 school_import_open 指定；
+ * ⑤ label 递增（Android manager 条目关不掉，同 label 二次 build 会报 already exists）。
  */
 
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
@@ -30,27 +34,65 @@ assert.match(
   /\[data-back\]'\)\.onclick[\s\S]{0,160}?close\(\)/,
   '「后退」在教务站首屏（无站内历史）时必须回退到关闭，否则又是个点不动的死按钮',
 );
+// Android WebView 对「同一 URL 的重复导航」不再触发 shouldOverrideUrlLoading ——
+// 关闭必须带随机 query 并重试，否则状态停在「正在关闭…」。
+assert.match(
+  bootstrap,
+  /letime-import:\/\/close\?r=' \+ \(\+\+\w+\) \+ '-' \+ Date\.now\(\)/,
+  'close 导航必须带随机 query（同 URL 重试在 Android 上不会触发 on_navigation）',
+);
+assert.match(
+  bootstrap,
+  /setTimeout\(go, \d+\)[\s\S]{0,40}?setTimeout\(go, \d+\)/,
+  'close 必须定时重试至少两次，防单次导航被吞',
+);
 
-/* ③ Rust 侧必须真的处理 close，并真的关掉那个窗口 */
+/* ③ Rust 侧：close 分支必须走统一的关闭函数 */
 assert.match(rust, /"close"\s*=>/, 'on_navigation 必须处理 letime-import://close');
 assert.match(
   rust,
-  /"close"\s*=>[\s\S]{0,240}?window\.close\(\)/,
-  'letime-import://close 必须真的关闭 school-import 窗口',
+  /"close"\s*=>[\s\S]{0,200}?school_import_close\(&app_for_navigation, &label\)/,
+  'letime-import://close 必须调 school_import_close 真正关闭窗口',
 );
 
-/* ④ 导入流程走完要自动关窗，用户不必自己找按钮 */
+/* ④ 关闭实现：Android 上必须 JNI finish Activity + destroy，不能只 window.close() */
+const closeFn = (rust.match(/fn school_import_close\([\s\S]*?\n\}/) || [])[0];
+assert.ok(closeFn, '必须有 school_import_close 函数');
+assert.match(closeFn, /with_webview/, 'Android 关窗必须经 with_webview 拿平台句柄');
+assert.match(closeFn, /jni_handle\(\)\.exec/, 'Android 关窗必须用 JniHandle::exec');
+assert.match(closeFn, /"finish", "\(\)V"/, '必须在承载 Activity 上调 finish()');
+assert.match(closeFn, /window\.destroy\(\)/, '关闭时必须 destroy() 清 tauri/runtime 引用');
+assert.doesNotMatch(closeFn, /window\.close\(\)/, 'close() 在 Android 是空操作，禁止出现');
+
+/* ⑤ 导入流程走完要自动关窗，用户不必自己找按钮 */
 assert.match(
   rust,
-  /action == "notifyTaskCompletion"[\s\S]{0,300}?window\.close\(\)/,
+  /action == "notifyTaskCompletion"[\s\S]{0,120}?school_import_close\(app, label\)/,
   '导入完成（notifyTaskCompletion）后必须自动关闭教务窗口',
 );
 
-/* ⑤ 自动关窗依赖适配器发完成信号 —— 没发就永远不会触发 */
+/* ⑥ 自动关窗依赖适配器发完成信号 —— 没发就永远不会触发 */
 const adapter = read('../public/plugins/shiguang-schedule/adapters/cppu.js');
 assert.match(adapter, /notifyTaskCompletion/, '适配器必须在导入结束时发 notifyTaskCompletion，否则自动关窗不会触发');
 
-/* ⑥ 别退回「只有 history.back()」的老写法 */
+/* ⑦ Android 专用 Activity：存在、注册、并被 open 指定 */
+const activityKt = read('../src-tauri/gen/android/app/src/main/java/com/yile/letime/SchoolImportActivity.kt');
+assert.match(activityKt, /class SchoolImportActivity : TauriActivity\(\)/, 'SchoolImportActivity 必须是 TauriActivity 的具体子类（abstract 不能 startActivity）');
+const manifest = read('../src-tauri/gen/android/app/src/main/AndroidManifest.xml');
+assert.match(manifest, /android:name="\.SchoolImportActivity"/, 'AndroidManifest 必须注册 SchoolImportActivity，否则 startActivity 直接崩');
+assert.doesNotMatch(manifest, /android:name="\.SchoolImportActivity"[^>]*android:exported="true"/, 'SchoolImportActivity 仅应用内启动，不能 exported');
+assert.match(
+  rust,
+  /#\[cfg\(target_os = "android"\)\]\s*\n\s*let builder = builder\.activity_name\("SchoolImportActivity"\);/,
+  'school_import_open 必须在 Android 上指定 SchoolImportActivity',
+);
+
+/* ⑧ label 必须递增：Android manager 条目关不掉，同 label 二次 build 会报 already exists */
+assert.match(rust, /IMPORT_WINDOW_SEQ: AtomicU64/, '必须有递增的窗口序号');
+assert.match(rust, /let label = format!\("school-import-\{seq\}"\)/, '教务窗口 label 必须带序号');
+assert.doesNotMatch(rust, /WebviewWindowBuilder::new\(&app, "school-import"/, '禁止回到固定 label（二次打不开）');
+
+/* ⑨ 别退回「只有 history.back()」的老写法 */
 assert.doesNotMatch(
   bootstrap,
   /\[data-back\]'\)\.onclick\s*=\s*\(\)\s*=>\s*history\.back\(\);/,
