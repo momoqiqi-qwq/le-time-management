@@ -1,5 +1,17 @@
 import { el } from "../../ui.js";
 
+// 分类图标：复用打包内 Font Awesome solid（与快捷 dock 同款根路径）。
+// 本地小助手而不是从 shell.js 引入，避免设置视图反向依赖外壳造成循环 import。
+function faIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "fa-ic");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `/icons/fontawesome/solid.svg#${name}`);
+  svg.append(use);
+  return svg;
+}
+
 export function createSettingsNavigator(entries, state = {}) {
   const search = el("input", {
     class: "settings-search",
@@ -60,6 +72,7 @@ export function createSettingsNavigator(entries, state = {}) {
         "aria-selected": String(active === entry.id),
         onclick: () => select(entry.id),
       },
+        el("span", { class: "settings-nav-ico", "aria-hidden": "true" }, faIcon(entry.icon || "gear")),
         el("span", { class: "settings-nav-item-copy" },
           el("b", {}, entry.label || entry.id),
           entry.hint ? el("small", {}, entry.hint) : null,

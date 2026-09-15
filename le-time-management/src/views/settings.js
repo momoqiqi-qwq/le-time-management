@@ -316,17 +316,17 @@ export function renderSettings(container) {
     const aboutCard = createAboutCard(info, regs);
 
     const settingEntries = [
-      { id: "ui", node: uiCard, label: "界面与交互", hint: "密度 / 字号 / 动效 / 窗口", keywords: "密度 文字 字号 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题" },
-      { id: "theme", node: themeCard, label: "主题", hint: "配色与阅读模式", keywords: "颜色 夜间 深海 樱花 松林 暮光 极简" },
-      { id: "background", node: bgCard, label: "自定义背景", hint: "壁纸 / 遮罩 / 毛玻璃", keywords: "壁纸 图片 纯色 透明 模糊 毛玻璃 遮罩 亮度 饱和度" },
-      { id: "reminders", node: reminderCard, label: "任务提醒", hint: "预警时间与提示音", keywords: "提醒 预警 音量 提示音 音频 截止" },
-      { id: "data", node: dataCard, label: "数据中心", hint: "备份 / 恢复 / 交换", keywords: "备份 恢复 JSON CSV Excel ICS 自动恢复点 导入 导出" },
-      { id: "sync", node: syncCard, label: "可选同步", hint: "WebDAV 双向同步", keywords: "WebDAV 上传 下载 Nextcloud 坚果云" },
-      { id: "ai", node: aiCard, label: "AI 与自动任务", hint: "Base / API Key / 安全边界", keywords: "AI Base API Key 模型 自动任务 加密 定时" },
-      { id: "shortcuts", node: shortcutCard, label: "全局快捷键", hint: "命令面板与快速捕获", keywords: "快捷键 命令面板 快速捕获 Ctrl" },
-      { id: "lan", node: lanCard, label: "局域网联动", hint: "手机联动与二维码", keywords: "手机 WiFi 二维码 端口 配对" },
-      { id: "plugins", node: plugCard, label: "插件管理", hint: "启用 / 导入 / 导出", keywords: "插件 权限 导入 ZIP 启用 停用 开发文档" },
-      { id: "about", node: aboutCard, label: "关于", hint: "版本与开源信息", keywords: "版本 更新 开源 框架" },
+      { id: "ui", node: uiCard, label: "界面与交互", icon: "sliders", hint: "密度 / 字号 / 动效 / 窗口", keywords: "密度 文字 字号 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题" },
+      { id: "theme", node: themeCard, label: "主题", icon: "palette", hint: "配色与阅读模式", keywords: "颜色 夜间 深海 樱花 松林 暮光 极简" },
+      { id: "background", node: bgCard, label: "自定义背景", icon: "image", hint: "壁纸 / 遮罩 / 毛玻璃", keywords: "壁纸 图片 纯色 透明 模糊 毛玻璃 遮罩 亮度 饱和度" },
+      { id: "reminders", node: reminderCard, label: "任务提醒", icon: "bell", hint: "预警时间与提示音", keywords: "提醒 预警 音量 提示音 音频 截止" },
+      { id: "data", node: dataCard, label: "数据中心", icon: "database", hint: "备份 / 恢复 / 交换", keywords: "备份 恢复 JSON CSV Excel ICS 自动恢复点 导入 导出" },
+      { id: "sync", node: syncCard, label: "可选同步", icon: "cloud-arrow-up", hint: "WebDAV 双向同步", keywords: "WebDAV 上传 下载 Nextcloud 坚果云" },
+      { id: "ai", node: aiCard, label: "AI 与自动任务", icon: "wand-magic-sparkles", hint: "Base / API Key / 安全边界", keywords: "AI Base API Key 模型 自动任务 加密 定时" },
+      { id: "shortcuts", node: shortcutCard, label: "全局快捷键", icon: "keyboard", hint: "命令面板与快速捕获", keywords: "快捷键 命令面板 快速捕获 Ctrl" },
+      { id: "lan", node: lanCard, label: "局域网联动", icon: "network-wired", hint: "手机联动与二维码", keywords: "手机 WiFi 二维码 端口 配对" },
+      { id: "plugins", node: plugCard, label: "插件管理", icon: "puzzle-piece", hint: "启用 / 导入 / 导出", keywords: "插件 权限 导入 ZIP 启用 停用 开发文档" },
+      { id: "about", node: aboutCard, label: "关于", icon: "circle-info", hint: "版本与开源信息", keywords: "版本 更新 开源 框架" },
     ];
     for (const entry of settingEntries) {
       entry.node.classList.add("settings-section");
