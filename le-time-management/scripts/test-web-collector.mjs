@@ -90,4 +90,11 @@ assert.ok(fx.items.some((x) => x.url === 'https://www.resource.edu.cn/'), '补�
 /* ── 六、render 必须真的接上迁移，否则老用户永远看不到新文案 ── */
 assert.match(src, /await ensureDefaults\(\);\s*await migrateNotes\(\);/, 'render 里必须调用 migrateNotes');
 
-console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）与老数据一次性迁移');
+/* ── 七、卡片编辑框不许把卡片撑爆（长标题/长备注溢出，用户实测截图）── */
+const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-collector/manifest.json', import.meta.url), 'utf8'));
+assert.equal(manifest.version, '1.1.1', '修卡片输入框溢出之后必须升插件版本');
+assert.match(src, /\.wc-edit\{[^}]*minmax\(0,1fr\)[^}]*\}/, '.wc-edit 两列轨道必须 minmax(0,1fr) —— 1fr 的下限是 min-content，会被长值撑破卡片');
+assert.match(src, /\.wc-edit input\{[^}]*min-width:0[^}]*\}/, '.wc-edit input 必须 min-width:0，否则输入框固有宽度把卡片顶破');
+assert.match(src, /\.wc-edit input\{[^}]*width:100%[^}]*\}/, '.wc-edit input 必须 width:100% 才会老老实实缩进轨道里');
+
+console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移与卡片编辑框宽度约束');
