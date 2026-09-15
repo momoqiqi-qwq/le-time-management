@@ -30,7 +30,9 @@ assert.match(rust, /ai_vault_clear/);
 assert.match(rust, /ai_chat/);
 assert.doesNotMatch(theme, /id:\s*["']elder["']/);
 assert.doesNotMatch(styles, /\.elder-root|\.care-home/);
-assert.match(shell, /view\.animate/);
+/* v0.37.7「弹 2 下」修复：切视图去掉旧页出场动画（view.animate 已删），
+   平滑动效由入场 page-l/page-r + 标题卡 animate 承担，守卫跟着改 */
+assert.match(shell, /titleCard\.animate/);
 assert.match(aiAutomation, /禁止.*本地文件|不能读取、写入、删除本地文件/);
 assert.match(aiAutomation, /create_task/);
 assert.match(aiAutomation, /create_timeblock/);

@@ -677,15 +677,9 @@ export function renderShell(root) {
       }
     };
 
-    const motion = getUiPreferences().motion;
-    const shouldAnimateExit = prevId !== targetId && view.childElementCount > 0 && motion !== "reduced" && typeof view.animate === "function";
-    if (!shouldAnimateExit) return commit();
-    const exitOffset = dir === "left" ? -12 : 12;
-    const exit = view.animate([
-      { opacity: 1, transform: "translate3d(0,0,0) scale(1)" },
-      { opacity: .1, transform: `translate3d(${exitOffset}px,0,0) scale(.992)` },
-    ], { duration: 120, easing: "cubic-bezier(.4,0,1,1)" });
-    exit.finished.catch(() => {}).then(commit);
+    // 「弹 2 下」修复：切视图只保留入场动画，不再先播放旧页滑出——
+    // 出场 + 入场 + 插件首绘三层动画叠在一起，小窗口里看起来就是界面弹两下。
+    commit();
   }
 
   // ── 插件中心：搜索、筛选、启停与直达 ──

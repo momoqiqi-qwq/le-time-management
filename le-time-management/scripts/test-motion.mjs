@@ -36,6 +36,15 @@ assert.match(motion, /event\.target !== target/);
 assert.match(ui, /removeWithMotion\(t\)/);
 assert.match(shell, /removeWithMotion\(menu\)/);
 assert.match(shell, /observePluginMotion\(box\)/);
+
+/* 「弹 2 下」修复守卫（用户视频反馈：打开插件/切侧边栏界面弹两下）：
+   1) 切视图不再播放旧页出场动画——出场 + 入场 + 插件首绘三层叠加 = 弹两下；
+   2) 插件重绘动画挂载宽限期（视图入场期间插件首绘不叠加）；
+   3) 重绘动画只留淡入，不许再有 7px 位移的「弹跳」。 */
+assert.doesNotMatch(shell, /shouldAnimateExit/, '切视图不许再播旧页出场动画——和入场叠加就是「弹 2 下」');
+assert.match(motion, /settleMs = 350/, 'observePluginMotion 必须有挂载宽限期');
+assert.doesNotMatch(motion, /translate3d\(0, 7px, 0\)/, '插件重绘动画不许带位移——淡入即可，位移就是「弹」');
+assert.match(motion, /startedAt/, '宽限期需要挂载时间戳');
 for (const source of [commandPalette, capture, drawer, timeblock, automationPanel]) {
   assert.match(source, /closeLayer\(/);
 }

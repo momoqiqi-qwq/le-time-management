@@ -69,13 +69,23 @@ export function initMotionInteractions() {
 
 // 插件常用 innerHTML / replaceChildren 重绘局部内容。宿主统一为新内容补上轻量反馈，
 // 让第三方插件无需依赖主应用 CSS 类，也能获得一致的状态切换动效。
-export function observePluginMotion(container) {
+//
+// 「弹 2 下」修复（用户视频反馈）：
+// 1) 挂载宽限期 settleMs——视图本身正在做入场动画，这期间插件的首绘 / 缓存绘
+//    （如学习通 render 里的 loading → paintMain(缓存)）不再叠加动画；
+// 2) 重绘动画只留淡入、去掉 7px 上移——异步数据到达的重绘是「浮现」不是「弹跳」。
+export function observePluginMotion(container, { settleMs = 350 } = {}) {
   if (!container || typeof MutationObserver === "undefined") return () => {};
   const pending = new Set();
   let frame = 0;
+  const startedAt = performance.now();
   const flush = () => {
     frame = 0;
     if (reducedMotion()) {
+      pending.clear();
+      return;
+    }
+    if (performance.now() - startedAt < settleMs) {
       pending.clear();
       return;
     }
@@ -87,12 +97,9 @@ export function observePluginMotion(container) {
       const topLevel = node.parentElement === container;
       node.animate(
         topLevel
-          ? [
-              { opacity: .18, transform: "translate3d(0, 7px, 0) scale(.997)" },
-              { opacity: 1, transform: "translate3d(0, 0, 0) scale(1)" },
-            ]
+          ? [{ opacity: .2 }, { opacity: 1 }]
           : [{ opacity: .24 }, { opacity: 1 }],
-        { duration: topLevel ? 210 : 160, easing: "cubic-bezier(.22,.8,.22,1)" },
+        { duration: topLevel ? 180 : 160, easing: "cubic-bezier(.22,.8,.22,1)" },
       );
     }
   };
