@@ -10,27 +10,32 @@ const expandedCards = new Set();
 function taskCard(t) {
   const scheduled = S.getState().blocks.find((b) => b.taskId === t.id);
   const hasNote = !!(t.note && t.note.trim());
-  const expandable = hasNote || t.title.length > 16;
+  // 标题现在一律换行完整显示（卡片随内容变高），不再截断，
+  // 所以「可展开」只服务于备注/原始消息，不再由标题长度触发。
+  const expandable = hasNote;
   const card = el("button", { class: `tkc${t.done ? " done" : ""}${expandedCards.has(t.id) ? " expanded" : ""}`, "data-id": t.id },
     el("span", {
       class: "cb",
       onclick: (e) => { e.stopPropagation(); S.toggleTask(t.id); },
     }, t.done ? "✓" : ""),
     el("span", { class: "tt" },
-      (() => {
-        const titleSpan = el("span", { class: "t", title: t.title }, t.title);
-        if (expandable) {
-          // 点标题就地展开/收起（长标题或带原始消息），不打开抽屉
-          titleSpan.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (expandedCards.has(t.id)) expandedCards.delete(t.id);
-            else expandedCards.add(t.id);
-            card.classList.toggle("expanded", expandedCards.has(t.id));
-          });
-        }
-        return titleSpan;
-      })(),
-      expandable ? el("span", { class: "exp" }, "⌄") : null,
+      // 标题行：标题 + 展开箭头同处一行，标题换行时卡片自动变高，不再截断
+      el("span", { class: "tt-top" },
+        (() => {
+          const titleSpan = el("span", { class: "t", title: t.title }, t.title);
+          if (expandable) {
+            // 点标题就地展开/收起备注，不打开抽屉
+            titleSpan.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (expandedCards.has(t.id)) expandedCards.delete(t.id);
+              else expandedCards.add(t.id);
+              card.classList.toggle("expanded", expandedCards.has(t.id));
+            });
+          }
+          return titleSpan;
+        })(),
+        expandable ? el("span", { class: "exp" }, "⌄") : null,
+      ),
       hasNote ? el("span", { class: "tn" }, t.note) : null,
       el("span", { class: "m" },
         t.due ? `截止 ${t.due.slice(5).replace("-", "/")} ${t.dueTime || "23:59"}` : "无截止",

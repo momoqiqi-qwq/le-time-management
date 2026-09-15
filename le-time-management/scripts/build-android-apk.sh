@@ -44,6 +44,40 @@ case "$(uname -s)" in
     ;;
 esac
 
+# ⓪ 桌面图标名必须是「Le时间管理」
+#    MainActivity 上的 android:label="@string/main_activity_title" 会覆盖 application 级
+#    android:label="@string/app_name"，launcher 显示的是 activity 的 label —— 于是图标名变成
+#    「Le时间管理 · 时间块与四象限」（手机桌面放不下、被截断）。
+#    gen/ 是 gitignored 的生成目录，手改会在下次 `tauri android init` 时丢失，所以在这里做
+#    幂等补丁：删掉 activity 级 label，让图标回落到 app_name。
+MANIFEST="src-tauri/gen/android/app/src/main/AndroidManifest.xml"
+if [ -f "$MANIFEST" ]; then
+  # 只删 MainActivity 块里的 label（launcher 图标取名用的就是它）。
+  # 注意两种写法：MainActivity 是 <activity ...>...</activity>（内含 intent-filter），
+  # SchoolImportActivity 是自闭合 <activity ... />。教务窗口的 label 是有意保留的应用内标题，
+  # 所以这里必须按 android:name 精确定位，不能笼统删所有 activity 的 label。
+  python - "$MANIFEST" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+src = p.read_text(encoding="utf-8")
+# 匹配 MainActivity 的 <activity ...> 开标签（到第一个 '>' 为止），删掉其中的 label 属性行
+pat = re.compile(r'(<activity\b(?:(?!>).)*?android:name="\.MainActivity")((?:(?!>).)*?>)', re.S)
+
+def fix(m):
+    head, tail = m.group(1), m.group(2)
+    head = re.sub(r'\n\s*android:label="@string/main_activity_title"', '', head)
+    tail = re.sub(r'\n\s*android:label="@string/main_activity_title"', '', tail)
+    return head + tail
+
+out = pat.sub(fix, src)
+if out != src:
+    p.write_text(out, encoding="utf-8", newline="")
+    print("── 已移除 MainActivity 的 label，桌面图标名回落为 app_name ──")
+else:
+    print("── MainActivity 无 label，已是干净状态 ──")
+PY
+fi
+
 # vite emptyOutDir 已设为 false；如需清理 dist 请在构建前手动删除
 # ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）
 npx vite build

@@ -37,6 +37,17 @@
   --shadow-lg: 0 10px 32px rgba(34, 48, 58, .16);
   --rail-w: 212px;
 
+  /* 安全区（v0.37.15）。Android WebView 不实现 env(safe-area-inset-*)，取值恒为 0，
+     而 MainActivity 的 enableEdgeToEdge() 又让状态栏作为透明浮层盖在网页之上
+     —— 顶栏于是直接压到状态栏图标下面（设置页标题与「关闭」按钮被遮挡）。
+
+     解法：原生侧读真实 WindowInsets，注入 --sat/--sab/--sal/--sar（单位 px），
+     前端一律写 var(--sat, env(safe-area-inset-top, 0px))：
+     Android 命中注入值，桌面 / iOS 落到 env()，两者都不可用时才是 0。
+
+     ⚠️ 这里千万不要给 --sat / --sab / --sal / --sar 写任何兜底默认值：变量一旦在 :root 被定义为
+     有效值，var() 的第二参数就永远不会生效，iOS / 桌面的原生 env() 会被彻底废掉。 */
+
   /* 插件主题兼容别名：旧插件可直接继承主程序色板。 */
   --card: var(--panel);
   --border: var(--line);
@@ -210,8 +221,8 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 /* ── 主区 ── */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .topbar {
-  height: calc(58px + env(safe-area-inset-top, 0px)); flex: none;
-  padding: env(safe-area-inset-top, 0px) 26px 0;
+  height: calc(58px + var(--sat, env(safe-area-inset-top, 0px))); flex: none;
+  padding: var(--sat, env(safe-area-inset-top, 0px)) 26px 0;
   display: flex; align-items: center; gap: 16px;
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg) 72%, #fff);
@@ -262,24 +273,27 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .q3 { background: var(--q3-bg); } .q3 .sq { background: var(--q3); } .q3 .rn { color: var(--q3); }
 .q4 { background: var(--q4-bg); } .q4 .sq { background: var(--q4); } .q4 .rn { color: var(--q4); }
 
-.tkc { background: var(--panel); border-radius: 10px; padding: 9px 13px; display: flex; align-items: center; gap: 10px;
+.tkc { background: var(--panel); border-radius: 10px; padding: 9px 13px; display: flex; align-items: flex-start; gap: 10px;
   box-shadow: 0 1px 2px rgba(34,48,58,.06); cursor: pointer; text-align: left; width: 100%; }
 .tkc:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(34,48,58,.12); }
 .tkc .cb { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #C9C4B8; flex: none;
-  display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--on-accent); }
+  display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--on-accent);
+  margin-top: 1px; }
 .tkc.done .cb { background: var(--q4); border-color: var(--q4); }
-.tkc .tt { flex: 1; min-width: 0; }
-.tkc .tt { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.tkc .tt .t { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.tkc.expanded .tt .t { white-space: normal; overflow: visible; text-overflow: clip; }
-.tkc .tt .exp { font-size: 9px; color: var(--ink-3); flex: none; line-height: 1; }
+/* .tt 改为纵向排布：标题行 / 备注 / 元信息各占一行，文字多时卡片自然变高 */
+.tkc .tt { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+.tkc .tt .tt-top { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.tkc .tt .t { font-size: 13px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
+.tkc .tt .exp { font-size: 9px; color: var(--ink-3); flex: none; line-height: 1.6; }
 .tkc.expanded .tt .exp { display: none; }
-.tkc .tt .tn { display: none; font-size: 11px; color: var(--ink-2); line-height: 1.7; white-space: normal; flex-basis: 100%; }
+.tkc .tt .tn { display: none; font-size: 11px; color: var(--ink-2); line-height: 1.7; white-space: pre-wrap; }
 .tkc.expanded .tt .tn { display: block; }
-.tkc .tt .m { font-size: 10.5px; color: var(--ink-2); margin-top: 2px; }
+.tkc .tt .m { font-size: 10.5px; color: var(--ink-2); }
 .tkc.done .t { text-decoration: line-through; color: var(--ink-2); font-weight: 400; }
 .tkc .est { font-size: 10.5px; color: var(--ink-2); background: var(--paper); border-radius: 6px; padding: 2px 8px; flex: none; }
 .tkc .sch { font-size: 10px; color: var(--deep); background: #E1EEF3; border-radius: 6px; padding: 2px 7px; flex: none; }
+/* 右侧徽标（已排 / 时长）随卡片变高时与首行对齐，不要被 align-items 拉到中间 */
+.tkc > .est, .tkc > .sch { align-self: flex-start; margin-top: 1px; }
 
 .q .addq { margin-top: 8px; border: 1.5px dashed rgba(34,48,58,.18); border-radius: 9px; padding: 7px;
   font-size: 12px; color: var(--ink-2); text-align: center; width: 100%; }
@@ -512,13 +526,13 @@ button, .nav { touch-action: manipulation; }
      内容一高顶栏就被推出屏幕外（旧写法的隐藏 bug） */
   .app { flex-direction: column; }
   .main { order: 1; flex: 1 1 0; height: 100dvh; }
-  .view { padding-bottom: calc(var(--nav-pad, 62px) + env(safe-area-inset-bottom)); }
+  .view { padding-bottom: calc(var(--nav-pad, 62px) + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .rail { order: 2; }
   /* 底栏：扁平单行核心入口，图标+小字，激活变色不加底。高度档位由设置「底栏高度」控制 */
   .rail {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
     width: 100%; flex: none; flex-direction: row; align-items: stretch;
-    padding: 2px 6px calc(4px + env(safe-area-inset-bottom));
+    padding: 2px calc(6px + var(--sar, env(safe-area-inset-right, 0px))) calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))) calc(6px + var(--sal, env(safe-area-inset-left, 0px)));
     border-top: 1px solid rgba(255, 255, 255, .07);
     box-shadow: 0 -8px 24px rgba(13, 31, 38, .18);
   }
@@ -543,8 +557,8 @@ button, .nav { touch-action: manipulation; }
   .nav button.on { background: none; box-shadow: none; color: #fff; font-weight: 600; }
   .nav button.on .ic { color: #17323A; transform: translateY(-1px) scale(1.04); }
   .nav .pv-count { display: none; }
-  .topbar { padding-right: 14px; padding-left: 14px; height: calc(52px + env(safe-area-inset-top, 0px)); }
-  .drawer { width: 100vw; max-width: 100vw; padding-top: env(safe-area-inset-top, 0px); }
+  .topbar { padding-right: 14px; padding-left: 14px; height: calc(52px + var(--sat, env(safe-area-inset-top, 0px))); }
+  .drawer { width: 100vw; max-width: 100vw; padding-top: var(--sat, env(safe-area-inset-top, 0px)); }
   .topbar h1 { font-size: clamp(15px, 4.2vw, 17px); }
   .topbar .sub { display: none; }
   .topbar .pill { padding: 4px 10px; font-size: 11px; }
@@ -564,7 +578,7 @@ button, .nav { touch-action: manipulation; }
   .tb-aside { width: 100%; padding: 4px 14px 18px; }
   .set-wrap { padding: 14px; }
   .plugview { padding: 14px; }
-  .market { padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); }
+  .market { padding: 14px 14px calc(18px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .mcard { padding: 16px 10px 14px; min-height: 118px; }
   .plug-card { align-items: center; gap: 10px; }
@@ -572,7 +586,7 @@ button, .nav { touch-action: manipulation; }
   .set-card { padding: 16px 14px; }
   .toast { max-width: calc(100vw - 24px); }
   /* toast 移到顶栏下方，避免被底栏挡住 */
-  #toasts { right: 12px; bottom: calc(86px + env(safe-area-inset-bottom)); }
+  #toasts { right: 12px; bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 
 @media (max-width: 520px) {
@@ -584,7 +598,7 @@ button, .nav { touch-action: manipulation; }
   .block { right: 12px; }
   .drawer .dh { padding: 16px 18px 0; }
   .drawer .dbody { padding: 14px 18px; }
-  .drawer .dfoot { padding: 12px 18px calc(18px + env(safe-area-inset-bottom)); }
+  .drawer .dfoot { padding: 12px 18px calc(18px + var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 
 .task-search { margin: 0 0 14px; width: 100%; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; }
@@ -756,7 +770,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .topbar {
-  height: calc(54px + env(safe-area-inset-top, 0px));
+  height: calc(54px + var(--sat, env(safe-area-inset-top, 0px)));
   padding-left: 22px; padding-right: 22px;
   gap: 10px;
   background: color-mix(in srgb, var(--panel) 94%, transparent);
@@ -867,13 +881,13 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, te
 @media (max-width: 900px) {
   .app { padding: 0; }
   .main { background: var(--bg); }
-  .topbar { height: calc(50px + env(safe-area-inset-top, 0px)); padding-left: 14px; padding-right: 14px; }
+  .topbar { height: calc(50px + var(--sat, env(safe-area-inset-top, 0px))); padding-left: 14px; padding-right: 14px; }
   .rail { background: color-mix(in srgb, var(--panel) 97%, var(--paper)); border-top: 1px solid var(--line); }
   .nav button { color: var(--ink-2); }
   .nav button.on { color: var(--ink); }
   .nav button .ic { background: transparent; }
   .nav button.on .ic { background: color-mix(in srgb, var(--deep) 11%, var(--panel)); }
-  .quad-wrap, .plugview, .market, .set-wrap { padding: 14px 14px calc(18px + env(safe-area-inset-bottom)); }
+  .quad-wrap, .plugview, .market, .set-wrap { padding: 14px 14px calc(18px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mcard { min-height: 126px; padding: 14px; }
 }
@@ -1312,6 +1326,15 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .topbar-title-copy h1 { margin: 0; }
 .topbar-title-copy .sub { display: block; }
 .topbar-action-card { gap: 8px; margin-left: 12px; }
+/* 顶栏右侧工具不再套外层大框（用户反馈「框太多」）：外层容器透明无边框，
+   视觉层级只由各按钮自身的边框/底色表达；标题卡的框保留不变。 */
+.topbar-action-card {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
 .topbar-action-card .pill {
   background: color-mix(in srgb, var(--deep) 8%, var(--panel));
   color: var(--ink-2);
@@ -1529,8 +1552,11 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .settings-section[hidden] { display: none !important; }
 
 @media (max-width: 980px) {
-  .settings-layout { grid-template-columns: 1fr; }
-  .settings-sidebar { position: static; }
+  /* minmax(0,1fr)：1fr 的自动最小值会被横向分类导航的 min-content（11×200px）撑爆，
+     整页被顶出屏幕右缘且无法横向滚动（手机设置页横向溢出）。0 下限让轨道锁在视口内，
+     .settings-catalog 的 overflow-x:auto 才能真正就地滚动。 */
+  .settings-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings-sidebar { position: static; min-width: 0; }
   .settings-catalog {
     flex-direction: row;
     overflow-x: auto;
@@ -1546,8 +1572,11 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .topbar {
     gap: 8px;
     flex-wrap: nowrap;
-    height: calc(54px + env(safe-area-inset-top, 0px));
-    padding-top: env(safe-area-inset-top, 0px);
+    height: calc(54px + var(--sat, env(safe-area-inset-top, 0px)));
+    /* 左/右也要吃刘海：横屏时挖孔会跑到侧边，只补 top 会让标题卡压进摄像头区。 */
+    padding-top: var(--sat, env(safe-area-inset-top, 0px));
+    padding-left: calc(14px + var(--sal, env(safe-area-inset-left, 0px)));
+    padding-right: calc(14px + var(--sar, env(safe-area-inset-right, 0px)));
     padding-bottom: 0;
   }
   .topbar-title-card,
@@ -2109,7 +2138,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .quick-dock {
   position: fixed;
-  top: calc(58px + env(safe-area-inset-top, 0px));
+  top: calc(58px + var(--sat, env(safe-area-inset-top, 0px)));
   right: 20px;
   z-index: 70;
   width: 292px;
@@ -2269,7 +2298,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 @media (max-width: 760px) {
   .quick-menu-trigger-label { display: none; }
   .quick-dock {
-    top: calc(62px + env(safe-area-inset-top, 0px));
+    top: calc(62px + var(--sat, env(safe-area-inset-top, 0px)));
     right: 12px;
     bottom: auto;
     width: min(292px, calc(100vw - 24px));
@@ -2394,7 +2423,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 :root[data-center-top-stats="on"] .topbar-action-card > .pill {
   position: absolute;
   left: 50%;
-  top: calc(50% + env(safe-area-inset-top, 0px) / 2);
+  top: calc(50% + var(--sat, env(safe-area-inset-top, 0px)) / 2);
   z-index: 2;
   transform: translate(-50%, -50%);
   box-shadow: 0 7px 22px rgba(15, 23, 42, .1);
