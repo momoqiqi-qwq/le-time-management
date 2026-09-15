@@ -220,36 +220,47 @@
       return label;
     };
 
-    const soundSel = document.createElement("select");
-    soundSel.style.cssText = "max-width:150px;height:30px;border:1px solid var(--line,#E4DFD6);border-radius:8px;padding:0 8px;background:var(--paper,#fff);color:var(--ink,#22303A);font-size:12px";
+    // 内置音效做成可见的胶囊按钮组（手机上不展开下拉也能看到全部常见提醒音），
+    // 点一下＝选中并试听；自定义音频仍走下面单独一行。
+    const soundChips = document.createElement("div");
+    soundChips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
     const soundNote = document.createElement("div");
     soundNote.style.cssText = "font-size:11px;color:var(--ink-3,#8FA2A8);margin-top:-2px";
-    // 宿主没回话时的最小兜底：至少保住原来那一项。
+    const soundChipEls = new Map();
+    function syncSoundChips() {
+      for (const [id, b] of soundChipEls) {
+        const active = reminder.sound === id;
+        b.style.background = active ? "var(--deep,#0F4C5C)" : "var(--panel,#fff)";
+        b.style.color = active ? "var(--on-deep,#fff)" : "var(--ink-2,#7E8B94)";
+        b.style.borderColor = active ? "var(--deep,#0F4C5C)" : "var(--line,#E4DFD6)";
+      }
+    }
+    // 宿主没回话时的最小兜底：至少保住默认那一项。
     const fillSounds = (presets) => {
-      soundSel.replaceChildren();
+      soundChips.replaceChildren();
+      soundChipEls.clear();
       for (const p of presets) {
-        const o = document.createElement("option");
-        o.value = p.id; o.textContent = p.label;
-        if (p.note) o.title = p.note;
+        const b = chip(p.label, () => {
+          if (reminder.sound === p.id) { playReminderSound(true); return; }
+          reminder.sound = p.id;
+          saveReminder();
+          updateSummary();
+          updateNote();
+          syncSoundChips();
+          playReminderSound(true);
+        });
+        b.type = "button";
+        b.title = p.note || p.label;
+        soundChipEls.set(p.id, b);
+        soundChips.append(b);
         presetLabels[p.id] = p.label;
         if (p.note) presetNotes[p.id] = p.note;
-        soundSel.append(o);
       }
-      const custom = document.createElement("option");
-      custom.value = "custom"; custom.textContent = "自定义音频";
-      soundSel.append(custom);
-      soundSel.value = reminder.sound;
       updateSummary();
       updateNote();
+      syncSoundChips();
     };
     fillSounds([{ id: REMINDER_DEFAULT.sound, label: "清脆提示" }]);
-    soundSel.addEventListener("change", () => {
-      reminder.sound = soundSel.value;
-      saveReminder();
-      updateSummary();
-      updateNote();
-      if (reminder.sound !== "custom") playReminderSound(true);
-    });
     try {
       Promise.resolve(tide.sound.presets()).then(fillSounds).catch(() => {});
     } catch (e) { console.warn("番茄专注：音效目录读取失败", e); }
@@ -302,7 +313,8 @@
     body.append(
       row("专注结束", check("focusNotify", "通知"), check("focusSound", "声音")),
       row("休息结束", check("breakNotify", "通知"), check("breakSound", "声音")),
-      row("提示音", soundSel, chip("试听", () => playReminderSound(true), true)),
+      row("提示音", chip("试听", () => playReminderSound(true), true)),
+      soundChips,
       soundNote,
       row("音量", vol, volText),
       row("自定义音频", audioName, chip("导入", () => audioInput.click()), clearAudio),
@@ -324,7 +336,7 @@
     /** 把当前 reminder 值灌回控件（storage 读完之后、以及导入 / 清除音频之后）。 */
     function sync() {
       for (const key of ["focusNotify", "focusSound", "breakNotify", "breakSound"]) if (controls[key]) controls[key].checked = reminder[key] !== false;
-      soundSel.value = reminder.sound;
+      syncSoundChips();
       vol.value = String(Math.round(reminder.volume * 100));
       volText.textContent = `${vol.value}%`;
       audioName.textContent = reminder.customAudio ? (reminder.customAudioName || "已导入音频") : "未导入";
