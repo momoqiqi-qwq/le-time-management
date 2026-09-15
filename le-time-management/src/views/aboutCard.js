@@ -2,6 +2,7 @@ import { el } from "../ui.js";
 import { api } from "../api.js";
 import { PROJECT_LINKS } from "../projectLinks.js";
 import { ABOUT_DOCS, FRAMEWORKS, OPEN_SOURCE_PROJECTS, RELEASE_NOTES } from "../aboutData.js";
+import { createUpdateSettingsPanel } from "./settings/update.js";
 
 function sectionTitle(text) {
   return el("h3", { class: "about-section-title" }, text);
@@ -31,6 +32,10 @@ export function createAboutCard(info, registry = []) {
       el("div", { class: "about-meta" }, el("span", {}, "设备联动"), el("b", {}, "由用户主动开启")),
     ),
   );
+
+  // 软件更新紧跟在版本信息后面：关于页本来就写着版本号，检查 / 升级 / 两个提示开关都放这儿。
+  // 细节见 views/settings/update.js；逻辑见 src/updateChecker.js。
+  card.append(sectionTitle("软件更新"), createUpdateSettingsPanel({ currentVersion }));
 
   const releaseList = el("ul", { class: "about-bullets" });
   RELEASE_NOTES.forEach((text) => releaseList.append(el("li", {}, text)));

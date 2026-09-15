@@ -13,6 +13,7 @@ import { initCommandPalette } from "./commandPalette.js";
 import { initGlobalShortcuts } from "./globalShortcuts.js";
 import { initAutomation } from "./automation.js";
 import { initMotionInteractions } from "./motion.js";
+import { initUpdateChecker } from "./updateChecker.js";
 
 // 首次启动的初始数据 —— 刻意全空，让空状态引导用户自己建第一条（对接 Rust seed_data()）。
 // ⚠️ 这里不要再塞示例任务：首启四象限/时间块该是干净的。样例请做成显式入口（如「恢复示例数据」）。
@@ -42,6 +43,8 @@ async function boot() {
   initTaskReminders();
   initCommandPalette();
   initGlobalShortcuts().catch((e) => console.warn("全局快捷键不可用:", e));
+  // 应用内更新：内部自己延迟 8s 再查，且不 await —— 绝不挡住首屏。
+  initUpdateChecker();
   api.appInfo().then((x) => initAutomation(x?.version || "")).catch(() => initAutomation(""));
   // 手机端（局域网）指令 → 应用统一数据层
   if (api.isTauri) {

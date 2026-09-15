@@ -68,6 +68,34 @@ export const api = {
     return invoke("app_info");
   },
 
+  /* 应用内更新（Rust 侧 src-tauri/src/update.rs，消费方 src/updateChecker.js）。
+     全部「仅 Tauri」：浏览器里 return null 而不是抛错，让 updateChecker 的
+     isUpdaterSupported() 判断能安静降级，不用到处 try/catch。 */
+  async updateCheck() {
+    if (!isTauri) return null;
+    return invoke("update_check");
+  },
+  // 返回下载后落盘的绝对路径；size 传给 Rust 当进度分母与完整性校验基准。
+  async updateDownload(url, name, size) {
+    if (!isTauri) return null;
+    return invoke("update_download", { url, name, size });
+  },
+  // Windows 上 Rust 会启动安装器后立刻 app.exit(0)，这个 Promise 可能等不到 resolve。
+  async updateInstall(path) {
+    if (!isTauri) return null;
+    return invoke("update_install", { path });
+  },
+  // Android 专有：{ready, platform, reason}。其它平台恒为 {ready:true}。
+  async updateReady() {
+    if (!isTauri) return null;
+    return invoke("update_ready");
+  },
+  // Android 专有：跳到「安装未知来源应用」授权页。
+  async updateOpenInstallSettings() {
+    if (!isTauri) return null;
+    return invoke("update_open_install_settings");
+  },
+
   // 插件网络桥：Tauri 端由 Rust 发请求（绕开 CORS），浏览器端直接 fetch
   async httpGet(url) {
     if (isTauri) return invoke("http_get", { url });

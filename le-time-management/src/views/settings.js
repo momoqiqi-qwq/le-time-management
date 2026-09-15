@@ -14,12 +14,17 @@ import { createSettingsNavigator } from "./settings/navigator.js";
 import { createPluginSettingsCard } from "./settings/plugins.js";
 import { createAiSettingsCard } from "./settings/ai.js";
 import { toggleSwitch } from "../switchControl.js";
+import {
+  getUpdateSettings, setUpdateSettings, getUpdateState, subscribeUpdateState,
+  describeUpdateState, isUpdaterSupported, checkForUpdates, startUpdate,
+  installUpdate, openInstallPermission, clearSkippedVersion,
+} from "../updateChecker.js";
 
 let info = null;
 let navUnsub = null;
 const settingsNavState = { query: "", filter: "all" };
 
-export function renderSettings(container) {
+export function renderSettings(container, opts = {}) {
   // 插件是异步加载的：注册表变化（导航变化）时重渲染，避免卡片缺位
   navUnsub?.();
   navUnsub = onNavChanged(() => { if (container.isConnected) render(); });
@@ -319,7 +324,8 @@ export function renderSettings(container) {
       { id: "shortcuts", node: shortcutCard, label: "全局快捷键", icon: "keyboard", hint: "命令面板与快速捕获", keywords: "快捷键 命令面板 快速捕获 Ctrl" },
       { id: "lan", node: lanCard, label: "局域网联动", icon: "network-wired", hint: "手机联动与二维码", keywords: "手机 WiFi 二维码 端口 配对" },
       { id: "plugins", node: plugCard, label: "插件管理", icon: "puzzle-piece", hint: "启用 / 导入 / 导出", keywords: "插件 权限 导入 ZIP 启用 停用 开发文档" },
-      { id: "about", node: aboutCard, label: "关于", icon: "circle-info", hint: "版本与开源信息", keywords: "版本 更新 开源 框架" },
+      // 更新入口在「关于」里（软件更新）：关键词挂这儿，搜「更新 / 升级」也能落到关于。
+      { id: "about", node: aboutCard, label: "关于", icon: "circle-info", hint: "版本 / 软件更新 / 开源信息", keywords: "版本 更新 升级 检查更新 自动更新 弹窗提示 忽略此版本 开源 框架" },
     ];
     for (const entry of settingEntries) {
       entry.node.classList.add("settings-section");
@@ -332,6 +338,9 @@ export function renderSettings(container) {
     // 设置中心头卡已移除：纯展示内容占掉首屏空间，左侧分类导航本身已承担引导职责。
     wrap.replaceChildren(layout);
     settingsNavigator.apply();
+    // 外部（如更新提示条的「立即更新」）可以点名要停在哪一节。
+    // 放在 apply() 之后：select() 会校验 visibleIds，而那正是 apply() 填的。
+    if (opts.section) settingsNavigator.select(opts.section, { animate: false });
   };
   render();
 }

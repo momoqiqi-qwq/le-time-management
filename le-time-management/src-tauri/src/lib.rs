@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBu
 use tauri_plugin_opener::OpenerExt as _;
 
 mod lan;
+mod update;
 
 /// 应用数据目录（Windows: %APPDATA%，Linux: ~/.local/share，Android: 应用内部存储）
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
@@ -963,7 +964,11 @@ struct HttpResp {
 
 static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
-fn shared_http_client() -> Result<&'static reqwest::Client, String> {
+/// 全应用共享的 HTTP 客户端（连接池 / UA / 超时统一在这里）。
+///
+/// `pub(crate)`：更新检查模块（`update.rs`）要复用同一份客户端 ——
+/// 它已经带了 `LeTimeManagement/<版本>` 的 UA，GitHub API 正需要这个头。
+pub(crate) fn shared_http_client() -> Result<&'static reqwest::Client, String> {
     if let Some(c) = HTTP_CLIENT.get() {
         return Ok(c);
     }
@@ -1432,6 +1437,8 @@ pub fn run() {
     #[cfg(target_os = "android")]
     {
         builder = builder.plugin(native_schedule::init());
+        // 应用内一键升级：Android 侧需要原生插件把 content:// 交给系统安装器
+        builder = builder.plugin(update::init());
     }
     builder
         .plugin(tauri_plugin_opener::init())
@@ -1466,7 +1473,12 @@ pub fn run() {
             ai_chat,
             lan_start,
             lan_stop,
-            lan_status
+            lan_status,
+            update::update_check,
+            update::update_download,
+            update::update_install,
+            update::update_ready,
+            update::update_open_install_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
