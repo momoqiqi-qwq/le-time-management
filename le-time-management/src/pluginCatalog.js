@@ -146,7 +146,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "chaoxing-notify",
     "name": "学习通",
-    "version": "2.5.1",
+    "version": "2.6.0",
     "author": "基于 dsh-user/chaoxing-notify-skill v2.0.0 · Le时间管理适配",
     "icon": "graduation-cap",
     "faIcon": "graduation-cap",

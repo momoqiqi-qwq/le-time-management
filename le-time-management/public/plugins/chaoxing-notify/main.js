@@ -28,6 +28,7 @@
     newIds: new Set(),
     knownIds: new Set(),
     ignoredIds: new Set(),
+    readOverrides: new Map(),   // id -> true(未读)/false(已读)：本机标记覆盖，不动平台状态
     tab: "inbox",
     filter: { kw: "", category: "全部", onlyUnread: false },
     course: { year: null, searchOpen: false },
@@ -171,6 +172,7 @@
   }
   async function saveKnown() { await tide.storage.set("knownIds", [...state.knownIds].slice(-MAX_KEEP)); }
   async function saveIgnored() { await tide.storage.set("ignoredIds", [...state.ignoredIds].slice(-MAX_KEEP)); }
+  async function saveReadOverrides() { await tide.storage.set("readOverrides", [...state.readOverrides].slice(-MAX_KEEP)); }
   async function savePrefs() { await tide.storage.set("filter", state.filter); }
 
   /* 配色一律走主题变量（--ink / --ink-2 / --ink-3 / --panel / --paper / --line / --deep / --sea / --coral / --sun / --mint），
@@ -190,6 +192,8 @@
       .cx2 button:hover{background:var(--paper)}
       .cx2 button.primary{background:var(--deep);color:#fff;border-color:var(--deep);font-weight:650}
       .cx2 button.danger{color:color-mix(in srgb,var(--coral) 50%,var(--ink));border-color:color-mix(in srgb,var(--coral) 34%,var(--line))}
+      /* 标记已读/未读：海青色框，与「未读」语义同源 */
+      .cx2 button.acc{color:color-mix(in srgb,var(--sea) 55%,var(--ink));border-color:color-mix(in srgb,var(--sea) 40%,var(--line))}
       .cx2 button:disabled{opacity:.5;cursor:default}
       .cx2-nav{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
       .cx2-nav button.on{background:var(--deep);color:#fff;border-color:var(--deep)}
@@ -203,8 +207,14 @@
       .cx2-status{font-size:12px;color:var(--ink-2);margin:7px 0 11px}
       .cx2-status.err{background:color-mix(in srgb,var(--coral) 16%,var(--panel));border:1px solid color-mix(in srgb,var(--coral) 34%,var(--line));color:color-mix(in srgb,var(--coral) 50%,var(--ink));padding:10px;border-radius:9px}
       .cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-      .cx2-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
-      .cx2-card.unread{border-left:4px solid var(--sea)}
+      .cx2-card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+      /* 彩色框：左边框按类型着色，与分类标签同色系 */
+      .cx2-card.cat-deep{border-left-color:var(--deep)}
+      .cx2-card.cat-sun{border-left-color:var(--sun)}
+      .cx2-card.cat-coral{border-left-color:var(--coral)}
+      .cx2-card.cat-mint{border-left-color:var(--mint)}
+      /* 未读不再占用左边框（那是类型色的位置），改用底色微染 */
+      .cx2-card.unread{background:color-mix(in srgb,var(--sea) 7%,var(--panel))}
       .cx2-title{font-weight:650;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
       .cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:11px;color:var(--ink-2)}
       .cx2-tag{padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--deep) 14%,var(--panel));color:var(--deep)}
@@ -279,6 +289,7 @@
     state.cookie = await tide.storage.get("sessionCookie", "") || "";
     state.knownIds = new Set(await tide.storage.get("knownIds", []));
     state.ignoredIds = new Set(await tide.storage.get("ignoredIds", []));
+    state.readOverrides = new Map(await tide.storage.get("readOverrides", []));
     state.filter = { ...state.filter, ...(await tide.storage.get("filter", null) || {}) };
     state.workStatus = await tide.storage.get("workStatus", null) || {};
     const cached = await tide.storage.get("inboxCache", []);
@@ -421,7 +432,7 @@
     return visibleInbox().filter((n) => {
       const cat = classify(n);
       if (state.filter.category !== "全部" && cat !== state.filter.category) return false;
-      if (state.filter.onlyUnread && !n.unread) return false;
+      if (state.filter.onlyUnread && !effUnread(n)) return false;
       if (kw && !`${n.title} ${n.body} ${n.sender}`.toLowerCase().includes(kw)) return false;
       return true;
     });
@@ -438,6 +449,24 @@
     await saveIgnored(); paintMain();
     tide.notify("已从本机列表移除（不影响学习通平台数据），顶部可恢复");
   }
+
+  /* 本机已读/未读标记：覆盖平台状态（readOverrides: id -> true=未读 / false=已读），
+     只影响本机显示与筛选，不动学习通服务端。 */
+  const effUnread = (n) => state.readOverrides.has(n.id) ? state.readOverrides.get(n.id) === true : !!n.unread;
+  async function markNotice(n) {
+    if (!n || !n.id) return;
+    const next = !effUnread(n);
+    state.readOverrides.set(n.id, next);
+    if (state.readOverrides.size > MAX_KEEP) {
+      for (const k of [...state.readOverrides.keys()].slice(0, state.readOverrides.size - MAX_KEEP)) state.readOverrides.delete(k);
+    }
+    await saveReadOverrides(); paintMain();
+    tide.notify(next ? "已在本机标记为未读" : "已在本机标记为已读（不影响学习通平台）");
+  }
+
+  /* 彩色框：卡片左边框按类型着色，与分类标签同色系（通知=deep、作业=sun、考试=coral、签到=mint）。 */
+  const CAT_FRAME = { 通知: "deep", 作业: "sun", 考试: "coral", 签到: "mint" };
+  const catFrameClass = (n) => `cat-${CAT_FRAME[classify(n)] || "deep"}`;
   async function restoreIgnored() {
     const n = state.ignoredIds.size;
     state.ignoredIds.clear();
@@ -460,6 +489,7 @@
     const btns = [];
     if (kind === "inbox") btns.push(`<button data-act="toggle">展开/收起</button>`);
     btns.push(`<button data-act="remind">${kind === "todo" ? "加入时间管理" : "转为提醒"}</button>`);
+    if (kind === "inbox") btns.push(`<button class="acc" data-act="mark" title="在本机标记已读 / 未读，只影响本机显示与筛选，不影响学习通平台的已读状态">${effUnread(n) ? "标记已读" : "标记未读"}</button>`);
     if (n.idCode) btns.push(`<button data-act="share" title="${esc(SHARE_TIP)}">打开通知</button>`);
     if (target) btns.push(`<button data-act="open" title="${esc(real ? OPEN_TIP : OPEN_SHARE_TIP)}">浏览器打开${real ? "（带登录态）" : ""}</button>`);
     btns.push(`<button class="danger" data-act="del" title="仅从本机列表移除并记住，不影响学习通平台，也不影响已创建的提醒；顶部「恢复已移除」可一键放回">移除</button>`);
@@ -479,12 +509,12 @@
   function inboxHtml() {
     const rows = filteredInbox();
     return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 作业 / 考试 / 正文…"><select class="cx2-select" data-category>${["全部","通知","作业","考试","签到"].map(x=>`<option ${state.filter.category===x?'selected':''}>${x}</option>`).join('')}</select><label class="cx2-check"><input type="checkbox" data-unread ${state.filter.onlyUnread?'checked':''}> 只看平台未读</label></div>
-      <div class="cx2-kpis"><span class="cx2-kpi">本次新增 ${state.newIds.size}</span><span class="cx2-kpi">平台未读 ${visibleInbox().filter(x=>x.unread).length}</span><span class="cx2-kpi">显示 ${visibleInbox().length} / 共 ${state.inbox.length}</span>${state.ignoredIds.size?`<span class="cx2-kpi" title="仅在本机列表隐藏，原始通知仍在本地缓存里；点右上角「恢复已移除」可放回">已移除 ${state.ignoredIds.size}</span>`:''}</div>
-      ${rows.length?`<div class="cx2-grid">${rows.map((n)=>{const cat=classify(n),isNew=state.newIds.has(n.id);return `<article class="cx2-card ${n.unread?'unread':''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${isNew?'<span class="cx2-pill cx2-new">NEW</span>':''}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span>${n.sender?`<span>${esc(n.sender)}</span>`:''}<span>${esc(n.time||'未知时间')}</span>${n.unread?'<span>未读</span>':'<span>已读</span>'}${linkHintHtml(n)}</div><div class="cx2-body">${esc(n.body||'（无正文）')}</div>${cardActionsHtml(n,'inbox')}</article>`;}).join('')}</div>`:'<div class="cx2-empty">没有匹配的通知。</div>'}`;
+      <div class="cx2-kpis"><span class="cx2-kpi">本次新增 ${state.newIds.size}</span><span class="cx2-kpi" title="含本机「标记未读」的覆盖结果">未读 ${visibleInbox().filter(x=>effUnread(x)).length}</span><span class="cx2-kpi">显示 ${visibleInbox().length} / 共 ${state.inbox.length}</span>${state.ignoredIds.size?`<span class="cx2-kpi" title="仅在本机列表隐藏，原始通知仍在本地缓存里；点右上角「恢复已移除」可放回">已移除 ${state.ignoredIds.size}</span>`:''}</div>
+      ${rows.length?`<div class="cx2-grid">${rows.map((n)=>{const cat=classify(n),isNew=state.newIds.has(n.id);return `<article class="cx2-card ${catFrameClass(n)} ${effUnread(n)?'unread':''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${isNew?'<span class="cx2-pill cx2-new">NEW</span>':''}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span>${n.sender?`<span>${esc(n.sender)}</span>`:''}<span>${esc(n.time||'未知时间')}</span>${effUnread(n)?'<span>未读</span>':'<span>已读</span>'}${linkHintHtml(n)}</div><div class="cx2-body">${esc(n.body||'（无正文）')}</div>${cardActionsHtml(n,'inbox')}</article>`;}).join('')}</div>`:'<div class="cx2-empty">没有匹配的通知。</div>'}`;
   }
   function todoHtml() {
     const list=todos();
-    return list.length?`<div class="cx2-todo">${list.map(n=>`<article class="cx2-card" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag 作业">作业</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div><div class="cx2-due">截止 ${esc(n.dueText)}</div><div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`).join('')}</div>`:'<div class="cx2-empty">当前拉取范围内没有识别到未截止作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>';
+    return list.length?`<div class="cx2-todo">${list.map(n=>`<article class="cx2-card ${catFrameClass(n)}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag 作业">作业</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div><div class="cx2-due">截止 ${esc(n.dueText)}</div><div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`).join('')}</div>`:'<div class="cx2-empty">当前拉取范围内没有识别到未截止作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>';
   }
   /* ── 作业提交状态探测：通知正文里没有提交/批改状态，只能拿附件里的作业入口实地看一眼 ──
      附件 iframe 的 name 是 Base64(URL编码的 JSON)，里面带 workId 和作业入口 URL。
@@ -699,7 +729,7 @@
       if(e.target.closest('[data-notice-remind]')&&state.notice){await toReminder(state.notice);return;}
       if(e.target.closest('[data-notice-open]')&&state.notice){await openTarget(state.notice);return;}
       if(e.target.closest('[data-notice-del]')&&state.notice){const hit=state.inbox.find(x=>x.idCode&&x.idCode===state.notice.idCode);if(hit)await ignoreNotice(hit);else tide.notify('这条分享码对应的通知不在当前收件箱列表里');return;}
-      const card=e.target.closest('[data-id]'),act=e.target.closest('[data-act]');if(card&&act){const n=state.inbox.find(x=>x.id===card.dataset.id);if(!n)return;const a=act.dataset.act;if(a==='toggle'){card.classList.toggle('open');return;}if(a==='remind'){await toReminder(n);return;}if(a==='share'&&n.idCode){tide.util.openUrl(SHARE_PAGE(n.idCode));return;}if(a==='open'){await openTarget(n);return;}if(a==='del'){await ignoreNotice(n);return;}}
+      const card=e.target.closest('[data-id]'),act=e.target.closest('[data-act]');if(card&&act){const n=state.inbox.find(x=>x.id===card.dataset.id);if(!n)return;const a=act.dataset.act;if(a==='toggle'){card.classList.toggle('open');return;}if(a==='remind'){await toReminder(n);return;}if(a==='mark'){await markNotice(n);return;}if(a==='share'&&n.idCode){tide.util.openUrl(SHARE_PAGE(n.idCode));return;}if(a==='open'){await openTarget(n);return;}if(a==='del'){await ignoreNotice(n);return;}}
     });
     host.addEventListener("input", (e) => { if(e.target.matches('[data-search]')){state.filter.kw=e.target.value;savePrefs();const pos=e.target.selectionStart;paintMain();const next=host.querySelector('[data-search]');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}} });
     host.addEventListener("change", (e) => { if(e.target.matches('[data-category]')){state.filter.category=e.target.value;savePrefs();paintMain();}if(e.target.matches('[data-unread]')){state.filter.onlyUnread=e.target.checked;savePrefs();paintMain();} });

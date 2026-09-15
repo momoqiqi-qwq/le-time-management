@@ -169,12 +169,13 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.5.1');
+assert.equal(manifest.version, '2.6.0');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步到 openUrl');
-assert.match(block, /"2\.5\.1"/, 'pluginCatalog 必须同步到插件新版本号');
+/* 版本从 manifest 推导，别再硬编码两处（升版本必忘一处的老坑） */
+assert.match(block, new RegExp(`"${manifest.version.replace(/\./g, "\\.")}"`), 'pluginCatalog 必须同步到插件新版本号');
 
 /* ── 6b. 配色必须走主题变量，否则夜间模式下会变成深色字压深色底 ──
    踩过的坑：插件样式表是浅色硬编码，且由 ensureStyle() 在运行时追加到 <head> 末尾，
@@ -331,3 +332,12 @@ assert.equal(gradingBadge({ raw: { rtf_content: '' } }), '', '解析不出引用
 assert.equal(todos().length, 2, '两条都在待办列表里（未提交的本来就该在）');
 
 console.log('PASS: 学习通链接识别、移除/恢复、课程年级分组与完成状态、正在批改标记、manifest 权限，以及带登录态的浏览器打开链路');
+
+/* v2.6.0：标记已读/未读（本机覆盖）+ 卡片彩色框 */
+const src2 = fs.readFileSync(new URL('../public/plugins/chaoxing-notify/main.js', import.meta.url), 'utf8');
+assert.match(src2, /const effUnread = /, '必须用 effUnread 统一取有效未读（平台状态 + 本机覆盖）');
+assert.match(src2, /readOverrides/, '标记必须走本机 readOverrides 覆盖，不动平台状态');
+assert.match(src2, /data-act="mark"/, '卡片必须有「标记」按钮');
+assert.match(src2, /CAT_FRAME/, '彩色框必须按类型映射（通知/作业/考试/签到）');
+assert.match(src2, /cx2-card\.cat-sun/, '作业卡要有 sun 色框');
+assert.match(src2, /button\.acc/, '标记按钮要有海青色框样式');
