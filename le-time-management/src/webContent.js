@@ -336,14 +336,23 @@ const JSON_SITE_ADAPTERS = [
       + `&page=1&pageSize=${Math.max(1, Math.min(100, Number(opts?.max) || 100))}&need_all=1`,
     list: "d.list",
     fields: { title: "title", url: "url", date: "publish_time", snippet: ["cname", "publish_date_time"] },
+    // 空壳页**既没有 `<title>` 也没有 `<link rel=icon>`**，`parseSiteMeta()` 只能退成
+    // 「域名 + 猜一个 /favicon.ico」。适配器本来就认识这个站，把这两样登记清楚，
+    // 免得站点名显示成 `it.buaa.edu.cn`、图标靠猜（实测 `/favicon.ico` 确实是真 ICO，16×16）。
+    meta: { title: "北航信息门户", iconPath: "/favicon.ico" },
   },
 ];
 
-/** 页面 URL 命中哪个适配器。返回 `{ id, label }`（可序列化，便于跨宿主边界传）。 */
+/** 页面 URL 命中哪个适配器。返回 `{ id, label, title, icon }`（可序列化，便于跨宿主边界传）。 */
 export function matchJsonSiteAdapter(url) {
   let u; try { u = new URL(String(url || "")); } catch { return null; }
   for (const a of JSON_SITE_ADAPTERS) {
-    if (a.host.test(u.hostname) && (!a.path || a.path.test(u.pathname))) return { id: a.id, label: a.label };
+    if (!a.host.test(u.hostname) || (a.path && !a.path.test(u.pathname))) continue;
+    return {
+      id: a.id, label: a.label,
+      title: a.meta?.title || "",
+      icon: a.meta?.iconPath ? resolveWebUrl(a.meta.iconPath, u.href) : "",
+    };
   }
   return null;
 }

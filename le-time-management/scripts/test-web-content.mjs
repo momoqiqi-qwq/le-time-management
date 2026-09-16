@@ -59,9 +59,13 @@ assert.equal(detectSpaShell(''), null, '空串不能抛，返回 null');
 const adapter = matchJsonSiteAdapter(BUAA_URL);
 assert.equal(adapter && adapter.id, 'buaa-portal');
 assert.ok(adapter && adapter.label, '适配器要带可显示的 label，插件拿它当「适配模式」');
+// 空壳页既没有 <title> 也没有 <link rel=icon> —— 站名会退成域名、图标只能猜 /favicon.ico，
+// 所以这两样必须由适配器登记（实测 /favicon.ico 确实是真 ICO，1150 字节）。
+assert.equal(adapter && adapter.title, '北航信息门户', '空壳页读不到 <title>，站名要靠适配器给');
+assert.equal(adapter && adapter.icon, 'https://it.buaa.edu.cn/favicon.ico', '图标路径要拼成绝对地址');
+assert.equal(matchJsonSiteAdapter('https://jwc.example.edu.cn/tzgg/'), null, '未登记的站点不该命中');
 assert.equal(matchJsonSiteAdapter('https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/index'), null,
   '同域但不是资讯页，不该命中');
-assert.equal(matchJsonSiteAdapter('https://jwc.example.edu.cn/tzgg/'), null, '未登记的站点不该命中');
 assert.equal(matchJsonSiteAdapter('不是网址'), null, '非法 URL 不能抛');
 
 assert.equal(buildJsonSiteListUrl('buaa-portal', BUAA_URL),
