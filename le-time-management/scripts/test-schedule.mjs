@@ -161,8 +161,21 @@ assert.match(styleDefaults, /colorful:false/, '彩色开关默认必须关：不
 assert.match(ui, /switchRow\('彩色课程块'/, '个性化配置里缺少彩色滑块');
 assert.match(ui, /name="\$\{name\}"/, '滑块必须真的渲染出带 name 的 checkbox，否则保存时读不到值');
 assert.match(ui, /style\.colorful\?'colorful':''/, '彩色开关必须落到 .sg 的类名上，否则 CSS 不生效');
-assert.match(ui, /colorful:form\.elements\.colorful\.checked/, '保存样式时必须一并写入 colorful，否则滑块点了白点');
+assert.match(ui, /colorful:!!f\.colorful\?\.checked/, '即时生效时必须一并写入 colorful，否则滑块点了白点');
 assert.match(ui, /switch-row/, '个性化配置的开关要用滑块样式，不能退回原生 checkbox');
+
+/* ── v0.42.0 个性化配置即时生效：删除「保存样式」按钮 ──
+   原来要拖完滑块再点「保存样式」才落库；现在 input/change 直接 liveStyle：
+   更新 style → 改 .sg 的 CSS 变量与类名（不整页重绘，拖滑块不打断）→ 自动持久化。 */
+assert.ok(!ui.includes('保存样式'), '「保存样式」按钮必须删除（改动即时生效，无需手动保存）');
+assert.match(ui, /function liveStyle\(form,saveNow\)/, '必须有 liveStyle：读表单 → 改 CSS 变量/类名 → 持久化');
+assert.match(ui, /sg\.classList\.toggle\('colorful',!!style\.colorful\)/, '即时生效必须连 .sg 的类名一起改，否则彩色/隐藏开关要等重绘才生效');
+assert.match(ui, /if\(sf\)liveStyle\(sf,false\);/, '拖动滑块（input 事件）必须实时应用并走 400ms 防抖落库');
+assert.match(ui, /if\(sf\)\{liveStyle\(sf,true\);return;\}/, '开关切换（change 事件）必须立即落库');
+assert.match(ui, /styleSaveTimer=setTimeout\(\(\)=>tide\.storage\.set\('style',style\)\.catch\(\(\)=>\{\}\),400\)/, '滑块拖动期间持久化要防抖，不能每个 tick 写一次存储');
+assert.match(ui, /if\(form\.dataset\.form==='style'\)return;/, '样式表单不得再走 submit 流程（旧「保存样式」提交分支已删）');
+assert.match(ui, /case 'style-reset':clearTimeout\(styleSaveTimer\);/, '恢复默认必须先清掉挂起的防抖保存，防止旧值覆盖重置结果');
+assert.ok(!/mode='settings';paint\(\);tide\.notify\(style\.colorful/.test(ui), '旧的「保存后跳回设置页+通知」流程应已删除');
 
 // 彩色调色板：每档都必须是「浅色文字压得住」的实色。
 // 这套色刻意不跟随主题 —— 深色模式下主题强调色会被提亮，白字压上去只剩 2.4:1。

@@ -2,7 +2,11 @@
 // Keep the upstream timetable interaction model; only the presentation layer is adapted.
 (function(){
  const M=modelScope.ShiguangModel;
- let table,tables=[],currentTableId='',style,week=1,host,mode='week',draft=null,pending=null,selectedPack=0,pendingEdu=null,loaded=false;let modeStack=[];
+ let table,tables=[],currentTableId='',style,week=1,host,mode='week',draft=null,pending=null,selectedPack=0,pendingEdu=null,loaded=false;
+ /* 切周动画的方向：1 = 往下一周（新内容从右侧推入），-1 = 往上一周，0 = 不播动画。
+    每次 action 处理周次变化前重置为 0，只有真正换了周才置方向 ——
+    否则普通重绘（保存课程、切换视图）也会莫名其妙地滑一下。 */
+ let slideDir=0;let modeStack=[];
  /* 二级页返回走「历史栈」：进子页时压入当前页，‹ 返回弹出上一页。
    原先 subHead 的返回目标是写死的（编辑课程默认回「我的」设置页），
    从课程管理点进编辑再点返回就会落到设置页而不是课程管理。 */
@@ -65,6 +69,40 @@
  .sg .form,.sg .panel{background:var(--sg-soft);border:1px solid var(--sg-line);padding:clamp(14px,2vw,22px);border-radius:14px;max-width:980px}.sg .fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}.sg .fields .wide{grid-column:1/-1}.sg label{display:block;font-size:13px;line-height:1.7;color:var(--sg-sub)}.sg label>span{display:block;margin-bottom:4px;font-weight:600}.sg input,.sg textarea,.sg select{display:block;width:100%;border:1px solid var(--sg-line);border-radius:9px;padding:9px 10px;background:var(--sg-card);color:var(--sg-ink);min-height:42px}.sg textarea{min-height:130px;resize:vertical}.sg .error{color:#a02e2e;white-space:pre-wrap;margin-top:12px}.sg .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
  .sg .transfer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}.sg .transfer-card{background:var(--sg-card);border:1px solid var(--sg-line);border-radius:13px;padding:15px}.sg .transfer-card p{margin:4px 0 10px}.sg .hint{font-size:12px;color:var(--sg-sub);background:var(--sg-soft);padding:9px 10px;border-radius:8px}.sg .preview-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:10px}.sg .preview-item{background:var(--sg-card);border:1px solid var(--sg-line);border-radius:9px;padding:9px;font-size:12px}.sg .preview-item b{display:block;margin-bottom:3px}.sg .preview-meta{color:var(--sg-sub);line-height:1.5}.sg .badge{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:11px;background:var(--sg-soft);color:var(--sg-accent);margin-right:5px}.sg .seg{display:flex;gap:6px;flex-wrap:wrap}.sg .seg button.on{background:var(--sg-accent);color:#fff;border-color:var(--sg-accent)}
  .sg .loading{display:grid;place-items:center;min-height:280px;color:var(--sg-sub)}.sg .loading::before{content:"";width:28px;height:28px;border:3px solid var(--sg-line);border-top-color:var(--sg-accent);border-radius:50%;animation:sg-spin .7s linear infinite;margin-bottom:10px}@keyframes sg-spin{to{transform:rotate(360deg)}}
+/* ── 总学期视图：一眼看完整个学期的 20 周 ──
+   每张卡是一周，卡内 7 列（周一到周日）× 色块条，条的高与位置按「第几节 → 第几分钟」映射，
+   所以同一天的课在纵向上是可比对的。卡片按 grid 自适应铺开，
+   点任意一张即跳到那一周 —— 它同时是「总览」和「周次选择器」，不再需要单独的周次页。 */
+.sg .semester-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(214px,1fr));gap:10px;margin-top:4px}
+.sg .sem-card{display:block;text-align:left;padding:9px 10px 10px;border-radius:12px;border:1px solid var(--sg-line);background:var(--sg-card);min-height:0;transition:border-color .12s ease,box-shadow .12s ease,transform .12s ease}
+.sg .sem-card:hover{border-color:color-mix(in srgb,var(--sg-accent) 55%,var(--sg-line));transform:translateY(-1px);box-shadow:0 6px 16px rgba(25,55,65,.1)}
+.sg .sem-card.on{border-color:var(--sg-accent);box-shadow:inset 0 0 0 1px var(--sg-accent)}
+/* 真实当前周：珊瑚色描边 + 底色，和「本周」标签同一套语义色 */
+.sg .sem-card.is-now{border-color:var(--sg-coral);box-shadow:inset 0 0 0 1px var(--sg-coral)}
+.sg .sem-card-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px;min-height:19px}
+.sg .sem-card-head b{font-size:13px;font-weight:760;color:var(--sg-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg .sem-card-head .sem-when{flex:none;font-size:10px;color:var(--sg-faint);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sg .sem-card.is-now .sem-card-head b{color:color-mix(in srgb,var(--sg-coral) 78%,var(--sg-ink))}
+.sg .sem-card.on .sem-card-head b{color:var(--sg-accent)}
+/* 迷你周条：7 列 = 周一到周日；每条的高度与 top 由 JS 按节次算出（百分比），
+   这里只负责定位与裁切。overflow:hidden 是必需的 —— 否则超出 100% 的条会画到卡外。 */
+.sg .sem-mini{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;height:96px;padding:2px;border-radius:7px;background:color-mix(in srgb,var(--sg-soft) 72%,var(--sg-card));overflow:hidden}
+.sg .sem-col{position:relative;min-width:0}
+.sg .sem-bar{position:absolute;left:0;right:0;border-radius:2.5px;background:var(--course-accent);opacity:.9;min-height:4px}
+.sg .sem-dow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;padding:0 2px;margin-top:3px}
+.sg .sem-dow span{font-size:9px;color:var(--sg-faint);text-align:center;min-width:0;overflow:hidden}
+.sg .sem-card-foot{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:5px;font-size:10.5px;color:var(--sg-sub);min-height:14px}
+.sg .sem-card-foot .sem-count{font-variant-numeric:tabular-nums}
+.sg .sem-card-foot .sem-flag{flex:none;font-size:9.5px;font-weight:700;color:color-mix(in srgb,var(--sg-coral) 80%,var(--sg-ink))}
+.sg .sem-card.is-empty .sem-mini{background:transparent;border:1px dashed var(--sg-line-soft)}
+.sg .sem-empty-note{padding:8px 2px 0}
+.sg .sem-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 2px;font-size:11.5px;color:var(--sg-sub)}
+.sg .sem-legend i{display:inline-flex;align-items:center;gap:6px;font-style:normal}
+.sg .sem-legend i::before{content:"";width:11px;height:11px;border-radius:3px;border:1px solid var(--sg-line);background:var(--sg-card)}
+.sg .sem-legend i.now::before{border-color:var(--sg-coral);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--sg-coral) 22%,var(--sg-card))}
+.sg .sem-legend i.cur::before{border-color:var(--sg-accent);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--sg-accent) 22%,var(--sg-card))}
+.sg .sem-legend i.bar::before{background:var(--sg-mint);border-color:color-mix(in srgb,var(--sg-mint) 60%,var(--sg-line))}
+@media(max-width:620px){.sg .semester-wrap{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.sg .sem-mini{height:78px}}
  .sg .main-stage{flex:1;min-height:520px;min-width:0;display:flex;flex-direction:column}/* 视图切换与常用操作收进右上角「⋯」：周视图要在一屏内塞下 7 天 × 全部节次，
    原来贴在底部的三宫格导航白占 ~76px，点开才展开更省地方。 */
 .sg .more-wrap{position:relative;flex:none;display:flex}
@@ -141,7 +179,8 @@
     55px 上下，远低于用户设定的 --sg-slot-height。改成按「表头 + 全部节次 × 格子高度」
     算出一个下限，课表就按用户设定真正拉长，放不下时由外层 .plugview 正常滚动。 */
  .sg .main-stage{min-height:calc(var(--sg-head-h,52px) + var(--slot-count,10) * var(--sg-slot-height,76px) + 2px)}.sg .transfer-grid{grid-template-columns:1fr}.sg .hero{align-items:flex-start}.sg .brand-badge{display:none}}
- @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:44px;padding:6px}.sg .hero-copy h2{font-size:19px}.sg .hero-copy .muted{font-size:11px}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:13px}.sg .slot-label span{font-size:8px}.sg .day-head{font-size:11px;gap:1px}.sg .day-head .date{font-size:9px}.sg .course-block{margin:1px;padding:4px 3px}.sg .course-block b{font-size:10px;-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:8.5px;margin-bottom:1px}.sg .course-block span{font-size:8.5px}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:17px}.sg .week-title small{font-size:9.5px}.sg footer{margin-top:6px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
+ @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:44px;padding:6px}.sg .hero-copy h2{font-size:19px}.sg .hero-copy .muted{font-size:11px}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:13px}.sg .slot-label span{font-size:8px}.sg .day-head{font-size:11px;gap:1px}.sg .day-head .date{font-size:9px}.sg .course-block{margin:1px;padding:4px 3px}.sg .course-block b{font-size:10px;-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:8.5px;margin-bottom:1px}.sg .course-block span{font-size:8.5px}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:17px}.sg .week-title small{font-size:9.5px}/* 窄屏把「本周」标签收成一个圆点：整词排不下，而它必须始终可见 —— 用户扫一眼就知道这是不是当前周。 */
+.sg .now-tag{padding:0;width:16px;height:16px;justify-content:center;font-size:0}.sg .now-tag::before{width:6px;height:6px}.sg .goto-now{padding:4px 8px;font-size:11px}.sg footer{margin-top:6px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
  @media(pointer:coarse){.sg button,.sg input,.sg select{min-height:42px}.sg .course-block{min-height:0}}
  @media(prefers-reduced-motion:reduce){.sg *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
  `;document.head.append(s);
@@ -159,6 +198,16 @@
  function notice(e){const target=host?.querySelector('[data-error]');if(target)target.textContent=e.message||String(e);else tide.notify(e.message||String(e));}
  function clearError(){const t=host?.querySelector('[data-error]');if(t)t.textContent='';}
  function currentWeek(){return Math.max(1,Math.min(table.config.semesterTotalWeeks,M.weekOf(table.config.semesterStartDate,tide.util.today())));}
+ /* 真实当前周（可能不在 1..总周数 内 —— 开学前是 0 或负数，学期结束后会超出）。
+    currentWeek() 是「夹取到合法范围」的版本，用来决定默认显示哪一周；
+    这个函数保留原值，用来判断「我们现在显示的到底是不是真实当前周」——
+    否则开学前打开会被当成第 1 周、还错误地打上「本周」标签。 */
+ function realWeek(){return M.weekOf(table.config.semesterStartDate,tide.util.today());}
+ function hasNow(){const r=realWeek();return r>=1&&r<=table.config.semesterTotalWeeks;}
+ function weekLabel(){const r=realWeek();const total=table.config.semesterTotalWeeks;
+   if(r<1)return`未开学 · 共 ${total} 周`;if(r>total)return`已结课 · 共 ${total} 周`;return`本周 · 第 ${r} 周 / 共 ${total} 周`;}
+ /* 周次区间文案：第 w 周的周一 ~ 周日，形如 09/14 – 09/20。 */
+ function weekRange(w){const start=M.addDays(M.monday(table.config.semesterStartDate),(w-1)*7);return`${start.slice(5).replace('-','/')} – ${M.addDays(start,6).slice(5).replace('-','/')}`;}
  function saveFile(name,body,type){const url=URL.createObjectURL(new Blob([body],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  function snapshot(targetWeek){
    let cache=scheduleCache.get(table);if(!cache){cache=new Map();scheduleCache.set(table,cache);}if(cache.has(targetWeek))return cache.get(targetWeek);
@@ -186,7 +235,20 @@ function bindMoreDismiss(){
   document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMore();});
 }
  function screenHead(title,sub,action=''){return `<div class="screen-head"><div><h2>${esc(title)}</h2>${sub?`<p class="muted">${esc(sub)}</p>`:''}</div>${action}</div>`;}
- function toolbar(){const pack=activePack();const total=table.config.semesterTotalWeeks;return `<div class="schedule-top">${button('‹','prev',`class="prev" aria-label="上一周" ${week===1?'disabled':''}`)}<button class="week-title" data-action="week-picker" title="快速选择周次"><b>第 ${week} 周</b><small>${esc(pack?.name||'我的课表')} · 共 ${total} 周 · 点标题快速跳转</small></button>${button('›','next',`class="next" aria-label="下一周" ${week===total?'disabled':''}`)}${moreMenu('week')}</div>`;}
+ /* 顶栏。三件事按优先级排：
+    ① 中间的周标题 —— 当前显示的就是真实当前周时，标题旁挂一个珊瑚色「本周」标签；
+       不是的时候挂灰色「非本周」，并多出一个「回到本周」按钮。
+       用户的需求是「可以让我判断哪个是现在这周」，所以两种状态都必须有明确标识，
+       只标「是本周」会让「不是本周」变成要靠用户自己推断的默认态。
+    ② 副标题从「共 N 周 · 点标题快速跳转」换成当前周进度（本周 · 第 16 周 / 共 20 周）——
+       同一句话里既回答了「现在第几周」也回答了「还剩几周」。
+    ③ 「回到本周」只在偏离当前周时出现，避免常态下多一个用不上的按钮。 */
+ function toolbar(){
+   const pack=activePack(),total=table.config.semesterTotalWeeks,now=hasNow(),atNow=now&&week===realWeek();
+   const tag=atNow?'<span class="now-tag">本周</span>':(now?'<span class="now-tag off">非本周</span>':'');
+   const back=now&&!atNow?button('回到本周','current','class="goto-now" title="跳回当前这一周"'):'';
+   return `<div class="schedule-top">${button('‹','prev',`class="prev" aria-label="上一周" ${week===1?'disabled':''}`)}<button class="week-title" data-action="week-picker" title="打开总学期视图，点任意一周即跳转"><span class="title-line"><b>第 ${week} 周</b>${tag}</span><small>${esc(pack?.name||'我的课表')} · ${esc(weekLabel())} · ${esc(weekRange(week))}</small></button>${button('›','next',`class="next" aria-label="下一周" ${week===total?'disabled':''}`)}${back}${moreMenu('week')}</div>`;
+ }
  function slotIndexForTime(value,isEnd=false){
    const mins=M.minutes(value),slots=table.timeSlots;if(!slots.length)return 0;
    if(isEnd){for(let i=0;i<slots.length;i++)if(M.minutes(slots[i].endTime)>=mins)return i;return slots.length-1;}
@@ -212,7 +274,8 @@ function bindMoreDismiss(){
    const today=tide.util.today();let content=toolbar();
    const {rows,overlap}=snapshot(week),start=M.addDays(M.monday(table.config.semesterStartDate),(week-1)*7);
    if(overlap.size)content+='<p class="warning">检测到课程时间重叠，已按原课表位置保留并高亮。请核对后再加入时间块。</p>';
-   content+=scheduleGrid(rows,overlap,start,today);
+   /* 切周动画的包裹层。动画类由 paint() 在「刚切过周」时补上，见 animateWeek 注释。 */
+   content+=`<div class="week-anim" data-week-anim>${scheduleGrid(rows,overlap,start,today)}</div>`;
    return content;
  }
  function todayContent(){
@@ -235,12 +298,54 @@ function settingsContent(){return `${screenHead('我的',activePack()?.name||'�
     加上 .plugview 20px 与 .sg 20px 的内边距，正文得从约 136px 处才开始，顶上一大片空白。
     参数顺序：标题 / 返回目标 data-action / 副标题 / 返回按钮文案。 */
  function subHead(title,backTo='back',sub='',backLabel='‹ 返回'){return `<div class="screen-head sub-head">${button(backLabel,backTo,'class="ghost"')}<div><h2>${esc(title)}</h2>${sub?`<p class="muted">${esc(sub)}</p>`:''}</div></div>`;}
- function weekPickerContent(){return `${subHead('选择周次')}<div class="seg">${Array.from({length:table.config.semesterTotalWeeks},(_,i)=>button('第 '+(i+1)+' 周','pick-week',`data-week="${i+1}" class="${week===i+1?'on':''}"`)).join('')}</div>`;}
+ /* 总学期视图：整个学期的每一周各一张卡，卡内用色块条画出那一周的课。
+    用户需求是「做一个总学期视图，可以看到所有周」，所以这里要同时满足两件事：
+    ① 能看出「哪一周课多、哪一周空」——靠迷你周条的疏密；
+    ② 能看出「哪一周是现在」——靠 is-now 珊瑚描边 + 「本周」小字。
+    点击任意一张卡即跳到那一周，于是它天然顶替了原来那个纯按钮堆的「选择周次」页
+    （20 周会排成 20 个按钮，既占地方又看不出分布）。
+    纵向映射：把全天时间轴（第一节课开始 → 最后一节结束）压进卡片 96px 高度，
+    条的 top/height 用百分比定位，所以不同周的同一节课位置一致，可横向比对。 */
+ function semBar(c,sem){
+   const top=((sem.minM-M.minutes(c.start))/(sem.spanM||1))*100;
+   const h=((M.minutes(c.end)-M.minutes(c.start))/(sem.spanM||1))*100;
+   /* 上下各留 1% 避免贴边；高度不足 5% 的（半节）抬到 5% 免得看不见。 */
+   const height=Math.max(5,h-1.4);
+   return `<span class="sem-bar tone-${tone(c)}" style="top:${top.toFixed(2)}%;height:${height.toFixed(2)}%" title="${esc(`${c.name} · ${c.start}–${c.end}`)}"></span>`;
+ }
+ function semBounds(){
+   const slots=table.timeSlots;if(!slots.length)return{minM:0,maxM:1,spanM:1};
+   const minM=Math.min(...slots.map(s=>M.minutes(s.startTime))),maxM=Math.max(...slots.map(s=>M.minutes(s.endTime)));
+   return{minM,maxM,spanM:Math.max(1,maxM-minM)};
+ }
+ function semCard(w,sem){
+   const {rows}=snapshot(w),today=tide.util.today(),r=realWeek();
+   const isNow=r===w,isCur=w===week;
+   const dots=['一','二','三','四','五','六','日'];
+   const cols=dots.map((_,i)=>`<span class="sem-col">${rows.filter(c=>c.day===i+1).map(c=>semBar(c,sem)).join('')}</span>`).join('');
+   const weekStart=M.monday(table.config.semesterStartDate);
+   const mon=M.addDays(weekStart,(w-1)*7);
+   const hasToday=hasNow()&&w===r;
+   return `<button class="sem-card ${isCur?'on':''} ${isNow?'is-now':''} ${rows.length?'':'is-empty'}" data-action="pick-week" data-week="${w}" title="${esc(`第 ${w} 周 · ${weekRange(w)} · ${rows.length} 节课`)}">
+     <span class="sem-card-head"><b>第 ${w} 周</b><span class="sem-when">${esc(mon.slice(5).replace('-','/'))}</span></span>
+     <span class="sem-mini">${cols}</span>
+     <span class="sem-dow">${dots.map(d=>`<span>${d}</span>`).join('')}</span>
+     <span class="sem-card-foot"><span class="sem-count">${rows.length?`${rows.length} 节课`:'无课'}</span>${isNow?'<span class="sem-flag">本周</span>':(hasToday?'':'')}</span>
+   </button>`;
+ }
+ function weekPickerContent(){
+   const sem=semBounds(),now=realWeek(),total=table.config.semesterTotalWeeks;
+   const cards=Array.from({length:total},(_,i)=>semCard(i+1,sem)).join('');
+   const note=hasNow()?'':'<p class="warning sem-empty-note">当前日期不在本学期范围内（共 '+total+' 周），因此没有「本周」标记。</p>';
+   return `${subHead('总学期视图','week',`共 ${total} 周 · 点任意一周即跳转`)}${note}
+     <div class="sem-legend"><i class="now">本周（第 ${now>=1&&now<=total?now:'—'} 周）</i><i class="cur">当前查看</i><i class="bar">课程</i></div>
+     <div class="semester-wrap" data-semester>${cards}</div>`;
+ }
  function coursesContent(){const rows=[...table.courses].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN')||a.day-b.day);return `${subHead('课程管理')}<div class="tools">${button('添加课程','add','class="primary"')}</div><div class="course-list">${rows.map(c=>`<button class="course-row" data-edit="${esc(c.id)}"><div><b>${esc(c.name)}</b><span>${days[c.day-1]} · ${c.isCustomTime?`${esc(c.customStartTime)}–${esc(c.customEndTime)}`:`第 ${c.startSection}–${c.endSection} 节`} · ${esc(c.position||'地点未填写')}</span></div><strong>编辑</strong></button>`).join('')||'<div class="panel muted">还没有课程，点击“添加课程”开始。</div>'}</div>`;}
  function tablesContent(){return `${subHead('课表管理')}<form class="form" data-form="table-new"><div class="fields">${field('新课表名称','tableName','新课表','text','required maxlength="40"')}</div><div class="tools"><button type="submit" class="primary">新建课表</button></div></form><div class="table-list" style="margin-top:12px">${tables.map(p=>`<div class="table-card ${p.id===currentTableId?'active':''}"><div><b>${esc(p.name)}</b><span>${p.data.courses.length} 门课程${p.id===currentTableId?' · 当前使用':''}</span></div><div class="inline-actions">${p.id!==currentTableId?button('使用','switch-table',`data-table-id="${esc(p.id)}"`):''}${button('重命名','rename-table',`data-table-id="${esc(p.id)}"`)}${button('复制','copy-table',`data-table-id="${esc(p.id)}"`)}${tables.length>1?button('删除','delete-table',`data-table-id="${esc(p.id)}" class="danger"`):''}</div></div>`).join('')}</div>`;}
  const DEMO_CARDS=[['数字电子技术','@A102 刘小军'],['模拟电子技术','@C204 雷朝军'],['线性代数A','@A103 邵红梅'],['马克思主义基本原理','@A207 张超']];
 function switchRow(label,note,name,checked){return `<div class="switch-row"><div class="switch-copy"><b>${label}</b><small>${note}</small></div><label class="switch"><input type="checkbox" name="${name}" aria-label="${label}" ${checked?'checked':''}><span class="track"></span></label></div>`;}
-function stylePreview(){return `<div class="style-preview${style.colorful?' colorful':''}" data-style-preview style="--sg-course-radius:${Number(style.cornerRadius)||0}px;--sg-course-gap:${Number(style.gap)||0}px;--sg-course-opacity:${(Number(style.opacity)||100)/100}"><b>样式预览</b><p class="muted style-preview-note">只是示意；点「保存样式」后才会应用到课表。</p><div class="style-preview-grid">${DEMO_CARDS.map((x,i)=>`<div class="demo tone-${i}"><span class="course-time">08:10–08:55</span><b>${esc(x[0])}</b><span>${esc(x[1])}</span></div>`).join('')}</div></div>`;}
+function stylePreview(){return `<div class="style-preview${style.colorful?' colorful':''}" data-style-preview style="--sg-course-radius:${Number(style.cornerRadius)||0}px;--sg-course-gap:${Number(style.gap)||0}px;--sg-course-opacity:${(Number(style.opacity)||100)/100}"><b>样式预览</b><p class="muted style-preview-note">所有修改即时生效并自动保存。</p><div class="style-preview-grid">${DEMO_CARDS.map((x,i)=>`<div class="demo tone-${i}"><span class="course-time">08:10–08:55</span><b>${esc(x[0])}</b><span>${esc(x[1])}</span></div>`).join('')}</div></div>`;}
 function refreshStylePreview(form){
   const host=form?.parentElement?.querySelector('[data-style-preview]');if(!host)return;
   const f=form.elements;
@@ -249,7 +354,20 @@ function refreshStylePreview(form){
   host.style.setProperty('--sg-course-gap',`${Number(f.gap.value)||0}px`);
   host.style.setProperty('--sg-course-opacity',String((Number(f.opacity.value)||100)/100));
 }
-function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<form class="form" data-form="style"><div class="fields">${field('课表格子高度','slotHeight',style.slotHeight,'range','min="52" max="120"')}${field('课程块圆角','cornerRadius',style.cornerRadius,'range','min="0" max="24"')}${field('课程块间距','gap',style.gap,'range','min="0" max="8"')}${field('课程块透明度','opacity',style.opacity,'range','min="35" max="100"')}${switchRow('彩色课程块','每门课一块实色卡片，未手动调色的课按课名自动配色，同一门课颜色稳定','colorful',!!style.colorful)}${switchRow('隐藏节次具体时间','收起每节课的上下课时间','hideTimes',!!style.hideTimes)}${switchRow('隐藏日期','日表头只留星期，不显示几月几日','hideDates',!!style.hideDates)}</div><div class="tools"><button type="submit" class="primary">保存样式</button>${button('恢复默认','style-reset','type="button"')}</div></form>`;}
+/* 个性化配置即时生效：滑动/开关时读全表单 → 更新 style → 直接改 .sg 的 CSS 变量与类名
+   （不整页重绘，避免拖滑块被打断）→ 自动持久化。saveNow=true 立即写，否则 400ms 防抖。 */
+let styleSaveTimer=null;
+function liveStyle(form,saveNow){
+  const f=form.elements;
+  style={slotHeight:Number(f.slotHeight),cornerRadius:Number(f.cornerRadius),gap:Number(f.gap),opacity:Number(f.opacity),hideTimes:!!f.hideTimes?.checked,hideDates:!!f.hideDates?.checked,colorful:!!f.colorful?.checked};
+  const sg=host?.querySelector('.sg');
+  if(sg){sg.style.setProperty('--sg-slot-height',`${style.slotHeight}px`);sg.style.setProperty('--sg-course-radius',`${style.cornerRadius}px`);sg.style.setProperty('--sg-course-gap',`${style.gap}px`);sg.style.setProperty('--sg-course-opacity',String(style.opacity/100));sg.classList.toggle('colorful',!!style.colorful);sg.classList.toggle('hide-times',!!style.hideTimes);sg.classList.toggle('hide-dates',!!style.hideDates);}
+  refreshStylePreview(form);
+  clearTimeout(styleSaveTimer);
+  if(saveNow)tide.storage.set('style',style).catch(()=>{});
+  else styleSaveTimer=setTimeout(()=>tide.storage.set('style',style).catch(()=>{}),400);
+}
+function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<form class="form" data-form="style"><div class="fields">${field('课表格子高度','slotHeight',style.slotHeight,'range','min="52" max="120"')}${field('课程块圆角','cornerRadius',style.cornerRadius,'range','min="0" max="24"')}${field('课程块间距','gap',style.gap,'range','min="0" max="8"')}${field('课程块透明度','opacity',style.opacity,'range','min="35" max="100"')}${switchRow('彩色课程块','每门课一块实色卡片，未手动调色的课按课名自动配色，同一门课颜色稳定','colorful',!!style.colorful)}${switchRow('隐藏节次具体时间','收起每节课的上下课时间','hideTimes',!!style.hideTimes)}${switchRow('隐藏日期','日表头只留星期，不显示几月几日','hideDates',!!style.hideDates)}</div><div class="tools">${button('恢复默认','style-reset','type="button"')}</div></form>`;}
  function editContent(){const c=draft;return `${subHead(c.id?'编辑课程':'添加课程')}<form class="form" data-form="course"><div class="fields">${field('课程名称','name',c.name,'text','required maxlength="120"')}${field('教师','teacher',c.teacher)}${field('教室 / 地点','position',c.position)}<label><span>星期</span><select name="day">${days.map((d,i)=>`<option value="${i+1}" ${c.day===i+1?'selected':''}>${d}</option>`).join('')}</select></label>${field('上课周次，如 1-16 / 1-16单周','weeks',(c.weeks||[]).join(','))}<label><span>课程颜色</span><select name="color">${Array.from({length:8},(_,i)=>`<option value="${i}" ${Number(c.color||0)===i?'selected':''}>颜色 ${i+1}</option>`).join('')}</select></label><label><span>时间方式</span><select name="isCustomTime"><option value="false" ${!c.isCustomTime?'selected':''}>按节次</option><option value="true" ${c.isCustomTime?'selected':''}>自定义时间</option></select></label>${field('开始节次','startSection',c.startSection||1,'number','min="1" max="40"')}${field('结束节次','endSection',c.endSection||2,'number','min="1" max="40"')}${field('自定义开始时间','customStartTime',c.customStartTime||'08:00','time')}${field('自定义结束时间','customEndTime',c.customEndTime||'09:40','time')}</div><div class="tools">${button('填入单周','odd','type="button"')}${button('填入双周','even','type="button"')}</div>${textArea('备注','remark',c.remark)}<p class="muted">按节次时使用学期作息表；自定义时间时忽略节次。</p><div class="tools"><button type="submit" class="primary">保存课程</button>${button('取消','week','type="button"')}${c.id?button('删除课程','delete','type="button" class="danger"'):''}</div></form>`;}
  function configContent(){return `<form class="form" data-form="config"><div class="fields">${field('第一周内的开学日期','semesterStartDate',table.config.semesterStartDate,'date')}${field('学期总周数','semesterTotalWeeks',table.config.semesterTotalWeeks,'number','min="1" max="60"')}<label><span>每周显示起始日</span><select name="firstDayOfWeek"><option value="1" ${table.config.firstDayOfWeek===1?'selected':''}>周一</option><option value="7" ${table.config.firstDayOfWeek===7?'selected':''}>周日</option></select></label>${textArea('每行一个节次：编号 开始时间 结束时间','slots',table.timeSlots.map(s=>`${s.number} ${s.startTime} ${s.endTime}`).join('\n'))}</div><p class="muted">开学日期所在周为第一周。教务导入会沿用这里的节次表。</p><div class="tools"><button type="submit" class="primary">保存设置</button></div></form>`;}
  function eduContent(){return `<div class="school-hero"><div><h3>学校教务系统导入</h3><div class="muted">还原时光课程表原版流程：选择学校，登录教务系统，在课表页面一键导入课程与作息。</div></div>${button('选择学校','school-list','class="primary"')}</div><div class="panel"><h3>文件 / 表格导入</h3><p>也可以复制学校教务课表，或上传 XLSX / XLS / CSV / TSV / TXT / HTML 文件。会自动识别表头并先预览。</p><div class="fields">${field('第一周内的开学日期','eduStart',table.config.semesterStartDate,'date')}${field('学期总周数','eduWeeks',table.config.semesterTotalWeeks,'number','min="1" max="60"')}<label class="wide"><span>上传教务导出文件</span><input class="file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.html,.htm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain,text/html" data-edu-file></label>${textArea('或直接粘贴教务表格','eduText','', 'placeholder="建议保留表头，例如：课程名称\t教师\t上课地点\t星期\t周次\t节次"')}</div><div class="hint">支持表头：课程名称/课程名/课程、教师、地点/教室、星期/周几、周次、节次、开始时间、结束时间、上课时间。周次可写 1-16、1,3,5、1-16单周、1-16周(单)；节次可写 第1-2节。</div><div class="tools">${button('解析并预览','edu-preview','class="primary"')}</div><div data-edu-preview></div></div>`;}
@@ -258,7 +376,20 @@ function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<f
  function schoolListContent(){return `${subHead('选择学校','back',schoolIndex?`官方适配索引 · ${schoolIndex.schools.length} 所学校/工具`:'官方时光课程表适配仓库')}<div class="school-tabs">${Object.entries(categoryLabels).map(([id,label])=>button(label,'school-category',`data-category="${id}" class="${schoolCategory===id?'on':''}"`)).join('')}</div><input class="school-search" data-school-search aria-label="搜索学校" value="${esc(schoolQuery)}" placeholder="搜索学校名称或拼音首字母"><div class="school-list" data-school-results>${schoolRowsContent()}</div>`;}
  function adapterListContent(){const adapters=(selectedSchool?.adapters||[]).filter(a=>a.category===schoolCategory);return `${subHead(selectedSchool?.name||'选择导入方式','back',categoryLabels[schoolCategory],'‹ 返回学校列表')}<div class="school-list">${adapters.map(a=>`<button class="adapter-card" data-action="school-open-adapter" data-adapter-id="${esc(a.adapterId)}"><b>${esc(a.adapterName)}</b><span>${esc(a.description||'进入教务系统后执行适配脚本')}</span><span>维护者：${esc(a.maintainer||'未注明')}</span></button>`).join('')||'<div class="school-empty">该分类暂时没有可用适配器。</div>'}</div><p class="hint">教务系统会在独立窗口打开。完成登录并进入个人课表页面后，点击窗口右下角“导入当前课表”。</p>`;}
  function transferContent(){return `${subHead('备份与恢复')}<div class="transfer-grid"><section class="transfer-card"><h4>导出课表</h4><p class="muted">JSON 备份包含全部课表；ICS 导出当前课表。</p><div class="tools">${button('导出 JSON','json','class="primary"')}${button('导出 ICS','ics')}</div></section><section class="transfer-card"><h4>导入 JSON 备份</h4><p class="muted">兼容拾光课程表单课表和多课表备份。先预览，再确认导入。</p><label><span>选择 JSON 文件</span><input class="file" type="file" accept=".json,application/json" data-file></label>${textArea('或粘贴 JSON','jsonText','')}<div class="tools">${button('预览 JSON','preview')}</div><div data-preview></div></section></div>`;}
- function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;}
+ function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;animateWeek();}
+ /* 切周滑入动画。
+    做法是整棵重绘后，在 .week-anim 上补一个一次性动画类 —— 而不是用 Transition/FLIP
+    去挪动旧节点：课表是 7×N 的 CSS Grid，逐块做 FLIP 要量几十个 rect，
+    代价远高于「整块淡入并横向位移」。位移方向由 slideDir 决定：
+    翻到后面的周 = 内容往左移进来（新的一周从右边推入），翻回前面的周则相反。
+    为什么用 animation 而不是 transition：类一加上动画就跑，不需要读一次布局触发 reflow。
+    animationend 后把类摘掉，否则下一次重绘会带着旧类、动画不再重放。 */
+ function animateWeek(){
+   const el=host?.querySelector('[data-week-anim]');if(!el||slideDir===0)return;
+   el.style.setProperty('--sg-slide',String(slideDir));
+   el.classList.add('anim-in',slideDir<0?'anim-back':'anim-fwd');
+   el.addEventListener('animationend',()=>el.classList.remove('anim-in','anim-back','anim-fwd'),{once:true});
+ }
  async function blocks(){const {rows,overlap}=snapshot(week);if(overlap.size)throw new Error('本周课程有冲突，请先修改后再加入时间块');const planned=[],skipped=[];for(const c of rows){const existing=tide.blocks.list(c.date);if(existing.some(b=>b.title===c.name&&b.start===c.start&&b.durMin===M.minutes(c.end)-M.minutes(c.start))){skipped.push(c);continue;}if(existing.some(b=>M.minutes(b.start)<M.minutes(c.end)&&M.minutes(b.start)+b.durMin>M.minutes(c.start)))throw new Error(`${c.date} ${c.start} 与已有时间块冲突，本次没有添加`);planned.push(c);}const made=[];try{for(const c of planned){const b=tide.blocks.create({date:c.date,start:c.start,durMin:M.minutes(c.end)-M.minutes(c.start),title:c.name,cat:'study',taskId:null});made.push(b.id);}}catch(e){made.forEach(id=>tide.blocks.remove(id));throw e;}tide.notify(`已添加 ${made.length} 个课程时间块，跳过 ${skipped.length} 个重复项`,{actionLabel:'查看',action:()=>tide.util.navigate('timeblock')});}
  function showPreview(){const target=host.querySelector('[data-preview]');if(!target||!pending)return;const data=M.normalize(pending[selectedPack].data);target.innerHTML=`<label><span>选择课表</span><select data-pack>${pending.map((p,i)=>`<option value="${i}" ${i===selectedPack?'selected':''}>${esc(p.name)}</option>`).join('')}</select></label><p><span class="badge">${data.courses.length} 门课程</span><span class="badge">${data.timeSlots.length} 个节次</span><span class="badge">${data.config.semesterTotalWeeks} 周</span></p><p class="warning">可替换当前课表；多课表备份也可一次恢复全部课表。</p><div class="tools">${button('替换当前课表','import','class="primary"')}${pending.length>1?button('恢复全部课表','import-all'):''}</div>`;}
  function showEduPreview(){const target=host.querySelector('[data-edu-preview]');if(!target||!pendingEdu)return;const d=pendingEdu.table,w=pendingEdu.warnings||[];target.innerHTML=`<div class="success">成功识别 ${d.courses.length} 门课程${w.length?`，另有 ${w.length} 行需要人工检查`:''}。</div><div class="preview-list">${d.courses.slice(0,12).map(c=>`<div class="preview-item"><b>${esc(c.name)}</b><div class="preview-meta">${days[c.day-1]} · ${c.isCustomTime?`${esc(c.customStartTime)}-${esc(c.customEndTime)}`:`第 ${c.startSection}-${c.endSection} 节`}<br>${esc(c.position||'地点未填写')} ${c.teacher?`· ${esc(c.teacher)}`:''}</div></div>`).join('')}</div>${d.courses.length>12?`<p class="muted">仅展示前 12 门，完整导入共 ${d.courses.length} 门。</p>`:''}${w.length?`<details><summary>查看未识别行（${w.length}）</summary><p class="error">${esc(w.slice(0,20).join('\n'))}</p></details>`:''}<label><span>导入方式</span><select data-edu-strategy><option value="merge">合并到当前课表（自动跳过重复项）</option><option value="replace">替换当前课表</option></select></label><div class="tools">${button('确认导入','edu-import','class="primary"')}</div>`;}
@@ -277,11 +408,17 @@ function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<f
    if(message.action==='saveImportedCourses'){const added=Math.max(0,table.courses.length-before);tide.notify(`在线教务已导入，新增 ${added} 门课程`);}
  }
  async function bindSchoolImporter(){if(schoolListenerBound)return;schoolListenerBound=true;try{await tide.schoolImporter.onMessage(raw=>{schoolMessageQueue=schoolMessageQueue.then(()=>handleSchoolMessage(raw)).catch(notice);});}catch(error){schoolListenerBound=false;throw error;}}
- async function action(a,source){clearError();switch(a){
- case 'prev':week=Math.max(1,week-1);break;case 'next':week=Math.min(table.config.semesterTotalWeeks,week+1);break;case 'current':week=currentWeek();mode='week';break;
+ /* 切周动作统一走 gotoWeek()，由它算出滑动方向。
+    方向只在「真的换了周」时才写，所以重复点同一周的卡片不会白白闪一下。 */
+ function gotoWeek(target){const next=Math.max(1,Math.min(table.config.semesterTotalWeeks,Number(target)||week));if(next!==week)slideDir=next>week?1:-1;week=next;}
+ async function action(a,source){clearError();slideDir=0;switch(a){
+ case 'prev':gotoWeek(week-1);break;case 'next':gotoWeek(week+1);break;
+ /* 「回到本周」：真实当前周已被夹取进合法范围（currentWeek 做了 clamp），
+    学期外时它等于第 1 周或最后一周 —— 那时候按钮根本不会渲染出来，见 toolbar()。 */
+ case 'current':gotoWeek(currentWeek());mode='week';break;
 case 'back':mode=modeStack.pop()||'week';break;
 case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'edu':case 'courses':case 'tables':case 'style':case 'week-picker':enterMode(a);break;
-case 'pick-week':week=Math.max(1,Math.min(table.config.semesterTotalWeeks,Number(source?.dataset.week)||week));mode='week';break;
+case 'pick-week':gotoWeek(source?.dataset.week);mode='week';break;
 case 'add':draft={name:'',teacher:'',position:'',day:1,weeks:Array.from({length:table.config.semesterTotalWeeks},(_,i)=>i+1),isCustomTime:false,startSection:1,endSection:2,color:0,remark:''};enterMode('edit');break;
  case 'odd':case 'even':host.querySelector('[name="weeks"]').value=Array.from({length:table.config.semesterTotalWeeks},(_,i)=>i+1).filter(w=>w%2===(a==='odd'?1:0)).join(',');return;
  case 'delete':{const old=table;await persist({...table,courses:table.courses.filter(c=>c.id!==draft.id)});mode='week';tide.notify('课程已删除',{actionLabel:'撤销',action:async()=>{await persist(old);paint();}});break;}
@@ -301,15 +438,15 @@ case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.da
  case 'rename-table':{const p=tables.find(x=>x.id===source?.dataset.tableId);if(!p)return;const next=typeof prompt==='function'?prompt('课表名称',p.name):null;if(next&&next.trim()){p.name=next.trim().slice(0,40);await saveTables();}break;}
  case 'copy-table':{const p=tables.find(x=>x.id===source?.dataset.tableId);if(!p)return;tables.push({id:makeId(),name:p.name+' 副本',createdAt:Date.now(),data:M.normalize(JSON.parse(JSON.stringify(p.data)))});await saveTables();break;}
  case 'delete-table':{const id=source?.dataset.tableId;if(tables.length<=1)return;if(typeof confirm==='function'&&!confirm('删除这张课表？此操作不会删除已加入的时间块。'))return;tables=tables.filter(x=>x.id!==id);if(currentTableId===id){currentTableId=tables[0].id;table=M.normalize(tables[0].data);week=currentWeek();}await saveTables();break;}
- case 'style-reset':style={...defaultStyle};await tide.storage.set('style',style);break;
+ case 'style-reset':clearTimeout(styleSaveTimer);style={...defaultStyle};await tide.storage.set('style',style);break;
  }paint();}
- async function submit(form){const f=Object.fromEntries(new FormData(form));if(form.dataset.form==='table-new'){const next=M.empty(tide.util.today());const p={id:makeId(),name:String(f.tableName||'新课表').trim().slice(0,40),createdAt:Date.now(),data:next};tables.push(p);currentTableId=p.id;table=next;week=currentWeek();await saveTables();mode='week';paint();tide.notify('新课表已创建');return;}if(form.dataset.form==='style'){style={slotHeight:Number(f.slotHeight),cornerRadius:Number(f.cornerRadius),gap:Number(f.gap),opacity:Number(f.opacity),hideTimes:form.elements.hideTimes.checked,hideDates:form.elements.hideDates.checked,colorful:form.elements.colorful.checked};await tide.storage.set('style',style);mode='settings';paint();tide.notify(style.colorful?'已开启彩色课程块':'个性化配置已保存');return;}let next;if(form.dataset.form==='course'){const c={...draft,...f,id:draft.id||makeId(),day:Number(f.day),color:Number(f.color||0),isCustomTime:f.isCustomTime==='true',weeks:M.weeks(f.weeks,table.config.semesterTotalWeeks)};next=M.normalize({...table,courses:[...table.courses.filter(x=>x.id!==c.id),c]});}else{const slots=f.slots.trim().split(/\r?\n/).filter(s=>s.trim()).map(line=>{const [number,startTime,endTime,...rest]=line.trim().split(/\s+/);if(rest.length)throw new Error('每行只填写编号、开始和结束时间');return {number,startTime,endTime};});next=M.normalize({...table,config:{...table.config,semesterStartDate:f.semesterStartDate,semesterTotalWeeks:Number(f.semesterTotalWeeks),firstDayOfWeek:Number(f.firstDayOfWeek)},timeSlots:slots});}await persist(next);week=Math.min(week,table.config.semesterTotalWeeks);mode='week';paint();tide.notify('课表已保存');}
+ async function submit(form){if(form.dataset.form==='style')return;const f=Object.fromEntries(new FormData(form));if(form.dataset.form==='table-new'){const next=M.empty(tide.util.today());const p={id:makeId(),name:String(f.tableName||'新课表').trim().slice(0,40),createdAt:Date.now(),data:next};tables.push(p);currentTableId=p.id;table=next;week=currentWeek();await saveTables();mode='week';paint();tide.notify('新课表已创建');return;}let next;if(form.dataset.form==='course'){const c={...draft,...f,id:draft.id||makeId(),day:Number(f.day),color:Number(f.color||0),isCustomTime:f.isCustomTime==='true',weeks:M.weeks(f.weeks,table.config.semesterTotalWeeks)};next=M.normalize({...table,courses:[...table.courses.filter(x=>x.id!==c.id),c]});}else{const slots=f.slots.trim().split(/\r?\n/).filter(s=>s.trim()).map(line=>{const [number,startTime,endTime,...rest]=line.trim().split(/\s+/);if(rest.length)throw new Error('每行只填写编号、开始和结束时间');return {number,startTime,endTime};});next=M.normalize({...table,config:{...table.config,semesterStartDate:f.semesterStartDate,semesterTotalWeeks:Number(f.semesterTotalWeeks),firstDayOfWeek:Number(f.firstDayOfWeek)},timeSlots:slots});}await persist(next);week=Math.min(week,table.config.semesterTotalWeeks);mode='week';paint();tide.notify('课表已保存');}
  function bindEvents(el){
    let swipeStart=null;
    el.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.action==='menu-toggle'){toggleMore(b);return;}if(b.dataset.edit){draft={...table.courses.find(c=>c.id===b.dataset.edit)};enterMode('edit');paint();}else if(b.dataset.action)action(b.dataset.action,b).catch(notice);});
    el.addEventListener('submit',e=>{e.preventDefault();submit(e.target).catch(notice);});
-   el.addEventListener('change',async e=>{try{if(e.target.matches('[data-file]')){const file=e.target.files[0];if(!file)return;if(file.size>4*1024*1024)throw new Error('课表文件不能超过 4 MB');host.querySelector('[name="jsonText"]').value=await file.text();}if(e.target.matches('[data-edu-file]')){const file=e.target.files[0];if(!file)return;if(file.size>4*1024*1024)throw new Error('教务文件不能超过 4 MB');const excel=/\.(xlsx|xls)$/i.test(file.name);host.querySelector('[name="eduText"]').value=excel?await tide.assets.spreadsheetText(file):await file.text();tide.notify(`已读取教务文件：${file.name}`);}if(e.target.matches('[data-pack]')){selectedPack=Number(e.target.value);showPreview();}}catch(err){notice(err);}});
-   el.addEventListener('input',e=>{if(e.target.matches('[data-school-search]')){schoolQuery=e.target.value;const target=host.querySelector('[data-school-results]');if(target)target.innerHTML=schoolRowsContent();}const sf=e.target.closest('form[data-form="style"]');if(sf)refreshStylePreview(sf);});
+   el.addEventListener('change',async e=>{try{const sf=e.target.closest('form[data-form="style"]');if(sf){liveStyle(sf,true);return;}if(e.target.matches('[data-file]')){const file=e.target.files[0];if(!file)return;if(file.size>4*1024*1024)throw new Error('课表文件不能超过 4 MB');host.querySelector('[name="jsonText"]').value=await file.text();}if(e.target.matches('[data-edu-file]')){const file=e.target.files[0];if(!file)return;if(file.size>4*1024*1024)throw new Error('教务文件不能超过 4 MB');const excel=/\.(xlsx|xls)$/i.test(file.name);host.querySelector('[name="eduText"]').value=excel?await tide.assets.spreadsheetText(file):await file.text();tide.notify(`已读取教务文件：${file.name}`);}if(e.target.matches('[data-pack]')){selectedPack=Number(e.target.value);showPreview();}}catch(err){notice(err);}});
+   el.addEventListener('input',e=>{if(e.target.matches('[data-school-search]')){schoolQuery=e.target.value;const target=host.querySelector('[data-school-results]');if(target)target.innerHTML=schoolRowsContent();}const sf=e.target.closest('form[data-form="style"]');if(sf)liveStyle(sf,false);});
    el.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))e.stopPropagation();});
    el.addEventListener('pointerdown',e=>{if(e.target.closest('.schedule-frame'))swipeStart={x:e.clientX,y:e.clientY};});
    el.addEventListener('pointerup',e=>{if(!swipeStart)return;const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;swipeStart=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.25)action(dx>0?'prev':'next').catch(notice);});
