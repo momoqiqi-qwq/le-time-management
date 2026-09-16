@@ -3,7 +3,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "shiguang-schedule",
     "name": "课程表",
-    "version": "3.6.0",
+    "version": "3.7.0",
     "author": "基于 XingHeYuZhuan/shiguangschedule · Le时间管理适配",
     "icon": "calendar-days",
     "faIcon": "calendar-days",
@@ -27,7 +27,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "web-collector",
     "name": "网页收集",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "author": "Le时间管理内置",
     "icon": "bookmark",
     "faIcon": "bookmark",
@@ -35,6 +35,7 @@ export const BUILTIN_PLUGINS = [
     "permissions": [
       "ui",
       "storage",
+      "notify",
       "http",
       "openUrl"
     ],
@@ -49,16 +50,17 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "school-notice",
     "name": "学校通知网站",
-    "version": "1.2.0",
+    "version": "1.3.1",
     "author": "Le时间管理内置",
     "icon": "school",
     "faIcon": "school",
-    "description": "输入学校公告/通知网址后自动识别常见高校 CMS 列表；对「服务端只吐空壳、列表靠 JS 渲染」的门户站点，命中已登记适配器时直接读取其数据接口。支持会话登录、用户名密码和手动验证码，并可把公告转成 Le时间管理提醒。",
+    "description": "输入学校公告/通知网址后自动识别常见高校 CMS 列表；对「服务端只吐空壳、列表靠 JS 渲染」的门户站点，命中已登记适配器时直接读取其数据接口。支持会话登录、用户名密码和手动验证码，并可把公告转成 Le时间管理提醒。站点标签页可右键弹出操作菜单（刷新 / 登录配置 / 编辑 / 打开 / 删除）。",
     "permissions": [
       "ui",
       "storage",
       "tasks",
       "blocks",
+      "notify",
       "http",
       "openUrl",
       "timeParse"
@@ -249,7 +251,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "exam-calendar",
     "name": "考试日历",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "author": "your-name",
     "icon": "calendar-check",
     "faIcon": "calendar-check",
@@ -261,7 +263,8 @@ export const BUILTIN_PLUGINS = [
       "storage",
       "notify",
       "events",
-      "openUrl"
+      "openUrl",
+      "timeParse"
     ],
     "entry": "main.js",
     "order": 12,
@@ -274,13 +277,14 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "plugin-guide",
     "name": "插件使用说明",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "author": "Le时间管理内置",
     "icon": "circle-question",
     "faIcon": "circle-question",
     "description": "按学习、效率、信息、生活与工具分类，用卡片快速查看每个内置插件的用途、使用步骤、平台支持和注意事项。",
     "permissions": [
       "ui",
+      "notify",
       "openUrl"
     ],
     "entry": "main.js",
