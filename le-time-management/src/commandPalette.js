@@ -12,6 +12,43 @@ let list = null;
 let activeIndex = 0;
 let visible = [];
 
+// 内联 SVG（stroke 风格，跟随 currentColor）：手机端命令面板要显示类型图标与关闭按钮，
+// 不走 Icons8 PNG——省一次网络/文件加载，且深浅主题自动跟随文字色。
+const SVG = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const SEARCH_ICON = SVG('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/>');
+const CLOSE_ICON = SVG('<path d="M18 6 6 18M6 6l12 12"/>');
+const KIND_ICONS = {
+  "命令": SVG('<path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/>'),
+  "导航": SVG('<circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z"/>'),
+  "任务": SVG('<circle cx="12" cy="12" r="10"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>'),
+  "已完成任务": SVG('<circle cx="12" cy="12" r="10"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>'),
+  "时间块": SVG('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
+  // 插件类条目的兜底图标（随包 PNG 加载失败 / 外来插件没有图标时）——齿轮。
+  "插件": SVG('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
+  "已停用插件": SVG('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
+};
+function iconSpan(cls, svg) {
+  const s = el("span", { class: cls, "aria-hidden": "true" });
+  s.innerHTML = svg;
+  return s;
+}
+// 插件条目用插件自己的随包图标（public/icons/plugins/<id>.png，Icons8 Color 彩色风格，
+// 与主导航/插件中心同一套）；没有随包图标的（外来插件等）回落齿轮 SVG。
+function kindIconNode(item) {
+  if (item.pluginId) {
+    const s = el("span", { class: `cmd-kind-ico cmd-kind-plugin${item.kind === "已停用插件" ? " off" : ""}`, "aria-hidden": "true" });
+    const img = el("img", {
+      class: "cmd-kind-img",
+      src: `/icons/plugins/${encodeURIComponent(item.pluginId)}.png`,
+      alt: "", loading: "lazy", decoding: "async", draggable: "false",
+    });
+    img.addEventListener("error", () => { s.innerHTML = KIND_ICONS["插件"]; }, { once: true });
+    s.append(img);
+    return s;
+  }
+  return iconSpan("cmd-kind-ico", KIND_ICONS[item.kind] || "");
+}
+
 function navigate(view) {
   window.dispatchEvent(new CustomEvent("tide:navigate", { detail: view }));
 }
@@ -63,6 +100,7 @@ function entries() {
     const enabled = S.pluginState(rec.id).enabled !== false;
     return {
       kind: enabled ? "插件" : "已停用插件",
+      pluginId: rec.id,
       title: man.name || rec.id,
       sub: enabled && pv ? "打开插件" : enabled ? "插件已开启 · 前往插件设置" : "插件已关闭 · 前往插件设置",
       keywords: `${rec.id} ${man.description || ""} ${man.author || ""}`,
@@ -90,7 +128,7 @@ function renderResults() {
   }
   visible.forEach((item, idx) => {
     const row = el("button", { class: `cmd-row${idx === activeIndex ? " on" : ""}`, type: "button" },
-      el("span", { class: "cmd-kind" }, item.kind),
+      el("span", { class: "cmd-kind" }, kindIconNode(item), el("span", { class: "cmd-kind-text" }, item.kind)),
       el("span", { class: "cmd-main" }, el("b", {}, item.title), item.sub ? el("small", {}, item.sub) : null),
       el("span", { class: "cmd-enter" }, idx === activeIndex ? "↵" : ""),
     );
@@ -124,11 +162,17 @@ export function openCommandPalette(initialQuery = "") {
   if (modal) { input.value = initialQuery; renderResults(); input.focus(); return; }
   const mask = el("div", { class: "cmd-mask", onclick: closeCommandPalette });
   input = el("input", { class: "cmd-input", type: "search", placeholder: "搜索任务、时间块、插件，或输入命令…", value: initialQuery, "aria-label": "全局搜索" });
+  // 手机端没有 Esc 键：始终渲染一个 ✕ 关闭按钮（kbd Esc 仅桌面显示，见 CSS）。
+  const closeBtn = el("button", { class: "cmd-close", type: "button", "aria-label": "关闭搜索", onclick: closeCommandPalette });
+  closeBtn.innerHTML = CLOSE_ICON;
   list = el("div", { class: "cmd-list", role: "listbox" });
   modal = el("div", { class: "cmd-palette", role: "dialog", "aria-label": "全局搜索与命令面板" },
-    el("div", { class: "cmd-search" }, el("span", {}, "⌕"), input, el("kbd", {}, "Esc")),
+    el("div", { class: "cmd-search" }, iconSpan("cmd-search-ico", SEARCH_ICON), input, closeBtn, el("kbd", {}, "Esc")),
     list,
-    el("div", { class: "cmd-foot" }, "↑↓ 选择 · Enter 打开 · Ctrl+K 随时呼出"),
+    el("div", { class: "cmd-foot" },
+      el("span", { class: "foot-desktop" }, "↑↓ 选择 · Enter 打开 · Ctrl+K 随时呼出"),
+      el("span", { class: "foot-mobile" }, "点按条目直接打开 · 点按空白处收起"),
+    ),
   );
   modal._mask = mask;
   input.addEventListener("input", () => { activeIndex = 0; renderResults(); });

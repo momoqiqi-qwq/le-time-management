@@ -1050,14 +1050,23 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .cmd-search{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line-soft);font-size:19px}
 .cmd-input{flex:1;min-width:0;border:0!important;outline:0!important;background:transparent!important;font-size:15px;height:34px;color:var(--ink)}
 .cmd-search kbd{font-size:10px;color:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:3px 6px;background:var(--paper)}
+.cmd-search-ico{flex:none;width:20px;height:20px;color:var(--ink-3);display:inline-flex}
+.cmd-search-ico svg{width:100%;height:100%}
+.cmd-close{flex:none;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink-3);cursor:pointer;padding:0;font:inherit}
+.cmd-close svg{width:14px;height:14px}
+.cmd-close:hover{color:var(--ink);border-color:color-mix(in srgb,var(--deep) 42%,var(--line))}
 .cmd-list{overflow:auto;padding:7px;min-height:120px}
 .cmd-row{display:flex;width:100%;align-items:center;gap:10px;text-align:left;border:0;background:transparent;padding:9px 10px;border-radius:10px;color:var(--ink);cursor:pointer;font:inherit}
 .cmd-row.on,.cmd-row:hover{background:color-mix(in srgb,var(--deep) 8%,var(--panel))}
-.cmd-kind{flex:none;min-width:66px;font-size:10.5px;color:var(--ink-3);border:1px solid var(--line-soft);border-radius:999px;text-align:center;padding:3px 7px;background:var(--paper)}
+.cmd-kind{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:66px;font-size:10.5px;color:var(--ink-3);border:1px solid var(--line-soft);border-radius:999px;text-align:center;padding:3px 7px;background:var(--paper)}
+.cmd-kind-ico{display:inline-flex;flex:none}
+.cmd-kind-ico svg{width:12px;height:12px}
+.cmd-kind-plugin .cmd-kind-img{width:14px;height:14px;object-fit:contain;border-radius:3px}
+.cmd-kind-plugin.off{opacity:.55}
 .cmd-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}
 .cmd-main b{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmd-main small{font-size:11px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmd-enter{width:22px;color:var(--deep);text-align:center}.cmd-empty{padding:36px 20px;text-align:center;color:var(--ink-3);font-size:12px}.cmd-foot{padding:8px 14px;border-top:1px solid var(--line-soft);font-size:10.5px;color:var(--ink-3);background:var(--paper)}
+.cmd-enter{width:22px;color:var(--deep);text-align:center}.cmd-empty{padding:36px 20px;text-align:center;color:var(--ink-3);font-size:12px}.cmd-foot{padding:8px 14px;border-top:1px solid var(--line-soft);font-size:10.5px;color:var(--ink-3);background:var(--paper)}.cmd-foot .foot-mobile{display:none}
 
 /* ── v0.10 · 快速捕获 ── */
 .quick-cap{position:fixed;z-index:1901;left:50%;top:18vh;transform:translateX(-50%);width:min(620px,calc(100vw - 28px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.22);padding:16px}
@@ -1075,7 +1084,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* ── v0.10 · 同步与快捷键 ── */
 .sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}
 
-@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-kind{min-width:54px}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
+@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
