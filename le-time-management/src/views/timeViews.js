@@ -1,5 +1,5 @@
 import * as S from "../store.js";
-import { el } from "../ui.js";
+import { el, toast } from "../ui.js";
 
 const VIEW_META = [
   ["day", "日时间轴", "当前可拖拽编辑的日程"],
@@ -174,6 +174,83 @@ function mondayOf(dateStr) {
 function addDate(dateStr, n) { const d = parseDate(dateStr); d.setDate(d.getDate() + n); return dateKey(d); }
 function minutes(hhmm) { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h * 60 + m; }
 
+/* ── 课表手势：捏合缩放 + 平移 ──
+   触控板与触控屏的捏合在 Chromium 里走两条不同的路，必须都接：
+   ① 触控板捏合 = **带 ctrlKey 的 wheel**（和鼠标 Ctrl+滚轮同一条路，顺便白送键盘用户）；
+   ② 触控屏捏合 = 双指 touchmove 的距离变化。
+   平移不自己实现：`.wakeup-scroll` 是 overflow:auto，原生触摸 / 触控板滚动已经够顺，
+   自己写反而丢掉惯性；`touch-action:pan-x pan-y`（见 styles.css）保证双指平移交给原生。
+   这里只负责「别让浏览器把捏合拿去缩放整个页面」。
+   缩放锚点取手势中心：缩放前后该点对应的内容坐标必须一致，否则捏合时内容会从手指底下
+   跑掉（用起来像「越捏越偏」）。 */
+const ZOOM_MIN = 0.6, ZOOM_MAX = 2;
+const clampZoom = (z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(z) || 1));
+
+function attachWakeupGestures(scroll, zoomHost, onZoomSettle) {
+  let cur = clampZoom(zoomHost.style.getPropertyValue("--wk-zoom"));
+  let pinch = null;
+  const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+  function setZoom(next, ax, ay) {
+    const z = clampZoom(next);
+    if (Math.abs(z - cur) < 0.005) return;
+    const r = scroll.getBoundingClientRect();
+    const px = ax == null ? scroll.clientWidth / 2 : ax - r.left;
+    const py = ay == null ? scroll.clientHeight / 2 : ay - r.top;
+    // 🔴 锚点用「在滚动内容里的相对位置」，不能用绝对内容坐标：
+    //    网格宽受 min-width、高受 height:100% / min-height 三重约束，缩放并不是纯等比 ——
+    //    实测 zoom 1 → 1.377 时网格宽只放大 1.11 倍（1116 → 1239），
+    //    按绝对坐标算会漂 60px+（内容从手指底下跑掉）。相对位置对非等比也成立。
+    const relX = scroll.scrollWidth ? (scroll.scrollLeft + px) / scroll.scrollWidth : 0;
+    const relY = scroll.scrollHeight ? (scroll.scrollTop + py) / scroll.scrollHeight : 0;
+    cur = z;
+    zoomHost.style.setProperty("--wk-zoom", String(z));
+    // 先把布局刷出来再改滚动位置：scrollLeft 的合法范围由内容尺寸决定，
+    // 尺寸刚改完时范围还是旧的 ⇒ 直接赋值会被 clamp 到旧范围。
+    // 读一次 scrollWidth 触发同步 layout。
+    void scroll.scrollWidth;
+    scroll.scrollLeft = relX * scroll.scrollWidth - px;
+    scroll.scrollTop = relY * scroll.scrollHeight - py;
+  }
+
+  // ① 触控板捏合 / Ctrl+滚轮。passive:false 才允许 preventDefault ——
+  //    否则 WebView2 会执行自己的页面缩放，整个界面跟着变大（而不是只缩课表）。
+  scroll.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey) return;              // 普通滚动放行，交给原生
+    e.preventDefault();
+    setZoom(cur * Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
+    onZoomSettle?.(cur);
+  }, { passive: false });
+
+  // ② 触控屏捏合
+  scroll.addEventListener("touchstart", (e) => {
+    pinch = e.touches.length === 2
+      ? {
+        d: touchDist(e.touches), z: cur,
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+      }
+      : null;
+  }, { passive: true });
+  scroll.addEventListener("touchmove", (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    setZoom(pinch.z * (touchDist(e.touches) / pinch.d), pinch.x, pinch.y);
+  }, { passive: false });
+  const endPinch = () => { if (pinch) { pinch = null; onZoomSettle?.(cur); } };
+  scroll.addEventListener("touchend", endPinch, { passive: true });
+  scroll.addEventListener("touchcancel", endPinch, { passive: true });
+
+  // 双击复位：缩到很小或放得很大之后总得有条回头路，否则只能一点点捏回来。
+  scroll.addEventListener("dblclick", (e) => {
+    if (Math.abs(cur - 1) < 0.005) return;
+    setZoom(1, e.clientX, e.clientY);
+    onZoomSettle?.(1);
+  });
+
+  return { get: () => cur };
+}
+
 /* ── 课程表（内部 id 仍叫 wakeup，改 id 会让用户已保存的视图选择失效）──
    桌面仍是一屏 7 天的真课表；窄屏改成「按天分组的日程列表」：
    7 列 × 10 节 = 70 个格子在 390px 宽里最小可读宽度约 700px，
@@ -211,6 +288,19 @@ function wakeupView(data, anchorDate) {
 
   // 桌面：真 7 列网格（CSS 在 ≤760px 里隐藏）
   const sc = el("div", { class: "wakeup-scroll" }); const grid = el("div", { class: "wakeup-grid" });
+  // 缩放比例从设置恢复（捏合后持久化），切走视图再回来、重启应用都保持。
+  // 挂在面板根节点上而不是网格自己：.wakeup-scroll 的 max-height 也要读它（变量只向下继承）。
+  root.style.setProperty("--wk-zoom", String(clampZoom(S.getState().settings.timeViewZoom)));
+  let zoomToast = null;
+  attachWakeupGestures(sc, root, (z) => {
+    // 手势过程中不弹提示（连续变化会刷屏），停手后再报一次当前比例
+    clearTimeout(zoomToast);
+    zoomToast = setTimeout(() => {
+      S.getState().settings.timeViewZoom = z;
+      S.persistSoon();
+      toast(`课表缩放 ${Math.round(z * 100)}%`);
+    }, 600);
+  });
   grid.append(el("div", { class: "wk-corner" }, week ? `第${week}周` : "时间"));
   const dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   for (let i = 0; i < 7; i++) { const d = addDate(monday, i); grid.append(el("div", { class: `wk-day${d === today ? " today" : ""}`, style: `grid-column:${i + 2};grid-row:1` }, el("b", {}, dayNames[i]), el("span", {}, shortDate(d)))); }

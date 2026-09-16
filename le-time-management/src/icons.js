@@ -1,17 +1,18 @@
 import { el } from "./ui.js";
 import { BUILTIN_PLUGINS } from "./pluginCatalog.js";
 
-// Icons8 / iGoutu 图标源，分两套风格（来源台账见 public/icons/plugins/ATTRIBUTION.md）：
-//  · 主导航：iOS Filled 单色剪影 + 每项独立强调色，URL 形如 ios-filled/50/<色>/<slug>.png；
-//  · 插件图标：Color 彩色风格（内置插件用随包 PNG，读不到才回落同风格 CDN 直链），
-//    URL 形如 img.icons8.com/color/96/<slug>.png。
+// Icons8 / iGoutu 图标源，统一为 Color 彩色风格（来源台账见 public/icons/{plugins,nav}/ATTRIBUTION.md）：
+//  · 内置插件：随包 PNG public/icons/plugins/<插件ID>.png（tools/gen-plugin-icons.py 生成）；
+//  · 主导航（四象限/时间块/收件箱/插件/设置/快速捕获）：随包 PNG public/icons/nav/<key>.png，
+//    与插件同一套 Color 风格 —— v0.42.0 前导航走 CDN 的 iOS Filled 直链，离线即裂且风格不统一；
+//  · 随包 PNG 加载失败才回落同风格 CDN 直链，URL 形如 img.icons8.com/color/96/<slug>.png。
 const NAV_ICONS8 = {
-  quadrant: ["four-squares", "grid-2"],
-  timeblock: ["clock"],
-  inbox: ["inbox"],
+  quadrant: ["four-squares", "grid-2", "grid"],
+  timeblock: ["clock", "clock--v1"],
+  inbox: ["inbox", "filled-in-box"],
   market: ["puzzle", "puzzle-piece"],
-  settings: ["settings"],
-  capture: ["inbox"],
+  settings: ["settings", "gear"],
+  capture: ["inbox", "filled-in-box"],
 };
 
 // slug 与 public/icons/plugins/<插件ID>.png 一一对应（由 tools/gen-plugin-icons.py 生成）。
@@ -35,20 +36,6 @@ const ICONS8 = { ...NAV_ICONS8, ...PLUGIN_ICONS8 };
 
 const MANIFEST_ICON_KEYS = Object.fromEntries(BUILTIN_PLUGINS.map((plugin) => [plugin.id, plugin.icon || plugin.faIcon || "puzzle-piece"]));
 
-// 仅主导航（iOS Filled）需要强调色，插件图标是彩色 PNG，不再染色。
-const ICON_COLORS = {
-  quadrant: "4F46E5",
-  timeblock: "0EA5E9",
-  inbox: "F59E0B",
-  market: "8B5CF6",
-  settings: "64748B",
-  capture: "F59E0B",
-};
-
-function iosFilledUrl(name, color) {
-  return `https://img.icons8.com/ios-filled/50/${color}/${name}.png`;
-}
-
 function colorUrl(name) {
   return `https://img.icons8.com/color/96/${name}.png`;
 }
@@ -56,27 +43,28 @@ function colorUrl(name) {
 export function appIcon(key, title = "") {
   const manifestIcon = MANIFEST_ICON_KEYS[key];
   const isNav = Boolean(NAV_ICONS8[key]);
+  // 随包目录：内置插件 → icons/plugins，主导航 → icons/nav；都没有（未知 key）→ 直接 CDN
+  const bundledDir = manifestIcon ? "plugins" : isNav ? "nav" : null;
   const candidates = manifestIcon ? [manifestIcon, ...(ICONS8[key] || [])] : (ICONS8[key] || ICONS8.market);
-  const color = ICON_COLORS[key] || ICON_COLORS.market;
-  const urlOf = (name) => (isNav ? iosFilledUrl(name, color) : colorUrl(name));
-  let index = manifestIcon ? -1 : 0;
+  let index = bundledDir ? -1 : 0;
   let usingFallback = false;
   const img = el("img", {
     class: "app-icon icons8-app-icon",
-    src: manifestIcon ? `/icons/plugins/${key}.png` : urlOf(candidates[index]),
+    src: bundledDir ? `/icons/${bundledDir}/${key}.png` : colorUrl(candidates[index]),
     alt: title || "",
     title: title || null,
     loading: "eager",
     decoding: "async",
     draggable: "false",
-    "data-icon-source": manifestIcon ? "bundled plugin PNG (Icons8 Color)" : isNav ? "Icons8 iOS Filled" : "Icons8 Color",
+    "data-icon-source": bundledDir === "plugins" ? "bundled plugin PNG (Icons8 Color)"
+      : bundledDir === "nav" ? "bundled nav PNG (Icons8 Color)"
+      : "Icons8 Color",
     "data-icon-key": manifestIcon || candidates[0],
-    "data-icon-color": isNav ? `#${color}` : null,
   });
   img.addEventListener("error", () => {
     index += 1;
     if (index < candidates.length) {
-      img.src = urlOf(candidates[index]);
+      img.src = colorUrl(candidates[index]);
       return;
     }
     if (!usingFallback && key !== "market") {

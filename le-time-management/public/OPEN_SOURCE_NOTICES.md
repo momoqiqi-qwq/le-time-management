@@ -22,10 +22,11 @@
 
 | 用途 | 风格 | 加载方式 |
 |---|---|---|
-| 主导航（四象限 / 时间块 / 收件箱 / 插件 / 设置） | iOS Filled 单色剪影 | 运行时走 Icons8 官方图片 CDN，`img.icons8.com/ios-filled/50/<色>/<slug>.png` |
+| 主导航（四象限 / 时间块 / 收件箱 / 插件 / 设置 / 快速捕获） | Color 彩色（来源图标集「标志 · 色版」） | 随包 PNG，`public/icons/nav/<key>.png`，由 `tools/gen-plugin-icons.py` 生成；加载失败回落同风格 CDN 直链 |
 | 12 个内置插件 | Color 彩色（来源图标集「标志 · 色版」，`wechat-push` 用 3D 风格微信标志） | 随包 PNG，`public/icons/plugins/<插件ID>.png`，由 `tools/gen-plugin-icons.py` 生成 |
 
-内置插件图标的来源台账（风格 / slug / sha256 / 消费方）见 `public/icons/plugins/ATTRIBUTION.md`。
+内置插件与主导航图标的来源台账（风格 / slug / sha256 / 消费方）分别见
+`public/icons/plugins/ATTRIBUTION.md` 与 `public/icons/nav/ATTRIBUTION.md`。
 
 Icons8 的免费使用条款要求在产品中提供署名链接，因此“关于”页保留 **图标集入口 `https://igoutu.cn/icons/set/标志--style-color`** 与 Icons8 的来源入口；正式发布前请按你的 Icons8 账户/授权方案再次核对是否需要保留署名。
 

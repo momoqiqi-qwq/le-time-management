@@ -1,6 +1,9 @@
 (function () {
   let host = null, sites = [], activeId = "", notices = [], busy = false, query = "";
   const sessions = new Map();
+  // 每个站点最近一次读取失败的错误：失败只靠 toast 一闪而过的话，
+  // 用户只会看到「正在读取通知…」来回转，不知道到底发生了什么。
+  const lastErrors = new Map();
   const loginRuntime = new Map();
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const uid = () => `school-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -39,7 +42,8 @@
   function filtered() { const q = query.trim().toLowerCase(); return q ? notices.filter((x) => `${x.title} ${x.snippet} ${x.date}`.toLowerCase().includes(q)) : notices; }
 
   async function fetchPage(site, url, opts = {}) {
-    const sid = await sessionFor(site);
+    // session() 也要纳入看门狗：否则底层 invoke 挂死时连超时错误都出不来。
+    const sid = await withTimeout(sessionFor(site));
     return withTimeout(tide.http.fetch(sid, opts.method || "GET", url, { headers: opts.headers, body: opts.body, binary: opts.binary }));
   }
   async function readNotices(site) {
@@ -127,7 +131,7 @@
           tmp.url = finalUrl; notices = tide.util.web.extractNoticeLinks(res.body, finalUrl, { max: 100 });
           tmp.lastFetchedAt = Date.now(); await tide.storage.set(`notices:${id}`, notices);
         }
-      } catch (e) { tide.notify(`网站已保存，但首次读取失败：${e.message || e}`); }
+      } catch (e) { lastErrors.set(tmp.id, e.message || String(e)); tide.notify(`网站已保存，但首次读取失败：${e.message || e}`); }
       await save();
     } catch (e) { tide.notify(`添加失败：${e.message || e}`); }
     busy = false; paint();
@@ -135,8 +139,8 @@
 
   async function refresh(notify = true) {
     const site = active(); if (!site || busy) return; busy = true; paint();
-    try { await readNotices(site); if (notify && !loginRuntime.has(site.id)) tide.notify(`已读取 ${notices.length} 条公告`); }
-    catch (e) { tide.notify(`读取失败：${e.message || e}`); }
+    try { await readNotices(site); lastErrors.delete(site.id); if (notify && !loginRuntime.has(site.id)) tide.notify(`已读取 ${notices.length} 条公告`); }
+    catch (e) { lastErrors.set(site.id, e.message || String(e)); tide.notify(`读取失败：${e.message || e}`); }
     finally { busy = false; paint(); }
   }
   async function switchSite(id) { activeId = id; notices = await tide.storage.get(`notices:${id}`, []); if (!Array.isArray(notices)) notices = []; paint(); }
@@ -154,7 +158,7 @@
 
   function paint() {
     if (!host?.isConnected) return; const site = active(), rows = filtered();
-    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in" style="margin-top:8px;max-width:460px" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><span class="sn-meta">${rows.length} 条</span></div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${esc(n.title)}</div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-remind>转提醒</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
+    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in" style="margin-top:8px;max-width:460px" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><span class="sn-meta">${rows.length} 条</span></div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${esc(n.title)}</div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-remind>转提醒</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : lastErrors.has(site.id) ? `读取失败：${esc(lastErrors.get(site.id))}。请检查网络或代理后，再点一次「刷新通知」重试。` : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
   }
 
   async function render(el) {
@@ -168,7 +172,7 @@
         if (!site) return;
         if (e.target.closest("[data-refresh]")) return refresh();
         if (e.target.closest("[data-open-site]")) return tide.util.openUrl(site.url);
-        if (e.target.closest("[data-remove-site]")) { sessions.delete(site.id); loginRuntime.delete(site.id); sites = sites.filter((x) => x.id !== site.id); activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; await save(); return paint(); }
+        if (e.target.closest("[data-remove-site]")) { sessions.delete(site.id); loginRuntime.delete(site.id); lastErrors.delete(site.id); sites = sites.filter((x) => x.id !== site.id); activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; await save(); return paint(); }
         if (e.target.closest("[data-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await prepareLogin(site); await save(); return paint(); }
         if (e.target.closest("[data-reload-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await prepareLogin(site); await save(); return paint(); }
         if (e.target.closest("[data-submit-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await save(); return submitLogin(site); }

@@ -1451,17 +1451,29 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
    行触到 52px 下限后轨道总和（584px）会超出被压扁的网格盒子 ⇒
    多出来的节次被**直接裁掉且滚不到**（`scrollHeight` 不含被裁内容），比原来「能滚」更糟。
    给足 min-height，溢出就只发生在网格**之外**，交给 .wakeup-scroll 正常滚动。 */
-.wakeup-scroll { flex:1 1 0; min-height:0; max-height:calc(112px + var(--slot-count, 10) * 72px); overflow:auto; padding:18px 18px 30px; overscroll-behavior:contain; }
-.wakeup-grid { --wk-row-min:52px; height:100%; min-height:calc(64px + var(--slot-count, 10) * var(--wk-row-min)); min-width:900px; display:grid; grid-template-columns:72px repeat(7,minmax(110px,1fr)); grid-template-rows:64px repeat(var(--slot-count, 10),minmax(var(--wk-row-min),1fr)); position:relative; border:1px solid color-mix(in srgb,var(--line) 80%,transparent); border-radius:18px; overflow:hidden; background:color-mix(in srgb,var(--panel) 82%,transparent); }
+/* v0.43.0 手势：`.wakeup-scroll` 加 `touch-action:pan-x pan-y` —— 显式允许原生平移滚动、
+   关掉浏览器自己的捏合缩放（否则双指缩放会去缩放整个 WebView 页面，而我们要缩的是课表）。
+   `overscroll-behavior:contain` 保证滚到边界时不把滚动传给外层（触控板上一路滑到底很常见）。
+
+   🔴 缩放**不用 `zoom` 属性**（试过，是错的）：zoom 元素的内部可用宽/高会被除以 zoom，
+   而网格是 `height:100%` + `1fr` 铺满容器的 ⇒ 缩小时行高反而被拉得更大
+   （实测 zoom=0.6 时视觉行高 60.7px > zoom=1 时的 58.1px），与直觉完全相反。
+   改成「尺寸 × --wk-zoom」：行下限、列宽、表头高、自然行高上限都乘同一个因子，
+   字号统一走网格根的 font-size + 子元素 em，改一处即整体缩放。
+   `--wk-zoom` 定义在 `.wakeup-view` 上：`.wakeup-scroll` 的 max-height 也要读它，
+   而 CSS 变量只能向下继承，挂在网格自己身上外层就读不到。 */
+.wakeup-view { --wk-zoom:1; }
+.wakeup-scroll { flex:1 1 0; min-height:0; max-height:calc(48px + (64px + var(--slot-count, 10) * 72px) * var(--wk-zoom)); overflow:auto; padding:18px 18px 30px; overscroll-behavior:contain; touch-action:pan-x pan-y; }
+.wakeup-grid { --wk-row-min:52px; height:100%; min-height:calc((64px + var(--slot-count, 10) * var(--wk-row-min)) * var(--wk-zoom)); min-width:calc(900px * var(--wk-zoom)); display:grid; grid-template-columns:calc(72px * var(--wk-zoom)) repeat(7,minmax(calc(110px * var(--wk-zoom)),1fr)); grid-template-rows:calc(64px * var(--wk-zoom)) repeat(var(--slot-count, 10),minmax(calc(var(--wk-row-min) * var(--wk-zoom)),1fr)); font-size:calc(13px * var(--wk-zoom)); position:relative; border:1px solid color-mix(in srgb,var(--line) 80%,transparent); border-radius:18px; overflow:hidden; background:color-mix(in srgb,var(--panel) 82%,transparent); }
 .wk-corner,.wk-day,.wk-slot,.wk-cell { border-right:1px solid color-mix(in srgb,var(--line) 72%,transparent); border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent); }
-.wk-corner { grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink-2);background:color-mix(in srgb,var(--paper) 88%,transparent); }
-.wk-day { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:color-mix(in srgb,var(--panel) 92%,transparent);font-size:13px;z-index:1; }
-.wk-day span{font-size:11px;color:var(--ink-3)} .wk-day.today{background:color-mix(in srgb,var(--deep) 11%,var(--panel));color:var(--deep)} .wk-day.today span{color:var(--deep)}
+.wk-corner { grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;font-size:0.92em;font-weight:700;color:var(--ink-2);background:color-mix(in srgb,var(--paper) 88%,transparent); }
+.wk-day { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.23em;background:color-mix(in srgb,var(--panel) 92%,transparent);font-size:1em;z-index:1; }
+.wk-day span{font-size:0.85em;color:var(--ink-3)} .wk-day.today{background:color-mix(in srgb,var(--deep) 11%,var(--panel));color:var(--deep)} .wk-day.today span{color:var(--deep)}
 .wk-slot { display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.25;background:color-mix(in srgb,var(--paper) 88%,transparent);font-variant-numeric:tabular-nums; }
-.wk-slot b{font-size:14px}.wk-slot span{font-size:9.5px;white-space:pre-line;text-align:center;color:var(--ink-3);margin-top:3px}
+.wk-slot b{font-size:1.08em}.wk-slot span{font-size:0.73em;white-space:pre-line;text-align:center;color:var(--ink-3);margin-top:0.23em}
 .wk-cell { background:color-mix(in srgb,var(--panel) 58%,transparent); min-width:0; }
-.wk-course { margin:4px; padding:8px 7px; border-radius:10px; background:color-mix(in srgb,var(--wk) 24%,var(--panel)); border:1px solid color-mix(in srgb,var(--wk) 58%,transparent); border-left:4px solid var(--wk); box-shadow:0 2px 8px color-mix(in srgb,var(--wk) 12%,transparent); z-index:3; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:0; }
-.wk-course b{font-size:12px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.wk-course span{font-size:10.5px;color:var(--ink-2);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.wk-course small{font-size:9.5px;color:var(--ink-3);margin-top:3px;white-space:nowrap}
+.wk-course { margin:0.3em; padding:0.6em 0.54em; border-radius:10px; background:color-mix(in srgb,var(--wk) 24%,var(--panel)); border:1px solid color-mix(in srgb,var(--wk) 58%,transparent); border-left:4px solid var(--wk); box-shadow:0 2px 8px color-mix(in srgb,var(--wk) 12%,transparent); z-index:3; overflow:hidden; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:0; }
+.wk-course b{font-size:0.92em;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.wk-course span{font-size:0.81em;color:var(--ink-2);margin-top:0.3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}.wk-course small{font-size:0.73em;color:var(--ink-3);margin-top:0.23em;white-space:nowrap}
 .wk-tip { margin:0 18px 20px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--sun) 9%,var(--panel));color:var(--ink-2);font-size:12px; }
 /* v0.37.20：这里原有 `@media(max-width:760px){.wakeup-scroll{...}.wakeup-grid{min-width:790px}...}`。
    窄屏已改为「按天折叠」的手机布局（见文件上方 .wakeup-mobile），

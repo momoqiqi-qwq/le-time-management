@@ -9,13 +9,13 @@ const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/wechat-pu
 assert.ok(source.includes('https://www.pushplus.plus/doc/guide/sdk.html'), '必须链接官方使用说明/SDK 文档');
 assert.ok(source.includes('https://www.pushplus.plus/doc/guide/api.html'), '必须链接官方消息接口文档');
 assert.ok(source.includes('tide.util.openUrl'), '文档链接必须用 openUrl 经系统浏览器打开');
-assert.equal(manifest.version, '1.8.0');
+assert.equal(manifest.version, '1.8.1');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
 assert.ok((manifest.permissions || []).includes('events'), '订阅 notice:new 必须在 manifest 声明 events 权限');
 const catalog = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "wechat-push"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
-assert.match(block, /"1\.8\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(block, /"1\.8\.1"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
 /* ── 2. vm 实测 pushPlus：请求体、成功判定、失败透传 ── */
@@ -79,7 +79,7 @@ assert.match(source, /推送「\$\{title\.slice\(0, 20\)\}」/, '失败日志必
    旧单选下拉（data-scope）已移除；pushScope 数组持久化，老配置从 blockEnabled/taskEnabled 反推。
    v1.8.0 攒批策略（对照 PushPlus 官方限制：相同内容 1 小时限 3 条、每分钟限 5 次、内容 ≤20000 字）：
    首条入队后攒 2 分钟（节流式窗口），到点把队列里全部待发消息合并成一条推送，请求数压到最低。 */
-assert.match(block, /"1\.8\.0"/, 'pluginCatalog 必须同步插件新版本号');
+assert.match(block, /"1\.8\.1"/, 'pluginCatalog 必须同步插件新版本号');
 assert.match(source, /data-ms="block"/, '多选面板要有「时间块」选项');
 assert.match(source, /data-ms="task"/, '多选面板要有「任务截止」选项');
 assert.match(source, /data-ms="plugin"/, '多选面板要有「插件收集的新消息」选项');
@@ -97,4 +97,17 @@ assert.match(source, /if \(!state\.pluginTimer\) await flushPluginNotices\(\)/, 
 assert.match(source, /\$\{batch\.length\} 条（\$\{now\}）/, '批量推送标题要带条数和时间，避免撞「相同内容 1 小时 3 条」');
 assert.doesNotMatch(source, /data-scope/, '旧单选下拉不应残留');
 
-console.log('PASS: wechat-push 官方文档入口、openUrl 权限、PushPlus 请求体与成功/失败判定、返回码透传与频次限制防护');
+/* ── 5. v1.8.1 多选面板可收起 + 展开/收起动画 ──
+   事故：.wp-ms-panel 的 display:flex 是作者样式，永远压过 UA 的 [hidden]{display:none}，
+   msPanel.hidden 切了也没用 → 面板恒展开收不回去。改为 .on 类切换 + 过渡动画。 */
+assert.match(source, /\.wp-ms-panel\.on\{/, '面板必须用 .on 类控制展开态（hidden 属性被 display:flex 压住，不可用）');
+assert.doesNotMatch(source, /msPanel\.hidden/, '不得再用 hidden 属性开关面板（根因所在）');
+assert.match(source, /setMsOpen\(!msPanel\.classList\.contains\("on"\)\)/, '点按钮必须按当前状态取反开合');
+assert.match(source, /if \(!e\.target\.closest\("\[data-ms\]"\)\) setMsOpen\(false\)/, '点外部必须收起面板');
+assert.match(source, /aria-expanded/, '按钮必须同步 aria-expanded');
+assert.match(source, /wp-ms-caret/, '箭头必须可随开合旋转');
+assert.match(source, /transition:opacity \.18s ease,transform \.18s ease/, '展开/收起必须有过渡动画');
+assert.match(source, /@media \(prefers-reduced-motion:reduce\)\{\.wp-ms-panel,\.wp-ms-caret\{transition:none\}\}/, '必须尊重 reduced-motion 关掉动画');
+assert.match(source, /<div class="wp-ms-panel" data-ms-panel>/, '面板初始为收起态（不再带 hidden 属性）');
+
+console.log('PASS: wechat-push 官方文档入口、openUrl 权限、PushPlus 请求体与成功/失败判定、返回码透传与频次限制防护、多选面板可收起与开合动画');

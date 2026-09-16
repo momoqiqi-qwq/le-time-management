@@ -1,15 +1,13 @@
-# v0.43.0 · 主导航图标随包化，与插件图标统一为 Icons8 Color 彩色风格
+# v0.43.0 · 主导航图标随包化 + 微信推送多选面板可收起（带开合动画）
 
 > 上一版：v0.42.0（课程表个性化配置即时生效，删除「保存样式」按钮）
 
-## 背景
+## 改动一：主导航图标随包化，与插件图标统一为 Icons8 Color 彩色风格
 
 插件图标在 v0.27.0 起已换成随包 Icons8 Color 彩色 PNG，而侧栏「四象限 / 时间块 /
 收件箱 / 插件」4 个核心入口（含设置、快速捕获，共 6 个 key）还走 Icons8 CDN 的
 iOS Filled 直链 —— 用户指出两者不一致（顶栏标题卡小框、侧栏里一眼可见），
-且旧线路离线即裂（`docs/plugin-icons.md` 第八节的已知缺口）。
-
-## 改动
+且旧线路离线即裂（`docs/plugin-icons.md` 第八节的已知缺口）。改动：
 
 - `tools/gen-plugin-icons.py` 新增 `NAV_ICONS` 清单与 `NAV_OUT` 输出：
   `public/icons/nav/<key>.png`（81×81 透明 PNG，与插件同一套 Color 风格），
@@ -27,6 +25,24 @@ iOS Filled 直链 —— 用户指出两者不一致（顶栏标题卡小框、�
 ## 版本
 
 - 应用版本 0.42.0 → 0.43.0（三端同步，package-lock 两处已手改）
+- 插件 wechat-push 1.8.0 → 1.8.1（sync-plugins 已重跑，pluginCatalog 同步）
+
+## 改动二：微信推送多选面板「展开后无法收起」修复 + 开合动画（wechat-push 1.8.1）
+
+用户截图：「推送内容：时间块 + 任务截止 + 插件消息 ▾」的面板展开后点按钮收不回去。
+
+**根因**：`.wp-ms-panel` 的作者样式里有 `display:flex`，而 `hidden` 属性靠的是
+浏览器 UA 样式的 `[hidden]{display:none}` —— **作者样式永远压过 UA 样式**（与特异性
+无关），所以 `msPanel.hidden = true` 切了也没用，面板从渲染起就恒展开。
+
+**修复**（`public/plugins/wechat-push/main.js`）：
+
+- 面板开关从 `hidden` 属性改成 `.on` 类切换（`setMsOpen()`），点按钮取反、点外部收起。
+- 新增展开/收起过渡：透明度 + 6px 下落位移 + `visibility` 延迟切换（收起动画播完才
+  真正隐藏，不会截断）；`prefers-reduced-motion:reduce` 时动画关闭。
+- 按钮箭头 `▾` 包一层 `.wp-ms-caret`，开合时旋转 180°；按钮补 `aria-expanded` 同步。
+- `test-wechat-push.mjs` 新增第 5 节守卫：禁用 `msPanel.hidden`、必须 `.on` 类开合、
+  reduced-motion 必须尊重等 9 条断言。
 
 ## 附：时间块「WakeUp课表」更名为「课程表」，1–10 节一屏显示
 
@@ -55,6 +71,6 @@ iOS Filled 直链 —— 用户指出两者不一致（顶栏标题卡小框、�
 
 | 端 | 影响 |
 |---|---|
-| Windows | ✅ 生效 |
+| Windows | ✅ 改动一、二均生效 |
 | Android | ✅ 生效（同一份前端代码） |
-| 微信小程序 | ⚪ 不适用（tabBar 仍是 FA 单色成对图标，由 sync-tab-icons.py 管；插件图标本来就是随包复制） |
+| 微信小程序 | ⚪ 改动一不适用（tabBar 仍是 FA 单色成对图标，由 sync-tab-icons.py 管；插件图标本来就是随包复制）；改动二不适用（小程序端是独立原生界面，无该面板） |

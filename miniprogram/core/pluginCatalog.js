@@ -201,7 +201,7 @@ const plugins = [
   {
     "id": "wechat-push",
     "name": "微信提醒推送",
-    "version": "1.8.0",
+    "version": "1.8.1",
     "author": "Le时间管理内置",
     "icon": "comment-dots",
     "faIcon": "comment-dots",

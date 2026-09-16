@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Le时间管理 · 内置插件图标生成器（Icons8 / iGoutu Color 彩色图标集）
+"""Le时间管理 · 图标生成器（Icons8 / iGoutu Color 彩色图标集）
 
 用途
-    把 12 个内置插件的图标统一换成 Icons8「Color」彩色风格（品牌类走 3D 图标），
-    生成 81×81 的透明 PNG，同时写入桌面端与小程序两处，并把来源台账写进 ATTRIBUTION.md。
+    ① 把 12 个内置插件的图标统一成 Icons8「Color」彩色风格（品牌类走 3D 图标）；
+    ② 把 6 个主导航图标（四象限/时间块/收件箱/插件/设置/快速捕获）也做成随包
+       Color PNG —— 此前导航图标走 Icons8 CDN 的 iOS Filled 直链，离线即裂，
+       且与插件图标的彩色风格不统一（v0.42.0 起随包化）。
+    生成 81×81 的透明 PNG，并把来源台账写进各自目录的 ATTRIBUTION.md。
 
 来源
     图标集：https://igoutu.cn/icons/set/标志--style-color
@@ -12,9 +15,12 @@
     igoutu.cn 是 Icons8 的中文镜像，slug 与 style 与 icons8.com 完全一致。
 
 输出
-    le-time-management/public/icons/plugins/<plugin-id>.png   ← 桌面端（src/icons.js 直接读）
-    le-time-management/public/icons/plugins/ATTRIBUTION.md    ← 来源与 sha256 台账
+    le-time-management/public/icons/plugins/<plugin-id>.png   ← 桌面端插件（src/icons.js 直接读）
+    le-time-management/public/icons/plugins/ATTRIBUTION.md    ← 插件图标来源与 sha256 台账
+    le-time-management/public/icons/nav/<key>.png             ← 桌面端主导航（src/icons.js 直接读）
+    le-time-management/public/icons/nav/ATTRIBUTION.md        ← 导航图标来源台账
     miniprogram/images/plugins/<plugin-id>.png                ← 小程序（与桌面端同一份素材）
+    （主导航 PNG 小程序不需要：小程序 tabBar 是 FA 单色成对图标，由 sync-tab-icons.py 管）
 
 依赖
     Pillow。用项目专用 venv 跑：
@@ -35,6 +41,7 @@ from PIL import Image
 
 REPO = Path(__file__).resolve().parent.parent
 DESKTOP_OUT = REPO / "le-time-management" / "public" / "icons" / "plugins"
+NAV_OUT = REPO / "le-time-management" / "public" / "icons" / "nav"
 MINI_OUT = REPO / "miniprogram" / "images" / "plugins"
 CACHE = REPO / ".workbuddy" / "icon-cache"
 
@@ -55,6 +62,18 @@ ICONS = {
     "school-notice":     ("color",      "school",           "学校通知网站 / 校舍"),
     "cn-holiday":        ("color",      "lantern",          "中国节假日 / 中式灯笼"),
     "weekly-report":     ("color",      "statistics",       "周度报告 / 数据看板"),
+}
+
+# 主导航 key -> (候选 slug 列表, 说明)。Color 风格，候选按序尝试、第一个下载成功的生效；
+# 选定后要把同一个 slug 同步进 src/icons.js 的 NAV_ICONS8（做 CDN 回落与外部 key 兜底）。
+# capture 是「快速捕获」入口，与收件箱同形，只为 key 独立落一份文件。
+NAV_ICONS = {
+    "quadrant":  (["grid-2", "four-squares", "grid"],       "四象限 / 田字格"),
+    "timeblock": (["clock", "clock--v1"],                   "时间块 / 时钟"),
+    "inbox":     (["inbox", "filled-in-box", "inbox--v1"],  "收件箱 / 收件托盘"),
+    "market":    (["puzzle", "puzzle-piece"],               "插件中心 / 拼图"),
+    "settings":  (["settings", "gear"],                     "设置 / 齿轮"),
+    "capture":   (["inbox", "filled-in-box", "inbox--v1"],  "快速捕获（与收件箱同形）"),
 }
 
 UA = {"User-Agent": "Mozilla/5.0 (compatible; Le-time-management-icon-sync/1.0)"}
@@ -86,6 +105,19 @@ def fetch(style: str, slug: str, offline: bool) -> bytes:
     raise SystemExit(f"下载失败 {style}/{slug}：{last}")
 
 
+def fetch_first(style: str, candidates: list, offline: bool):
+    """按候选顺序尝试下载，返回 (bytes, 生效的 slug)；全部失败才报错。"""
+    last = None
+    for slug in candidates:
+        try:
+            return fetch(style, slug, offline), slug
+        except SystemExit as exc:
+            if offline:
+                raise
+            last = exc
+    raise SystemExit(f"候选 slug 全部失败 {style}/{candidates}：{last}")
+
+
 def normalize(raw: bytes) -> Image.Image:
     """把任意尺寸的图标缩放到 81×81 画布，图形最长边统一为 GLYPH，居中（保留透明边）。"""
     src = Image.open(io.BytesIO(raw)).convert("RGBA")
@@ -107,6 +139,7 @@ def main() -> int:
     args = ap.parse_args()
 
     DESKTOP_OUT.mkdir(parents=True, exist_ok=True)
+    NAV_OUT.mkdir(parents=True, exist_ok=True)
     MINI_OUT.mkdir(parents=True, exist_ok=True)
 
     rows = []
@@ -127,6 +160,25 @@ def main() -> int:
         (MINI_OUT / f"{plugin_id}.png").write_bytes(data)
         rows.append((plugin_id, style, slug, note, digest))
         print(f"写入 {plugin_id:20} {style}/{slug:18} {len(data):6} B  sha256={digest[:12]}")
+
+    nav_rows = []
+    for key, (candidates, note) in NAV_ICONS.items():
+        raw, slug = fetch_first("color", candidates, args.offline)
+        img = normalize(raw)
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=True)
+        data = buf.getvalue()
+        digest = hashlib.sha256(data).hexdigest()
+
+        existing = NAV_OUT / f"{key}.png"
+        if args.check:
+            same = existing.exists() and hashlib.sha256(existing.read_bytes()).hexdigest() == digest
+            print(f"{'OK ' if same else 'DIFF'} [nav] {key:20} color/{slug}")
+            continue
+
+        existing.write_bytes(data)
+        nav_rows.append((key, slug, note, digest))
+        print(f"写入 [nav] {key:20} color/{slug:18} {len(data):6} B  sha256={digest[:12]}")
 
     if not args.check:
         lines = [
@@ -166,6 +218,41 @@ def main() -> int:
         ]
         (DESKTOP_OUT / "ATTRIBUTION.md").write_text("\n".join(lines), encoding="utf-8")
         print(f"\n台账已写入 {DESKTOP_OUT / 'ATTRIBUTION.md'}")
+
+        nav_lines = [
+            "# public/icons/nav 素材台账（主导航图标）",
+            "",
+            f"共 {len(nav_rows)} 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**，"
+            "与插件图标同一套方案（v0.42.0 起随包化，此前导航走 iOS Filled CDN 直链）。",
+            "",
+            "`capture`（快速捕获）与 `inbox`（收件箱）同形，是刻意为之的两份独立文件。",
+            "",
+            "图标集入口：<https://igoutu.cn/icons/set/标志--style-color> ｜ "
+            "CDN 直链格式：`https://img.icons8.com/color/96/<slug>.png`",
+            "",
+            "生成方式：`tools/gen-plugin-icons.py`（Pillow，输出 81×81 透明 PNG，"
+            f"图形最长边 {GLYPH}px）。**不要手工替换这些 PNG** —— 重新生成会覆盖。",
+            "",
+            "| key | 生效 slug | 说明 | sha256 |",
+            "|---|---|---|---|",
+        ]
+        for key, slug, note, digest in nav_rows:
+            nav_lines.append(f"| `{key}` | `{slug}` | {note} | `{digest[:16]}…` |")
+        nav_lines += [
+            "",
+            "## 许可与消费方",
+            "",
+            "Icons8 License（免费使用需在产品内署名）。署名入口见设置 → 关于（`src/aboutData.js`）"
+            "与 `public/OPEN_SOURCE_NOTICES.md`。素材仅作为本产品界面的组成部分使用，"
+            "**不得作为独立图标库转售或再分发**。",
+            "",
+            "消费方：`le-time-management/public/icons/nav/*.png` ← `src/icons.js` 的 `appIcon()` 按导航 key 直读，"
+            "加载失败才回落 CDN 同风格直链（候选清单在 `NAV_ICONS8`，须与本台账 slug 对齐）。",
+            "微信小程序不需要这批 PNG（tabBar 是 FA 单色成对图标，由 `miniprogram/tools/sync-tab-icons.py` 管）。",
+            "",
+        ]
+        (NAV_OUT / "ATTRIBUTION.md").write_text("\n".join(nav_lines), encoding="utf-8")
+        print(f"台账已写入 {NAV_OUT / 'ATTRIBUTION.md'}")
 
     return 0
 

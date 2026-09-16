@@ -126,8 +126,9 @@ assert.match(ganttBody, /filter\(r => r\.hit\.length \|\| r\.m === todayMonth\)/
       超出一屏的内容会被 .tv-panel 的 overflow:hidden 裁掉。 */
 const wkGrid = css.match(/\.wakeup-grid\s*\{[^}]*\}/)?.[0] ?? "";
 assert.match(wkGrid, /--wk-row-min\s*:\s*\d+px/, "课程表网格必须定义节次行下限 --wk-row-min");
-assert.match(wkGrid, /grid-template-rows:[^;]*minmax\(var\(--wk-row-min\)/,
-  "grid-template-rows 的节次行下限必须引用 var(--wk-row-min)");
+// v0.43.0 起下限会乘 --wk-zoom（用户缩放），包裹形态是 minmax(calc(var(--wk-row-min) * var(--wk-zoom)),1fr)
+assert.match(wkGrid, /grid-template-rows:[^;]*minmax\((?:calc\()?var\(--wk-row-min\)/,
+  "grid-template-rows 的节次行下限必须引用 var(--wk-row-min)（允许 calc 包裹缩放系数）");
 assert.match(wkGrid, /min-height:\s*calc\([^;]*var\(--wk-row-min\)/,
   "课程表网格必须有 min-height: calc(表头 + 节次数 × 行下限) —— 漏了它，矮窗口下末尾节次会被 " +
   "overflow:hidden 裁死且滚不到（溢出量还是 0，看不出来）");

@@ -13,10 +13,12 @@ assert.doesNotMatch(pluginSettings, /getPluginPermissions|setPluginPermission|pl
 assert.doesNotMatch(pluginHost, /export function getPluginPermissions|export async function setPluginPermission/);
 assert.match(shell, /market-plugin-switch/);
 assert.match(pluginSettings, /plugin-enable-switch/);
-assert.match(icons, /img\.icons8\.com\/ios-filled/);
+// v0.42.0：主导航图标从 Icons8 iOS Filled CDN 直链改为随包 Color PNG（icons/nav/），与插件图标同一方案
+assert.match(icons, /icons\/\$\{bundledDir\}\/\$\{key\}\.png/);
+assert.match(icons, /bundled nav PNG \(Icons8 Color\)/);
 assert.match(cppu, /pp-detail-shell/);
 assert.match(cppu, /grid-template-rows:0fr/);
 assert.match(cppu, /setCardExpanded\(card, false\)/);
 assert.match(cppu, /prefers-reduced-motion:reduce/);
 
-console.log("PASS: v0.11.4 plugin switch simplification, Icons8 iOS Filled icons and smooth notice expansion");
+console.log("PASS: v0.11.4 plugin switch simplification, bundled nav/plugin Icons8 Color icons and smooth notice expansion");

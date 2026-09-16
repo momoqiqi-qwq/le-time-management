@@ -1,61 +1,65 @@
 # Le时间管理插件图标说明
 
-> 适用：Le时间管理 **v0.27.0+** ｜ 对应源码：`src/icons.js`、`src/pluginAppearance.js`、`public/icons/plugins/`、`public/icons/fontawesome/`
-> v0.27.0 起内置插件图标换成 **Icons8 / iGoutu 的 Color 彩色风格**（来源图标集「标志 · 色版」），随包 PNG；主导航仍是 iOS Filled 单色剪影 + 强调色。
+> 适用：Le时间管理 **v0.27.0+**（主导航随包化自 **v0.42.0**）｜ 对应源码：`src/icons.js`、`src/pluginAppearance.js`、`public/icons/plugins/`、`public/icons/nav/`、`public/icons/fontawesome/`
+> v0.27.0 起内置插件图标换成 **Icons8 / iGoutu 的 Color 彩色风格**（来源图标集「标志 · 色版」），随包 PNG；
+> **v0.42.0 起主导航 6 个图标也随包化成同一套 Color 风格**（此前走 iOS Filled CDN 直链，离线即裂）。
 
 ---
 
-## 一、两套图标来源（别混用）
+## 一、图标来源（一套 Color 风格，两条随包线路）
 
 | 用途 | 风格 | 落地方式 | 出处 |
 |---|---|---|---|
-| 主导航：四象限 / 时间块 / 收件箱 / 插件 / 设置 | **iOS Filled** 单色剪影 + 每项强调色 | 运行时走 Icons8 CDN，`img.icons8.com/ios-filled/50/<色>/<slug>.png` | `src/icons.js` → `NAV_ICONS8` |
-| 12 个内置插件 | **Color 彩色**（`wechat-push` 用 3D 微信标志） | **随包 PNG**：`public/icons/plugins/<插件ID>.png` | `tools/gen-plugin-icons.py` |
+| 主导航：四象限 / 时间块 / 收件箱 / 插件 / 设置 / 快速捕获 | **Color 彩色** | **随包 PNG**：`public/icons/nav/<key>.png` | `tools/gen-plugin-icons.py` → `NAV_ICONS` |
+| 12 个内置插件 | **Color 彩色**（`wechat-push` 用 3D 微信标志） | **随包 PNG**：`public/icons/plugins/<插件ID>.png` | `tools/gen-plugin-icons.py` → `ICONS` |
 | 未知 key（用户插件 / 外部插件） | Color 彩色 | CDN 回落：`img.icons8.com/color/96/<slug>.png` | `src/icons.js` → `PLUGIN_ICONS8` |
 
 要点：
 
-- **内置插件优先读随包 PNG**（离线可用、色彩可控），PNG 加载失败才回落同风格的 CDN 直链。
-- 插件图标的 key 就是**插件 ID**（不是 manifest 里的 `icon` 字段）——`appIcon(pluginId)`。
-- 主导航才需要强调色；插件图标是彩色 PNG，不再染色（`.plugin-present-icon` 已把 `opacity` 强制为 `1`）。
+- **随包 PNG 优先，CDN 只做回落**（离线可用、色彩可控）。
+- 插件图标的 key 就是**插件 ID**（不是 manifest 里的 `icon` 字段）——`appIcon(pluginId)`；
+  主导航的 key 是 `quadrant / timeblock / inbox / market / settings / capture`——`appIcon(key)`。
+- 主导航不再需要强调色染色（旧 iOS Filled 时代的 `ICON_COLORS` 已随随包化删除）；
+  插件图标不做灰度与透明度压缩（`.plugin-present-icon` 强制 `opacity: 1`）。
 
 ---
 
 ## 二、`src/icons.js` 的解析规则
 
 ```js
-const NAV_ICONS8   = { quadrant: ["four-squares", "grid-2"], timeblock: ["clock"], inbox: ["inbox"],
-                       market: ["puzzle", "puzzle-piece"], settings: ["settings"], capture: ["inbox"] };
+const NAV_ICONS8    = { quadrant: ["four-squares", "grid-2", "grid"], timeblock: ["clock", "clock--v1"], inbox: ["inbox", "filled-in-box"],
+                        market: ["puzzle", "puzzle-piece"], settings: ["settings", "gear"], capture: ["inbox", "filled-in-box"] };
 const PLUGIN_ICONS8 = { "shiguang-schedule": ["timetable", "calendar"], pomodoro: ["tomato", "hourglass"], /* … */ };
 const ICONS8        = { ...NAV_ICONS8, ...PLUGIN_ICONS8 };
 
 appIcon(key)  →
   manifestIcon = MANIFEST_ICON_KEYS[key]                  // 命中内置插件 → /icons/plugins/<key>.png
+  isNav        = Boolean(NAV_ICONS8[key])                 // 命中主导航 → /icons/nav/<key>.png
+  bundledDir   = manifestIcon ? "plugins" : isNav ? "nav" : null   // 都没命中 → 直接 CDN
   candidates   = manifestIcon ? [manifestIcon, ...ICONS8[key]] : (ICONS8[key] || ICONS8.market)
-  isNav        = Boolean(NAV_ICONS8[key])                 // 命中 → ios-filled，否则 color
 ```
 
 逐条：
 
-1. **候选数组**：同一个语义允许写 1–2 个 slug，第 1 个 404 自动试第 2 个。
-2. **URL 模板**：主导航 `ios-filled/50/<色>/<slug>.png`；插件 `color/96/<slug>.png`。
+1. **随包优先**：命中插件或主导航 key 时先读 `/icons/<plugins|nav>/<key>.png`，加载失败才逐个试 CDN 候选。
+2. **候选数组**：同一个语义允许写 1–2 个 slug，第 1 个 404 自动试第 2 个（`quadrant` 的生效 slug 是 `four-squares`，`grid-2` 在 Color 风格下 404）。
 3. **逐级回退**：候选耗尽 → 回落 `ICONS8.market[0]`（`puzzle`，彩色拼图）；连它都失败 → `visibility: hidden`，**不出现裂图**。
-4. **输出标签**：`<img class="app-icon icons8-app-icon">`，`data-icon-source` 取值 `bundled plugin PNG (Icons8 Color)` / `Icons8 iOS Filled` / `Icons8 Color`，`data-icon-key` 便于在 DevTools 里核对解析结果。
+4. **输出标签**：`<img class="app-icon icons8-app-icon">`，`data-icon-source` 取值 `bundled plugin PNG (Icons8 Color)` / `bundled nav PNG (Icons8 Color)` / `Icons8 Color`，`data-icon-key` 便于在 DevTools 里核对解析结果。
 
 ---
 
 ## 三、key → 图标映射
 
-### 主导航（`NAV_ICONS8`，iOS Filled + 强调色）
+### 主导航（`NAV_ICONS8`，Color 彩色；随包 PNG 与 slug 一一对应）
 
-| key | 候选 slug | 强调色 |
-|---|---|---|
-| quadrant | `four-squares` → `grid-2` | `#4F46E5` |
-| timeblock | `clock` | `#0EA5E9` |
-| inbox | `inbox` | `#F59E0B` |
-| market | `puzzle` → `puzzle-piece`（**同时是所有未知 key 的兜底**） | `#8B5CF6` |
-| settings | `settings` | `#64748B` |
-| capture | `inbox` | `#F59E0B` |
+| key | 随包 PNG | 生效 slug | 图形 |
+|---|---|---|---|
+| quadrant | ✅ | `four-squares`（候选 `grid-2`/`grid` 在 Color 风格下 404） | 四个圆角方块 |
+| timeblock | ✅ | `clock` | 时钟 |
+| inbox | ✅ | `inbox` | 收件托盘 |
+| market | ✅ | `puzzle`（**同时是所有未知 key 的兜底**） | 拼图 |
+| settings | ✅ | `settings` | 齿轮 |
+| capture | ✅ | `inbox`（与收件箱同形，刻意为之） | 收件托盘 |
 
 ### 内置插件（`PLUGIN_ICONS8`，Color 彩色；随包 PNG 与 slug 一一对应）
 
@@ -97,8 +101,8 @@ https://img.icons8.com/color/96/tomato.png
 "C:/Users/yile/.workbuddy/binaries/python/envs/default/Scripts/python.exe" tools/gen-plugin-icons.py
 ```
 
-脚本会一次写完三处：`le-time-management/public/icons/plugins/<id>.png`、同名台账 `ATTRIBUTION.md`、`miniprogram/images/plugins/<id>.png`。
-然后把 slug 同步进 `src/icons.js` 的 `PLUGIN_ICONS8`（做 CDN 回落与外部插件兜底）。
+脚本会一次写完四处：`le-time-management/public/icons/plugins/<id>.png`、同名台账 `ATTRIBUTION.md`、`miniprogram/images/plugins/<id>.png`，外加主导航 `public/icons/nav/*.png` 与其台账（由脚本里的 `NAV_ICONS` 清单驱动）。
+然后把 slug 同步进 `src/icons.js` 的 `PLUGIN_ICONS8` / `NAV_ICONS8`（做 CDN 回落与外部插件兜底）。
 
 **3. 看一眼**：`npm run tauri dev` → 侧栏「插件视图」、插件中心卡片、设置 → 插件，三处确认无裂图、无拼图兜底。
 
@@ -145,7 +149,7 @@ https://img.icons8.com/color/96/tomato.png
 
 | 资源 | 授权 | 署名位置 |
 |---|---|---|
-| 主导航图标 | Icons8 / iGoutu · iOS Filled | 设置 → 关于（`src/aboutData.js`），链接 <https://igoutu.cn/icons/set/标志--style-color> |
+| 主导航图标（6 个随包） | Icons8 / iGoutu · Color | 设置 → 关于（`src/aboutData.js`），链接 <https://igoutu.cn/icons/set/标志--style-color>；`public/icons/nav/ATTRIBUTION.md` |
 | 内置插件图标（12 个） | Icons8 / iGoutu · Color（`wechat-push` 为 3D 风格） | 同上 + `public/icons/plugins/ATTRIBUTION.md` |
 | 小程序 tabBar 图标 / 插件图标兜底 | Font Awesome Free（Icons: CC BY 4.0） | 设置 → 关于；`public/icons/fontawesome/ATTRIBUTION.md`、`LICENSE.txt` |
 
@@ -157,7 +161,6 @@ https://img.icons8.com/color/96/tomato.png
 
 | 缺口 | 表现 | 修法 |
 |---|---|---|
-| 主导航图标依赖 CDN | 离线 / 无网环境回落彩色拼图，最终隐藏 | 若要完全离线，需把 6 个主导航图标也做成随包 PNG（会多一处生成步骤） |
 | `manifest.json` 的 `icon` / `faIcon` 是死元数据 | 桌面端不读，改了没效果（只有小程序兜底渲染会用） | 保持现状即可；真要清理需三端一起动 |
 | Color 风格没有微信标志 | `wechat-push` 只能用 3D 风格，是 12 个图标里唯一风格不同的 | 已在 `ATTRIBUTION.md` 注明；如介意可换成 `color/speech-bubble` |
 | 根 `tools/` 三个 Magnific 脚本是死代码 | 读的是已删除的 `public/icons/*.png`，运行即报错 | 删除 `tools/fetch-ui-icons.py`、`tools/sync-tab-icons.py`、`tools/gen-miniprogram-tab-icons.js` |
@@ -168,7 +171,8 @@ https://img.icons8.com/color/96/tomato.png
 
 ## 九、提交前自检清单
 
-- [ ] 新插件的彩色素材已生成：`public/icons/plugins/<id>.png` 存在且**不是** FA 单色（`tools/gen-plugin-icons.py --check` 全 OK）
+- [ ] 新插件的彩色素材已生成：`public/icons/plugins/<id>.png` 存在且**不是** FA 单色（`tools/gen-plugin-icons.py --check` 全 OK，主导航 6 个 PNG 同一批校验）
+- [ ] 换过导航图标时：`src/icons.js` 的 `NAV_ICONS8` 首选 slug 与 `public/icons/nav/ATTRIBUTION.md` 的「生效 slug」一致
 - [ ] `src/icons.js` 的 `PLUGIN_ICONS8` 里有对应 ID（否则用户插件/离线回落变成拼图）
 - [ ] 小程序副本字节一致：`le-time-management/public/icons/plugins/<id>.png` ≡ `miniprogram/images/plugins/<id>.png`
 - [ ] 22px（窄屏侧栏）与 30px（桌面侧栏）下图形都可辨认，浅色 / 夜间两套主题都不糊

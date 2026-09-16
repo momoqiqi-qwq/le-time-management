@@ -864,9 +864,12 @@ export function renderShell(root) {
   }
 
   // ── 内容区左右滑动 = 翻页（与底栏点按互补）──
-  // 只排除真正占有横向手势的元素：可拖拽时间块、横向滚动池、抽屉、输入控件
+  // 只排除真正占有横向手势的元素：可拖拽时间块、横向滚动池、抽屉、输入控件，
+  // 以及时间块那 5 个「自己能横向滚」的画布（触控屏上横滑它们必须滚动内容，
+  // 否则会一边滚一边翻页 —— 课表宽 900px、泳道 1250px，横滑是常规操作）。
   let swX = 0, swY = 0, swOn = false;
-  const SWIPE_SKIP = ".plist, .block, .drawer, .popmenu, input, textarea, select, [data-noswipe]";
+  const SWIPE_SKIP = ".plist, .block, .drawer, .popmenu, input, textarea, select, [data-noswipe], " +
+    ".wakeup-scroll, .milestone-scroll, .chronicle-scroll, .gantt-scroll, .swim-scroll";
   view.addEventListener("touchstart", (e) => {
     swOn = false;
     if (e.touches.length !== 1) return;
