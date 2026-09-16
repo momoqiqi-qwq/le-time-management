@@ -39,11 +39,17 @@ iOS Filled 直链 —— 用户指出两者不一致（顶栏标题卡小框、�
   `max-height:calc(112px + var(--slot-count) * 72px)`。装得下按 72px 自然行高，
   装不下等比压到刚好铺满 —— 与课程表插件 `.schedule-frame` 同一套机制
   （上限写成 CSS 而非 JS 量高度：帧高一旦随内容走就会自激）。
+- 🔴 网格同时补 `min-height: calc(64px + var(--slot-count) * 52px)`。
+  **少了这一条会出真回归**：`.wakeup-grid` 自带 `overflow:hidden`（裁 18px 圆角用），
+  窗口矮到行触 52px 下限时，轨道总和（584px）超出被压扁的网格盒子 ⇒ 末尾几节被
+  **直接裁掉且滚不到**（`scrollHeight` 不含被裁内容），比原来「能滚」更糟。
+  给足 `min-height` 后溢出只发生在网格之外，交给 `.wakeup-scroll` 正常滚动。
 - 桌面端（≥761px）`.wakeup-view` 改 `display:flex; flex-direction:column; height:100%`，
   让网格吃到 `.time-alt-host` 的确定高度；**手机端刻意不改** —— 面板一旦 `height:100%`，
   超出一屏的内容会被 `.tv-panel` 的 `overflow:hidden` 裁掉。
-- 实测（真浏览器）：1440×900 下 10 节全部可见、行高 72 → 58px、纵向溢出 0；
-  390×844 手机档仍是按天折叠列表，零溢出。
+- 实测（真浏览器，`measure-timeviews.cjs`）：1440×900 → 10 节全可见、行高 72 → 58px、
+  纵向溢出 0；1366×768 / 1440×700 / 1440×560 → 行触 52px 下限转为可滚动（溢出 71 / 139 / 279），
+  末节均可达；390×844 手机档仍是按天折叠列表。各档横向溢出、绘制溢出、文本重叠均为 0。
 
 ## 三端影响
 

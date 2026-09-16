@@ -1445,11 +1445,14 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* v0.11.2 WakeUp 风格周课表：真实 7 列 + 节次行；桌面自适应，手机按天分组 */
 /* v0.43.0：原来行高写死 72px ⇒ 10 节 = 64 + 720 = 784px，第 10 节必须纵向滚动才看得见。
    现在改成「帧高上限 = 表头 + 节次数 × 自然行高」，行用 minmax(下限, 1fr) 自动铺满：
-   装得下就按 72px 的自然行高，装不下就等比压到刚好铺满，所以 1–10 节永远一屏看完。
-   上限写成 CSS 而不是 JS 量高度，是因为帧高必须由容器决定、不能反过来被内容撑大：
-   一旦帧高随内容走，量到的就是自己撑出来的高度，会自激（与课程表插件同一套机制）。 */
+   装得下就按 72px 的自然行高，装不下就等比压到刚好铺满。
+   🔴 网格必须同时写 `min-height: 表头 + 节次数 × 行下限`：
+   `.wakeup-grid` 自带 `overflow:hidden`（裁 18px 圆角用），窗口一矮，
+   行触到 52px 下限后轨道总和（584px）会超出被压扁的网格盒子 ⇒
+   多出来的节次被**直接裁掉且滚不到**（`scrollHeight` 不含被裁内容），比原来「能滚」更糟。
+   给足 min-height，溢出就只发生在网格**之外**，交给 .wakeup-scroll 正常滚动。 */
 .wakeup-scroll { flex:1 1 0; min-height:0; max-height:calc(112px + var(--slot-count, 10) * 72px); overflow:auto; padding:18px 18px 30px; overscroll-behavior:contain; }
-.wakeup-grid { height:100%; min-width:900px; display:grid; grid-template-columns:72px repeat(7,minmax(110px,1fr)); grid-template-rows:64px repeat(var(--slot-count, 10),minmax(52px,1fr)); position:relative; border:1px solid color-mix(in srgb,var(--line) 80%,transparent); border-radius:18px; overflow:hidden; background:color-mix(in srgb,var(--panel) 82%,transparent); }
+.wakeup-grid { --wk-row-min:52px; height:100%; min-height:calc(64px + var(--slot-count, 10) * var(--wk-row-min)); min-width:900px; display:grid; grid-template-columns:72px repeat(7,minmax(110px,1fr)); grid-template-rows:64px repeat(var(--slot-count, 10),minmax(var(--wk-row-min),1fr)); position:relative; border:1px solid color-mix(in srgb,var(--line) 80%,transparent); border-radius:18px; overflow:hidden; background:color-mix(in srgb,var(--panel) 82%,transparent); }
 .wk-corner,.wk-day,.wk-slot,.wk-cell { border-right:1px solid color-mix(in srgb,var(--line) 72%,transparent); border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent); }
 .wk-corner { grid-column:1;grid-row:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--ink-2);background:color-mix(in srgb,var(--paper) 88%,transparent); }
 .wk-day { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:color-mix(in srgb,var(--panel) 92%,transparent);font-size:13px;z-index:1; }
