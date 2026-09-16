@@ -146,4 +146,66 @@ assert.ok(!/^\.wakeup-view\s*\{[^}]*height:\s*100%/m.test(css),
   "基础态不能给 .wakeup-view 写 height:100% —— 手机上面板被限高后，超出一屏的内容会被 " +
   ".tv-panel 的 overflow:hidden 裁掉");
 
-console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）");
+/* 🔴 回归 7：课程表的触控板 / 触控屏手势（v0.43.0）。
+   这几条都**不会**在普通单测里自然暴露（要真手势才看得见），但少一条用户就明显感到不对：
+   ① `.wakeup-scroll` 必须 `touch-action:pan-x pan-y` —— 不写就回浏览器默认，
+      双指在触控板上会被 WebView2 拿去做「页面缩放 / 前进后退」，课表纹丝不动。
+   ② 缩放的写点必须是面板根 `.wakeup-view`，不能是网格自己 ——
+      `.wakeup-scroll` 的 max-height 要读 `--wk-zoom`，而 CSS 变量只向下继承。
+   ③ wheel 监听必须 `{passive:false}` —— passive 下 preventDefault 是空操作，
+      触控板捏合会去缩放整个 WebView（整个界面跟着变大），而不是只缩课表。
+   ④ 缩放**不能用 `zoom` 属性**（试过，是错的）：zoom 元素的内部可用宽高会被除以 zoom，
+      而网格是 `height:100%` + `1fr` 铺满容器的 ⇒ 缩小时行高反而被拉大
+      （实测 zoom=0.6 视觉行高 60.7px > zoom=1 的 58.1px，与直觉完全相反）。
+      正确做法是「尺寸 × --wk-zoom」+ 子元素字号全走 em。
+   ⑤ 锚点必须用「滚动内容里的相对位置」，不能用绝对内容坐标 ——
+      网格宽受 min-width、高受 height:100% / min-height 三重约束，缩放并非纯等比
+      （实测 zoom 1 → 1.377 时网格宽只放大 1.11 倍），绝对坐标会漂 60px+。 */
+assert.match(css, /\.wakeup-view\s*\{\s*--wk-zoom\s*:\s*1\s*;?\s*\}/,
+  "--wk-zoom 必须在基础态给默认值 1：.wakeup-scroll 的 max-height 直接引用它，没兜底会整条失效");
+assert.match(wkScroll, /touch-action:\s*pan-x pan-y/,
+  "课程表滚动容器必须 touch-action:pan-x pan-y，否则双指平移会被浏览器抢去做页面缩放/前进后退");
+assert.doesNotMatch(wkGrid, /(?:^|[;{\s])zoom\s*:/,
+  "课程表网格不能用 zoom 属性缩放 —— zoom 会缩小内部可用宽高，与 height:100% + 1fr 冲突，" +
+  "缩小时行高反而变大。要用尺寸 × var(--wk-zoom)");
+assert.match(wkGrid, /font-size:\s*calc\(\s*\d+px\s*\*\s*var\(--wk-zoom\)\s*\)/,
+  "网格根字号必须走 calc(基准 px × var(--wk-zoom))，子元素才能靠 em 一起缩放");
+// 子元素字号一律 em：改回 px 就会出现「格子缩了、字没缩」
+for (const sel of [".wk-corner", ".wk-day", ".wk-slot b", ".wk-slot span", ".wk-course b", ".wk-course span", ".wk-course small"]) {
+  const re = new RegExp(`\\${sel.replace(/ /g, "\\s+")}\\s*\\{[^}]*font-size:\\s*([^;}]+)`);
+  const val = css.match(re)?.[1]?.trim();
+  if (val == null) continue;
+  assert.match(val, /em$/,
+    `${sel} 的字号必须用 em（当前 ${val}）—— 用 px 就不会跟着 --wk-zoom 缩放`);
+}
+assert.match(timeViews, /root\.style\.setProperty\("--wk-zoom"/,
+  "--wk-zoom 必须写在面板根节点上：max-height 在外层 .wakeup-scroll，变量只能向下继承");
+assert.doesNotMatch(timeViews, /grid\.style\.setProperty\("--wk-zoom"/,
+  "--wk-zoom 不能写在网格自己身上，外层 .wakeup-scroll 读不到");
+assert.match(timeViews, /addEventListener\("wheel"[\s\S]{0,240}?\{ passive: false \}/,
+  "wheel 监听必须 passive:false，否则 preventDefault 无效，触控板捏合会缩放整个 WebView");
+assert.match(timeViews, /if \(!e\.ctrlKey\) return/,
+  "必须只接管带 ctrlKey 的 wheel（Chromium 的触控板捏合 = ctrl+wheel），普通滚动要放行");
+assert.match(timeViews, /ZOOM_MIN\s*=\s*[\d.]+,\s*ZOOM_MAX\s*=\s*[\d.]+/,
+  "缩放必须有上下限常量");
+assert.match(timeViews, /Math\.min\(ZOOM_MAX,\s*Math\.max\(ZOOM_MIN/,
+  "缩放值必须钳制在 [ZOOM_MIN, ZOOM_MAX]，越界会让行高/字号算成 0 或巨大");
+assert.match(timeViews, /\(scroll\.scrollLeft \+ px\)\s*\/\s*scroll\.scrollWidth/,
+  "缩放锚点必须用「滚动内容里的相对位置」：网格宽高受 min-width / height:100% 约束，" +
+  "缩放非等比，用绝对内容坐标会漂 60px+（内容从手指底下跑掉）");
+assert.match(timeViews, /void scroll\.scrollWidth/,
+  "改完 --wk-zoom 必须读一次 scrollWidth 强制同步布局，否则 scrollLeft 会被钳到旧范围");
+{
+  const setZoomBody = timeViews.match(/function setZoom\([\s\S]*?\n  \}/)?.[0] ?? "";
+  const flushAt = setZoomBody.indexOf("void scroll.scrollWidth");
+  const assignAt = setZoomBody.indexOf("scroll.scrollLeft =");
+  assert.ok(flushAt > -1 && assignAt > -1 && flushAt < assignAt,
+    "强制布局（void scroll.scrollWidth）必须排在 scrollLeft 赋值之前");
+}
+assert.match(timeViews, /settings\.timeViewZoom\s*=\s*z/,
+  "缩放比例必须写进 settings 持久化，否则切走视图/重启就丢");
+assert.match(timeViews, /clampZoom\(S\.getState\(\)\.settings\.timeViewZoom\)/,
+  "恢复持久化缩放时也必须过 clampZoom：旧值或手改过的配置可能越界");
+
+console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
+  + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）");
