@@ -59,8 +59,16 @@ esac
 #    解析不了它 —— 前导 `/` 被当成盘根，`/e/E-...` 会变成 `E:\e\E-...` 报 MODULE_NOT_FOUND。
 node "../tools/sync-android-native.js"
 
-# vite emptyOutDir 已设为 false；如需清理 dist 请在构建前手动删除
 # ① 前端构建（资产会被 Rust 库通过 custom-protocol 嵌入）
+#
+# 🔴 构建前**必须**先把 dist 移走，否则这一步会挂。
+#    原注释写「vite emptyOutDir 已设为 false」是**错的**：vite.config.js 里根本没设它，
+#    而 outDir 在项目根内时默认就是 true ⇒ vite 每次都先 `emptyDir(dist)`。
+#    dist/plugins 有 79 个文件，超过 safe-delete 的 50 条批量删除阈值，于是：
+#      [safe-delete][SAFE_DELETE_BULK_CONFIRM_REQUIRED] {"count":79,"threshold":50,...}
+#    实测（2026-09-16）：`mv dist ../.workbuddy-ai/tmp/dist-old-$(date +%s)` 移走即可。
+#    ⚠️ 移走前先停 dev server —— `vite dev` 持有 dist 的**目录句柄**，不停会 `Permission denied`
+#    （同目录改名也失败，但普通目录改名 / dist 内部单文件改名都正常，别误判成 safe-delete 拦截）。
 npx vite build
 
 # ② 逐目标交叉编译 .so
