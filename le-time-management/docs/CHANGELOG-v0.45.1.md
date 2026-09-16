@@ -48,7 +48,7 @@
 | 函数 | 作用 |
 |---|---|
 | `detectSpaShell(html)` | 认出 Nuxt / Next.js / React / Angular / Vue 的 JS 渲染空壳，返回框架名与页面里现成的链接数（提示文案要用） |
-| `matchJsonSiteAdapter(url)` | 页面 URL 命中哪个已登记站点，返回 `{ id, label }` |
+| `matchJsonSiteAdapter(url)` | 页面 URL 命中哪个已登记站点，返回 `{ id, label, title, icon }`（`title` / `icon` 由登记的 `meta` 补齐，见 ④） |
 | `buildJsonSiteListUrl(id, url)` | 由**页面 URL** 推出列表接口地址（页面上的 `?system=` 栏目参数原样带给接口） |
 | `parseJsonSiteList(id, body, baseUrl)` | 把接口响应映射成与 `extractNoticeLinks()` **同构**的条目 |
 
