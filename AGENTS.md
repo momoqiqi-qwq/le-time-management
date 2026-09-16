@@ -57,6 +57,7 @@ node ../tools/sync-version.js --check
 |---|---|
 | `src-tauri/Cargo.toml` | `version` |
 | `src-tauri/Cargo.lock` | `letime` 包的 `version` |
+| `src-tauri/tauri.conf.json` | `version` |
 | `miniprogram/core/appMeta.js` | `version` |
 | `src-tauri/gen/android/app/tauri.properties` | `versionName` + `versionCode` |
 | `src-tauri/gen/android/app/src/main/res/values/strings.xml` | `app_name`（跟 productName 对齐） |
@@ -67,7 +68,12 @@ node ../tools/sync-version.js --check
 - ⚠️ **`package-lock.json`** —— 脚本完全不管。漏改会导致 lock 与 `package.json` 长期脱节
   （实测曾停在 `0.11.2` 而 `package.json` 已到 `0.11.6`）。要改
   `version` 与 `packages[""].version` **两处**。
-- `tauri.conf.json` —— Tauri 2 的版本从 `Cargo.toml` 取，这里通常没有 `version` 字段，不用管。
+
+> 📌 关于 `tauri.conf.json`：**它有 `version` 字段，且脚本会同步它**
+> （旧版本的本页曾写「这里通常没有 version 字段，不用管」—— 那是错的，
+> v0.46.0 发布时实测 0.45.1 → 0.46.0 被脚本改写）。
+> Tauri 2 运行时确实以 `Cargo.toml` 为准，但配置文件里这个字段仍然存在、会被写，
+> 所以看 `git diff` 时见到它别当异常。
 
 ### ⚠️ Android `versionCode` 不要手改
 
