@@ -5,6 +5,13 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const uid = () => `school-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const active = () => sites.find((x) => x.id === activeId) || sites[0] || null;
+  // 看门狗：底层 invoke 一旦挂死（代理失效/连接被吞等），按钮会永远停在「处理中…」。
+  // 给所有网络调用兜一个 30 秒超时，超时后 UI 一定恢复并给出错误提示。
+  const FETCH_TIMEOUT = 30000;
+  const withTimeout = (p, ms = FETCH_TIMEOUT) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`请求超过 ${Math.round(ms / 1000)} 秒未响应，已中断。请检查网络或代理后重试`)), ms)),
+  ]);
 
   function styles() {
     if (document.getElementById("school-notice-style")) return;
@@ -33,7 +40,7 @@
 
   async function fetchPage(site, url, opts = {}) {
     const sid = await sessionFor(site);
-    return tide.http.fetch(sid, opts.method || "GET", url, { headers: opts.headers, body: opts.body, binary: opts.binary });
+    return withTimeout(tide.http.fetch(sid, opts.method || "GET", url, { headers: opts.headers, body: opts.body, binary: opts.binary }));
   }
   async function readNotices(site) {
     const res = await fetchPage(site, site.url);
@@ -107,7 +114,7 @@
       const url = tide.util.web.normalizeUrl(raw); const id = uid(); const tmp = { id, name: nameInput?.value.trim() || "学校通知", url, loginUrl: "", cms: "自动识别", lastFetchedAt: 0 };
       sites.push(tmp); activeId = id;
       try {
-        const sid = await sessionFor(tmp); const res = await tide.http.fetch(sid, "GET", url, {});
+        const res = await fetchPage(tmp, url);
         const finalUrl = res.finalUrl || url;
         const meta = tide.util.web.parseSiteMeta(res.body, finalUrl); if (!nameInput?.value.trim()) tmp.name = meta.title || tmp.name;
         tmp.cms = cmsName(res.body);
@@ -130,7 +137,7 @@
     const site = active(); if (!site || busy) return; busy = true; paint();
     try { await readNotices(site); if (notify && !loginRuntime.has(site.id)) tide.notify(`已读取 ${notices.length} 条公告`); }
     catch (e) { tide.notify(`读取失败：${e.message || e}`); }
-    busy = false; paint();
+    finally { busy = false; paint(); }
   }
   async function switchSite(id) { activeId = id; notices = await tide.storage.get(`notices:${id}`, []); if (!Array.isArray(notices)) notices = []; paint(); }
   async function toReminder(n) {

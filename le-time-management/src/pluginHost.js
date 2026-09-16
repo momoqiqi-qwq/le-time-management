@@ -142,7 +142,9 @@ function makeApi(man, source) {
 
     tasks: {
       list: () => { requirePermission(man, pid, "tasks"); return JSON.parse(JSON.stringify(S.getState().tasks)); },
-      create: (patch) => { requirePermission(man, pid, "tasks"); return S.addTask(patch); },
+      // 插件创建的任务自动记住来源插件（sourcePlugin），四象限/详情抽屉据此显示插件图标；
+      // 以宿主注入为准，插件自己传的同名字段会被覆盖，防止伪装来源。
+      create: (patch) => { requirePermission(man, pid, "tasks"); return S.addTask({ ...patch, sourcePlugin: pid }); },
       update: (id, patch) => { requirePermission(man, pid, "tasks"); return S.updateTask(id, patch); },
       remove: (id) => { requirePermission(man, pid, "tasks"); return S.removeTask(id); },
     },

@@ -1,13 +1,14 @@
 // Generated/synchronized by tools/sync-version.js. Keep product copy here, version is checked automatically.
 module.exports = {
   name: "Le时间管理",
-  version: "0.39.0",
+  version: "0.41.0",
   edition: "微信小程序版",
   frameworks: ["微信小程序原生运行时", "CommonJS JavaScript", "与 Tauri 端同源的数据模型/时间解析"],
   releaseNotes: [
-    "桌面 / Android 设置中心新增搜索、分类筛选与界面交互偏好",
-    "备份 JSON 继续兼容 settings.ui 新字段，小程序会原样保留未知设置",
-    "保留 WakeUp 周视图、自定义背景、插件权限、命令面板与 WebDAV 同步",
+    "小程序插件中心新增 4 个原生适配：插件使用说明、微信提醒推送、竞赛消息雷达、学习通",
+    "学习通：账号密码（DES 加密）/ Cookie 双登录、收件箱全文、待办作业与课程推断，可一键转提醒",
+    "竞赛雷达抓取摩课云公告，关键词/类型/月份过滤；微信推送支持 PushPlus 与 Server酱",
+    "保留四象限、时间块、捕获、暗色模式与既有 4 个原生插件能力",
   ],
   openSource: [
     "Font Awesome Free 6.7.2（图标）",

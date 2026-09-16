@@ -1,11 +1,11 @@
 {
   "id": "web-collector",
   "name": "网页收集",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "author": "Le时间管理内置",
   "icon": "bookmark",
   "faIcon": "bookmark",
-  "description": "输入网址自动读取网站名称、favicon，并智能匹配 Font Awesome 图标；支持搜索、备注、刷新元信息和一键打开。",
+  "description": "输入网址自动读取网站名称、favicon，并智能匹配 Font Awesome 图标；支持单独获取/更换网站图标、搜索、备注、刷新元信息和一键打开。",
   "permissions": [
     "ui",
     "storage",

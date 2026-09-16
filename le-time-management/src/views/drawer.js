@@ -5,6 +5,7 @@ import { taskActions } from "../pluginHost.js";
 import { PRESET_OFFSETS, normalizeOffsets, reminderLabel } from "../taskReminder.js";
 import { closeLayer } from "../motion.js";
 import { toggleSwitch } from "../switchControl.js";
+import { pluginDisplayName, pluginDisplayIcon } from "../pluginAppearance.js";
 
 export function openTaskDrawer(taskId) {
   document.querySelector(".drawer")?._close?.();
@@ -103,6 +104,11 @@ export function openTaskDrawer(taskId) {
 
   body.append(
     el("div", { class: "kv" }, el("span", {}, "任务名称"), titleInput),
+    // 插件联动提醒：显示来源插件图标与名称（手动创建的任务没有这一行）
+    t.sourcePlugin ? el("div", { class: "kv" }, el("span", {}, "来源插件"),
+      el("span", { class: "src-plug", title: "这条提醒由插件创建" },
+        pluginDisplayIcon(t.sourcePlugin, pluginDisplayName(t.sourcePlugin)),
+        el("span", {}, pluginDisplayName(t.sourcePlugin)))) : null,
     el("div", { class: "kv" }, el("span", {}, "标签"), tagsInput),
     el("div", { class: "kv" }, el("span", {}, "所属象限"), el("span", { class: "quadpick" }, ...quadBtns)),
     el("div", { class: "kv" }, el("span", {}, "预估耗时"), estSel),

@@ -27,11 +27,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "web-collector",
     "name": "网页收集",
-    "version": "1.1.2",
+    "version": "1.2.0",
     "author": "Le时间管理内置",
     "icon": "bookmark",
     "faIcon": "bookmark",
-    "description": "输入网址自动读取网站名称、favicon，并智能匹配 Font Awesome 图标；支持搜索、备注、刷新元信息和一键打开。",
+    "description": "输入网址自动读取网站名称、favicon，并智能匹配 Font Awesome 图标；支持单独获取/更换网站图标、搜索、备注、刷新元信息和一键打开。",
     "permissions": [
       "ui",
       "storage",
@@ -74,7 +74,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "pomodoro",
     "name": "番茄专注",
-    "version": "0.3.2",
+    "version": "0.4.0",
     "author": "Le时间管理内置",
     "icon": "hourglass-half",
     "faIcon": "hourglass-half",
@@ -119,7 +119,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "gx-news",
     "name": "竞赛消息雷达",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "author": "Le时间管理内置",
     "icon": "trophy",
     "faIcon": "trophy",
@@ -140,17 +140,17 @@ export const BUILTIN_PLUGINS = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {
     "id": "chaoxing-notify",
     "name": "学习通",
-    "version": "2.6.0",
+    "version": "2.11.0",
     "author": "基于 dsh-user/chaoxing-notify-skill v2.0.0 · Le时间管理适配",
     "icon": "graduation-cap",
     "faIcon": "graduation-cap",
-    "description": "学习通通知与待办：使用 notice.chaoxing.com 收件箱主路径（无需旧消息接口 IP 白名单），支持账号密码或 Cookie 登录、完整通知正文、分享码查询、作业/考试截止时间识别，可一键转为 Le时间管理提醒；通知支持移除（本机忽略，可恢复）与「浏览器打开（带登录态）」；课程页按学年分tab（默认最近学年），学年内按完成状态三色卡片分组（红未完成/蓝正在进行/绿已完成），搜索框折叠为图标；待办作业自动探测提交状态，已提交未批改的在标题后标「正在批改」。",
+    "description": "学习通通知与待办：使用 notice.chaoxing.com 收件箱主路径（无需旧消息接口 IP 白名单），支持账号密码或 Cookie 登录、完整通知正文、分享码查询、作业/考试截止时间识别，可一键转为 Le时间管理提醒；通知支持移除（本机忽略，可恢复）与「浏览器打开（带登录态）」；课程页按学年分tab（默认最近学年），学年内按完成状态三色卡片分组（红未完成/蓝正在进行/绿已完成），搜索框折叠为图标；待办作业自动探测提交状态，已提交未批改的在标题后标「正在批改」；打开时可选「自动刷新 / 节流刷新」策略（悬停按钮可查看各自适用原因），默认自动刷新；新增「通知分类」页：顶部下拉按学年筛选（按中国学年制从通知时间推导，9 月至次年 8 月），页内按通知/作业/考试/签到分区展示。",
     "permissions": [
       "ui",
       "tasks",
@@ -167,7 +167,7 @@ export const BUILTIN_PLUGINS = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {
@@ -201,17 +201,18 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "wechat-push",
     "name": "微信提醒推送",
-    "version": "1.3.0",
+    "version": "1.8.0",
     "author": "Le时间管理内置",
     "icon": "comment-dots",
     "faIcon": "comment-dots",
-    "description": "通过 PushPlus（推荐）把时间块与任务截止提醒推送到微信，支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
+    "description": "通过 PushPlus（推荐）把时间块、任务截止与插件收集的新消息推送到微信；插件消息先攒 2 分钟再合并成一条推送，兼容 PushPlus 频次限制。支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
     "permissions": [
       "ui",
       "tasks",
       "blocks",
       "storage",
       "notify",
+      "events",
       "http",
       "openUrl"
     ],
@@ -220,13 +221,13 @@ export const BUILTIN_PLUGINS = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {
     "id": "cn-holiday",
     "name": "中国节假日",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "author": "Le时间管理内置 · 数据源 NateScarlet/holiday-cn",
     "icon": "calendar-day",
     "faIcon": "calendar-day",
@@ -273,7 +274,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "plugin-guide",
     "name": "插件使用说明",
-    "version": "1.2.1",
+    "version": "1.3.0",
     "author": "Le时间管理内置",
     "icon": "circle-question",
     "faIcon": "circle-question",
@@ -287,7 +288,7 @@ export const BUILTIN_PLUGINS = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   }
 ];

@@ -143,15 +143,16 @@ assert.deepEqual(failures, [], `滑块开关配色不达标：\n  ${failures.joi
 assert.equal(seen.length, Object.keys(light).length * 2,
   `配色必须覆盖全部主题的浅/深两套，实际只算了 ${seen.length} 组`);
 
-/* ── 4. 用法：设置页 + 任务抽屉全部换成滑块 ── */
+/* ── 4. 用法：设置页 + 任务抽屉 + 收件箱全部换成滑块 ── */
 const SWITCH_USERS = {
   "../src/views/settings.js": "设置主页（任务提醒 / 自动备份 / 系统级快捷键）",
   "../src/views/settings/appearance.js": "界面与交互 / 自定义背景",
   "../src/views/drawer.js": "任务抽屉的提醒开关",
+  "../src/views/inbox.js": "收件箱自动化规则的启停开关",
 };
 for (const [file, what] of Object.entries(SWITCH_USERS)) {
   const src = read(file);
-  assert.match(src, /import\s*\{[^}]*toggleSwitch[^}]*\}\s*from\s*"[^"]*switchControl\.js"/,
+  assert.match(src, /import\s*\{[^}]*toggleSwitch[^}]*\}\s*from\s*["'][^"']*switchControl\.js["']/,
     `${file} 必须从 switchControl.js 引 toggleSwitch（${what}）`);
   assert.match(src, /toggleSwitch\(\{/, `${file} 必须真的用上 toggleSwitch（${what}）`);
   const raw = [...src.matchAll(/type:\s*"checkbox"/g)].length;
@@ -174,6 +175,37 @@ assert.match(aiPanel, /type:\s*"checkbox"/,
 
 /* 插件中心 / 插件市场的开关仍然是 <button class="switch">，不能因为这次改动断掉 */
 assert.match(pluginSettings, /switch[\s\S]{0,80}plugin-enable-switch/, "插件启用开关必须继续用 .switch 类名");
+
+/* ── 4.5 插件里的勾样式开关也要换成滑块（v0.40.0：番茄 / 学习通 / 微信推送）──
+   这三个插件的开关都是「单值开/关」，不再是勾选框；多选型勾选框不在此列（见上）。
+   插件拿不到 toggleSwitch 模块（插件沙箱只有 tide API），所以直接用全局 .switch 类 +
+   role="switch"——语义仍是原生 checkbox，外观与设置页同一套 CSS。
+   v1.7.0 微信推送例外：「推送内容」是 data-ms 的多选勾选框（时间块/任务截止/插件消息），
+   多选必须保持 checkbox，统计裸开关前先剥掉。 */
+const PLUGIN_TOGGLE_SOURCES = {
+  "../public/plugins/pomodoro/main.js": { what: "番茄专注的提醒开关（提醒前弹窗 / 完成弹窗等）", multiSelect: [] },
+  "../public/plugins/chaoxing-notify/main.js": { what: "学习通的「只看未读」与「保存登录信息」开关", multiSelect: [] },
+  "../public/plugins/wechat-push/main.js": { what: "微信推送的启用开关（推送内容是多选勾选框，必须保持 checkbox）", multiSelect: ["data-ms="] },
+};
+for (const [file, cfg] of Object.entries(PLUGIN_TOGGLE_SOURCES)) {
+  const what = cfg.what;
+  const src = read(file);
+  const hasSwitchClass = /class="[^"]*\bswitch\b[^"]*"/.test(src) || /className\s*=\s*"switch"/.test(src);
+  const hasSwitchRole = /role="switch"/.test(src) || /setAttribute\(\s*"role"\s*,\s*"switch"\s*\)/.test(src);
+  assert.ok(hasSwitchClass && hasSwitchRole,
+    `${file} 至少要把勾选框换成 .switch 类 + role="switch" 的滑块（${what}）`);
+  // 把「已是滑块」的两种写法挖掉之后，不许再剩任何裸 checkbox：
+  //  a) 标签形态：带 switch 类的 <input> 整段挖掉
+  //  b) DOM 形态：input.type = "checkbox" 后 200 字符内跟上 className = "switch" 的整对挖掉
+  //  c) 多选型勾选框（multiSelect 列出的标记）整段挖掉——它们不是开关，允许用 checkbox
+  let rest = src.replace(/<input[^>]*class="[^"]*\bswitch\b[^"]*"[^>]*>/g, "");
+  rest = rest.replace(/input\.type\s*=\s*"checkbox";(?=[\s\S]{0,200}?input\.className\s*=\s*"switch";)/g, "");
+  for (const marker of cfg.multiSelect) {
+    rest = rest.replace(new RegExp(`<input[^>]*${marker}[^>]*>`, "g"), "");
+  }
+  const bare = [...rest.matchAll(/type\s*=\s*[\'"]checkbox[\'"]/g)].length;
+  assert.equal(bare, 0, `${file} 里还有 ${bare} 个裸勾选框开关，应换成 .switch 滑块（${what}）`);
+}
 
 /* ── 5. 详细描述：删掉的必须真的删掉，保留的必须真的保留 ── */
 const SETTINGS_SOURCES = [

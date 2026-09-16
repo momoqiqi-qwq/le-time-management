@@ -92,7 +92,9 @@ assert.match(src, /await ensureDefaults\(\);\s*await migrateNotes\(\);/, 'render
 
 /* ── 七、卡片编辑框不许把卡片撑爆（长标题/长备注溢出，用户实测截图）── */
 const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-collector/manifest.json', import.meta.url), 'utf8'));
-assert.equal(manifest.version, '1.1.2', '编辑框字号自适应之后必须升插件版本');
+// 1.1.2 → 编辑框字号自适应；1.2.0 → 拆出「自动获取网站图标」与「换图标」两个入口。
+// 这条断言的作用是「改了行为就必须动版本号」，所以每加一批行为就往上抬一格，别删。
+assert.equal(manifest.version, '1.2.0', '编辑框字号自适应之后必须升插件版本');
 assert.match(src, /\.wc-edit\{[^}]*minmax\(0,1fr\)[^}]*\}/, '.wc-edit 两列轨道必须 minmax(0,1fr) —— 1fr 的下限是 min-content，会被长值撑破卡片');
 assert.match(src, /\.wc-edit input\{[^}]*min-width:0[^}]*\}/, '.wc-edit input 必须 min-width:0，否则输入框固有宽度把卡片顶破');
 assert.match(src, /\.wc-edit input\{[^}]*width:100%[^}]*\}/, '.wc-edit input 必须 width:100% 才会老老实实缩进轨道里');
@@ -103,4 +105,28 @@ assert.match(src, /const MAX = 13, MIN = 11;/, '字号上限 13px、下限 11px 
 assert.match(src, /input\.scrollWidth > input\.clientWidth/, '缩字判定必须基于真实溢出（scrollWidth vs clientWidth）');
 assert.match(src, /fitInputFonts\(\);\s*\n?\s*\}/, 'paint() 末尾必须调用 fitInputFonts');
 
-console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移与卡片编辑框宽度约束');
+/* ── 九、图标要能单独获取/更换，不能和「识别标题」绑死 ──
+   用户需求原文：「自动获取网站图标 添加1个变成插件按钮」。
+   核心是拆开：抓图标只回写 iconUrl / iconName，不许碰用户改过的标题。 */
+assert.match(src, /async function fetchIcon\(/, '必须单独提供 fetchIcon(url)，只取图标');
+assert.match(src, /async function probeIcon\(/, '顶栏「自动获取网站图标」要有对应处理函数');
+assert.match(src, /async function refreshIcon\(id\)/, '卡片「换图标」要有对应处理函数');
+// fetchIcon 只回两个字段 —— 这是「不误伤标题」的契约，多回一个就可能被 Object.assign 覆盖
+assert.match(src, /return \{ iconUrl, iconName: iconName \|\| "globe" \};/,
+  'fetchIcon 必须只回 { iconUrl, iconName }，否则会覆盖用户手改的标题');
+// 顶栏与卡片按钮的 data 标记必须不同，否则事件委托里顶栏分支会抢走卡片的点击
+assert.match(src, /data-probe-icon/, '顶栏按钮用 data-probe-icon');
+assert.match(src, /data-fetch-icon/, '卡片按钮用 data-fetch-icon');
+assert.match(src, /closest\("\[data-probe-icon\]"\)[\s\S]*?closest\("\[data-id\]"\)/,
+  '顶栏 data-probe-icon 分支必须在 closest("[data-id]") 之前 —— '
+  + '两者若同名，卡片「换图标」永远拿不到条目 id');
+assert.match(src, /data-fetch-icon[^>]*title=/, '卡片「换图标」要有 title 说明它和「刷新名称/图标」的区别');
+// 预览条里的图标地址：长 URL 必须保持一行 + 横向滚动
+// （实测用 word-break:break-all 会在 390px 窄屏把 .../favicon.ico 折成 4 行竖排，几乎读不出来）
+assert.match(src, /\.wc-preview-text code\{[^}]*white-space:nowrap/, '图标地址要 nowrap，不能逐字符折行');
+assert.doesNotMatch(src, /\.wc-preview-text code\{[^}]*word-break:break-all/,
+  '图标地址不能用 word-break:break-all —— 窄屏会把 URL 折成竖排');
+assert.match(src, /@media\(max-width:640px\)\{[\s\S]*?\.wc-preview-text\{flex-basis:100%\}/,
+  '窄屏下图标地址要独占一行（否则按钮挤占宽度，URL 只剩十几个字符可见）');
+
+console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移、卡片编辑框宽度约束与图标单独获取');

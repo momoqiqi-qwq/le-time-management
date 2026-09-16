@@ -16,6 +16,19 @@
   const LOGIN_JUMP = (target) => `https://passport2.chaoxing.com/login?fid=&newversion=true&refer=${encodeURIComponent(target)}`;
   const ANON_HOST_RE = /^sharewh\d*\.xuexi365\.com$/i;
   const PROBE_TIMEOUT_MS = 8000;
+  // 打开插件时的刷新策略（用户可在界面按钮里二选一，选择持久化）：
+  // auto = 每次打开都自动刷新（默认）；throttle = 距上次成功同步不足 10 分钟直接用缓存。
+  const AUTO_REFRESH_THROTTLE_MS = 10 * 60 * 1000;
+  const REFRESH_MODES = {
+    auto: {
+      label: "自动刷新",
+      why: "每次打开都拉取最新的通知、课程和作业状态，数据最及时；代价是每次进入插件都会向超星发送几条请求。",
+    },
+    throttle: {
+      label: "节流刷新",
+      why: "10 分钟内再次打开直接用本地缓存、不发请求，超过 10 分钟才自动刷新；省流量、降低对超星的请求频率，数据最多滞后 10 分钟（可随时点「快速刷新」立即更新）。",
+    },
+  };
 
   const state = {
     sid: null,
@@ -30,13 +43,15 @@
     ignoredIds: new Set(),
     readOverrides: new Map(),   // id -> true(未读)/false(已读)：本机标记覆盖，不动平台状态
     tab: "inbox",
-    filter: { kw: "", category: "全部", onlyUnread: false },
+    filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部" },
     course: { year: null, searchOpen: false },
     notice: null,
     loading: false,
     busy: "",
     error: "",
     lastSync: "",
+    lastSyncAt: 0,   // 上次成功同步的毫秒时间戳（持久化，供打开插件时判断缓存是否够新）
+    refreshMode: "auto",   // 打开插件时的刷新策略：auto=每次刷新（默认）| throttle=10 分钟节流
     cacheLoaded: false,
     workStatus: {},
   };
@@ -67,6 +82,14 @@
     if (/作业|习题|任务点/.test(t)) return "作业";
     if (/签到|打卡/.test(t)) return "签到";
     return "通知";
+  }
+  /* 通知学年：按中国学年制（9 月 1 日 ~ 次年 8 月 31 日）从通知时间推导。
+     例：2025-09-01 与 2026-08-31 都属「2025-2026」；解析不出时间返回 ""（归入「未知学年」）。 */
+  function noticeAcademicYear(n) {
+    const m = String(n?.time || "").match(/^(\d{4})-(\d{2})/);
+    if (!m) return "";
+    const y = Number(m[1]);
+    return Number(m[2]) >= 9 ? `${y}-${y + 1}` : `${y - 1}-${y}`;
   }
   function deadline(text) {
     const m = String(text || "").match(/(?:结束时间|截止时间)[：:]\s*(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})/);
@@ -188,6 +211,11 @@
       .cx2 h2{margin:0;font-size:clamp(22px,3vw,30px)}
       .cx2-sub{font-size:12.5px;color:var(--ink-2);margin:4px 0}
       .cx2-actions{display:flex;gap:7px;flex-wrap:wrap}
+      .cx2-mode{display:inline-flex}
+      .cx2-mode button{border-radius:0;border-right-width:0;min-height:40px;padding:7px 11px;font-size:12.5px}
+      .cx2-mode button:first-child{border-radius:9px 0 0 9px}
+      .cx2-mode button:last-child{border-radius:0 9px 9px 0;border-right-width:1px}
+      .cx2-mode button.on{background:var(--deep);border-color:var(--deep);color:#fff;font-weight:650}
       .cx2 button{border:1px solid var(--line);background:var(--panel);color:var(--deep);border-radius:9px;min-height:40px;padding:7px 12px;cursor:pointer}
       .cx2 button:hover{background:var(--paper)}
       .cx2 button.primary{background:var(--deep);color:#fff;border-color:var(--deep);font-weight:650}
@@ -203,7 +231,7 @@
       .cx2-search{flex:1;min-width:220px;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 11px;background:var(--panel);color:var(--ink)}
       .cx2-search::placeholder{color:var(--ink-2);opacity:1}
       .cx2-select{border:1px solid var(--line);border-radius:9px;min-height:40px;padding:6px 9px;background:var(--panel);color:var(--ink)}
-      .cx2-check{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2);white-space:nowrap}
+      .cx2-check{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);white-space:nowrap}.cx2-check .switch{margin-top:0}
       .cx2-status{font-size:12px;color:var(--ink-2);margin:7px 0 11px}
       .cx2-status.err{background:color-mix(in srgb,var(--coral) 16%,var(--panel));border:1px solid color-mix(in srgb,var(--coral) 34%,var(--line));color:color-mix(in srgb,var(--coral) 50%,var(--ink));padding:10px;border-radius:9px}
       .cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
@@ -233,6 +261,7 @@
       .cx2-course span{display:block;font-size:11px;color:var(--ink-2);margin-top:4px}
       .cx2-grade{margin:14px 0 4px}
       .cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;color:var(--ink)}
+      .cx2-cat-sec{margin:18px 0}
       .cx2-grade-sub{font-size:11px;font-weight:400;color:var(--ink-2)}
       .cx2-course{position:relative}
       .cx2-course b{padding-right:64px}
@@ -266,7 +295,7 @@
       .cx2-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
       .cx2 label{font-size:12px;color:var(--ink-2)}
       .cx2 label span{display:block;margin-bottom:4px;font-weight:600}
-      .cx2 input,.cx2 textarea{width:100%;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 10px;background:var(--panel);color:var(--ink)}
+      .cx2 input:not(.switch),.cx2 textarea{width:100%;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 10px;background:var(--panel);color:var(--ink)}
       .cx2 input::placeholder,.cx2 textarea::placeholder{color:var(--ink-2);opacity:1}
       .cx2 textarea{min-height:100px;resize:vertical}
       .cx2-wide{grid-column:1/-1}
@@ -292,6 +321,8 @@
     state.readOverrides = new Map(await tide.storage.get("readOverrides", []));
     state.filter = { ...state.filter, ...(await tide.storage.get("filter", null) || {}) };
     state.workStatus = await tide.storage.get("workStatus", null) || {};
+    state.lastSyncAt = Number(await tide.storage.get("lastSyncAt", 0)) || 0;
+    state.refreshMode = (await tide.storage.get("refreshMode", "auto")) === "throttle" ? "throttle" : "auto";
     const cached = await tide.storage.get("inboxCache", []);
     if (Array.isArray(cached) && cached.length) { state.inbox = cached; state.cacheLoaded = true; }
   }
@@ -372,6 +403,17 @@
       state.inbox = normalized;
       await tide.storage.set("inboxCache", state.inbox.slice(0, 2000));
       await saveKnown(); await saveAuth();
+      // 插件联动：把新通知广播给订阅方（微信推送的「插件消息」通道订阅 notice:new）。
+      // 只带前 5 条，避免一次大批量把推送频次额度打爆；广播失败绝不影响抓取本身。
+      if (state.newIds.size) {
+        try {
+          tide.events.emit("notice:new", {
+            source: "chaoxing-notify", sourceName: "学习通", total: state.newIds.size,
+            items: state.inbox.filter((x) => state.newIds.has(x.id)).slice(0, 5)
+              .map((x) => ({ title: x.title, time: x.time || "", sender: x.sender || "" })),
+          });
+        } catch {}
+      }
     }
     return normalized;
   }
@@ -500,17 +542,39 @@
     const t = todos();
     return `<div class="cx2-nav">${[
       ["inbox", `收件箱 <span class="cx2-pill">${visibleInbox().length}</span>${state.newIds.size?`<span class="cx2-pill cx2-new">+${state.newIds.size}</span>`:""}`],
+      ["cats", "通知分类"],
       ["todo", `待办作业 <span class="cx2-pill">${t.length}</span>`],
       ["courses", `课程 <span class="cx2-pill">${state.courses.length}</span>`],
       ["lookup", "分享码查询"],
     ].map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'on':''}">${label}</button>`).join('')}</div>`;
   }
 
+  /* 收件箱卡片：收件箱列表与「通知分类」页共用，避免两处漂移。 */
+  function inboxCardHtml(n) {
+    const cat=classify(n),isNew=state.newIds.has(n.id);return `<article class="cx2-card ${catFrameClass(n)} ${effUnread(n)?'unread':''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${isNew?'<span class="cx2-pill cx2-new">NEW</span>':''}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span>${n.sender?`<span>${esc(n.sender)}</span>`:''}<span>${esc(n.time||'未知时间')}</span>${effUnread(n)?'<span>未读</span>':'<span>已读</span>'}${linkHintHtml(n)}</div><div class="cx2-body">${esc(n.body||'（无正文）')}</div>${cardActionsHtml(n,'inbox')}</article>`;
+  }
   function inboxHtml() {
     const rows = filteredInbox();
-    return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 作业 / 考试 / 正文…"><select class="cx2-select" data-category>${["全部","通知","作业","考试","签到"].map(x=>`<option ${state.filter.category===x?'selected':''}>${x}</option>`).join('')}</select><label class="cx2-check"><input type="checkbox" data-unread ${state.filter.onlyUnread?'checked':''}> 只看平台未读</label></div>
+    return `<div class="cx2-toolbar"><input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 作业 / 考试 / 正文…"><select class="cx2-select" data-category>${["全部","通知","作业","考试","签到"].map(x=>`<option ${state.filter.category===x?'selected':''}>${x}</option>`).join('')}</select><label class="cx2-check"><input class="switch" role="switch" type="checkbox" data-unread ${state.filter.onlyUnread?'checked':''}> 只看平台未读</label></div>
       <div class="cx2-kpis"><span class="cx2-kpi">本次新增 ${state.newIds.size}</span><span class="cx2-kpi" title="含本机「标记未读」的覆盖结果">未读 ${visibleInbox().filter(x=>effUnread(x)).length}</span><span class="cx2-kpi">显示 ${visibleInbox().length} / 共 ${state.inbox.length}</span>${state.ignoredIds.size?`<span class="cx2-kpi" title="仅在本机列表隐藏，原始通知仍在本地缓存里；点右上角「恢复已移除」可放回">已移除 ${state.ignoredIds.size}</span>`:''}</div>
-      ${rows.length?`<div class="cx2-grid">${rows.map((n)=>{const cat=classify(n),isNew=state.newIds.has(n.id);return `<article class="cx2-card ${catFrameClass(n)} ${effUnread(n)?'unread':''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${isNew?'<span class="cx2-pill cx2-new">NEW</span>':''}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span>${n.sender?`<span>${esc(n.sender)}</span>`:''}<span>${esc(n.time||'未知时间')}</span>${effUnread(n)?'<span>未读</span>':'<span>已读</span>'}${linkHintHtml(n)}</div><div class="cx2-body">${esc(n.body||'（无正文）')}</div>${cardActionsHtml(n,'inbox')}</article>`;}).join('')}</div>`:'<div class="cx2-empty">没有匹配的通知。</div>'}`;
+      ${rows.length?`<div class="cx2-grid">${rows.map(inboxCardHtml).join('')}</div>`:'<div class="cx2-empty">没有匹配的通知。</div>'}`;
+  }
+  /* ── 通知分类页：顶部下拉选学年（按中国学年制从通知时间推导），下方按 通知/作业/考试/签到 分区 ── */
+  const CATS = ["通知", "作业", "考试", "签到"];
+  function catYears() {
+    return [...new Set(visibleInbox().map(noticeAcademicYear).filter(Boolean))].sort().reverse();
+  }
+  function catsHtml() {
+    const years = catYears();
+    const ySel = years.includes(state.filter.catYear) ? state.filter.catYear : "全部";
+    if (ySel !== state.filter.catYear) state.filter.catYear = ySel;
+    const pool = visibleInbox().filter((n) => ySel === "全部" || noticeAcademicYear(n) === ySel).sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
+    const yearSel = `<select class="cx2-select" data-cat-year aria-label="筛选学年" title="按通知时间推导学年（9 月至次年 8 月为一个学年）">${['全部', ...years].map((y) => `<option value="${y}" ${y === ySel ? 'selected' : ''}>${y === '全部' ? '全部学年' : `${y} 学年`}</option>`).join('')}</select>`;
+    const secs = CATS.map((cat) => {
+      const list = pool.filter((n) => classify(n) === cat);
+      return `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-tag ${cat}">${cat}</span><span class="cx2-grade-sub">${list.length} 条</span></h4>${list.length ? `<div class="cx2-grid">${list.map(inboxCardHtml).join('')}</div>` : `<div class="cx2-empty">这个学年没有${cat}。</div>`}</section>`;
+    }).join("");
+    return `<div class="cx2-toolbar">${yearSel}<span class="cx2-kpi">共 ${pool.length} 条</span></div>${pool.length ? secs : '<div class="cx2-empty">这个学年没有通知。</div>'}`;
   }
   function todoHtml() {
     const list=todos();
@@ -672,7 +736,8 @@
 
   function paintMain() {
     if (!host) return;
-    host.innerHTML = `<div class="cx2"><div class="cx2-head"><div><h2>学习通</h2><p class="cx2-sub">收件箱通知 · 未截止作业 · 课程列表 · 分享码全文</p></div><div class="cx2-actions"><button class="primary" data-refresh ${state.loading?'disabled':''}>${state.loading?'刷新中…':'快速刷新'}</button><button data-full-sync ${state.loading?'disabled':''}>完整同步</button>${state.ignoredIds.size?`<button data-ignore-reset title="把被移除的通知重新放回列表，不需要重新同步">恢复已移除（${state.ignoredIds.size}）</button>`:''}<button data-switch>切换登录</button></div></div>${navHtml()}<div class="cx2-status ${state.error?'err':''}">${state.error?esc(state.error):`${state.busy==='open'?'正在校验学习通登录态，随后交给系统浏览器 · ':''}${state.lastSync?`上次刷新 ${esc(state.lastSync)} · `:''}收件箱使用 notice.chaoxing.com 无 IP 白名单主路径`}</div><div data-body>${state.tab==='inbox'?inboxHtml():state.tab==='todo'?todoHtml():state.tab==='courses'?coursesHtml():lookupHtml()}</div><footer>基于 chaoxing-notify-skill v2.0.0 的已验证接口流程。Cookie/账号信息仅在选择“保存登录信息”时写入本机；Cookie 等同账号登录身份，请勿外传。</footer></div>`;
+    const modeBtns = `<span class="cx2-mode" role="group" aria-label="打开插件时的刷新策略">${["auto", "throttle"].map((m) => `<button class="${state.refreshMode === m ? "on" : ""}" data-mode="${m}" title="${esc(REFRESH_MODES[m].why)}" aria-pressed="${state.refreshMode === m}">${REFRESH_MODES[m].label}</button>`).join("")}</span>`;
+    host.innerHTML = `<div class="cx2"><div class="cx2-head"><div><h2>学习通</h2><p class="cx2-sub">收件箱通知 · 未截止作业 · 课程列表 · 分享码全文</p></div><div class="cx2-actions">${modeBtns}<button class="primary" data-refresh ${state.loading?'disabled':''}>${state.loading?'刷新中…':'快速刷新'}</button><button data-full-sync ${state.loading?'disabled':''}>完整同步</button>${state.ignoredIds.size?`<button data-ignore-reset title="把被移除的通知重新放回列表，不需要重新同步">恢复已移除（${state.ignoredIds.size}）</button>`:''}<button data-switch>切换登录</button></div></div>${navHtml()}<div class="cx2-status ${state.error?'err':''}">${state.error?esc(state.error):`${state.busy==='open'?'正在校验学习通登录态，随后交给系统浏览器 · ':''}${state.lastSync?`上次刷新 ${esc(state.lastSync)} · `:''}收件箱使用 notice.chaoxing.com 无 IP 白名单主路径`}</div><div data-body>${state.tab==='inbox'?inboxHtml():state.tab==='cats'?catsHtml():state.tab==='todo'?todoHtml():state.tab==='courses'?coursesHtml():lookupHtml()}</div><footer>基于 chaoxing-notify-skill v2.0.0 的已验证接口流程。Cookie/账号信息仅在选择“保存登录信息”时写入本机；Cookie 等同账号登录身份，请勿外传。</footer></div>`;
   }
 
   async function refreshAll() {
@@ -682,6 +747,7 @@
       await fetchInbox(0, true, state.inbox.length > 0);
       try { await loadCourses(); } catch (e) { state.error = String(e.message || e); }
       state.lastSync = new Date().toLocaleString();
+      state.lastSyncAt = Date.now(); await tide.storage.set("lastSyncAt", state.lastSyncAt);
       probePendingWorks(); // 后台串行探测作业提交状态，不阻塞刷新
     } catch (e) {
       state.error = String(e.message || e);
@@ -695,13 +761,14 @@
     try {
       await fetchInbox(0, true, false);
       state.lastSync = new Date().toLocaleString();
+      state.lastSyncAt = Date.now(); await tide.storage.set("lastSyncAt", state.lastSyncAt);
       tide.notify(`完整同步完成，共 ${state.inbox.length} 条通知`);
     } catch (e) { state.error = String(e.message || e); }
     finally { state.loading = false; paintMain(); }
   }
 
   function loginHtml(message = "") {
-    host.innerHTML = `<div class="cx2"><div class="cx2-login"><h3>登录学习通</h3><p class="cx2-sub">推荐账号密码登录；若频繁登录触发风控，可粘贴浏览器/App 已登录 Cookie 直接复用会话。</p><div class="cx2-tabs"><button class="on" data-login-tab="password">账号密码</button><button data-login-tab="cookie">Cookie</button></div><div data-login-password><div class="cx2-fields"><label><span>账号（手机号 / 学号）</span><input data-u autocomplete="username"></label><label><span>密码</span><input data-p type="password" autocomplete="current-password"></label></div><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-login>登录</button></div></div><div data-login-cookie hidden><label><span>Cookie</span><textarea data-cookie placeholder="例如：_uid=...; route=...; ..."></textarea></label><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-cookie-login>使用 Cookie</button></div></div><label class="cx2-check" style="margin-top:12px"><input type="checkbox" data-remember checked> 保存登录信息到本机，便于下次直接复用</label><div class="cx2-status ${message?'err':''}" data-login-status>${esc(message)}</div><div class="cx2-note">账号密码登录使用 fanyalogin + DES-ECB/PKCS5；密码加密在本机 Tauri 后端完成。收件箱改用 v2 包确认的 getNoticeList 接口，不再依赖 specie.chaoxing.com 的来源 IP 白名单。</div></div></div>`;
+    host.innerHTML = `<div class="cx2"><div class="cx2-login"><h3>登录学习通</h3><p class="cx2-sub">推荐账号密码登录；若频繁登录触发风控，可粘贴浏览器/App 已登录 Cookie 直接复用会话。</p><div class="cx2-tabs"><button class="on" data-login-tab="password">账号密码</button><button data-login-tab="cookie">Cookie</button></div><div data-login-password><div class="cx2-fields"><label><span>账号（手机号 / 学号）</span><input data-u autocomplete="username"></label><label><span>密码</span><input data-p type="password" autocomplete="current-password"></label></div><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-login>登录</button></div></div><div data-login-cookie hidden><label><span>Cookie</span><textarea data-cookie placeholder="例如：_uid=...; route=...; ..."></textarea></label><div class="cx2-actions" style="margin-top:12px"><button class="primary" data-cookie-login>使用 Cookie</button></div></div><label class="cx2-check" style="margin-top:12px"><input class="switch" role="switch" type="checkbox" data-remember checked> 保存登录信息到本机，便于下次直接复用</label><div class="cx2-status ${message?'err':''}" data-login-status>${esc(message)}</div><div class="cx2-note">账号密码登录使用 fanyalogin + DES-ECB/PKCS5；密码加密在本机 Tauri 后端完成。收件箱改用 v2 包确认的 getNoticeList 接口，不再依赖 specie.chaoxing.com 的来源 IP 白名单。</div></div></div>`;
   }
 
   async function autoLogin() {
@@ -722,6 +789,7 @@
       const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
       const yearBtn=e.target.closest('[data-year]');if(yearBtn){state.course.year=Number(yearBtn.dataset.year)||0;paintMain();return;}
       if(e.target.closest('[data-search-toggle]')){state.course.searchOpen=true;paintMain();return;}
+      const modeBtn=e.target.closest('[data-mode]');if(modeBtn){state.refreshMode=modeBtn.dataset.mode==='throttle'?'throttle':'auto';await tide.storage.set('refreshMode',state.refreshMode);paintMain();return;}
       if(e.target.closest('[data-refresh]')){await refreshAll();return;}
       if(e.target.closest('[data-switch]')){state.loggedIn=false;state.sid=null;state.cookie='';state.creds=null;await tide.storage.set('sessionCookie',null);await tide.storage.set('creds',null);loginHtml();return;}
       const lookup=e.target.closest('[data-lookup]');if(lookup){const input=host.querySelector('[data-code]');try{state.error='';await loadNotice(input.value);paintMain();}catch(err){state.error=err.message||String(err);paintMain();}return;}
@@ -732,7 +800,7 @@
       const card=e.target.closest('[data-id]'),act=e.target.closest('[data-act]');if(card&&act){const n=state.inbox.find(x=>x.id===card.dataset.id);if(!n)return;const a=act.dataset.act;if(a==='toggle'){card.classList.toggle('open');return;}if(a==='remind'){await toReminder(n);return;}if(a==='mark'){await markNotice(n);return;}if(a==='share'&&n.idCode){tide.util.openUrl(SHARE_PAGE(n.idCode));return;}if(a==='open'){await openTarget(n);return;}if(a==='del'){await ignoreNotice(n);return;}}
     });
     host.addEventListener("input", (e) => { if(e.target.matches('[data-search]')){state.filter.kw=e.target.value;savePrefs();const pos=e.target.selectionStart;paintMain();const next=host.querySelector('[data-search]');if(next){next.focus();try{next.setSelectionRange(pos,pos);}catch{}}} });
-    host.addEventListener("change", (e) => { if(e.target.matches('[data-category]')){state.filter.category=e.target.value;savePrefs();paintMain();}if(e.target.matches('[data-unread]')){state.filter.onlyUnread=e.target.checked;savePrefs();paintMain();} });
+    host.addEventListener("change", (e) => { if(e.target.matches('[data-category]')){state.filter.category=e.target.value;savePrefs();paintMain();}if(e.target.matches('[data-unread]')){state.filter.onlyUnread=e.target.checked;savePrefs();paintMain();}if(e.target.matches('[data-cat-year]')){state.filter.catYear=e.target.value;savePrefs();paintMain();} });
     host.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))e.stopPropagation();if(e.target.matches('[data-search]')&&e.key==='Escape'){state.course.searchOpen=false;state.filter.kw='';paintMain();}});
   }
 
@@ -741,7 +809,12 @@
     wire(); await loadPrefs();
     if (state.inbox.length) paintMain();
     const ok = await autoLogin();
-    if (ok) { paintMain(); await refreshAll(); } else loginHtml();
+    if (!ok) { loginHtml(); return; }
+    paintMain();
+    // 刷新策略（用户在按钮里选）：auto=每次打开都刷新（默认）；
+    // throttle=距上次成功同步不足 10 分钟直接用缓存，想更新随时点「快速刷新」。
+    const stale = Date.now() - (state.lastSyncAt || 0) >= AUTO_REFRESH_THROTTLE_MS;
+    if (state.refreshMode === "auto" || stale) await refreshAll();
   }
 
   tide.ui.registerView({ id: "chaoxing-notify", title: "学习通", icon: 'graduation-cap', render });

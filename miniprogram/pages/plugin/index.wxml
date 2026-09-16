@@ -132,4 +132,255 @@
       </block>
     </view>
   </block>
+
+  <!-- 插件使用说明 -->
+  <block wx:if="{{id === 'plugin-guide' && guide}}">
+    <view class="card">
+      <view class="section-title">按场景查看每个内置插件</view>
+      <view class="desc">插件名称、说明和平台能力直接读取主程序插件清单，避免文档与实际清单分叉。标「原生适配」的可在小程序里直接打开使用。</view>
+      <view class="guide-actions"><button class="btn ghost" bindtap="onGuideCopyRepo">复制项目仓库地址</button></view>
+    </view>
+    <view class="card" wx:for="{{guide.groups}}" wx:for-item="grp" wx:key="name">
+      <view class="section-title">{{grp.name}}</view>
+      <view class="guide-card {{item.native ? '' : 'off'}}" wx:for="{{grp.items}}" wx:for-item="item" wx:key="id">
+        <view class="guide-top">
+          <image class="guide-icon" src="{{item.iconPath}}" mode="aspectFit" />
+          <view class="guide-copy">
+            <view class="guide-name">{{item.name}}<text class="guide-native" wx:if="{{item.native}}">原生适配</text></view>
+            <view class="meta">v{{item.version}} · {{item.platformText}}</view>
+          </view>
+        </view>
+        <view class="guide-desc">{{item.desc}}</view>
+        <view class="guide-steps">
+          <view class="guide-step" wx:for="{{item.steps}}" wx:for-item="s" wx:for-index="si" wx:key="*this">{{si + 1}}. {{s}}</view>
+        </view>
+      </view>
+    </view>
+    <view class="card"><view class="desc hint">安全提示：外部 ZIP 插件属于受信任扩展模型，只安装来源可信、你已审核过的插件。</view></view>
+  </block>
+
+  <!-- 微信提醒推送 -->
+  <block wx:if="{{id === 'wechat-push' && push}}">
+    <view class="card">
+      <view class="section-title">微信推送通道 · PushPlus</view>
+      <view class="desc">推荐 PushPlus：复制下方「一键获取 Token」地址到浏览器打开，微信扫码登录后复制页面上的 Token 粘贴回来。旧版 Server酱 配置保留兼容。</view>
+      <view class="push-docs">
+        <view class="push-link" data-url="https://www.pushplus.plus/doc/guide/sdk.html" bindtap="onPushCopy">官方文档：使用说明 / SDK ↗（点击复制）</view>
+        <view class="push-link" data-url="https://www.pushplus.plus/doc/guide/api.html" bindtap="onPushCopy">消息接口文档（参数与返回码）↗</view>
+      </view>
+      <view class="push-provider">
+        <view class="push-pro {{push.provider === 'pushplus' ? 'on' : ''}}" data-p="pushplus" bindtap="onPushProvider">PushPlus（推荐）</view>
+        <view class="push-pro {{push.provider === 'serverchan' ? 'on' : ''}}" data-p="serverchan" bindtap="onPushProvider">Server酱（兼容）</view>
+      </view>
+      <block wx:if="{{push.provider === 'pushplus'}}">
+        <view class="push-field"><view class="label">PushPlus Token</view>
+          <input password="{{!push.showKey}}" value="{{push.token}}" data-k="token" bindinput="onPushField" placeholder="粘贴 Token" />
+        </view>
+        <button class="btn ghost push-btn" data-url="https://www.pushplus.plus/push1.html" bindtap="onPushCopy">↗ 复制「一键获取 Token」页面地址</button>
+        <view class="push-field"><view class="label">Topic（可选，群组编码）</view>
+          <input value="{{push.topic}}" data-k="topic" bindinput="onPushField" placeholder="不填则只推送给自己" />
+        </view>
+      </block>
+      <block wx:else>
+        <view class="push-field"><view class="label">Server酱 SendKey</view>
+          <input password="{{!push.showKey}}" value="{{push.oldKey}}" data-k="oldKey" bindinput="onPushField" placeholder="SCT…" />
+        </view>
+      </block>
+      <view class="push-switches">
+        <view class="push-switch"><switch checked="{{push.enabled}}" data-k="enabled" bindchange="onPushSwitch" color="#2EC4B6" /><text>启用微信推送</text></view>
+        <view class="push-switch"><switch checked="{{push.blockEnabled}}" data-k="blockEnabled" bindchange="onPushSwitch" color="#2EC4B6" /><text>时间块提醒</text></view>
+        <view class="push-switch"><switch checked="{{push.taskEnabled}}" data-k="taskEnabled" bindchange="onPushSwitch" color="#2EC4B6" /><text>任务截止提醒</text></view>
+      </view>
+      <view class="custom-row">
+        <text class="label flex-none">时间块提前</text>
+        <picker mode="selector" range="{{push.leadOptions}}" value="{{push.leadIndex}}" bindchange="onPushLead">
+          <view class="pickerbox">{{push.lead}} 分钟</view>
+        </picker>
+      </view>
+      <view class="controls">
+        <button class="btn ghost" bindtap="onPushToggleShow">{{push.showKey ? '隐藏凭据' : '显示/隐藏凭据'}}</button>
+        <button class="btn pri" bindtap="onPushTest">发送测试消息</button>
+      </view>
+      <view class="desc hint">小程序内推送只在插件页打开期间每分钟检查一次；桌面 / Android 端开启后可全天候推送。推送域名 www.pushplus.plus / sctapi.ftqq.com 在正式版需登记到小程序后台合法域名。</view>
+      <view class="push-log" wx:if="{{push.log.length}}">
+        <view class="section-title">推送记录</view>
+        <view class="push-logline {{item[1] === '✗' ? 'bad' : ''}}" wx:for="{{push.log}}" wx:key="*this">{{item}}</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 竞赛消息雷达 -->
+  <block wx:if="{{id === 'gx-news' && gx}}">
+    <view class="card">
+      <view class="gx-toolbar">
+        <button class="btn pri gx-refresh" bindtap="onGxRefresh" disabled="{{gx.fetching}}">刷新</button>
+        <input class="gx-kw" value="{{gx.kw}}" placeholder="关键词：答辩 / 数学 / 报名 / 截止…" bindinput="onGxKw" confirm-type="search" />
+      </view>
+      <view class="gx-chips">
+        <view class="gx-chip {{item.on ? 'on' : ''}}" wx:for="{{gx.typeChips}}" wx:key="id" data-id="{{item.id}}" bindtap="onGxType">{{item.label}}</view>
+        <view class="gx-chip {{gx.hideSeen ? 'on' : ''}}" bindtap="onGxToggleSeen">只看未读</view>
+      </view>
+      <view class="gx-chips" wx:if="{{gx.monthChips.length > 1}}">
+        <view class="gx-chip {{item.on ? 'on' : ''}}" wx:for="{{gx.monthChips}}" wx:key="id" data-id="{{item.id}}" bindtap="onGxMonth">{{item.label}}</view>
+      </view>
+      <view class="gx-status {{gx.error ? 'err' : ''}}">
+        <text wx:if="{{gx.error}}">抓取失败：{{gx.error}}（点「刷新」重试；模拟器/体验版请勾选「不校验合法域名」）</text>
+        <text wx:else>{{gx.status}}</text>
+      </view>
+      <block wx:for="{{gx.rows}}" wx:key="key">
+        <view wx:if="{{item.kind === 'month'}}" class="gx-month">{{item.label}}</view>
+        <view wx:else class="gx-card {{item.seen ? 'seen' : ''}}" data-id="{{item.id}}" bindtap="onGxTap" data-act="open">
+          <view class="gx-main">
+            <view class="gx-title">{{item.title}}<text class="gx-new" wx:if="{{item.isNew}}">NEW</text></view>
+            <view class="gx-meta"><text class="gx-tag {{item.tagHot ? 'hot' : ''}}">{{item.tagName}}</text><text>{{item.time}}</text></view>
+            <view class="gx-snip" wx:if="{{item.snippet}}">{{item.snippet}}</view>
+          </view>
+          <button class="btn small ghost gx-remind" data-id="{{item.id}}" data-act="remind" catchtap="onGxTap">提醒</button>
+        </view>
+      </block>
+      <view class="empty" wx:if="{{!gx.rows.length && !gx.fetching}}">{{gx.count ? "没有符合过滤条件的消息，试试换个关键词或切回「全部」" : "还没有消息，点上方「刷新」抓取"}}</view>
+      <button class="btn ghost gx-more" wx:if="{{gx.rows.length && gx.more !== 'end'}}" bindtap="onGxMore" disabled="{{gx.fetching}}">{{gx.moreText}}</button>
+      <view class="desc hint">消息详情在浏览器打开：点卡片会复制详情链接。识别到日期的竞赛通知可用「提醒」按钮一键转成 Le 提醒。</view>
+    </view>
+  </block>
+
+  <!-- 学习通 -->
+  <block wx:if="{{id === 'chaoxing-notify' && cx}}">
+    <block wx:if="{{cx.mode === 'login'}}">
+      <view class="card">
+        <view class="section-title">登录学习通</view>
+        <view class="modes cx-login-tabs">
+          <button class="mode {{cx.loginTab === 'pwd' ? 'on' : ''}}" data-t="pwd" bindtap="onCxLoginTab">账号密码</button>
+          <button class="mode {{cx.loginTab === 'cookie' ? 'on' : ''}}" data-t="cookie" bindtap="onCxLoginTab">Cookie 登录</button>
+        </view>
+        <block wx:if="{{cx.loginTab === 'pwd'}}">
+          <view class="push-field"><view class="label">账号（手机号 / 学号）</view>
+            <input value="{{cx.uname}}" data-k="uname" bindinput="onCxField" placeholder="学习通账号" />
+          </view>
+          <view class="push-field"><view class="label">密码</view>
+            <input password value="{{cx.pwd}}" data-k="pwd" bindinput="onCxField" placeholder="密码（DES 加密后传输，不明文保存）" />
+          </view>
+          <view class="cx-check"><switch checked="{{cx.remember}}" bindchange="onCxRemember" color="#2EC4B6" /><text>保存登录信息到本机</text></view>
+          <button class="btn pri cx-wide" bindtap="onCxLogin" disabled="{{cx.loading}}">{{cx.loading ? '登录中…' : '登录并同步'}}</button>
+        </block>
+        <block wx:else>
+          <view class="push-field"><view class="label">Cookie</view>
+            <textarea class="cx-textarea" value="{{cx.cookieInput}}" data-k="cookieInput" bindinput="onCxField" placeholder="粘贴学习通 Cookie（可从桌面端插件复制，需包含 UID / FUID / VC3 等字段）" />
+          </view>
+          <button class="btn pri cx-wide" bindtap="onCxLoginCookie" disabled="{{cx.loading}}">验证会话并进入</button>
+        </block>
+        <view class="cx-error" wx:if="{{cx.error}}">{{cx.error}}</view>
+        <view class="desc hint">Cookie 等同账号登录身份，仅在选择保存时写入本机、随备份 JSON 同步，请勿外传。个别机型 wx.request 拿不到 Set-Cookie，账号密码登录后会话无法保持，此时请改用 Cookie 登录。</view>
+      </view>
+    </block>
+    <block wx:else>
+      <view class="card">
+        <view class="cx-actions">
+          <button class="btn pri" bindtap="onCxRefresh" disabled="{{cx.loading}}">{{cx.loading ? '刷新中…' : '快速刷新'}}</button>
+          <button class="btn ghost" bindtap="onCxRestore" wx:if="{{cx.ignoredCount}}">恢复已移除（{{cx.ignoredCount}}）</button>
+          <button class="btn ghost" bindtap="onCxLogout">切换登录</button>
+        </view>
+        <view class="modes cx-nav">
+          <button class="mode {{cx.tab === 'inbox' ? 'on' : ''}}" data-t="inbox" bindtap="onCxTab">收件箱 {{cx.visibleCount}}</button>
+          <button class="mode {{cx.tab === 'todo' ? 'on' : ''}}" data-t="todo" bindtap="onCxTab">待办 {{cx.todoCount}}</button>
+          <button class="mode {{cx.tab === 'courses' ? 'on' : ''}}" data-t="courses" bindtap="onCxTab">课程 {{cx.courseCount}}</button>
+          <button class="mode {{cx.tab === 'lookup' ? 'on' : ''}}" data-t="lookup" bindtap="onCxTab">分享码查询</button>
+        </view>
+        <view class="cx-error" wx:if="{{cx.error}}">{{cx.error}}</view>
+        <view class="meta">{{cx.statusText}}</view>
+      </view>
+
+      <!-- 收件箱 -->
+      <block wx:if="{{cx.tab === 'inbox'}}">
+        <view class="card">
+          <view class="cx-toolbar">
+            <input class="cx-search" value="{{cx.filterKw}}" placeholder="搜索标题 / 正文 / 发送者…" bindinput="onCxSearch" confirm-type="search" />
+            <picker mode="selector" range="{{cx.catOptions}}" value="{{cx.filterCatIndex}}" bindchange="onCxCat">
+              <view class="pickerbox cx-cat">{{cx.catOptions[cx.filterCatIndex]}}</view>
+            </picker>
+          </view>
+          <view class="cx-check cx-unread-toggle"><switch checked="{{cx.onlyUnread}}" bindchange="onCxUnread" color="#2EC4B6" /><text>只看未读（含本机标记）</text></view>
+          <view class="cx-kpis">
+            <text class="cx-kpi">本次新增 {{cx.newCount}}</text>
+            <text class="cx-kpi">未读 {{cx.unreadCount}}</text>
+            <text class="cx-kpi">显示 {{cx.visibleCount}} / 共 {{cx.totalCount}}</text>
+          </view>
+          <view class="empty" wx:if="{{!cx.inboxRows.length}}">没有匹配的通知。点上方「快速刷新」拉取收件箱。</view>
+          <view class="cx-card {{item.unread ? 'unread' : ''}} cat-{{item.catCls}} {{item.expanded ? 'open' : ''}}" wx:for="{{cx.inboxRows}}" wx:key="key">
+            <view class="cx-title" data-id="{{item.key}}" bindtap="onCxRowToggle">{{item.title}}<text class="cx-pill new" wx:if="{{item.isNew}}">NEW</text><text class="cx-pill grading" wx:if="{{item.grading}}">正在批改</text></view>
+            <view class="cx-meta"><text class="cx-tag {{item.catCls}}">{{item.cat}}</text><text wx:if="{{item.sender}}">{{item.sender}}</text><text>{{item.time}}</text><text>{{item.unread ? '未读' : '已读'}}</text><text wx:if="{{item.linkHint}}" class="cx-pill">{{item.linkHint}}</text></view>
+            <view class="cx-body">{{item.body}}</view>
+            <view class="cx-card-actions">
+              <button class="btn small ghost" data-id="{{item.key}}" bindtap="onCxRemind">转为提醒</button>
+              <button class="btn small ghost" data-id="{{item.key}}" bindtap="onCxMark">{{item.unread ? '标记已读' : '标记未读'}}</button>
+              <button class="btn small ghost" data-id="{{item.key}}" bindtap="onCxCopyLink">复制链接</button>
+              <button class="btn small danger" data-id="{{item.key}}" bindtap="onCxIgnore">移除</button>
+            </view>
+          </view>
+          <view class="desc hint">已读/未读标记只影响本机显示与筛选；「移除」只在本机列表隐藏，可用顶部「恢复已移除」放回，都不影响学习通平台数据。</view>
+        </view>
+      </block>
+
+      <!-- 待办作业 -->
+      <block wx:if="{{cx.tab === 'todo'}}">
+        <view class="card">
+          <view class="empty" wx:if="{{!cx.todoRows.length}}">当前拉取范围内没有识别到未截止作业。识别规则：正文中的「结束时间 / 截止时间：YYYY-MM-DD HH:MM」。</view>
+          <view class="cx-card cat-work" wx:for="{{cx.todoRows}}" wx:key="key">
+            <view class="cx-title">{{item.title}}<text class="cx-pill grading" wx:if="{{item.grading}}">正在批改</text></view>
+            <view class="cx-meta"><text class="cx-tag work">作业</text><text wx:if="{{item.sender}}">{{item.sender}}</text></view>
+            <view class="cx-due">截止 {{item.dueText}}</view>
+            <view class="cx-body">{{item.body}}</view>
+            <view class="cx-card-actions">
+              <button class="btn small pri" data-id="{{item.key}}" bindtap="onCxRemind">加入时间管理</button>
+              <button class="btn small ghost" data-id="{{item.key}}" bindtap="onCxCopyLink">复制链接</button>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 课程 -->
+      <block wx:if="{{cx.tab === 'courses'}}">
+        <view class="card">
+          <view class="cx-toolbar">
+            <input class="cx-search" value="{{cx.filterKw}}" placeholder="搜索课程 / 教师 / 班级…" bindinput="onCxSearch" confirm-type="search" />
+          </view>
+          <picker mode="selector" range="{{cx.courseYears}}" range-key="label" value="{{cx.courseYearIndex}}" bindchange="onCxYear" wx:if="{{cx.courseYears.length}}">
+            <view class="pickerbox">{{cx.courseYears[cx.courseYearIndex].label}}（{{cx.courseYears[cx.courseYearIndex].count}} 门）</view>
+          </picker>
+          <view class="empty" wx:if="{{!cx.courseGroups.length}}">这个学年没有课程；先「快速刷新」同步课程列表。</view>
+          <view class="cx-status-sec" wx:for="{{cx.courseGroups}}" wx:for-item="grp" wx:key="key">
+            <view class="cx-grade-head"><view class="cx-dot dot-{{grp.key}}"></view>{{grp.label}}<text class="meta"> {{grp.count}} 门</text></view>
+            <view class="cx-course st-{{c.status}}" wx:for="{{grp.items}}" wx:for-item="c" wx:key="key">
+              <view class="cx-course-name">{{c.name}}<text class="cx-mark st-{{c.status}}">{{grp.label}}</text></view>
+              <view class="meta">{{c.sub}}</view>
+              <view class="meta">{{c.termLine}}</view>
+            </view>
+          </view>
+          <view class="desc hint">卡片底色与角标是按课程卡片里的「开课时间」本地推断的完成状态（红=未完成 / 蓝=正在进行 / 绿=已完成），学习通接口本身不返回该状态，可能与平台显示不一致。</view>
+        </view>
+      </block>
+
+      <!-- 分享码查询 -->
+      <block wx:if="{{cx.tab === 'lookup'}}">
+        <view class="card">
+          <view class="push-field"><view class="label">通知分享码 / 分享链接</view>
+            <input value="{{cx.lookupCode}}" data-k="lookupCode" bindinput="onCxField" placeholder="粘贴 32 位 idCode 或学习通分享链接" />
+          </view>
+          <button class="btn pri cx-wide" bindtap="onCxLookup" disabled="{{cx.loading}}">查询全文</button>
+          <view class="empty" wx:if="{{!cx.lookupResult}}">收件箱本身已包含通知全文；这里用于按分享码单独查询。</view>
+          <block wx:if="{{cx.lookupResult}}">
+            <view class="cx-card open">
+              <view class="cx-title">{{cx.lookupResult.title}}</view>
+              <view class="cx-meta"><text wx:if="{{cx.lookupResult.sender}}">{{cx.lookupResult.sender}}</text><text>{{cx.lookupResult.time}}</text><text wx:if="{{cx.lookupResult.toNames}}">发送给 {{cx.lookupResult.toNames}}</text></view>
+              <view class="cx-body">{{cx.lookupResult.body}}</view>
+              <view class="cx-card-actions">
+                <button class="btn small pri" bindtap="onCxLookupRemind">转为提醒</button>
+                <button class="btn small ghost" data-url="https://sharewh3.xuexi365.com/share/{{cx.lookupResult.idCode}}?t=4" bindtap="onPushCopy">复制分享页链接</button>
+              </view>
+            </view>
+          </block>
+        </view>
+      </block>
+    </block>
+  </block>
 </view>

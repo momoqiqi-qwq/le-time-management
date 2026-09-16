@@ -286,6 +286,12 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 /* .tt 改为纵向排布：标题行 / 备注 / 元信息各占一行，文字多时卡片自然变高 */
 .tkc .tt { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
 .tkc .tt .tt-top { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+/* 插件联动提醒：任务卡标题行的来源插件小图标（用户可在插件中心自定义图标/强调色，随 pluginDisplayIcon 走） */
+.tkc .tt .tt-top .src-ic { display: inline-flex; flex: none; align-items: center; padding-top: 2px; }
+.tkc .tt .tt-top .src-ic .app-icon { width: 15px; height: 15px; border-radius: 4px; }
+/* 任务详情抽屉的「来源插件」行 */
+.kv .src-plug { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); }
+.kv .src-plug .app-icon { width: 18px; height: 18px; border-radius: 4px; }
 .tkc .tt .t { font-size: 13px; font-weight: 600; white-space: normal; overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
 .tkc .tt .exp { font-size: 9px; color: var(--ink-3); flex: none; line-height: 1.6; }
 .tkc.expanded .tt .exp { display: none; }

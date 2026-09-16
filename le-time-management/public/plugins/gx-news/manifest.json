@@ -1,7 +1,7 @@
 {
   "id": "gx-news",
   "name": "竞赛消息雷达",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Le时间管理内置",
   "icon": "trophy",
   "description": "抓取摩课云竞赛平台（gxxsjs.com）的竞赛通知与资讯：关键词过滤、类型筛选、已读标记、自动刷新，并可一键把带时间的消息转成Le时间管理提醒。",
@@ -21,7 +21,7 @@
   "platforms": {
     "windows": "full",
     "android": "full",
-    "miniprogram": "unavailable"
+    "miniprogram": "native"
   },
   "faIcon": "trophy"
 }

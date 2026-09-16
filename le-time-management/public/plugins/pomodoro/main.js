@@ -210,11 +210,14 @@
 
     const check = (key, text) => {
       const label = document.createElement("label");
-      label.style.cssText = "display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink,#22303A);cursor:pointer";
+      label.style.cssText = "display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink,#22303A);cursor:pointer";
       const input = document.createElement("input");
       input.type = "checkbox";
+      // v0.40.0：勾选框改滑块开关（与应用层 .switch 同一套外观，appearance:none 自绘轨道与滑块）
+      input.className = "switch";
+      input.setAttribute("role", "switch");
       input.checked = reminder[key] !== false;
-      input.style.cssText = "width:15px;height:15px;margin:0;accent-color:var(--deep,#0F4C5C);cursor:pointer";
+      input.style.cssText = "margin:0";
       input.addEventListener("change", () => { reminder[key] = input.checked; saveReminder(); updateSummary(); });
       label.append(input, document.createTextNode(text));
       controls[key] = input;

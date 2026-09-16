@@ -1,5 +1,6 @@
 import * as S from '../store.js';
 import { el, toast } from '../ui.js';
+import { toggleSwitch } from '../switchControl.js';
 import { getLogs, undoLog, getRules, setRuleEnabled, runAutomation } from '../automation.js';
 import { createAiAutomationCard } from './aiAutomationPanel.js';
 
@@ -20,7 +21,7 @@ export function renderInbox(container){
   }
   const ruleCard=el('section',{class:'card set-card'},el('h3',{},'自动化规则'));
   for(const r of getRules()){
-    const ck=el('input',{type:'checkbox',checked:r.enabled?true:null}); ck.onchange=()=>{setRuleEnabled(r.id,ck.checked);};
+    const ck=toggleSwitch({checked:r.enabled,ariaLabel:'启用自动化规则 '+r.name}); ck.onchange=()=>{setRuleEnabled(r.id,ck.checked);};
     ruleCard.append(el('label',{class:'automation-rule'},el('span',{},el('b',{},r.name),el('small',{},`${r.trigger} → ${r.action}`)),ck));
   }
   const aiCard=createAiAutomationCard({rerender:()=>renderInbox(container)});

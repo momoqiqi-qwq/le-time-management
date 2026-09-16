@@ -2,6 +2,7 @@
 import * as S from "../store.js";
 import { el, QUADS, popmenu, toast } from "../ui.js";
 import { taskActions } from "../pluginHost.js";
+import { pluginDisplayName, pluginDisplayIcon } from "../pluginAppearance.js";
 import { openTaskDrawer } from "./drawer.js";
 
 // 展开状态跨重渲染保持
@@ -21,6 +22,9 @@ function taskCard(t) {
     el("span", { class: "tt" },
       // 标题行：标题 + 展开箭头同处一行，标题换行时卡片自动变高，不再截断
       el("span", { class: "tt-top" },
+        // 插件联动提醒：任务由插件创建时，标题前显示来源插件图标（悬停看插件名）
+        t.sourcePlugin ? el("span", { class: "src-ic", title: `来自插件「${pluginDisplayName(t.sourcePlugin)}」的提醒` },
+          pluginDisplayIcon(t.sourcePlugin, pluginDisplayName(t.sourcePlugin))) : null,
         (() => {
           const titleSpan = el("span", { class: "t", title: t.title }, t.title);
           if (expandable) {

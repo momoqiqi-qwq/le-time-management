@@ -49,7 +49,7 @@ assert.match(settingsView, /for \(const preset of BUILTIN_SOUNDS\)/, '设置页�
 const PLUGIN = new URL('../public/plugins/pomodoro/main.js', import.meta.url);
 const manifest = JSON.parse(read('../public/plugins/pomodoro/manifest.json'));
 assert.ok(manifest.permissions.includes('sound'), '番茄专注的 manifest 必须声明 sound 权限，否则 tide.sound 会被宿主拒绝');
-assert.equal(manifest.version, '0.3.2', '提醒面板默认收起之后必须升插件版本');
+assert.equal(manifest.version, '0.4.0', '提醒面板默认收起 / 提醒开关改滑块之后必须升插件版本');
 
 const source = fs.readFileSync(PLUGIN, 'utf8');
 for (const marker of ['tide.sound.play', 'tide.sound.presets', 'focusNotify', 'focusSound', 'breakNotify', 'breakSound', 'AUDIO_MAX_BYTES', 'readAsDataURL']) {
@@ -75,6 +75,7 @@ function fakeEl(tag = 'div') {
     value: '', checked: false, textContent: '', innerHTML: '', title: '',
     files: null, type: '', accept: '', min: '', max: '', step: '', placeholder: '',
     addEventListener: () => {}, click: () => {}, remove: () => {},
+    setAttribute: (name, val) => { node[name === 'class' ? 'className' : name] = val; },
     append: (...n) => { node.children.push(...n); },
     appendChild: (n) => { node.children.push(n); return n; },
     replaceChildren: (...n) => { node.children = [...n]; },

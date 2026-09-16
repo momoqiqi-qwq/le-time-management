@@ -1,13 +1,13 @@
 {
   "id": "wechat-push",
   "name": "微信提醒推送",
-  "version": "1.3.0",
+  "version": "1.8.0",
   "author": "Le时间管理内置",
   "icon": "comment-dots",
   "faIcon": "comment-dots",
-  "description": "通过 PushPlus（推荐）把时间块与任务截止提醒推送到微信，支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
-  "permissions": ["ui", "tasks", "blocks", "storage", "notify", "http", "openUrl"],
+  "description": "通过 PushPlus（推荐）把时间块、任务截止与插件收集的新消息推送到微信；插件消息先攒 2 分钟再合并成一条推送，兼容 PushPlus 频次限制。支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
+  "permissions": ["ui", "tasks", "blocks", "storage", "notify", "events", "http", "openUrl"],
   "entry": "main.js",
   "order": 10,
-  "platforms": { "windows": "full", "android": "full", "miniprogram": "unavailable" }
+  "platforms": { "windows": "full", "android": "full", "miniprogram": "native" }
 }

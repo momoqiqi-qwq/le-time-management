@@ -9,6 +9,8 @@
   let root = null;
   let currentYear = Number(tide.util.today().slice(0, 4));
   let busy = false;
+  // 「查某一天」自定义日历的状态：选中日期 + 日历正在展示的年月
+  let checkDate = "", calYear = 0, calMonth = 0;
 
   const toUTC = (s) => {
     const [y, m, d] = s.split("-").map(Number);
@@ -172,10 +174,27 @@
       .ch-status.makeup{background:color-mix(in srgb,var(--sun,#e3a008) 12%,var(--panel,#fff));color:var(--ink,#9A4D16)}.ch-status.workday{background:var(--paper,#F1F3F5);color:var(--ink-2,#59656D)}.ch-status.weekend{background:color-mix(in srgb,var(--sea,#5364A5) 10%,var(--panel,#fff));color:var(--deep,#5364A5)}
       .ch-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.ch-btn{height:34px;border-radius:9px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);padding:0 13px;cursor:pointer;font-size:12px;color:var(--ink,#22303A)}.ch-btn.pri{background:#0F4C5C;border-color:var(--deep,#0F4C5C);color:#fff}.ch-btn:disabled{opacity:.5}
       .ch-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.ch-title{font-size:14px;font-weight:750;margin-bottom:12px}.ch-rest-big{font-size:22px;font-weight:750;color:var(--ink,#22303A);margin:6px 0}.ch-rest-big em{font-style:normal;color:var(--deep,#0F4C5C)}
-      .ch-check{display:flex;gap:8px}.ch-in{height:36px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:#fff;color:var(--ink,#22303A)}.ch-check .ch-in{flex:1;min-width:130px}
+      .ch-check{display:flex;gap:8px}.ch-in{height:36px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:#fff;color:var(--ink,#22303A)}.ch-check .ch-datebtn{flex:1;min-width:150px;height:38px;text-align:left;font-size:13px;cursor:pointer}
+      .ch-cal{display:grid;grid-template-rows:0fr;opacity:0;transform:translateY(-6px);transition:grid-template-rows .3s cubic-bezier(.4,0,.2,1),opacity .22s ease,transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none}
+      .ch-cal.open{grid-template-rows:1fr;opacity:1;transform:none;pointer-events:auto}
+      .ch-cal-in{min-height:0;overflow:hidden}
+      .ch-cal-panel{padding:13px 14px;border:1px solid var(--line,#DDD7CD);border-radius:12px;background:var(--panel,#fff);margin-top:8px}
+      .ch-cal-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}.ch-cal-head b{font-size:13px}.ch-cal-nav{height:28px;padding:0 10px}
+      .ch-cal-legend{margin-left:auto;font-size:10.5px;color:var(--ink-2,#7E8B94);display:inline-flex;gap:6px;align-items:center}.lg-off{width:9px;height:9px;border-radius:3px;background:color-mix(in srgb,#D64545 18%,var(--panel,#fff));border:1px solid #D64545;display:inline-block}.lg-makeup{font-style:normal;width:14px;height:14px;border-radius:4px;background:var(--sun,#e3a008);color:#fff;font-size:9px;display:inline-flex;align-items:center;justify-content:center}
+      .ch-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+      .ch-cal-wd{font-size:10.5px;color:var(--ink-3,#8B979F);text-align:center;padding:4px 0}
+      .ch-cal-day{position:relative;border:0;background:transparent;border-radius:9px;min-height:37px;font-size:12.5px;cursor:pointer;color:var(--ink,#22303A);font-family:inherit}
+      .ch-cal-day:hover{background:var(--paper,#F1F3F5)}
+      .ch-cal-day.off{color:#C0392B;font-weight:700;background:color-mix(in srgb,#D64545 10%,var(--panel,#fff))}
+      .ch-cal-day.makeup{color:var(--ink-2,#59656D)}
+      .ch-cal-day.makeup i,.ch-cal-day.sel i{position:absolute;top:2px;right:3px;font-style:normal;font-size:8.5px;background:var(--sun,#e3a008);color:#fff;border-radius:4px;padding:0 3px;line-height:1.5}
+      .ch-cal-day.tod{box-shadow:inset 0 0 0 1px var(--deep,#0F4C5C)}
+      .ch-cal-day.sel{background:var(--deep,#0F4C5C);color:#fff}
+      .ch-cal-foot{display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:8px}
       .ch-result{margin-top:12px;border-radius:12px;background:var(--paper,#F8F7F3);padding:13px 14px;font-size:13px;line-height:1.7;color:var(--ink-2,#46545D);min-height:47px}
       .ch-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:16px 0 8px}.ch-year-nav{display:flex;align-items:center;gap:7px}.ch-year{font-size:18px;font-weight:800;min-width:76px;text-align:center}
       .ch-list{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:18px;overflow:hidden}.ch-row{display:grid;grid-template-columns:92px 1fr auto;gap:12px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line-soft,#F0ECE5)}.ch-row:last-child{border-bottom:0}.ch-row b{font-size:13px}.ch-range{font-size:12px;color:var(--ink-2,#687780)}.ch-days{font-size:11px;color:var(--deep,#0F4C5C);background:color-mix(in srgb,var(--mint,#2ec4b6) 10%,var(--panel,#fff));border-radius:999px;padding:4px 9px}
+      .ch-row.past b,.ch-row.past .ch-range{color:var(--ink-3,#A9B2BA)}.ch-row.past .ch-days{background:var(--paper,#F1F3F5);color:var(--ink-3,#A9B2BA)}.ch-past-tag{font-style:normal;font-weight:500;font-size:10px;color:var(--ink-3,#98A2AA);border:1px solid var(--line,#DCD6CB);border-radius:999px;padding:1px 7px;margin-left:7px;vertical-align:1px}
       .ch-makeup{margin-top:10px;font-size:11px;color:var(--ink-2,#8A6B52);line-height:1.8}.ch-source{font-size:10px;color:var(--ink-3,#A1A9AF);margin-top:10px}.ch-err{color:#B34747}
       @media(max-width:720px){.ch-hero,.ch-grid{grid-template-columns:1fr}.ch-name{font-size:23px}.ch-count{font-size:44px}.ch-row{grid-template-columns:76px 1fr auto;padding:12px}.ch-card{padding:17px}}
     `;
@@ -184,6 +203,86 @@
 
   function statusLabel(k) {
     return k.kind === "holiday" ? `法定假期 · ${k.name}` : k.kind === "makeup" ? `调休上班 · ${k.name}` : k.kind === "weekend" ? "普通周末" : "工作日";
+  }
+
+  /* ── 「查某一天」自定义日历（替代原生 date input）──
+     原生弹层又小又没法定制；自绘日历更大，且能把法定假休日标红、「班」标调休。
+     展开收起用 grid-template-rows 0fr→1fr + 透明度/位移过渡，动画平滑不跳变。 */
+  const calLabel = (d) => (validDate(d) ? `${d.slice(0, 4)} / ${d.slice(5, 7)} / ${d.slice(8, 10)} ${weekday(d)}` : "选择日期");
+  function paintDateBtn() {
+    const btn = root?.querySelector("[data-datebtn]");
+    if (btn) btn.textContent = calLabel(checkDate);
+  }
+  function toggleCal(open) {
+    const cal = root?.querySelector("[data-cal]");
+    if (cal) cal.classList.toggle("open", open);
+  }
+  // 某月的日子网格：周一起头，用 null 补齐首尾空位（周一对齐原生选择器习惯）
+  function monthGrid(year, month) {
+    const first = `${year}-${String(month).padStart(2, "0")}-01`;
+    const startOff = (new Date(toUTC(first)).getUTCDay() + 6) % 7;
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const cells = [];
+    for (let i = 0; i < startOff; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+    while (cells.length % 7) cells.push(null);
+    return cells;
+  }
+  async function renderCalendar() {
+    const cal = root?.querySelector("[data-cal]");
+    if (!cal) return;
+    const today = tide.util.today();
+    const cells = monthGrid(calYear, calMonth);
+    // 假日标记：本地/内置优先，缺年才联网（带 12h 缓存）；失败静默降级为无标记日历
+    let idx = null;
+    try { idx = buildIndex([(await loadYear(calYear, false, true)).doc]); } catch {}
+    const mark = (d) => {
+      if (!idx) return "";
+      const k = kindOf(d, idx);
+      return k.kind === "holiday" ? " off" : k.kind === "makeup" ? " makeup" : "";
+    };
+    cal.querySelector(".ch-cal-in").innerHTML = `
+      <div class="ch-cal-panel">
+        <div class="ch-cal-head">
+          <button class="ch-btn ch-cal-nav" data-cal-prev type="button">‹</button>
+          <b>${calYear}年${calMonth}月</b>
+          <button class="ch-btn ch-cal-nav" data-cal-next type="button">›</button>
+          <span class="ch-cal-legend"><i class="lg-off"></i>休 <i class="lg-makeup">班</i>班</span>
+        </div>
+        <div class="ch-cal-grid">
+          ${["一", "二", "三", "四", "五", "六", "日"].map((w) => `<span class="ch-cal-wd">${w}</span>`).join("")}
+          ${cells.map((d) => d
+            ? `<button class="ch-cal-day${mark(d)}${d === checkDate ? " sel" : ""}${d === today ? " tod" : ""}" data-day="${d}" type="button">${Number(d.slice(8, 10))}${idx && kindOf(d, idx).kind === "makeup" ? "<i>班</i>" : ""}</button>`
+            : "<span></span>").join("")}
+        </div>
+        <div class="ch-cal-foot"><button class="ch-btn" data-cal-clear type="button">清除</button>${idx ? "" : '<span class="ch-muted">该年节假日数据不可用，暂无假日标记</span>'}<button class="ch-btn" data-cal-today type="button">今天</button></div>
+      </div>`;
+    cal.querySelector("[data-cal-prev]").addEventListener("click", () => { calMonth--; if (calMonth < 1) { calMonth = 12; calYear--; } renderCalendar(); });
+    cal.querySelector("[data-cal-next]").addEventListener("click", () => { calMonth++; if (calMonth > 12) { calMonth = 1; calYear++; } renderCalendar(); });
+    cal.querySelectorAll("[data-day]").forEach((b) => b.addEventListener("click", () => {
+      checkDate = b.dataset.day;
+      paintDateBtn();
+      toggleCal(false);
+      queryDay();
+    }));
+    cal.querySelector("[data-cal-clear]").addEventListener("click", () => { checkDate = ""; paintDateBtn(); });
+    cal.querySelector("[data-cal-today]").addEventListener("click", () => {
+      const t = tide.util.today();
+      checkDate = t; calYear = yearOf(t); calMonth = Number(t.slice(5, 7));
+      paintDateBtn(); renderCalendar();
+    });
+  }
+  async function queryDay() {
+    const out = root?.querySelector("[data-result]");
+    if (!out) return;
+    if (!validDate(checkDate)) { out.textContent = "请先选择有效日期。"; return; }
+    out.textContent = "查询中…";
+    try {
+      const { index: idx } = await neighborhood(checkDate);
+      const k = kindOf(checkDate, idx);
+      const extra = k.kind === "holiday" ? `，${k.name}放假` : k.kind === "makeup" ? `，补「${k.name}」的假` : "";
+      out.innerHTML = `<b>${esc(fmt(checkDate))} ${weekday(checkDate)}</b>：${esc(statusLabel(k))}${esc(extra)}`;
+    } catch (e) { out.innerHTML = `<span class="ch-err">${esc(e.message || e)}</span>`; }
   }
 
   async function paint() {
@@ -209,7 +308,7 @@
           <section class="ch-card"><div class="ch-kicker">今天 · ${esc(today)} ${weekday(today)}</div><div class="ch-status ${rep.todayStatus.kind}">${esc(statusLabel(rep.todayStatus))}</div><div class="ch-rest-big">${r?.offset === 0 ? "今天就是休息日" : `再过 <em>${r?.offset ?? "-"}</em> 天休息`}</div><div class="ch-muted">${r ? `${fmt(r.date)} ${weekday(r.date)} · ${r.kind === "holiday" ? esc(r.name) : "普通周末"}` : "未找到下个休息日"}</div></section>
         </div>
         <div class="ch-grid">
-          <section class="ch-card"><div class="ch-title">查某一天</div><div class="ch-check"><input class="ch-in" type="date" value="${today}" data-date><button class="ch-btn pri" data-check>查询</button></div><div class="ch-result" data-result>选择日期即可判断：法定假期、调休上班、普通周末或工作日。</div></section>
+          <section class="ch-card"><div class="ch-title">查某一天</div><div class="ch-check"><button class="ch-in ch-datebtn" data-datebtn type="button">选择日期</button><button class="ch-btn pri" data-check>查询</button></div><div class="ch-cal" data-cal><div class="ch-cal-in"></div></div><div class="ch-result" data-result>点日期框展开日历：法定假休日标红、「班」为调休上班日；选中即可判断。</div></section>
           <section class="ch-card"><div class="ch-title">规则说明</div><div class="ch-muted">调休上班日会覆盖普通周末，不会误算成休息日。缺少年份时才联网读取；已获取的数据会缓存到Le时间管理本地数据中。</div><div class="ch-source">数据源：NateScarlet/holiday-cn · 原始依据为国务院办公厅放假通知</div></section>
         </div>
         <div class="ch-toolbar"><div><div class="ch-kicker">全年安排</div><div class="ch-year-nav"><button class="ch-btn" data-prev>‹</button><span class="ch-year" data-year>${currentYear}</span><button class="ch-btn" data-next>›</button></div></div><div class="ch-muted" data-year-source></div></div>
@@ -225,17 +324,21 @@
   }
 
   function bind(index) {
-    root.querySelector("[data-check]")?.addEventListener("click", async () => {
-      const date = root.querySelector("[data-date]").value, out = root.querySelector("[data-result]");
-      if (!validDate(date)) { out.textContent = "请选择有效日期。"; return; }
-      out.textContent = "查询中…";
-      try {
-        const { index: idx } = await neighborhood(date);
-        const k = kindOf(date, idx);
-        const extra = k.kind === "holiday" ? `，${k.name}放假` : k.kind === "makeup" ? `，补「${k.name}」的假` : "";
-        out.innerHTML = `<b>${esc(fmt(date))} ${weekday(date)}</b>：${esc(statusLabel(k))}${esc(extra)}`;
-      } catch (e) { out.innerHTML = `<span class="ch-err">${esc(e.message || e)}</span>`; }
+    // 查某一天：初始选中今天，日历从当月起展示
+    const today = tide.util.today();
+    if (!validDate(checkDate)) { checkDate = today; calYear = yearOf(today); calMonth = Number(today.slice(5, 7)); }
+    paintDateBtn();
+    root.querySelector("[data-datebtn]")?.addEventListener("click", async () => {
+      const cal = root.querySelector("[data-cal]");
+      const willOpen = !cal.classList.contains("open");
+      toggleCal(willOpen);
+      if (willOpen) await renderCalendar();
     });
+    if (!bind._docBound) {
+      bind._docBound = true;
+      document.addEventListener("click", (e) => { if (!e.target.closest(".ch-card")) toggleCal(false); });
+    }
+    root.querySelector("[data-check]")?.addEventListener("click", queryDay);
     root.querySelector("[data-refresh]")?.addEventListener("click", refreshNow);
     root.querySelector("[data-jump-year]")?.addEventListener("click", () => { currentYear = yearOf(tide.util.today()); paintYear(); root.querySelector("[data-list]")?.scrollIntoView({ behavior: "smooth", block: "start" }); });
     root.querySelector("[data-prev]")?.addEventListener("click", () => { currentYear--; paintYear(); });
@@ -250,9 +353,14 @@
     try {
       const r = await loadYear(currentYear), idx = buildIndex([r.doc]);
       src.textContent = `来源：${r.source}`;
-      list.innerHTML = idx.blocks.map((b) => `<div class="ch-row"><b>${esc(b.name)}</b><span class="ch-range">${fmt(b.start)} ${weekday(b.start)} — ${fmt(b.end)} ${weekday(b.end)}</span><span class="ch-days">${b.days.length} 天</span></div>`).join("") || `<div class="ch-row"><span></span><span class="ch-muted">暂无放假记录</span><span></span></div>`;
-      const ms = [...idx.makeupMap.entries()].sort().map(([d, n]) => `${fmt(d)} ${weekday(d)}（补${n}）`);
-      makeup.textContent = ms.length ? `调休上班：${ms.join(" · ")}` : "本年数据中没有调休上班日。";
+      // 已经结束的假期（今天在 end 之后）整行置灰并打「已过」标签
+      const today = tide.util.today();
+      list.innerHTML = idx.blocks.map((b) => {
+        const past = diffDays(b.end, today) > 0;
+        return `<div class="ch-row${past ? " past" : ""}"><b>${esc(b.name)}${past ? '<i class="ch-past-tag">已过</i>' : ""}</b><span class="ch-range">${fmt(b.start)} ${weekday(b.start)} — ${fmt(b.end)} ${weekday(b.end)}</span><span class="ch-days">${b.days.length} 天</span></div>`;
+      }).join("") || `<div class="ch-row"><span></span><span class="ch-muted">暂无放假记录</span><span></span></div>`;
+      const ms = [...idx.makeupMap.entries()].sort().map(([d, n]) => ({ txt: `${fmt(d)} ${weekday(d)}（补${n}）`, past: diffDays(d, today) > 0 }));
+      makeup.innerHTML = ms.length ? `调休上班：${ms.map((x) => x.past ? `<span style="color:var(--ink-3,#A9B2BA)">${esc(x.txt)}（已过）</span>` : esc(x.txt)).join(" · ")}` : "本年数据中没有调休上班日。";
     } catch (e) {
       list.innerHTML = `<div class="ch-row"><span></span><span class="ch-err">${esc(e.message || e)}</span><span></span></div>`;
       src.textContent = "可尝试联网更新";

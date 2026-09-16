@@ -48,7 +48,7 @@ const context = vm.createContext({
   tide,
 });
 
-const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks}';
+const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks,noticeAcademicYear,catYears,catsHtml,inboxCardHtml}';
 vm.runInContext(
   source.replace('  tide.ui.registerView({', `  globalThis.cx = ${EXPORTS};\n  tide.ui.registerView({`),
   context,
@@ -56,7 +56,8 @@ vm.runInContext(
 const { state, pickTargetLink, isAnonymousUrl, cardActionsHtml, ignoreNotice, restoreIgnored,
   visibleInbox, filteredInbox, todos, openTarget, fetchInbox, LOGIN_JUMP,
   loadCourses, termOf, currentTerm, gradeOf, detectEnrollYear, courseStatus, courseGroups, coursesHtml,
-  parseWorkRef, statusOf, gradingBadge, probeWorkStatus, probePendingWorks } = context.cx;
+  parseWorkRef, statusOf, gradingBadge, probeWorkStatus, probePendingWorks,
+  noticeAcademicYear, catYears, catsHtml, inboxCardHtml } = context.cx;
 
 const HW = 'https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?courseId=1&workId=99';
 const EXAM = 'https://mooc1.chaoxing.com/mooc-ans/exam/test/reVersionTestStartNew?examId=5';
@@ -169,13 +170,64 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.6.0');
+assert.equal(manifest.version, '2.11.0');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
 assert.match(block, /"openUrl"/, 'pluginCatalog 必须同步到 openUrl');
 /* 版本从 manifest 推导，别再硬编码两处（升版本必忘一处的老坑） */
 assert.match(block, new RegExp(`"${manifest.version.replace(/\./g, "\\.")}"`), 'pluginCatalog 必须同步到插件新版本号');
+
+/* ── 6c. 打开插件的刷新策略（v2.9.0）：界面上二选一（自动刷新/节流刷新），默认自动刷新。
+   节流档下 render 里的 refreshAll 必须被 lastSyncAt 节流；两档按钮都要带 title 悬停理由。 ── */
+assert.ok(source.includes('AUTO_REFRESH_THROTTLE_MS'), '必须有节流常量 AUTO_REFRESH_THROTTLE_MS');
+assert.match(
+  source,
+  /if \(state\.refreshMode === "auto" \|\| stale\) await refreshAll\(\)/,
+  'render 必须按所选策略决定是否自动刷新（auto 恒刷 / throttle 看 lastSyncAt）',
+);
+assert.match(source, /state\.lastSyncAt = Date\.now\(\)/, '成功同步后必须记录 lastSyncAt');
+assert.ok(/refreshMode: "auto"/.test(source), '默认策略必须是「自动刷新」（refreshMode: "auto"）');
+assert.match(source, /REFRESH_MODES = \{[\s\S]*?auto: \{[\s\S]*?why: [\s\S]*?throttle: \{[\s\S]*?why: /, '两档策略都必须带 why 悬停理由文案');
+assert.match(source, /title="\$\{esc\(REFRESH_MODES\[m\]\.why\)\}"/, '策略按钮必须把 why 渲染进 title（鼠标悬停可见）');
+assert.match(source, /await tide\.storage\.set\('refreshMode',\s*state\.refreshMode\)/, '切换策略必须持久化到 storage');
+
+/* ── 6f. 插件联动广播（v2.11.0）：抓到新通知时 emit notice:new，供微信推送的「插件消息」通道订阅 ── */
+assert.match(source, /tide\.events\.emit\("notice:new"/, '有新通知时必须广播 notice:new 事件');
+assert.match(source, /sourceName: "学习通"/, '广播必须带来源插件显示名');
+assert.match(source, /\.slice\(0, 5\)[\s\S]{0,120}\.map\(\(x\) => \(\{ title: x\.title/, '广播最多带 5 条，避免打爆推送频次额度');
+
+/* ── 6d. 通知分类页（v2.10.0）：学年下拉 + 按分类分区 ──
+   学年按中国学年制（9 月至次年 8 月）从通知时间推导；下拉选学年后只显示该学年的通知。 */
+assert.ok(source.includes('["cats", "通知分类"]'), '导航必须有「通知分类」标签页');
+assert.match(source, /data-cat-year/, '分类页必须有学年下拉栏');
+assert.match(source, /state\.filter\.catYear/, '选中的学年必须持久化到 filter');
+assert.equal(noticeAcademicYear({ time: '2025-09-01 08:00' }), '2025-2026', '9 月属新学年');
+assert.equal(noticeAcademicYear({ time: '2026-08-31 23:59' }), '2025-2026', '次年 8 月仍属上一学年');
+assert.equal(noticeAcademicYear({ time: '2026-09-01 00:01' }), '2026-2027', '次年 9 月进入下学年');
+assert.equal(noticeAcademicYear({ time: '' }), '', '解析不出时间归「未知学年」');
+
+state.ignoredIds.clear(); state.newIds.clear(); state.readOverrides.clear(); state.workStatus = {};
+state.inbox = [
+  { id: 'ex-a', title: '关于期末考试安排的通知', body: '', sender: '教务处', time: '2025-09-10 10:00', unread: false },
+  { id: 'hw-a', title: '第三章作业提交', body: '截止时间：2026-06-30 23:59', sender: '高数老师', time: '2026-03-01 09:00', unread: true },
+  { id: 'old-b', title: '往年校园卡通知', body: '', sender: '信息中心', time: '2024-05-01 08:00', unread: false },
+];
+state.filter.catYear = '全部';
+const catsAll = catsHtml();
+assert.match(catsAll, /全部学年/, '学年下拉默认「全部学年」');
+assert.match(catsAll, /2025-2026 学年/, '下拉要有推导出的学年选项');
+assert.match(catsAll, /2023-2024 学年/, '下拉要有更早的学年选项（2024-05 属 2023-2024 学年）');
+assert.match(catsAll, /class="cx2-tag 考试"/, '要按「考试」分区');
+assert.match(catsAll, /class="cx2-tag 作业"/, '要按「作业」分区');
+assert.ok(catsAll.includes('往年校园卡通知'), '全部学年应包含所有通知');
+state.filter.catYear = '2025-2026';
+const catsYear = catsHtml();
+assert.match(catsYear, /共 2 条/, '2025-2026 学年应筛出 2 条（2025-09 与 2026-03 各一）');
+assert.ok(!catsYear.includes('往年校园卡通知'), '其它学年的通知不应出现在筛选结果里');
+assert.ok(catsYear.includes('关于期末考试安排的通知'), '2025-09 的通知属于 2025-2026 学年');
+state.filter.catYear = '全部';
+state.inbox = [];
 
 /* ── 6b. 配色必须走主题变量，否则夜间模式下会变成深色字压深色底 ──
    踩过的坑：插件样式表是浅色硬编码，且由 ensureStyle() 在运行时追加到 <head> 末尾，
