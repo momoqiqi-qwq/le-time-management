@@ -13,7 +13,7 @@ import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, 
 import { getUiPreferences } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
-import { initBackNav, noteViewChange } from "./backNav.js";
+import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -128,6 +128,18 @@ export function renderShell(root) {
   // 42px 死框，而是紧凑尺寸（22px，窄屏 20px），图标跟随当前视图：
   // 插件页装插件自己的图标（如竞赛消息的奖杯），核心页装各视图导航图标。
   const titleMark = el("span", { class: "topbar-title-mark", "aria-hidden": "true" });
+  // v0.44.1：窄屏顶栏返回按钮。起因（用户反馈）：「apk 点进插件后很多没有返回按钮」。
+  // 根因：≤900px 时底栏把 12 个插件直达入口收进「插件市场」（styles.css 的 `.plug-list{display:none}`），
+  // 进插件后底栏只剩一颗高亮的「插件」，虽然点它能回市场，但没有任何「返回」语义的控件。
+  // 行为与 Android 返回键完全一致（先关浮层、再回上一个视图），实现直接复用 backNav 的 goBack()。
+  // 默认 display:none，只在窄屏且确实有地方可回时显示（桌面有侧栏直达，不占顶栏）。
+  const backBtn = el("button", {
+    class: "topbar-back",
+    type: "button",
+    title: "返回",
+    "aria-label": "返回",
+    onclick: () => goBack(),
+  }, el("span", { class: "topbar-back-glyph", "aria-hidden": "true" }, "‹"));
   const statPill = el("span", { class: "pill" });
   const quickDockToggle = el("button", { class: "top-mini-btn quick-menu-trigger", title: "快捷入口", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
     el("span", { class: "quick-menu-avatar", "aria-hidden": "true" }, "YL"),
@@ -171,6 +183,7 @@ export function renderShell(root) {
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
         // v0.39.0：小框回归（紧凑版），图标随视图切换（见 renderTitleMark）；
         // 右侧标题仍直接写在顶栏这两条横线之间（v0.37.15「框太多」只针对右侧工具卡）。
+        backBtn,
         titleMark,
         el("div", { class: "topbar-title-copy", "data-tauri-drag-region": dragRegion }, titleEl, subEl),
       ),
@@ -634,6 +647,12 @@ export function renderShell(root) {
     syncWindowPinState();
   }
 
+  // 返回按钮只在「确实有地方可回」时出现：首页且无浮层时它会出现但点了等于退出应用，
+  // 那种情况不给按钮（与 Android 返回键的语义保持一致，见 backNav.js 的不变量）。
+  function syncBackButton() {
+    backBtn.classList.toggle("show", canGoBack());
+  }
+
   // opts.history=false：程序性重渲染（刷新当前视图、注册表变化后回正、首屏）不该压历史栈，
   // 否则 Android 返回键要多按好几下才退得出去（见 backNav.js）。
   function switchTo(id, dirHint, opts = {}) {
@@ -701,6 +720,9 @@ export function renderShell(root) {
       }
       // 用户真的换了界面才压历史：返回键据此回到上一个界面
       if (opts.history !== false) noteViewChange(targetId);
+      // 必须排在 noteViewChange 之后：它刚压了一格，返回按钮要立刻反映出来
+      // （commit 早于 noteViewChange 跑，放在上面会慢一拍 —— 进插件时按钮不出现）。
+      syncBackButton();
     };
 
     // 「弹 2 下」修复：切视图只保留入场动画，不再先播放旧页滑出——
@@ -912,5 +934,9 @@ export function renderShell(root) {
     readView: () => activeView,
     applyView: (id) => switchTo(id, undefined, { history: false }),
   });
+  // 关浮层这类回退不会走 commit，返回按钮得自己跟一次。
+  // 注册在 initBackNav 之后：backNav 的 onPopState 先跑完（depth 已更新），这里读到的才是新值。
+  window.addEventListener("popstate", syncBackButton);
+  syncBackButton();
   S.subscribe(renderStat);
 }

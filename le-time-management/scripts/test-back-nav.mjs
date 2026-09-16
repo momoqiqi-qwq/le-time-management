@@ -384,4 +384,132 @@ async function pressBack(world) {
   assert.deepEqual(STATE.popstate, [], "卸载后不应再留着 popstate 监听");
 }
 
-console.log("PASS: 返回键历史栈（视图回退 / 浮层优先 / 空格子回收 / 各类遮罩类名）");
+// 11. v0.44.1 顶栏返回按钮的数据源：canGoBack() / goBack()。
+//     这两条是「按钮该不该出现」与「点了有没有用」的唯一依据，
+//     而 WebView 里拿不到历史长度，只能靠 backNav 自己记的 depth —— 记错就会
+//     出现「按钮常驻但点了没反应」或「明明能退却不给按钮」。
+{
+  const { world, mod, off } = await setup({ view: "quadrant" });
+  assert.equal(mod.canGoBack(), false, "首屏必须报「没地方可回」——否则按钮点了等于退出应用");
+  assert.equal(mod.goBack(), false, "没地方可回时 goBack 应返回 false 且不动历史");
+
+  world.goto("inbox"); mod.noteViewChange("inbox");
+  assert.equal(mod.canGoBack(), true, "切过一次视图后就有地方可回，按钮该出现");
+
+  assert.equal(mod.goBack(), true, "goBack 要真的发起回退");
+  await flush();
+  assert.deepEqual(world.applied, ["quadrant"], "顶栏返回按钮的行为必须与 Android 返回键完全一致");
+  assert.equal(mod.canGoBack(), false, "退到最初那格后按钮要自己消失");
+  off();
+}
+
+// 12. 浮层也算「有地方可回」：返回按钮要先关浮层，而不是切视图。
+{
+  const { world, mod, off } = await setup({ view: "quadrant" });
+  const { mask } = world.openMask();
+  await flush();
+  assert.equal(mod.canGoBack(), true, "浮层开着也算有地方可回");
+
+  await mod.goBack();
+  await flush();
+  assert.equal(mask.isConnected, false, "返回按钮先关浮层");
+  assert.deepEqual(world.applied, [], "关浮层不能顺手切视图");
+  assert.equal(mod.canGoBack(), false, "浮层关掉后没有多余格子");
+  off();
+}
+
+// 13. depth 记账必须跟着「回收空格子」一起走 —— 否则按钮会常驻。
+//     浮层被自己的关闭按钮关掉时，backNav 会 history.back() 回收那一格；
+//     那次 back() 的 popstate 也会进来，若不记账就会多算一格。
+{
+  const { world, mod, off } = await setup({ view: "quadrant" });
+  world.goto("inbox"); mod.noteViewChange("inbox");
+  const { mask } = world.openMask();
+  await flush();
+  assert.equal(mod.canGoBack(), true);
+
+  mask.remove();          // 用户自己点了浮层里的「关闭」
+  await flush();
+  assert.equal(mod.canGoBack(), true, "还有一格视图格可退（inbox → quadrant）");
+
+  await mod.goBack();
+  await flush();
+  assert.deepEqual(world.applied, ["quadrant"], "回收浮层格后，返回应直接回上一个视图");
+  assert.equal(mod.canGoBack(), false, "退到底后按钮必须消失（回收那一格没记错账）");
+  off();
+}
+
+/* ────────────────────────── 静态接线断言（v0.44.1） ──────────────────────────
+   上面测的是 backNav 的行为；这一段测「按钮有没有正确接到它上面」。
+   这几条都不会在行为测试里自然暴露（要真跑 shell + 真 DOM 才看得见），但少一条用户就明显感到不对：
+   ① 按钮必须走 backNav 的 goBack()，不能自己写 history.back() 或自己维护一份「上一个视图」——
+      浮层优先级、程序性重渲染不压栈这些规则都在 onPopState 里，两条路迟早不一致。
+   ② 顶栏只该挂一次 syncBackButton，且必须排在 noteViewChange **之后**：
+      commit 早于 noteViewChange 跑，而压栈发生在 noteViewChange 里 ⇒ 放前面会慢一拍
+      （表现：刚进插件时按钮不出现，要再切一次才冒出来）。
+   ③ `.topbar-back` 默认必须 display:none，只在 ≤900px 的媒体块里才允许显示。
+      桌面端有侧栏直达全部视图，顶栏不该多出东西 —— 这个媒体块断点必须与
+      `.plug-list{display:none}` 一致：正是它把插件直达入口收走，按钮才有存在意义。 */
+{
+  const fs = await import("node:fs");
+  const read = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8");
+  const shell = read("../src/shell.js");
+  const css = read("../src/styles.css");
+
+  assert.match(shell, /import \{[^}]*\bcanGoBack\b[^}]*\bgoBack\b[^}]*\} from "\.\/backNav\.js"/,
+    "shell 必须从 backNav 引入 canGoBack / goBack，别自己造一套回退");
+  assert.match(shell, /class: "topbar-back"/, "顶栏必须有 .topbar-back 按钮");
+  assert.match(shell, /"aria-label": "返回"/, "返回按钮要有 aria-label（图标是纯符号，读屏得靠它）");
+  assert.match(shell, /onclick: \(\) => goBack\(\)/,
+    "返回按钮必须直接调 backNav 的 goBack()，保证与 Android 返回键同一条路");
+  assert.doesNotMatch(shell, /class: "topbar-back"[\s\S]{0,200}?history\.back\(\)/,
+    "返回按钮不能自己写 history.back() —— 那样会绕过浮层优先的规则");
+  assert.match(shell, /backBtn\.classList\.toggle\("show", canGoBack\(\)\)/,
+    "按钮显隐必须由 canGoBack() 决定：没地方可回时不显示，否则点了等于退出应用");
+  // 挂点：必须在标题卡内、且排在小框前面（`[‹][图标] 标题`）
+  assert.match(shell, /class: "topbar-title-card"[\s\S]{0,400}?\bbackBtn,\s*\n\s*titleMark,/,
+    "backBtn 必须在标题卡里、排在 titleMark 之前");
+  // 调用顺序：syncBackButton 必须在 noteViewChange 之后
+  assert.match(shell, /if \(opts\.history !== false\) noteViewChange\(targetId\);[\s\S]{0,200}?syncBackButton\(\);/,
+    "syncBackButton 必须排在 noteViewChange 之后 —— 压栈在 noteViewChange 里，放前面按钮会慢一拍");
+  assert.match(shell, /window\.addEventListener\("popstate", syncBackButton\)/,
+    "关浮层这类回退不走 commit，要单独补一个 popstate 监听刷新按钮");
+  assert.match(shell, /initBackNav\(\{[\s\S]{0,300}?\}\);\s*\n[\s\S]{0,200}?window\.addEventListener\("popstate", syncBackButton\)/,
+    "popstate 监听必须注册在 initBackNav 之后：backNav 的 onPopState 先跑完，depth 才是新值");
+
+  // CSS：默认不显示 + 只在 ≤900px 显示 + 触控区 ≥40px
+  assert.match(css, /\.topbar-back\s*\{\s*display:\s*none/, "基础态必须 display:none（桌面端不显示）");
+  const mobile900 = css.match(/@media \(max-width: 900px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(mobile900, "必须存在 ≤900px 媒体块");
+  assert.match(mobile900, /\.plug-list\s*\{\s*display:\s*none/,
+    "插件直达入口必须收在 ≤900px 里 —— 正是它被收走，返回按钮才有存在意义（两者要同进退）");
+  assert.match(mobile900, /\.topbar-back\.show\s*\{[^}]*display:\s*inline-flex/,
+    "返回按钮只允许在 ≤900px 媒体块里显示");
+  assert.match(mobile900, /\.topbar-back\.show\s*\{[^}]*width:\s*(\d+)px[^}]*height:\s*(\d+)px/,
+    "返回按钮要有明确的触控区尺寸");
+  {
+    const size = mobile900.match(/\.topbar-back\.show\s*\{[^}]*width:\s*(\d+)px[^}]*height:\s*(\d+)px/);
+    const w = Number(size?.[1]), h = Number(size?.[2]);
+    assert.ok(w >= 40 && h >= 40,
+      `返回按钮触控区必须 ≥40×40px（实测 ${w}×${h}）—— 手机上小于这个尺寸点不准`);
+  }
+  assert.ok(!/^\.topbar-back\.show\s*\{/m.test(css),
+    ".topbar-back.show 的显示规则不能写在基础态：桌面端顶栏不该多出按钮");
+}
+
+// 14. 同一个模块实例重新挂载（热重载 / 宿主重建）：depth 必须归零。
+//     否则上一轮的记账会留下来，按钮常驻但点了没反应（历史栈其实已经空了）。
+{
+  const { world, mod, off } = await setup({ view: "quadrant" });
+  world.goto("inbox"); mod.noteViewChange("inbox");
+  assert.equal(mod.canGoBack(), true, "前置：先攒出一格");
+  off();
+
+  const off2 = mod.initBackNav({ readView: () => world.current, applyView: (id) => world.applyView(id) });
+  assert.equal(mod.canGoBack(), false,
+    "重新挂载后 depth 必须归零 —— 留着上一轮的记账会让返回按钮常驻却点了没反应");
+  off2();
+}
+
+console.log("PASS: 返回键历史栈（视图回退 / 浮层优先 / 空格子回收 / 各类遮罩类名）"
+  + " + 顶栏返回按钮的数据源与接线（canGoBack / goBack / 断点 / 调用顺序）");

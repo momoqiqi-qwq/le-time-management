@@ -610,6 +610,20 @@ button, .nav { touch-action: manipulation; }
   .nav button.on { background: none; box-shadow: none; color: #fff; font-weight: 600; }
   .nav button.on .ic { color: #17323A; transform: translateY(-1px) scale(1.04); }
   .nav .pv-count { display: none; }
+  /* v0.44.1：返回按钮跟小框并排。触控区 40px（项目约定 ≥40px），顶栏 54px 装得下；
+     负左边距是为了让它贴住标题卡的左内边距，视觉上不把标题往右挤。 */
+  .topbar-back.show {
+    display: inline-flex; align-items: center; justify-content: center;
+    flex: none; width: 40px; height: 40px;
+    margin-left: -8px; margin-right: -2px; padding: 0;
+    border: 0; border-radius: 11px; background: transparent;
+    color: var(--ink-2); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .12s ease, color .12s ease;
+  }
+  .topbar-back.show:hover { color: var(--ink); }
+  .topbar-back.show:active { background: color-mix(in srgb, var(--ink-2) 13%, transparent); }
+  .topbar-back-glyph { display: block; font-size: 24px; line-height: 1; transform: translateY(-1px); }
   .topbar { padding-right: 14px; padding-left: 14px; height: calc(52px + var(--sat, env(safe-area-inset-top, 0px))); }
   .drawer { width: 100vw; max-width: 100vw; padding-top: var(--sat, env(safe-area-inset-top, 0px)); }
   .topbar h1 { font-size: clamp(15px, 4.2vw, 17px); }
@@ -1633,6 +1647,11 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   max-width: min(54vw, 520px);
   padding: 8px 16px;
 }
+/* v0.44.1：窄屏顶栏返回按钮。桌面端恒不显示（侧栏能直达所有视图，顶栏不加东西）；
+   窄屏也只在「确实有地方可回」时显示 —— `.show` 由 shell.js 的 syncBackButton 按
+   backNav 的 depth 切换。起因：≤900px 时底栏把插件直达入口收进「插件市场」，
+   进插件后没有任何「返回」语义的控件（用户反馈「apk 点进插件后很多没有返回按钮」）。 */
+.topbar-back { display: none; }
 /* v0.39.0 · 标题卡小框回归（紧凑版）。前史：v0.38.2 之前是一颗 42×42 死框、
    恒装 Le 应用图标（在插件页里纯属噪音）→ v0.38.2 整颗删除 → 用户回头表示
    「想要框，但要小、图标跟插件走」，首版 28px 仍嫌大，再收到 22px。

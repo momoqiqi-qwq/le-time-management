@@ -34,12 +34,15 @@ let applyView = () => {};
 let replaying = false;    // 正在按历史还原：期间不要补格子，否则会自己套自己
 let reclaiming = false;   // 这次 popstate 是自己发起的 reclaim，不能当成用户按了返回
 let lastView = "";        // 当前历史位置代表的视图，用来吞掉「点同一个导航项」的重复压栈
+// 我们自己压了几格。>0 就说明「按一下返回有东西可回」——
+// 顶栏那颗返回按钮据此显示（见 shell.js）。WebView 里拿不到历史长度，只能自己记。
+let depth = 0;
 
 const historyOf = () => (typeof window !== "undefined" ? window.history : globalThis.history);
 const docOf = () => (typeof document !== "undefined" ? document : null);
 
 function pushState(state) {
-  try { historyOf().pushState(state, ""); } catch { /* 取不到历史就退化成没有回退 */ }
+  try { historyOf().pushState(state, ""); depth++; } catch { /* 取不到历史就退化成没有回退 */ }
 }
 
 /** 还在屏幕上的浮层遮罩（已经进入关闭动画的不算，否则会连点两次同一层）。 */
@@ -95,6 +98,10 @@ function syncGuard() {
 }
 
 function onPopState(event) {
+  // 无论这一格是什么，popstate 都消耗掉一格。先记账再分支：
+  // 分支里会 applyView → switchTo → commit → 刷新返回按钮，那时必须已经减过了。
+  depth = Math.max(0, depth - 1);
+
   // 自己发起的 reclaim：这一格本来就是多余的，退掉就算完事，不关浮层也不切视图。
   if (reclaiming) { reclaiming = false; return; }
 
@@ -143,6 +150,7 @@ export function initBackNav({ readView: read, applyView: apply }) {
 
   window.addEventListener("popstate", onPopState);
   enabled = true;
+  depth = 0;              // 重新挂载（热重载 / 测试）时把记账归零
   lastView = readView();
   // 挂载时可能已经有浮层开着（例如首屏弹出的引导），补一次对账。
   syncGuard();
@@ -152,6 +160,25 @@ export function initBackNav({ readView: read, applyView: apply }) {
     window.removeEventListener("popstate", onPopState);
     enabled = false;
   };
+}
+
+/**
+ * 应用内是否还有可回退的一格（浮层格或视图格）。
+ * 顶栏返回按钮据此显示 —— 首页且无浮层时返回 false，按钮就不该出现
+ * （那种情况下返回等于退出应用，不该给按钮）。
+ */
+export function canGoBack() { return enabled && depth > 0; }
+
+/**
+ * 等价于按一次 Android 返回键：先关最上层浮层，没有浮层才回上一个视图。
+ * 刻意复用 history.back() 而不是自己实现一套 —— 浮层与视图的优先级、
+ * 「程序性重渲染不压栈」这些规则全在 onPopState 里，走同一条路才不会两边不一致。
+ * @returns {boolean} 是否真的发起了回退（false = 没地方可回，调用方可以忽略）
+ */
+export function goBack() {
+  if (!canGoBack()) return false;
+  try { historyOf().back(); } catch { return false; }
+  return true;
 }
 
 /**
