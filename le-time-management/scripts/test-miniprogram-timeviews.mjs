@@ -255,4 +255,19 @@ assert.match(pageSrc, /f\["gm-"\s*\+\s*m\.m\]/, "甘特读的 key 必须是 gm-<
 assert.match(wxml, /data-key="sm-\{\{item\.cat\}\}"/, "泳道折叠 key 用 sm-<分类>");
 assert.match(pageSrc, /f\["sm-"\s*\+\s*c\.cat\]/, "泳道读的 key 必须是 sm-<分类>");
 
+/* ── 9) 视图名必须两端一致（桌面 VIEW_META ↔ 小程序 viewTabs）──
+   v0.43.0 把「WakeUp课表」改成「课程表」时两端都得改。漏一端的话，桌面菜单与手机菜单
+   会显示不同的名字，而两边各自的测试都测不出来（上面那条 id 断言只比了硬编码字符串，
+   且完全没管 label）。这里直接把桌面事实源读进来逐项对比。 */
+const desktopViews = read("le-time-management/src/views/timeViews.js");
+const metaBlock = desktopViews.match(/const VIEW_META = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+assert.ok(metaBlock, "必须能从桌面端 timeViews.js 读到 VIEW_META");
+const desktopPairs = [...metaBlock.matchAll(/\["([a-z]+)",\s*"([^"]+)"/g)].map((m) => [m[1], m[2]]);
+assert.equal(desktopPairs.length, 7, `桌面 VIEW_META 应有 7 项（读到 ${desktopPairs.length} 项）`);
+assert.equal(desktopPairs.map(([id]) => id).join(","), tabIds.join(","),
+  "两端视图 id 与顺序必须一致");
+assert.equal(desktopPairs.map(([, label]) => label).join(","),
+  captured.data.viewTabs.map((t) => t.label).join(","),
+  "两端视图显示名必须逐字一致 —— 改名时漏改一端就会在这里红");
+
 console.log("PASS: 小程序时间块 —— 7 样式收进展开菜单 + 5 个横向滚动视图改折叠/纵向（真跑数据构造）");
