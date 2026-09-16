@@ -448,7 +448,9 @@ function bindMoreDismiss(){
    if(!Number.isInteger(startIdx))startIdx=0;if(!Number.isInteger(endIdx))endIdx=startIdx;endIdx=Math.max(startIdx,endIdx);
    const col=order.indexOf(c.day-1)+2,row=startIdx+2,span=Math.max(1,endIdx-startIdx+1);
    const meta=[c.teacher,c.position].filter(Boolean).map(esc);
-   return `<button class="course-block tone-${tone(c)} ${overlap.has(c.id)?'conflict':''}" data-edit="${esc(c.id)}" style="grid-column:${col};grid-row:${row}/span ${span}" title="${esc([c.name,c.teacher,c.position,`${c.start}-${c.end}`].filter(Boolean).join(' · '))}"><span class="course-time">${esc(c.start)}–${esc(c.end)}</span><b>${esc(c.name)}</b>${meta.map(x=>`<span>${x}</span>`).join('')}</button>`;
+   // 课程块内不显示上下课时间：左侧节次列已有完整时间，窄屏上块内时间必然截断成「08:…」（v0.45.3）。
+   // 完整时间信息保留在 title 悬停提示与编辑弹窗里。
+   return `<button class="course-block tone-${tone(c)} ${overlap.has(c.id)?'conflict':''}" data-edit="${esc(c.id)}" style="grid-column:${col};grid-row:${row}/span ${span}" title="${esc([c.name,c.teacher,c.position,`${c.start}-${c.end}`].filter(Boolean).join(' · '))}"><b>${esc(c.name)}</b>${meta.map(x=>`<span>${x}</span>`).join('')}</button>`;
  }
  function scheduleGrid(rows,overlap,start,today){
    const order=table.config.firstDayOfWeek===7?[6,0,1,2,3,4,5]:[0,1,2,3,4,5,6];
