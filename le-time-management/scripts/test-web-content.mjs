@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, formEncode,
+import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, screenNotice, formEncode,
   charsetFromContentType, charsetFromMeta, looksLikeMarkup, decodeWebBody } from '../src/webContent.js';
 assert.equal(normalizeWebUrl('example.edu.cn'), 'https://example.edu.cn/');
 assert.equal(resolveWebUrl('../notice/1.htm', 'https://www.example.edu.cn/xw/list.htm'), 'https://www.example.edu.cn/notice/1.htm');
@@ -11,6 +11,51 @@ const plain=`<ul><li><a href="/2026/0911/c123a456/page.htm">2026 年秋季学期
 const plainRows=extractNoticeLinks(plain,'https://jwc.example.edu.cn/tzgg/');assert.equal(plainRows.length,1);assert.equal(plainRows[0].date,'2026-09-11');
 assert.equal(inferSiteIconName('校园图书馆','https://lib.example.edu.cn'),'book-open');
 assert.equal(formEncode({username:'张三',password:'a&b'}),'username=%E5%BC%A0%E4%B8%89&password=a%26b');
+
+/* ── 导航 / 页脚 / 栏目页必须摘出去 ──
+   真实取证：桂林电子科技大学招生信息网首页（2026-09-16 抓取）全页 45 条候选里，
+   25 条是导航、页脚和学院目录（`/zs/2119/list.htm`、`桂公网安备…`、`招生动态`），
+   真通知被挤在后面。判据用 screenNotice 这个纯函数压 —— Node 里没有 DOMParser，
+   extractNoticeLinks 的 DOM 分支只能靠 output/notice-probe.cjs + Chrome 端到端验。 */
+const GUET = 'https://www.guet.edu.cn/zs/';
+assert.equal(screenNotice('数学与计算科学学院', 'https://www.guet.edu.cn/zs/2119/list.htm', '数学与计算科学学院', '', GUET), null,
+  '学院目录指向 list.htm，必须摘掉');
+assert.equal(screenNotice('招生动态', 'http://www.guet.edu.cn/zs/550/list.htm', '招生动态', '', GUET), null, '栏目 tab 也是列表页');
+assert.equal(screenNotice('桂公网安备45030502000232号', 'http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=45030502000232', '主办单位：桂林电子科技大学招生办公室 桂公网安备45030502000232号', '', GUET), null,
+  '页脚备案链接必须摘掉');
+assert.equal(screenNotice('桂ICP备05000961号', 'https://beian.miit.gov.cn/', '桂ICP备05000961号', '', GUET), null);
+assert.equal(screenNotice('学校简介', 'https://www.guet.edu.cn/zs/2023/0221/c543a58762/page.htm', '学校简介', '', GUET), null,
+  '无日期的短栏目名必须摘掉');
+const keep = screenNotice('关于临时调整本科招生咨询方式的通知', 'https://www.guet.edu.cn/zs/2023/0808/c551a104240/page.htm',
+  '2026-08-16 关于临时调整本科招生咨询方式的通知', '2026-08-16', GUET);
+assert.ok(keep >= 4, `真通知必须留下，实际评分 ${keep}`);
+// 站外链接（公众号文章、友情链接）不一律排除，但必须带日期
+assert.equal(screenNotice('某某大学教务处关于学籍管理工作的若干说明文件', 'https://other.example.com/x', '某某大学教务处关于学籍管理工作的若干说明文件', '', GUET), null,
+  '无日期的站外链接要摘');
+assert.ok(screenNotice('咨询面对面｜桂电2026年招生咨询活动预告！', 'https://mp.weixin.qq.com/s/abc', '2026-06-15 咨询面对面｜桂电2026年招生咨询活动预告！', '2026-06-15', GUET) >= 4,
+  '带日期的公众号文章要留');
+assert.equal(noticeKind('关于临时调整本科招生咨询方式的通知'), 'notice');
+assert.equal(noticeKind('2026年全日制本科招生宣传册电子书'), 'news', '宣传册属于 news 而不是 notice');
+assert.equal(noticeKind('我校2026年统招本科录取工作圆满结束（图）'), 'other');
+
+/* ── 端到端：有 DOM 时才跑（浏览器环境），Node 下跳过 ── */
+if (typeof DOMParser !== 'undefined') {
+  const guet = `<html><body>
+  <nav class="nav-second"><ul><li><a class="nav-second-a" href="/zs/2119/list.htm">数学与计算科学学院</a></li></ul></nav>
+  <div class="panel-list"><ul>
+    <li><span class="panel-list-date">2026-09-13</span><a href="/zs/2026/0913/c551a159536/page.htm">桂林电子科技大学2027年优秀应届本科毕业生免试攻读研究生拟推荐名单公示</a></li>
+    <li><span class="panel-list-date">2026-08-16</span><a href="/zs/2023/0808/c551a104240/page.htm">关于临时调整本科招生咨询方式的通知</a></li>
+  </ul></div>
+  <footer><a href="http://www.beian.gov.cn/portal/registerSystemInfo?recordcode=45030502000232">桂公网安备45030502000232号</a></footer>
+  </body></html>`;
+  const rows = extractNoticeLinks(guet, GUET);
+  assert.equal(rows.length, 2, `导航与页脚要摘掉，实际 ${rows.length} 条`);
+  const art = extractArticleText(`<html><body><nav><a href="/">首页</a></nav>
+    <div id="vsb_content"><p>各学院：</p><p>现将 2026 年秋季学期本科生选课工作安排通知如下，请于 2026 年 9 月 20 日前完成第一轮选课，逾期系统将自动关闭。</p><p>教务处</p></div></body></html>`,
+    'https://jwc.example.edu.cn/tzgg/1.htm');
+  assert.ok(art.text.includes('现将 2026 年秋季学期本科生选课工作安排通知如下'), '正文没抽对');
+  assert.ok(art.text.split('\n').length >= 3, '段落之间要保留换行');
+}
 
 /* ── 响应体编码：中文站点常只在 <meta> 里声明 gb2312 ──
    真实取证：http://daxue.qiyemulu.cn/ 的响应头只有 `Content-Type: text/html`（不带 charset），
@@ -61,4 +106,4 @@ assert.ok(decodeWebBody(GBK_PAGE, '').includes('大学网站大全'), '没有 co
 // 未知 / 非法标签不能抛，回落 UTF-8
 assert.equal(decodeWebBody(enc.encode('中文'), 'text/html; charset=x-unknown-9'), '中文');
 
-console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction, form encoding and charset decoding');
+console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction (nav/footer/listing-page screening), notice classification, article body extraction, form encoding and charset decoding');

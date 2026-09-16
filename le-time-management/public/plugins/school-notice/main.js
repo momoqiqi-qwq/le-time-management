@@ -1,5 +1,15 @@
 (function () {
   let host = null, sites = [], activeId = "", notices = [], busy = false, query = "";
+  // 「编辑」模式只对当前站点生效：切换/删除站点时收回，避免编辑框串到别的站点上。
+  let editing = false;
+  // 展开的正文只留内存：详情页正文动辄几 KB，写进本地存储会把它撑爆，
+  // 关掉插件重开再抓一次即可（有 lastFetchedAt 缓存，抓取很便宜）。
+  const expanded = new Set();
+  const bodies = new Map();
+  const bodyLoading = new Set();
+  // 用户手动删掉的通知：记 URL 而不是删缓存，否则一刷新就又被抓回来。
+  let hiddenUrls = [];
+  let onlyNotice = true;
   const sessions = new Map();
   // 每个站点最近一次读取失败的错误：失败只靠 toast 一闪而过的话，
   // 用户只会看到「正在读取通知…」来回转，不知道到底发生了什么。
@@ -20,11 +30,12 @@
     if (document.getElementById("school-notice-style")) return;
     const s = document.createElement("style"); s.id = "school-notice-style";
     s.textContent = `
-      .sn{max-width:1120px;margin:0 auto;padding:12px 0 32px;color:var(--ink)}.sn-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}.sn-add{display:grid;grid-template-columns:1fr 1.35fr auto;gap:9px}.sn-in{height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:0 11px;min-width:0}.sn-btn{min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:7px 13px;font-weight:650}.sn-btn.pri{background:var(--deep);border-color:var(--deep);color:white}.sn-btn:disabled{opacity:.5}.sn-note{font-size:12px;color:var(--ink-2);line-height:1.7;margin-top:9px}.sn-tabs{display:flex;gap:8px;overflow:auto;padding:2px 0 10px}.sn-tab{flex:none;border:1px solid var(--line);border-radius:999px;background:var(--panel);padding:7px 12px;color:var(--ink-2);font-size:12px}.sn-tab.on{background:var(--deep);border-color:var(--deep);color:white}.sn-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between}.sn-head h2{font-size:19px;margin:0 0 4px}.sn-meta{font-size:11px;color:var(--ink-3);line-height:1.6;overflow-wrap:anywhere}.sn-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.sn-login{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:14px}.sn-login-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sn-login-grid label{display:grid;gap:5px;font-size:11px;color:var(--ink-2)}.sn-login-grid .wide{grid-column:1/-1}.sn-captcha{display:flex;align-items:center;gap:9px}.sn-captcha img{max-width:180px;max-height:72px;border-radius:8px;border:1px solid var(--line);background:white}.sn-toolbar{display:flex;gap:8px;align-items:center;margin:12px 0}.sn-toolbar .sn-in{flex:1}.sn-list{display:grid;gap:8px}.sn-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 14px;content-visibility:auto;contain-intrinsic-size:86px}.sn-title{font-size:13.5px;font-weight:700;line-height:1.5}.sn-date{font-size:11px;color:var(--deep);margin-top:4px}.sn-snip{font-size:11px;color:var(--ink-2);line-height:1.55;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.sn-item-actions{display:flex;flex-direction:column;gap:6px}.sn-item-actions button{border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-size:11px;padding:5px 9px}.sn-empty{border:1.5px dashed var(--line);border-radius:16px;padding:30px;text-align:center;color:var(--ink-3);line-height:1.7}.sn-warn{background:color-mix(in srgb,var(--sun) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--sun) 35%,var(--line));border-radius:12px;padding:10px 12px;color:var(--ink-2);font-size:12px;line-height:1.65;margin-top:10px}.sn-ok{display:inline-flex;border-radius:999px;padding:3px 8px;background:color-mix(in srgb,var(--mint) 14%,var(--panel));color:var(--deep);font-size:10px;margin-top:5px}
-      @media(max-width:720px){.sn-add{grid-template-columns:1fr}.sn-head{display:block}.sn-actions{justify-content:flex-start;margin-top:10px}.sn-login-grid{grid-template-columns:1fr}.sn-login-grid .wide{grid-column:auto}.sn-item{grid-template-columns:1fr}.sn-item-actions{flex-direction:row;flex-wrap:wrap}}
+      .sn{max-width:1120px;margin:0 auto;padding:12px 0 32px;color:var(--ink)}.sn-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}.sn-add{display:grid;grid-template-columns:1fr 1.35fr auto;gap:9px}.sn-in{height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:0 11px;min-width:0}.sn-btn{min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:7px 13px;font-weight:650}.sn-btn.pri{background:var(--deep);border-color:var(--deep);color:white}.sn-btn:disabled{opacity:.5}.sn-note{font-size:12px;color:var(--ink-2);line-height:1.7;margin-top:9px}.sn-tabs{display:flex;gap:8px;overflow:auto;padding:2px 0 10px}.sn-tab{flex:none;border:1px solid var(--line);border-radius:999px;background:var(--panel);padding:7px 12px;color:var(--ink-2);font-size:12px}.sn-tab.on{background:var(--deep);border-color:var(--deep);color:white}.sn-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between}.sn-head h2{font-size:19px;margin:0 0 4px}.sn-meta{font-size:11px;color:var(--ink-3);line-height:1.6;overflow-wrap:anywhere}.sn-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.sn-login{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:14px}.sn-login-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sn-login-grid label{display:grid;gap:5px;font-size:11px;color:var(--ink-2)}.sn-login-grid .wide{grid-column:1/-1}.sn-captcha{display:flex;align-items:center;gap:9px}.sn-captcha img{max-width:180px;max-height:72px;border-radius:8px;border:1px solid var(--line);background:white}.sn-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}.sn-toolbar .sn-in{flex:1 1 240px;max-width:560px;min-width:180px}.sn-count{flex:none;white-space:nowrap}.sn-toggle{margin-left:auto}.sn-login-url{display:block;width:min(100%,460px);margin-top:8px}.sn-list{display:grid;gap:8px}.sn-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 14px;content-visibility:auto;contain-intrinsic-size:86px}.sn-title{display:flex;align-items:flex-start;gap:7px;font-size:13.5px;font-weight:700;line-height:1.5}.sn-title>span:last-child{min-width:0;overflow-wrap:anywhere}.sn-date{font-size:11px;color:var(--deep);margin-top:4px}.sn-snip{font-size:11px;color:var(--ink-2);line-height:1.55;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.sn-item-actions{display:flex;flex-direction:column;gap:6px}.sn-item-actions button{border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font-size:11px;padding:5px 9px}.sn-empty{border:1.5px dashed var(--line);border-radius:16px;padding:30px;text-align:center;color:var(--ink-3);line-height:1.7}.sn-warn{background:color-mix(in srgb,var(--sun) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--sun) 35%,var(--line));border-radius:12px;padding:10px 12px;color:var(--ink-2);font-size:12px;line-height:1.65;margin-top:10px}.sn-ok{display:inline-flex;border-radius:999px;padding:3px 8px;background:color-mix(in srgb,var(--mint) 14%,var(--panel));color:var(--deep);font-size:10px;margin-top:5px}.sn-toggle.on{background:var(--deep);border-color:var(--deep);color:white}.sn-fav{flex:none;width:16px;height:16px;margin-top:1px;border-radius:4px;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:var(--paper)}.sn-fav img{width:16px;height:16px;object-fit:contain;display:block}.sn-fav.no-img img{display:none}.sn-fav.no-img::after{content:attr(data-initial);width:16px;height:16px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--deep);background:color-mix(in srgb,var(--deep) 14%,var(--panel))}.sn-article{margin-top:9px;padding:10px 12px;border:1px solid var(--line-soft);border-radius:10px;background:var(--paper);color:var(--ink-2);font-size:12.5px;line-height:1.75;word-break:break-word;max-height:420px;overflow:auto}
+      @media(max-width:720px){.sn-add{grid-template-columns:1fr}.sn-head{display:block}.sn-actions{justify-content:flex-start;margin-top:10px}.sn-login-grid{grid-template-columns:1fr}.sn-login-grid .wide{grid-column:auto}.sn-item{grid-template-columns:1fr}.sn-item-actions{flex-direction:row;flex-wrap:wrap}.sn-toolbar .sn-in{flex:1 1 100%;max-width:none}}
     `; document.head.append(s);
   }
-  async function save() { await tide.storage.set("sites", sites.map(({ id, name, url, loginUrl, cms, lastFetchedAt }) => ({ id, name, url, loginUrl, cms, lastFetchedAt }))); }
+  async function save() { await tide.storage.set("sites", sites.map(({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl }) => ({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl }))); }
+  async function loadHidden(id) { const v = await tide.storage.get(`hidden:${id}`, []); hiddenUrls = Array.isArray(v) ? v : []; }
   async function sessionFor(site) { if (!sessions.has(site.id)) sessions.set(site.id, await tide.http.session()); return sessions.get(site.id); }
   function cmsName(html) {
     const s = String(html || "").toLowerCase();
@@ -39,7 +50,21 @@
     if (/metinfo|met_[a-z_]+/i.test(s)) return "MetInfo";
     return "通用高校公告解析";
   }
-  function filtered() { const q = query.trim().toLowerCase(); return q ? notices.filter((x) => `${x.title} ${x.snippet} ${x.date}`.toLowerCase().includes(q)) : notices; }
+  const kindOf = (n) => n.kind || tide.util.web.noticeKind(n.title);
+  // 去掉已删除的 → 按关键词搜索 → 最后才做「仅通知/公告」收敛。
+  // 收敛后一条不剩时（有的站点标题里根本不写「通知」二字）退回显示全部，
+  // 免得用户以为插件坏了。
+  function matched() {
+    const q = query.trim().toLowerCase();
+    const rows = notices.filter((x) => !hiddenUrls.includes(x.url));
+    return q ? rows.filter((x) => `${x.title} ${x.snippet || ""} ${x.date || ""}`.toLowerCase().includes(q)) : rows;
+  }
+  function filtered() {
+    const rows = matched();
+    if (!onlyNotice) return rows;
+    const hits = rows.filter((x) => kindOf(x) === "notice");
+    return hits.length ? hits : rows;
+  }
 
   async function fetchPage(site, url, opts = {}) {
     // session() 也要纳入看门狗：否则底层 invoke 挂死时连超时错误都出不来。
@@ -56,8 +81,11 @@
       notices = []; return { login: true, html: res.body };
     }
     loginRuntime.delete(site.id);
+    const finalUrl = res.finalUrl || site.url;
     site.cms = cmsName(res.body); site.lastFetchedAt = Date.now();
-    notices = tide.util.web.extractNoticeLinks(res.body, res.finalUrl || site.url, { max: 100 });
+    // 老站点（v0.44.x 加的）没存过图标，刷新时补一次，用户不必删掉重加。
+    if (!site.iconUrl) { try { site.iconUrl = tide.util.web.parseSiteMeta(res.body, finalUrl).iconUrl || ""; } catch {} }
+    notices = tide.util.web.extractNoticeLinks(res.body, finalUrl, { max: 100 });
     await tide.storage.set(`notices:${site.id}`, notices.slice(0, 100)); await save();
     return { login: false, html: res.body };
   }
@@ -115,12 +143,13 @@
     const raw = urlInput?.value || ""; if (!raw.trim()) return tide.notify("请输入学校通知网站网址");
     busy = true; paint();
     try {
-      const url = tide.util.web.normalizeUrl(raw); const id = uid(); const tmp = { id, name: nameInput?.value.trim() || "学校通知", url, loginUrl: "", cms: "自动识别", lastFetchedAt: 0 };
+      const url = tide.util.web.normalizeUrl(raw); const id = uid(); const tmp = { id, name: nameInput?.value.trim() || "学校通知", url, loginUrl: "", cms: "自动识别", lastFetchedAt: 0, iconUrl: "" };
       sites.push(tmp); activeId = id;
       try {
         const res = await fetchPage(tmp, url);
         const finalUrl = res.finalUrl || url;
         const meta = tide.util.web.parseSiteMeta(res.body, finalUrl); if (!nameInput?.value.trim()) tmp.name = meta.title || tmp.name;
+        tmp.iconUrl = meta.iconUrl || "";
         tmp.cms = cmsName(res.body);
         const form = tide.util.web.detectLoginForm(res.body, finalUrl);
         if (form?.passwordField) {
@@ -143,12 +172,60 @@
     catch (e) { lastErrors.set(site.id, e.message || String(e)); tide.notify(`读取失败：${e.message || e}`); }
     finally { busy = false; paint(); }
   }
-  async function switchSite(id) { activeId = id; notices = await tide.storage.get(`notices:${id}`, []); if (!Array.isArray(notices)) notices = []; paint(); }
+  async function switchSite(id) { activeId = id; editing = false; notices = await tide.storage.get(`notices:${id}`, []); if (!Array.isArray(notices)) notices = []; await loadHidden(id); paint(); }
   async function toReminder(n) {
     const text = `${n.title} ${n.snippet || ""} ${n.date || ""}`; const p = tide.util.parseWhen(text);
     const task = tide.tasks.create({ title: n.title, quad: tide.util.guessQuad(p.date || n.date), estMin: p.endMin ? p.endMin - p.startMin : 30, due: p.date || n.date || null, tags: ["学校通知"], note: n.url });
     if (p.date && p.startMin !== null) tide.blocks.create({ date: p.date, start: tide.util.hhmmOf(p.startMin), durMin: p.endMin ? p.endMin - p.startMin : 60, title: n.title, taskId: task.id, cat: "study" });
     tide.notify(p.date || n.date ? "已将公告加入提醒" : "已加入任务池；未识别到明确日期");
+  }
+
+  // 展开正文：抓详情页 → 抽正文 → 只留内存。抓过一次就复用，反复展开不再请求。
+  async function toggleBody(site, n) {
+    if (expanded.has(n.url)) { expanded.delete(n.url); return paint(); }
+    expanded.add(n.url);
+    if (bodies.has(n.url) || bodyLoading.has(n.url)) return paint();
+    bodyLoading.add(n.url); paint();
+    try {
+      const res = await fetchPage(site, n.url);
+      if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
+      const art = tide.util.web.extractArticleText(res.body, res.finalUrl || n.url);
+      bodies.set(n.url, (art.text || "").trim() || "未识别到正文，可点「打开」查看原文");
+    } catch (e) {
+      bodies.set(n.url, `读取正文失败：${e.message || e}`);
+    } finally { bodyLoading.delete(n.url); }
+    paint();
+  }
+
+  // 删除通知：记进「已隐藏」而不是删缓存 —— 否则下次刷新又从站点抓回来。
+  async function dismissNotice(site, n) {
+    hiddenUrls = [...hiddenUrls.filter((u) => u !== n.url), n.url];
+    expanded.delete(n.url); bodies.delete(n.url);
+    notices = notices.filter((x) => x.url !== n.url);
+    await tide.storage.set(`hidden:${site.id}`, hiddenUrls);
+    paint();
+  }
+
+  // 保存编辑：名称随时可改；网址改动 = 换了一个站点，
+  // 旧缓存（公告列表 / 正文 / 已删除记录）都按旧网址算，必须一并作废再重抓。
+  async function saveSite(site) {
+    const name = host.querySelector("[data-edit-name]")?.value.trim() || "";
+    const raw = host.querySelector("[data-edit-url]")?.value || "";
+    if (!raw.trim()) { tide.notify("网址不能为空；不想用这个站点可直接点「删除」"); return; }
+    const url = tide.util.web.normalizeUrl(raw);
+    const urlChanged = url !== site.url;
+    if (name) site.name = name;
+    site.url = url;
+    if (urlChanged) {
+      site.cms = "自动识别"; site.lastFetchedAt = 0; site.iconUrl = "";
+      notices = []; expanded.clear(); bodies.clear();
+      await tide.storage.set(`notices:${site.id}`, []);
+    }
+    editing = false;
+    await save();
+    paint();
+    if (urlChanged) setTimeout(() => refresh(false), 0);
+    else tide.notify("站点配置已保存");
   }
 
   function loginHtml(site) {
@@ -157,12 +234,12 @@
   }
 
   function paint() {
-    if (!host?.isConnected) return; const site = active(), rows = filtered();
-    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in" style="margin-top:8px;max-width:460px" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><span class="sn-meta">${rows.length} 条</span></div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${esc(n.title)}</div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-remind>转提醒</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : lastErrors.has(site.id) ? `读取失败：${esc(lastErrors.get(site.id))}。请检查网络或代理后，再点一次「刷新通知」重试。` : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
+    if (!host?.isConnected) return; const site = active(), rows = filtered(), total = matched().length;
+    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in sn-login-url" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-edit-site>编辑</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${editing ? `<div class="sn-add" data-edit-box style="margin-top:12px"><input class="sn-in" data-edit-name value="${esc(site.name)}" placeholder="网站名称"><input class="sn-in" data-edit-url value="${esc(site.url)}" placeholder="通知/公告网站网址"><div style="display:flex;gap:7px"><button class="sn-btn pri" data-save-site ${busy ? "disabled" : ""}>保存</button><button class="sn-btn" data-cancel-edit>取消</button></div></div><div class="sn-note">改名称只影响显示；改网址会作废旧缓存并自动重新读取公告。</div>` : ""}${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><button class="sn-btn sn-toggle ${onlyNotice ? "on" : ""}" data-toggle-only>${onlyNotice ? "仅通知/公告" : "全部条目"}</button><span class="sn-meta sn-count">${rows.length} / ${total} 条${hiddenUrls.length ? ` · 已删除 ${hiddenUrls.length}` : ""}</span>${hiddenUrls.length ? `<button class="sn-btn" data-restore>恢复已删除</button>` : ""}</div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${site.iconUrl ? `<span class="sn-fav" data-initial="${esc((site.name || "学").slice(0, 1))}"><img src="${esc(site.iconUrl)}" alt=""></span>` : ""}<span>${esc(n.title)}</span></div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}${expanded.has(n.url) ? `<div class="sn-article">${(bodyLoading.has(n.url) ? "正在读取正文…" : esc(bodies.get(n.url) || "未识别到正文，可点「打开」查看原文")).replace(/\n/g, "<br>")}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-toggle-body>${expanded.has(n.url) ? "收起" : "展开"}</button><button data-remind>转提醒</button><button data-dismiss>删除</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : lastErrors.has(site.id) ? `读取失败：${esc(lastErrors.get(site.id))}。请检查网络或代理后，再点一次「刷新通知」重试。` : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
   }
 
   async function render(el) {
-    host = el; styles(); sites = await tide.storage.get("sites", []); if (!Array.isArray(sites)) sites = []; activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; if (!Array.isArray(notices)) notices = []; paint();
+    host = el; styles(); sites = await tide.storage.get("sites", []); if (!Array.isArray(sites)) sites = []; activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; if (!Array.isArray(notices)) notices = []; await loadHidden(activeId); paint();
     if (activeId && notices.length) setTimeout(() => refresh(false), 0);
     host.addEventListener("click", async (e) => {
       try {
@@ -171,14 +248,21 @@
         const tab = e.target.closest("[data-site]"); if (tab) return switchSite(tab.dataset.site);
         if (!site) return;
         if (e.target.closest("[data-refresh]")) return refresh();
+        if (e.target.closest("[data-edit-site]")) { editing = true; return paint(); }
+        if (e.target.closest("[data-cancel-edit]")) { editing = false; return paint(); }
+        if (e.target.closest("[data-save-site]")) return saveSite(site);
+        if (e.target.closest("[data-toggle-only]")) { onlyNotice = !onlyNotice; return paint(); }
+        if (e.target.closest("[data-restore]")) { hiddenUrls = []; await tide.storage.set(`hidden:${site.id}`, []); return paint(); }
         if (e.target.closest("[data-open-site]")) return tide.util.openUrl(site.url);
-        if (e.target.closest("[data-remove-site]")) { sessions.delete(site.id); loginRuntime.delete(site.id); lastErrors.delete(site.id); sites = sites.filter((x) => x.id !== site.id); activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; await save(); return paint(); }
+        if (e.target.closest("[data-remove-site]")) { editing = false; sessions.delete(site.id); loginRuntime.delete(site.id); lastErrors.delete(site.id); hiddenUrls = []; sites = sites.filter((x) => x.id !== site.id); activeId = sites[0]?.id || ""; notices = activeId ? await tide.storage.get(`notices:${activeId}`, []) : []; await loadHidden(activeId); await save(); return paint(); }
         if (e.target.closest("[data-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await prepareLogin(site); await save(); return paint(); }
         if (e.target.closest("[data-reload-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await prepareLogin(site); await save(); return paint(); }
         if (e.target.closest("[data-submit-login]")) { const v = host.querySelector("[data-site-login-url]")?.value ?? host.querySelector("[data-login-url]")?.value; if (v !== undefined) site.loginUrl = v.trim(); await save(); return submitLogin(site); }
-        const itemEl = e.target.closest("[data-notice]"); if (itemEl) { const n = rowsAt(Number(itemEl.dataset.notice)); if (!n) return; if (e.target.closest("[data-open-notice]")) tide.util.openUrl(n.url); else if (e.target.closest("[data-remind]")) await toReminder(n); }
+        const itemEl = e.target.closest("[data-notice]"); if (itemEl) { const n = rowsAt(Number(itemEl.dataset.notice)); if (!n) return; if (e.target.closest("[data-open-notice]")) tide.util.openUrl(n.url); else if (e.target.closest("[data-toggle-body]")) await toggleBody(site, n); else if (e.target.closest("[data-dismiss]")) await dismissNotice(site, n); else if (e.target.closest("[data-remind]")) await toReminder(n); }
       } catch (err) { tide.notify(err.message || String(err)); }
     });
+    // 站点图标加载不出来（防盗链 / 老站点没存图标）时退成首字色块，不留破图。
+    host.addEventListener("error", (e) => { const t = e.target; if (t?.tagName === "IMG") t.parentElement?.classList.add("no-img"); }, true);
     host.addEventListener("input", (e) => { if (e.target.matches("[data-search]")) { query = e.target.value; paint(); const n = host.querySelector("[data-search]"); n?.focus(); n?.setSelectionRange(query.length, query.length); } });
     return () => { if (host === el) host = null; };
   }
