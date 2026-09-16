@@ -140,7 +140,71 @@ const quad = tide.util.guessQuad("2026-09-12");
 tide.util.navigate("timeblock");
 ```
 
-## 4. 插件页面建议
+## 4. 插件页面规范与建议
+
+### 4.1 返回按钮（硬性要求）
+
+**每个插件注册的视图页面必须提供明显的返回按钮，点击后返回上一页。** 这不是建议，是上架/导入插件的门槛：
+
+- 插件内部有多级子页面时，插件自己维护页面栈，返回按钮回退到上一级子页面；首页顶部如需提供返回（例如从其他视图跳转而来），点击应回到跳转来源视图。
+- 插件通过 `tide.util.navigate()` 跳到应用其他视图之前，先记录来源视图，返回按钮用 `tide.util.navigate("<来源视图>")` 送用户回去。
+- 返回按钮固定在页面顶部显眼位置（手机端尤其重要），不要藏在折叠菜单或长列表底部。
+- 没有返回按钮、或点击后无法回退的插件页面，视为不合规。
+
+参考实现（页面栈 + 顶部返回按钮）：
+
+```js
+tide.ui.registerView({
+  id: "my-view",
+  title: "我的页面",
+  render(el) {
+    const stack = []; // 插件内部页面栈
+    const show = (renderPage) => {
+      el.textContent = "";
+      const topbar = document.createElement("div");
+      topbar.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:8px;";
+      if (stack.length > 0) {
+        const back = document.createElement("button");
+        back.textContent = "← 返回";
+        back.onclick = () => show(stack.pop());
+        topbar.appendChild(back);
+      }
+      el.appendChild(topbar);
+      el.appendChild(renderPage());
+    };
+    const home = () => {
+      const page = document.createElement("div");
+      const item = document.createElement("button");
+      item.textContent = "打开详情";
+      item.onclick = () => { stack.push(home); show(detail); };
+      page.appendChild(item);
+      return page;
+    };
+    const detail = () => {
+      const page = document.createElement("div");
+      page.textContent = "这是子页面，点上方「← 返回」回首页";
+      return page;
+    };
+    show(home);
+  },
+});
+```
+
+跨视图跳转的返回（跳走前记下来源）：
+
+```js
+// 进入插件前用户停留在哪个视图，就记下来
+let fromView = "quadrant";
+// 需要把用户送去其他视图时：
+function gotoTimeblock() {
+  fromView = "quadrant"; // 或按实际情况记录
+  tide.util.navigate("timeblock");
+}
+// 插件首页返回按钮：
+backButton.onclick = () => tide.util.navigate(fromView);
+```
+
+### 4.2 其他建议
 
 - 首屏先展示插件能做什么，再展示配置项。
 - 登录类插件明确说明账号信息如何保存、是否落盘。
@@ -160,6 +224,7 @@ tide.util.navigate("timeblock");
 - `id` 唯一且稳定。
 - `entry` 文件存在。
 - 所声明权限与实际能力一致。
+- 每个插件页面都有返回按钮，点击后能正确返回上一页（子页面回上一级，跨视图跳转回来源视图）。
 - 无硬编码密钥、账号、Cookie、上传私钥。
 - 离线状态不会卡死页面。
 - 失败信息对用户可读。

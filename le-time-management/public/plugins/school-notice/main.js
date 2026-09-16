@@ -34,7 +34,7 @@
       @media(max-width:720px){.sn-add{grid-template-columns:1fr}.sn-head{display:block}.sn-actions{justify-content:flex-start;margin-top:10px}.sn-login-grid{grid-template-columns:1fr}.sn-login-grid .wide{grid-column:auto}.sn-item{grid-template-columns:1fr}.sn-item-actions{flex-direction:row;flex-wrap:wrap}.sn-toolbar .sn-in{flex:1 1 100%;max-width:none}}
     `; document.head.append(s);
   }
-  async function save() { await tide.storage.set("sites", sites.map(({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl }) => ({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl }))); }
+  async function save() { await tide.storage.set("sites", sites.map(({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl, spaHint }) => ({ id, name, url, loginUrl, cms, lastFetchedAt, iconUrl, spaHint }))); }
   async function loadHidden(id) { const v = await tide.storage.get(`hidden:${id}`, []); hiddenUrls = Array.isArray(v) ? v : []; }
   async function sessionFor(site) { if (!sessions.has(site.id)) sessions.set(site.id, await tide.http.session()); return sessions.get(site.id); }
   function cmsName(html) {
@@ -71,6 +71,34 @@
     const sid = await withTimeout(sessionFor(site));
     return withTimeout(tide.http.fetch(sid, opts.method || "GET", url, { headers: opts.headers, body: opts.body, binary: opts.binary }));
   }
+  // 取数：分两条路 —— 命中「JSON 接口型」适配器就直接读它的数据接口；
+  // 否则按 HTML 解析。两条路产出的条目**同构**（title/url/date/score/kind/snippet），
+  // 所以后面的搜索、筛选、转提醒不必区分来源。
+  // `hint` 是「为什么一条都没有」的解释，只在 0 条时才有值。
+  async function collectNotices(site, html, finalUrl) {
+    const adapter = tide.util.web.matchJsonSiteAdapter(finalUrl);
+    if (adapter) {
+      try {
+        const apiUrl = tide.util.web.buildJsonSiteListUrl(adapter.id, finalUrl, { max: 100 });
+        const res = apiUrl ? await fetchPage(site, apiUrl, { headers: { "Accept": "application/json, text/plain, */*", "Referer": finalUrl } }) : null;
+        const rows = res && res.status < 400 ? tide.util.web.parseJsonSiteList(adapter.id, res.body, finalUrl, { max: 100 }) : [];
+        if (rows.length) return { rows, mode: adapter.label, hint: "" };
+        return { rows: [], mode: adapter.label, hint: `已按适配器读取 ${adapter.label}，但接口没返回条目${res ? `（HTTP ${res.status}）` : "（接口地址未能生成）"}。可点「打开网站」确认页面还能正常访问。` };
+      } catch (e) {
+        return { rows: [], mode: adapter.label, hint: `已按适配器读取 ${adapter.label}，但接口请求失败：${e.message || e}` };
+      }
+    }
+    const rows = tide.util.web.extractNoticeLinks(html, finalUrl, { max: 100 });
+    if (rows.length) return { rows, mode: cmsName(html), hint: "" };
+    // 一条都没解析出来时才判「是不是 JS 渲染的空壳」—— 这类站点换列表页也救不了，
+    // 必须把原因说清楚，否则用户只会看到「已读取 0 条公告」。
+    const spa = tide.util.web.detectSpaShell(html);
+    return {
+      rows: [], mode: cmsName(html),
+      hint: spa ? `这个页面是 ${spa.framework} 单页应用：HTML 里只有 ${spa.links} 个链接，通知列表由浏览器执行 JS 后才渲染出来，插件读不到。可换成学校的「通知公告」列表页；若该站另有数据接口，反馈给插件做站点适配。` : "",
+    };
+  }
+
   async function readNotices(site) {
     const res = await fetchPage(site, site.url);
     if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
@@ -82,10 +110,12 @@
     }
     loginRuntime.delete(site.id);
     const finalUrl = res.finalUrl || site.url;
-    site.cms = cmsName(res.body); site.lastFetchedAt = Date.now();
+    site.lastFetchedAt = Date.now();
     // 老站点（v0.44.x 加的）没存过图标，刷新时补一次，用户不必删掉重加。
     if (!site.iconUrl) { try { site.iconUrl = tide.util.web.parseSiteMeta(res.body, finalUrl).iconUrl || ""; } catch {} }
-    notices = tide.util.web.extractNoticeLinks(res.body, finalUrl, { max: 100 });
+    const got = await collectNotices(site, res.body, finalUrl);
+    site.cms = got.mode; site.spaHint = got.hint;
+    notices = got.rows;
     await tide.storage.set(`notices:${site.id}`, notices.slice(0, 100)); await save();
     return { login: false, html: res.body };
   }
@@ -157,7 +187,9 @@
           tmp.loginUrl = finalUrl !== url ? finalUrl : tmp.loginUrl;
           loginRuntime.set(tmp.id, { form, pageUrl: finalUrl, message: "检测到登录页面，请完成登录。", captchaData: "" });
         } else {
-          tmp.url = finalUrl; notices = tide.util.web.extractNoticeLinks(res.body, finalUrl, { max: 100 });
+          tmp.url = finalUrl;
+          const got = await collectNotices(tmp, res.body, finalUrl);
+          tmp.cms = got.mode; tmp.spaHint = got.hint; notices = got.rows;
           tmp.lastFetchedAt = Date.now(); await tide.storage.set(`notices:${id}`, notices);
         }
       } catch (e) { lastErrors.set(tmp.id, e.message || String(e)); tide.notify(`网站已保存，但首次读取失败：${e.message || e}`); }
@@ -217,7 +249,7 @@
     if (name) site.name = name;
     site.url = url;
     if (urlChanged) {
-      site.cms = "自动识别"; site.lastFetchedAt = 0; site.iconUrl = "";
+      site.cms = "自动识别"; site.lastFetchedAt = 0; site.iconUrl = ""; site.spaHint = "";
       notices = []; expanded.clear(); bodies.clear();
       await tide.storage.set(`notices:${site.id}`, []);
     }
@@ -235,7 +267,7 @@
 
   function paint() {
     if (!host?.isConnected) return; const site = active(), rows = filtered(), total = matched().length;
-    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in sn-login-url" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-edit-site>编辑</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${editing ? `<div class="sn-add" data-edit-box style="margin-top:12px"><input class="sn-in" data-edit-name value="${esc(site.name)}" placeholder="网站名称"><input class="sn-in" data-edit-url value="${esc(site.url)}" placeholder="通知/公告网站网址"><div style="display:flex;gap:7px"><button class="sn-btn pri" data-save-site ${busy ? "disabled" : ""}>保存</button><button class="sn-btn" data-cancel-edit>取消</button></div></div><div class="sn-note">改名称只影响显示；改网址会作废旧缓存并自动重新读取公告。</div>` : ""}${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><button class="sn-btn sn-toggle ${onlyNotice ? "on" : ""}" data-toggle-only>${onlyNotice ? "仅通知/公告" : "全部条目"}</button><span class="sn-meta sn-count">${rows.length} / ${total} 条${hiddenUrls.length ? ` · 已删除 ${hiddenUrls.length}` : ""}</span>${hiddenUrls.length ? `<button class="sn-btn" data-restore>恢复已删除</button>` : ""}</div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${site.iconUrl ? `<span class="sn-fav" data-initial="${esc((site.name || "学").slice(0, 1))}"><img src="${esc(site.iconUrl)}" alt=""></span>` : ""}<span>${esc(n.title)}</span></div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}${expanded.has(n.url) ? `<div class="sn-article">${(bodyLoading.has(n.url) ? "正在读取正文…" : esc(bodies.get(n.url) || "未识别到正文，可点「打开」查看原文")).replace(/\n/g, "<br>")}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-toggle-body>${expanded.has(n.url) ? "收起" : "展开"}</button><button data-remind>转提醒</button><button data-dismiss>删除</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : lastErrors.has(site.id) ? `读取失败：${esc(lastErrors.get(site.id))}。请检查网络或代理后，再点一次「刷新通知」重试。` : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
+    host.innerHTML = `<div class="sn"><div class="sn-card"><div class="sn-add"><input class="sn-in" data-new-name placeholder="学校名称（可留空自动识别）"><input class="sn-in" data-new-url placeholder="学校通知/公告网站网址"><button class="sn-btn pri" data-add ${busy ? "disabled" : ""}>${busy ? "处理中…" : "添加并自动适配"}</button></div><div class="sn-note">支持常见高校 VSB / VisualSiteBuilder、WordPress、Drupal、DedeCMS 以及通用公告列表结构。登录页面会尝试识别账号、密码、隐藏字段和验证码。</div></div>${sites.length ? `<div class="sn-tabs">${sites.map((x) => `<button class="sn-tab ${x.id === site?.id ? "on" : ""}" data-site="${esc(x.id)}">${esc(x.name)}</button>`).join("")}</div>` : ""}${site ? `<section class="sn-card"><div class="sn-head"><div><h2>${esc(site.name)}</h2><div class="sn-meta">${esc(site.url)}<br>适配模式：${esc(site.cms || "自动识别")}</div><input class="sn-in sn-login-url" data-site-login-url value="${esc(site.loginUrl || "")}" placeholder="登录网址（可选；与公告网址不同时填写）">${site.lastFetchedAt ? `<span class="sn-ok">已缓存 · ${new Date(site.lastFetchedAt).toLocaleString()}</span>` : ""}</div><div class="sn-actions"><button class="sn-btn pri" data-refresh ${busy ? "disabled" : ""}>刷新通知</button><button class="sn-btn" data-edit-site>编辑</button><button class="sn-btn" data-login>登录配置</button><button class="sn-btn" data-open-site>打开网站</button><button class="sn-btn" data-remove-site>删除</button></div></div>${editing ? `<div class="sn-add" data-edit-box style="margin-top:12px"><input class="sn-in" data-edit-name value="${esc(site.name)}" placeholder="网站名称"><input class="sn-in" data-edit-url value="${esc(site.url)}" placeholder="通知/公告网站网址"><div style="display:flex;gap:7px"><button class="sn-btn pri" data-save-site ${busy ? "disabled" : ""}>保存</button><button class="sn-btn" data-cancel-edit>取消</button></div></div><div class="sn-note">改名称只影响显示；改网址会作废旧缓存并自动重新读取公告。</div>` : ""}${loginHtml(site)}</section><div class="sn-toolbar"><input class="sn-in" data-search value="${esc(query)}" placeholder="搜索通知"><button class="sn-btn sn-toggle ${onlyNotice ? "on" : ""}" data-toggle-only>${onlyNotice ? "仅通知/公告" : "全部条目"}</button><span class="sn-meta sn-count">${rows.length} / ${total} 条${hiddenUrls.length ? ` · 已删除 ${hiddenUrls.length}` : ""}</span>${hiddenUrls.length ? `<button class="sn-btn" data-restore>恢复已删除</button>` : ""}</div><div class="sn-list">${rows.map((n, i) => `<article class="sn-item" data-notice="${i}"><div><div class="sn-title">${site.iconUrl ? `<span class="sn-fav" data-initial="${esc((site.name || "学").slice(0, 1))}"><img src="${esc(site.iconUrl)}" alt=""></span>` : ""}<span>${esc(n.title)}</span></div>${n.date ? `<div class="sn-date">${esc(n.date)}</div>` : ""}${n.snippet ? `<div class="sn-snip">${esc(n.snippet)}</div>` : ""}${expanded.has(n.url) ? `<div class="sn-article">${(bodyLoading.has(n.url) ? "正在读取正文…" : esc(bodies.get(n.url) || "未识别到正文，可点「打开」查看原文")).replace(/\n/g, "<br>")}</div>` : ""}</div><div class="sn-item-actions"><button data-open-notice>打开</button><button data-toggle-body>${expanded.has(n.url) ? "收起" : "展开"}</button><button data-remind>转提醒</button><button data-dismiss>删除</button></div></article>`).join("") || `<div class="sn-empty">${loginRuntime.has(site.id) ? "请先完成登录。" : busy ? "正在读取通知…" : lastErrors.has(site.id) ? `读取失败：${esc(lastErrors.get(site.id))}。请检查网络或代理后，再点一次「刷新通知」重试。` : site.spaHint ? esc(site.spaHint) : "暂无可识别通知。可尝试换成学校“通知公告”列表页，而不是门户首页。"}</div>`}</div>` : `<div class="sn-empty">先输入学校通知网站网址。插件会自动识别公告列表；如果站点需要登录，会显示登录配置。</div>`}</div>`;
   }
 
   async function render(el) {

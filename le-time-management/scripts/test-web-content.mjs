@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, screenNotice, formEncode,
-  charsetFromContentType, charsetFromMeta, looksLikeMarkup, decodeWebBody } from '../src/webContent.js';
+  charsetFromContentType, charsetFromMeta, looksLikeMarkup, decodeWebBody,
+  detectSpaShell, matchJsonSiteAdapter, buildJsonSiteListUrl, parseJsonSiteList } from '../src/webContent.js';
 assert.equal(normalizeWebUrl('example.edu.cn'), 'https://example.edu.cn/');
 assert.equal(resolveWebUrl('../notice/1.htm', 'https://www.example.edu.cn/xw/list.htm'), 'https://www.example.edu.cn/notice/1.htm');
 const html=`<html><head><meta property="og:site_name" content="示例大学"><link rel="icon" href="/logo.ico"></head><body><ul class="notice-list"><li><a href="/info/1001/1234.htm">关于开展 2026 年奖学金申报的通知</a><span>2026-09-10</span></li><li><a href="/">首页</a></li></ul></body></html>`;
@@ -37,6 +38,70 @@ assert.ok(screenNotice('咨询面对面｜桂电2026年招生咨询活动预告�
 assert.equal(noticeKind('关于临时调整本科招生咨询方式的通知'), 'notice');
 assert.equal(noticeKind('2026年全日制本科招生宣传册电子书'), 'news', '宣传册属于 news 而不是 notice');
 assert.equal(noticeKind('我校2026年统招本科录取工作圆满结束（图）'), 'other');
+
+/* ── JSON 接口型站点：服务端只吐空壳，列表靠浏览器执行 JS 后调接口渲染 ──
+   真实取证：北航信息门户 `it.buaa.edu.cn/portal/pages/newsite/site/informationPc/zixun?system=news`
+   返回 HTTP 200 / 11642 字节，但整页 **0 个 `<a>` 标签**、连 `<title>` 都是空的，
+   body 里只有 `<div id="__nuxt">` 与 `window.__NUXT__` —— 纯 DOM 解析必然 0 条，
+   而插件当时连「为什么」都不说，用户只看到「已读取 0 条公告」。
+   数据只在它自己的接口里：`/portal/news/frontend/default/news-list`（实测无 cookie 可访问）。 */
+const BUAA_URL = 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/zixun?system=news';
+const BUAA_SHELL = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+  + '<script src="/portal/pages/_nuxt/entry.48836b41.js"></script></head>'
+  + '<body><div id="__nuxt"></div><script>window.__NUXT__={config:{webid:"portal"}}</script></body></html>';
+
+const shell = detectSpaShell(BUAA_SHELL);
+assert.equal(shell && shell.framework, 'Nuxt', '北航空壳必须认出是 Nuxt');
+assert.equal(shell && shell.links, 0, '空壳里的链接数要为 0 —— 提示文案直接引用它');
+assert.equal(detectSpaShell(html), null, '普通服务端渲染页面不能被误判成空壳');
+assert.equal(detectSpaShell(''), null, '空串不能抛，返回 null');
+
+const adapter = matchJsonSiteAdapter(BUAA_URL);
+assert.equal(adapter && adapter.id, 'buaa-portal');
+assert.ok(adapter && adapter.label, '适配器要带可显示的 label，插件拿它当「适配模式」');
+assert.equal(matchJsonSiteAdapter('https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/index'), null,
+  '同域但不是资讯页，不该命中');
+assert.equal(matchJsonSiteAdapter('https://jwc.example.edu.cn/tzgg/'), null, '未登记的站点不该命中');
+assert.equal(matchJsonSiteAdapter('不是网址'), null, '非法 URL 不能抛');
+
+assert.equal(buildJsonSiteListUrl('buaa-portal', BUAA_URL),
+  'https://it.buaa.edu.cn/portal/news/frontend/default/news-list?system=news&page=1&pageSize=100&need_all=1');
+assert.equal(buildJsonSiteListUrl('buaa-portal', 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/zixun?system=tzgg'),
+  'https://it.buaa.edu.cn/portal/news/frontend/default/news-list?system=tzgg&page=1&pageSize=100&need_all=1',
+  '页面 URL 里的栏目参数要原样带给接口');
+assert.equal(buildJsonSiteListUrl('没这个适配器', BUAA_URL), '', '未登记的 id 返回空串，插件好回退');
+
+// 字段形状照实测响应压：`d.list[]` 里 title / url / publish_time / publish_date_time / cname
+const BUAA_JSON = JSON.stringify({ e: 0, m: '操作成功', d: { total: 6616, list: [
+  { id: '3286f56765fcda5325f1c8c3bdbf280e', title: '北航召开美育工作高质量发展研讨会',
+    url: 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/details?id=3286f56765fcda5325f1c8c3bdbf280e&system=news',
+    publish_time: '2026-09-16', publish_date_time: '2026-09-16 19:01', cname: '新闻资讯' },
+  { id: 'b47df82fb2ca3b3d61a3bd24504e714e', title: '关于开展 2026 年秋季学期本科生选课工作的通知',
+    url: 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/details?id=b47df82fb2ca3b3d61a3bd24504e714e&system=news',
+    publish_time: '2026-09-14', publish_date_time: '2026-09-14 16:24', cname: '通知公告' },
+  { id: 'short', title: '短', url: 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/details?id=short' },
+] } });
+
+const jrows = parseJsonSiteList('buaa-portal', BUAA_JSON, BUAA_URL);
+assert.equal(jrows.length, 2, `标题短于 4 字的条目要丢掉，实际 ${jrows.length} 条`);
+assert.equal(jrows[0].date, '2026-09-16', '要按日期倒序：9-16 排在 9-14 前面');
+assert.equal(jrows[0].title, '北航召开美育工作高质量发展研讨会');
+assert.equal(jrows[0].kind, 'other', '「研讨会」既不是通知也不是新闻动态');
+assert.equal(jrows[0].snippet, '新闻资讯 · 2026-09-16 19:01', '摘要由 cname 与带时间的发布时间拼成');
+assert.equal(jrows[1].date, '2026-09-14', 'publish_time 直接成为 date');
+assert.equal(jrows[1].kind, 'notice', '含「通知」的标题要分类成 notice，好让「仅通知/公告」筛得出来');
+assert.equal(jrows[1].snippet, '通知公告 · 2026-09-14 16:24');
+assert.equal(jrows[1].url, 'https://it.buaa.edu.cn/portal/pages/newsite/site/informationPc/details?id=b47df82fb2ca3b3d61a3bd24504e714e&system=news',
+  '绝对地址要原样保留（详情页靠 id 参数）');
+
+// 接口挂了 / 改版了都必须安静返回空数组，插件好回退到 DOM 解析，而不是整页报错
+assert.deepEqual(parseJsonSiteList('buaa-portal', '这不是 JSON', BUAA_URL), []);
+assert.deepEqual(parseJsonSiteList('buaa-portal', JSON.stringify({ e: 1, m: '失败', d: null }), BUAA_URL), []);
+assert.deepEqual(parseJsonSiteList('buaa-portal', JSON.stringify({ d: { list: '不是数组' } }), BUAA_URL), []);
+assert.deepEqual(parseJsonSiteList('没这个适配器', BUAA_JSON, BUAA_URL), []);
+assert.equal(parseJsonSiteList('buaa-portal', BUAA_JSON, BUAA_URL, { max: 1 }).length, 1, 'max 要生效');
+// 对象形态的响应（宿主可能已解好 JSON）也要吃
+assert.equal(parseJsonSiteList('buaa-portal', JSON.parse(BUAA_JSON), BUAA_URL).length, 2);
 
 /* ── 端到端：有 DOM 时才跑（浏览器环境），Node 下跳过 ── */
 if (typeof DOMParser !== 'undefined') {
@@ -106,4 +171,4 @@ assert.ok(decodeWebBody(GBK_PAGE, '').includes('大学网站大全'), '没有 co
 // 未知 / 非法标签不能抛，回落 UTF-8
 assert.equal(decodeWebBody(enc.encode('中文'), 'text/html; charset=x-unknown-9'), '中文');
 
-console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction (nav/footer/listing-page screening), notice classification, article body extraction, form encoding and charset decoding');
+console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction (nav/footer/listing-page screening), notice classification, article body extraction, form encoding, charset decoding and JSON-API site adapters (SPA shell detection, field mapping)');

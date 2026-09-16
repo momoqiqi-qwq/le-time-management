@@ -4,7 +4,7 @@ import * as S from "./store.js";
 import { toast } from "./ui.js";
 import { parseWhen, guessCategory, guessQuad } from "./timeParser.js";
 import { BUILTIN_IDS, BUILTIN_PLUGINS } from "./pluginCatalog.js";
-import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, detectLoginForm, formEncode } from "./webContent.js";
+import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, detectLoginForm, formEncode, detectSpaShell, matchJsonSiteAdapter, buildJsonSiteListUrl, parseJsonSiteList } from "./webContent.js";
 import { PROJECT_LINKS } from "./projectLinks.js";
 import { previewSchedule } from "./scheduleConflict.js";
 import { pushInbox } from "./automation.js";
@@ -283,6 +283,10 @@ function makeApi(man, source) {
         parseSiteMeta: (...args) => { requirePermission(man, pid, "http"); return parseSiteMeta(...args); },
         inferIconName: (...args) => { requirePermission(man, pid, "http"); return inferSiteIconName(...args); },
         extractNoticeLinks: (...args) => { requirePermission(man, pid, "http"); return extractNoticeLinks(...args); },
+        detectSpaShell: (...args) => { requirePermission(man, pid, "http"); return detectSpaShell(...args); },
+        matchJsonSiteAdapter: (...args) => { requirePermission(man, pid, "http"); return matchJsonSiteAdapter(...args); },
+        buildJsonSiteListUrl: (...args) => { requirePermission(man, pid, "http"); return buildJsonSiteListUrl(...args); },
+        parseJsonSiteList: (...args) => { requirePermission(man, pid, "http"); return parseJsonSiteList(...args); },
         noticeKind: (...args) => { requirePermission(man, pid, "http"); return noticeKind(...args); },
         extractArticleText: (...args) => { requirePermission(man, pid, "http"); return extractArticleText(...args); },
         detectLoginForm: (...args) => { requirePermission(man, pid, "http"); return detectLoginForm(...args); },

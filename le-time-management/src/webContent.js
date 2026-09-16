@@ -286,6 +286,113 @@ export function extractNoticeLinks(html, baseUrl, options = {}) {
   return rows.slice(0, max);
 }
 
+// ── JSON 接口型站点：服务端只吐空壳，列表靠浏览器执行 JS 后调接口渲染 ────────
+// 实测（北京航空航天大学信息门户 `it.buaa.edu.cn`，2026-09-16）：页面返回 HTTP 200、
+// 11642 字节，**一个 `<a>` 标签都没有**（连 `<title>` 都是空的），body 里只有
+// `<div id="__nuxt">` 与 `window.__NUXT__` —— 典型的 Nuxt 3 客户端渲染页面。
+// 公告数据只存在于它自己的 JSON 接口里，DOM 解析必然 0 条。所以这里补两件事：
+//   ① `detectSpaShell()` 认出空壳，让插件能说明「为什么读不到」，而不是静默 0 条；
+//   ② `JSON_SITE_ADAPTERS` 为已知站点登记「页面 URL → 接口 URL → 字段映射」，
+//      插件命中后直接取接口。加新学校只需往表里加一条，不必改插件代码。
+
+/** 命中即说明页面是 JS 渲染的空壳。 */
+const SPA_SHELL_MARKERS = [
+  [/\b__NUXT__\b|_nuxt\/|__nuxt_data__/i, "Nuxt"],
+  [/\b__NEXT_DATA__\b|_next\/static/i, "Next.js"],
+  [/data-reactroot|__REACT_DEVTOOLS_GLOBAL_HOOK__/, "React"],
+  [/ng-version\s*=|ng-app\s*=/i, "Angular"],
+  [/\bdata-v-app\b|\b__VUE__\b/, "Vue"],
+];
+
+/**
+ * 页面是不是「靠 JS 渲染」的空壳。返回框架名与 HTML 里现成的链接数（供提示文案用），
+ * 不是则返回 `null`。只在「解析结果为 0 条」时才该调用 —— 它是给用户解释原因用的。
+ */
+export function detectSpaShell(html) {
+  const source = String(html || "");
+  if (!source) return null;
+  for (const [re, framework] of SPA_SHELL_MARKERS) {
+    if (re.test(source)) return { framework, links: (source.match(/<a\b[^>]*\bhref\s*=/gi) || []).length };
+  }
+  return null;
+}
+
+/**
+ * 已登记的「JSON 接口型」站点。字段含义：
+ * - `host` / `path`：命中判据（`path` 省略表示该域下全部页面）。
+ * - `api(u, opts)`：由**页面 URL** 推出列表接口地址（栏目参数原样吃回去）。
+ * - `list`：响应里列表的字段路径；`fields`：每条记录的字段映射。
+ *   `date` 支持 `YYYY-MM-DD` 或带时间的 `YYYY-MM-DD HH:mm`；`snippet` 可以是数组，按序拼接。
+ */
+const JSON_SITE_ADAPTERS = [
+  {
+    id: "buaa-portal",
+    label: "北航信息门户（Nuxt 资讯接口）",
+    host: /(^|\.)buaa\.edu\.cn$/i,
+    path: /\/informationPc\/zixun\b/i,
+    // `?system=news` 就是栏目，原样传回接口；pageSize 实测放到 100 不被限。
+    api: (u, opts) => `${u.origin}/portal/news/frontend/default/news-list`
+      + `?system=${encodeURIComponent(u.searchParams.get("system") || "news")}`
+      + `&page=1&pageSize=${Math.max(1, Math.min(100, Number(opts?.max) || 100))}&need_all=1`,
+    list: "d.list",
+    fields: { title: "title", url: "url", date: "publish_time", snippet: ["cname", "publish_date_time"] },
+  },
+];
+
+/** 页面 URL 命中哪个适配器。返回 `{ id, label }`（可序列化，便于跨宿主边界传）。 */
+export function matchJsonSiteAdapter(url) {
+  let u; try { u = new URL(String(url || "")); } catch { return null; }
+  for (const a of JSON_SITE_ADAPTERS) {
+    if (a.host.test(u.hostname) && (!a.path || a.path.test(u.pathname))) return { id: a.id, label: a.label };
+  }
+  return null;
+}
+
+/** 由页面 URL 推出列表接口地址；未登记或 URL 非法时返回空串。 */
+export function buildJsonSiteListUrl(id, url, options = {}) {
+  const a = JSON_SITE_ADAPTERS.find((x) => x.id === id);
+  if (!a) return "";
+  try { return a.api(new URL(String(url || "")), options); } catch { return ""; }
+}
+
+function readPath(obj, path) {
+  return String(path || "").split(".").filter(Boolean)
+    .reduce((acc, key) => (acc == null ? acc : acc[key]), obj);
+}
+
+/**
+ * 把接口响应解析成与 `extractNoticeLinks()` **同构**的条目 —— 插件两条取数路径
+ * 共用同一套渲染、搜索与分类。解析失败 / 字段缺失 / 条目不成形一律跳过、不抛：
+ * 接口不可用时插件要能安静地回退到 DOM 解析，而不是整个报错。
+ */
+export function parseJsonSiteList(id, body, baseUrl, options = {}) {
+  const a = JSON_SITE_ADAPTERS.find((x) => x.id === id);
+  if (!a) return [];
+  let data = body;
+  if (typeof body === "string") { try { data = JSON.parse(body); } catch { return []; } }
+  const list = readPath(data, a.list);
+  if (!Array.isArray(list)) return [];
+  const max = Math.max(1, Math.min(200, Number(options.max) || 100));
+  const yearHint = Number(options.yearHint) || new Date().getFullYear();
+  const rows = [], seen = new Set();
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const title = cleanText(readPath(raw, a.fields.title));
+    if (title.length < 4) continue;
+    const href = resolveWebUrl(readPath(raw, a.fields.url), baseUrl);
+    if (!href || seen.has(href)) continue;
+    seen.add(href);
+    const date = extractDate(String(readPath(raw, a.fields.date) || ""), yearHint);
+    // 摘要去掉与 date 重复的部分（接口常同时给 `2026-09-16` 与 `2026-09-16 19:01`）。
+    const snippet = [].concat(a.fields.snippet || []).map((k) => cleanText(readPath(raw, k)))
+      .filter((v) => v && v !== date).join(" · ");
+    rows.push({ title, url: href, date, score: 50, kind: noticeKind(title), snippet });
+    if (rows.length >= max) break;
+  }
+  rows.sort((x, y) => (y.date || "").localeCompare(x.date || ""));
+  return rows;
+}
+
 // ── 详情页正文提取 ────────────────────────────────────────────────────────
 // 「展开正文」用：把详情页里的正文抽出来，不必为了看一眼内容就跳出应用。
 // 先试常见 CMS 的正文容器（VSB 的 `#vsb_content`、WordPress 的 `.entry-content`…），
