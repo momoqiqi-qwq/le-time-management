@@ -360,7 +360,7 @@
 .vt-item-check { flex:none; font-size:26rpx; font-weight:800; color:var(--deep); }
 
 /* ═══════ v0.38.0 通用折叠分组 ═══════
-   WakeUp 按天 / 年度甘特按月 / 阶段甘特按分类共用。 */
+   课程表按天 / 年度甘特按月 / 阶段甘特按分类共用。 */
 .fold { background:var(--paper); border:2rpx solid var(--line-soft); border-radius:16rpx; overflow:hidden; margin-bottom:12rpx; }
 .fold.is-today { border-color:var(--deep); }
 .fold-head {
@@ -384,7 +384,7 @@
 /* 视图标题条右侧的补充信息（周次 / 年份 / 月份） */
 .vh-meta { margin-left:auto; font-size:20rpx; color:var(--ink-3); font-variant-numeric:tabular-nums; }
 
-/* ── WakeUp 按天折叠后的日程行 ── */
+/* ── 课程表按天折叠后的日程行 ── */
 /* 只负责行本身 —— 外层留白统一交给 .fold-body，别再叠一层 padding（两个类同时命中会打架）。 */
 .wk-days .wk-row:first-child { padding-top:0; }
 .wk-row { display:flex; align-items:flex-start; gap:16rpx; padding:12rpx 0; border-bottom:1rpx solid var(--line-soft); }

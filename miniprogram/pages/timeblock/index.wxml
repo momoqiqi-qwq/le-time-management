@@ -183,7 +183,7 @@
 
   <view wx:elif="{{viewMode === 'wakeup'}}" class="viz-panel wakeup-mini-panel">
     <view class="viz-head">
-      <text class="vh-title">WakeUp 课表</text>
+      <text class="vh-title">课程表</text>
       <text class="vh-meta">{{wakeupWeekLabel}}</text>
     </view>
     <!-- 原为 7 列 × 15 时的横向网格（1740rpx 起），窄屏必须左右滑动才看得全。

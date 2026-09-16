@@ -47,7 +47,7 @@ Page({
     // 7 个名字里「横向时间轴 / 卡片时间轴 / 年度甘特 / 阶段甘特」光看名字分不清。
     viewTabs: [
       { id: "day", label: "日时间轴", desc: "当前可拖拽编辑的日程" },
-      { id: "wakeup", label: "WakeUp课表", desc: "按天看这一周的安排" },
+      { id: "wakeup", label: "课程表", desc: "按天看这一周的安排" },
       { id: "milestone", label: "里程碑", desc: "按日期排序的关键节点" },
       { id: "chronicle", label: "横向时间轴", desc: "高密度事件年表" },
       { id: "cards", label: "卡片时间轴", desc: "带说明与备注的卡片流" },
@@ -55,7 +55,7 @@ Page({
       { id: "swimlane", label: "阶段甘特", desc: "按分类查看本月时间占用" },
     ],
     visualEvents: [], visualGantt: [], visualSwim: [], wakeupDays: [], wakeupWeekLabel: "",
-    // 折叠状态：key → 是否展开。key 形如 `2026-09-15`（WakeUp 某天）/ `gm-9`（9 月）/ `sm-work`（分类）
+    // 折叠状态：key → 是否展开。key 形如 `2026-09-15`（课程表某天）/ `gm-9`（9 月）/ `sm-work`（分类）
     folds: {},
     ganttMonths: [], ganttYear: 0, swimCats: [], swimMonthLabel: "",
   },
@@ -233,7 +233,7 @@ Page({
     this.setData({ viewMenuOpen: false });
   },
 
-  /* 通用折叠开关：WakeUp 按天 / 年度甘特按月 / 阶段甘特按分类共用一份状态。
+  /* 通用折叠开关：课程表按天 / 年度甘特按月 / 阶段甘特按分类共用一份状态。
      用一个 `folds` 字典而不是给每个数组元素塞 `open` 字段 —— 后者要在
      refresh() 里重建数据时把展开状态再搬回去，容易在重建时被清空。 */
   onFoldTap(e) {

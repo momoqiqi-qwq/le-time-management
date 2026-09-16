@@ -3,7 +3,7 @@ import { el } from "../ui.js";
 
 const VIEW_META = [
   ["day", "日时间轴", "当前可拖拽编辑的日程"],
-  ["wakeup", "WakeUp课表", "七日课程表式周视图"],
+  ["wakeup", "课程表", "七日课程表式周视图"],
   ["milestone", "里程碑", "彩色箭头式阶段时间轴"],
   ["chronicle", "横向时间轴", "高密度事件年表"],
   ["cards", "卡片时间轴", "左右交错的叙事时间线"],
@@ -174,10 +174,12 @@ function mondayOf(dateStr) {
 function addDate(dateStr, n) { const d = parseDate(dateStr); d.setDate(d.getDate() + n); return dateKey(d); }
 function minutes(hhmm) { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h * 60 + m; }
 
-/* ── WakeUp 课表 ──
+/* ── 课程表（内部 id 仍叫 wakeup，改 id 会让用户已保存的视图选择失效）──
    桌面仍是一屏 7 天的真课表；窄屏改成「按天分组的日程列表」：
    7 列 × 10 节 = 70 个格子在 390px 宽里最小可读宽度约 700px，
-   横向滚动能滚但不实用 —— 直接换布局，一天一段更符合手机阅读。 */
+   横向滚动能滚但不实用 —— 直接换布局，一天一段更符合手机阅读。
+   行高不写死：`--slot-count` 提到根节点上，CSS 用
+   `minmax(下限, 1fr)` 按剩余空间平分，让 1–10 节一屏看完（见 styles.css）。 */
 function wakeupView(data, anchorDate) {
   const root = el("section", { class: "tv-panel wakeup-view" });
   const anchor = anchorDate || S.todayStr(); const monday = mondayOf(anchor); const today = S.todayStr();
@@ -202,10 +204,13 @@ function wakeupView(data, anchorDate) {
     const mapDate = new Map(Array.from({ length: 7 }, (_, i) => [addDate(monday, i), i + 1]));
     courses = data.blocks.filter(b => mapDate.has(b.date)).map((b, i) => { const sm = minutes(b.start), em = sm + Number(b.durMin || 30); const r1 = clamp(Math.floor((sm - 420) / 60), 0, 15), r2 = clamp(Math.floor((Math.max(sm + 1, em) - 421) / 60), r1, 15); return { name: b.title, day: mapDate.get(b.date), position: CAT_NAME[b.cat] || "时间块", start: b.start, end: S.hhmmOf(em), r1, r2, color: CAT_COLOR[b.cat] || PALETTE[i % PALETTE.length] }; });
   }
-  root.append(head("WakeUp 课表周视图", `${week ? `第 ${week} 周 · ` : ""}${monday} ～ ${addDate(monday, 6)} · 课程表式时间布局，窄屏自动改为按天分组。`));
+  // `--slot-count` 挂在根节点上（而不是网格自己）：CSS 要用它算「自然高度上限」，
+  // 那个 max-height 写在 .wakeup-scroll（网格的父级）上，变量只能向下继承。
+  root.style.setProperty("--slot-count", String(slots.length));
+  root.append(head("课程表周视图", `${week ? `第 ${week} 周 · ` : ""}${monday} ～ ${addDate(monday, 6)} · 课程表式时间布局，窄屏自动改为按天分组。`));
 
   // 桌面：真 7 列网格（CSS 在 ≤760px 里隐藏）
-  const sc = el("div", { class: "wakeup-scroll" }); const grid = el("div", { class: "wakeup-grid", style: `--slot-count:${slots.length}` });
+  const sc = el("div", { class: "wakeup-scroll" }); const grid = el("div", { class: "wakeup-grid" });
   grid.append(el("div", { class: "wk-corner" }, week ? `第${week}周` : "时间"));
   const dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   for (let i = 0; i < 7; i++) { const d = addDate(monday, i); grid.append(el("div", { class: `wk-day${d === today ? " today" : ""}`, style: `grid-column:${i + 2};grid-row:1` }, el("b", {}, dayNames[i]), el("span", {}, shortDate(d)))); }
