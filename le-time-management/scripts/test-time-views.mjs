@@ -115,4 +115,34 @@ const ganttBody = timeViews.split("function ganttView")[1] ?? "";
 assert.match(ganttBody, /filter\(r => r\.hit\.length \|\| r\.m === todayMonth\)/,
   "年度甘特窄屏只列出有内容的月份 + 当前月，空月份不能占屏");
 
+/* 🔴 回归 6：课程表（wakeup）的「1–10 节一屏显示」靠三个约束成对存在，缺一即回归。
+   ① 行下限 --wk-row-min 必须**同时**喂给 grid-template-rows 与 min-height。
+      只改 grid-template-rows 而漏 min-height：窗口一矮，行触下限后轨道总和会超出被压扁的
+      网格盒子，而 .wakeup-grid 自带 overflow:hidden（裁 18px 圆角用）⇒ 末尾几节被直接裁掉，
+      且 scrollHeight 不含被裁内容所以滚不到 —— 比原来固定 72px「能滚」更糟。
+      实测（1440×560）被裁掉 5 节，而「纵向溢出」量出来还是 0，只看溢出会判成通过。
+   ② 帧高上限写在 .wakeup-scroll，CSS 变量只能向下继承 ⇒ --slot-count 必须挂面板根节点。
+   ③ .wakeup-view 的 flex 高度链只能待在桌面媒体块：手机上面板一旦 height:100%，
+      超出一屏的内容会被 .tv-panel 的 overflow:hidden 裁掉。 */
+const wkGrid = css.match(/\.wakeup-grid\s*\{[^}]*\}/)?.[0] ?? "";
+assert.match(wkGrid, /--wk-row-min\s*:\s*\d+px/, "课程表网格必须定义节次行下限 --wk-row-min");
+assert.match(wkGrid, /grid-template-rows:[^;]*minmax\(var\(--wk-row-min\)/,
+  "grid-template-rows 的节次行下限必须引用 var(--wk-row-min)");
+assert.match(wkGrid, /min-height:\s*calc\([^;]*var\(--wk-row-min\)/,
+  "课程表网格必须有 min-height: calc(表头 + 节次数 × 行下限) —— 漏了它，矮窗口下末尾节次会被 " +
+  "overflow:hidden 裁死且滚不到（溢出量还是 0，看不出来）");
+// ⚠️ `.wakeup-scroll` 有两处（窄屏 `{display:none}` + 桌面自适应），必须取含 max-height 的那条。
+const wkScroll = [...css.matchAll(/\.wakeup-scroll\s*\{[^}]*\}/g)].map((m) => m[0])
+  .find((r) => r.includes("max-height")) ?? "";
+assert.match(wkScroll, /flex:\s*1 1 0/, "课程表滚动容器要 flex:1 1 0 + min-height:0 才能被压到剩余空间");
+assert.match(wkScroll, /max-height:\s*calc\([^;]*var\(--slot-count/,
+  "帧高上限必须按 --slot-count 算（写死高度就没法随节次数自适应）");
+assert.match(timeViews, /root\.style\.setProperty\("--slot-count"/,
+  "--slot-count 必须挂在面板根节点：max-height 写在外层 .wakeup-scroll 上，变量只能向下继承");
+const wkDesktop = css.match(/@media \(min-width: 761px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
+assert.match(wkDesktop, /\.wakeup-view\s*\{[^}]*height:\s*100%/, "课程表的 flex 高度链必须写在桌面媒体块里");
+assert.ok(!/^\.wakeup-view\s*\{[^}]*height:\s*100%/m.test(css),
+  "基础态不能给 .wakeup-view 写 height:100% —— 手机上面板被限高后，超出一屏的内容会被 " +
+  ".tv-panel 的 overflow:hidden 裁掉");
+
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）");
