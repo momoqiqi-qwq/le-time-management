@@ -322,3 +322,75 @@ const catalogBlock = fs.readFileSync(new URL('../src/pluginCatalog.js', import.m
 assert.ok(catalogBlock.includes(`"version": "${manifest.version}"`), 'pluginCatalog 必须同步插件版本号（改完 manifest 要跑 tools/sync-plugins.js）');
 assert.match(manifest.description, /彩色课程块/, 'manifest 描述要提到彩色课程块');
 console.log('PASS: shiguang-schedule/main.js is regenerated from model.js + ui.js and catalog version matches');
+
+/* ── v0.42.0 一、当前周标签：必须能区分「本周」与「非本周」 ──
+   用户需求原文：「添加当前周标签，可以让我判断哪个是现在这周」。
+   关键是**两种状态都要有标记** —— 只标「是本周」的话，「不是本周」就变成
+   要用户自己推断的默认态，等于没回答「现在这周是哪一周」。 */
+assert.match(ui, /function realWeek\(\)/, '要有 realWeek()：保留未夹取的真实周次，用来判断是否本周');
+assert.match(ui, /function hasNow\(\)/, '要有 hasNow()：判断当前日期是否落在学期范围内');
+assert.match(ui, /function weekLabel\(\)/, '要有 weekLabel()：顶栏「本周 · 第 N 周 / 共 M 周」进度文案');
+// realWeek 与 currentWeek 的分工：一个保留原值、一个夹取到合法范围。
+// 若两者合一，开学前打开会把第 1 周误标成「本周」。
+assert.match(ui, /function currentWeek\(\)\{return Math\.max\(1,Math\.min\(/,
+  'currentWeek() 必须把周次夹取到 1..总周数（决定默认显示哪一周）');
+assert.match(ui, /function realWeek\(\)\{return M\.weekOf\(/, 'realWeek() 不能用 currentWeek() 的夹取逻辑');
+assert.match(ui, /<span class="now-tag">本周<\/span>/, '顶栏本周态要渲染 .now-tag 标签');
+assert.match(ui, /<span class="now-tag off">非本周<\/span>/, '顶栏非本周态也要有标签（不能只标本周）');
+assert.match(ui, /now&&!atNow\?button\('回到本周'/,
+  '「回到本周」只在偏离当前周时出现（常态下不占位）');
+// 窄屏把整词收成一个圆点：它必须始终可见，所以不能直接 display:none
+assert.match(ui, /@media\(max-width:620px\)\{[\s\S]*?\.sg \.now-tag\{padding:0;width:16px;height:16px/,
+  '窄屏「本周」标签收成圆点，而不是隐藏');
+console.log('PASS: 当前周标签 —— 本周/非本周两态都有标记，窄屏收成圆点且不消失');
+
+/* ── v0.42.0 二、切周动画 ──
+   用户需求原文：「切换周时做好动画」。
+   两个坑：① 动画层不能加在 .schedule-frame 上（overflow:auto 滚动容器一旦有 transform，
+   内部 position:sticky 的表头会失锚）；② 方向要区分前后翻。 */
+assert.match(ui, /let slideDir=0/, '要有 slideDir 状态记录切周方向');
+assert.match(ui, /function gotoWeek\(target\)/, '切周统一走 gotoWeek()，由它算方向');
+assert.match(ui, /if\(next!==week\)slideDir=next>week\?1:-1/,
+  '只在真的换了周时才设方向（重复点同一周不该闪）');
+assert.match(ui, /async function action\(a,source\)\{clearError\(\);slideDir=0;switch\(a\)\{/,
+  '每次 action 开头重置 slideDir，否则普通重绘也会莫名滑动');
+assert.match(ui, /function animateWeek\(\)/, '要有 animateWeek() 补动画类');
+assert.match(ui, /<div class="week-anim" data-week-anim>/, '周视图必须把课表包进 .week-anim');
+assert.match(ui, /\.sg \.week-anim\{flex:1 1 0;min-height:0;display:flex;flex-direction:column;overflow:hidden\}/,
+  '.week-anim 要 flex 撑开 + overflow:hidden（否则横向滑动会出滚动条）');
+assert.match(ui, /@keyframes sg-week-in\{from\{opacity:\.25;transform:translateX\(calc\(var\(--sg-slide,1\) \* 42px\)\)\}/,
+  '滑入关键帧要用 --sg-slide 控制方向');
+assert.match(ui, /slideDir<0\?'anim-back':'anim-fwd'/, '往回翻与往后翻要用不同的动画类');
+assert.match(ui, /animationend[\s\S]{0,160}classList\.remove\('anim-in','anim-back','anim-fwd'\)/,
+  'animationend 要摘掉动画类，否则下次重绘不会重播');
+// 回归守卫：动画绝不能加到滚动容器 .schedule-frame 上
+assert.doesNotMatch(ui, /\.sg \.schedule-frame\{[^}]*animation:/,
+  '.schedule-frame 是 overflow:auto 容器，加 animation/transform 会让 sticky 表头失锚');
+assert.doesNotMatch(ui, /\.sg \.schedule-frame\{[^}]*transform:/,
+  '.schedule-frame 不能有 transform（会让内部 sticky 失效）');
+console.log('PASS: 切周动画 —— 动画层独立于滚动容器，方向可辨且不重播失效');
+
+/* ── v0.42.0 三、总学期视图 ──
+   用户需求原文：「做一个总学期视图，可以看到所有周」。
+   它同时顶替了旧的「选择周次」纯按钮页（20 个按钮既占地方又看不出分布）。 */
+assert.match(ui, /function semesterOverview|function weekPickerContent\(\)\{[\s\S]*?semester-wrap/,
+  '总学期视图要渲染 .semester-wrap');
+assert.match(ui, /function semCard\(w,sem\)/, '每周一张 semCard');
+assert.match(ui, /function semBar\(c,sem\)/, '周卡内用 semBar 画课程条');
+assert.match(ui, /function semBounds\(\)/, '要有 semBounds() 把全天时间轴压进卡片高度');
+assert.match(ui, /class="sem-card \$\{isCur\?'on':''\} \$\{isNow\?'is-now':''\}/,
+  '周卡要同时带「当前查看 on」与「本周 is-now」两个独立标记');
+assert.match(ui, /const isNow=r===w,isCur=w===week;/, '两个标记分别比对真实本周与当前查看周');
+// 纵向映射用百分比，才能让不同周的同一节课位置一致、可横向比对
+assert.match(ui, /const top=\(\(sem\.minM-M\.minutes\(c\.start\)\)\/\(sem\.spanM\|\|1\)\)\*100/,
+  '课程条的 top 要用百分比（跨周可比对）');
+assert.match(ui, /const height=Math\.max\(5,h-1\.4\);/, '课程条要保底高度，否则半节课看不见');
+assert.match(ui, /\.sg \.sem-mini\{position:relative;display:grid;grid-template-columns:repeat\(7,minmax\(0,1fr\)\)/,
+  '迷你周条是 7 列网格（周一到周日）');
+assert.match(ui, /\.sg \.sem-mini\{[^}]*overflow:hidden\}/,
+  '.sem-mini 必须 overflow:hidden，否则超出 100% 的条会画到卡片外');
+assert.match(ui, /data-action="pick-week" data-week="\$\{w\}"/, '点周卡即跳转到该周');
+assert.match(ui, /<div class="sem-legend">/, '总学期视图要有图例解释两种描边');
+// 学期外不该假装有本周
+assert.match(ui, /当前日期不在本学期范围内/, '日期在学期外时要如实说明没有本周标记');
+console.log('PASS: 总学期视图 —— 20 周总览、迷你课条、本周/当前双标记与图例');
