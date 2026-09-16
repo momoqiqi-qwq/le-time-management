@@ -60,6 +60,11 @@ export function applyBackground(raw = null) {
   root.style.setProperty("--custom-panel-alpha", `${cfg.panelOpacity}%`);
   root.style.setProperty("--custom-panel-blur", `${cfg.panelBlur}px`);
   root.style.setProperty("--custom-comp-alpha", `${cfg.componentOpacity}%`);
+  // 插件卡片（番茄专注等用内联样式的插件）跟随「卡片不透明度 / 毛玻璃」的复合变量。
+  // 只在自定义背景开启时有半透明值；关闭时退回普通 panel 底色，插件外观与从前一致。
+  root.style.setProperty("--custom-panel-mix",
+    cfg.enabled ? `color-mix(in srgb, var(--panel) ${cfg.panelOpacity}%, transparent)` : "var(--panel)");
+  root.style.setProperty("--custom-panel-glass", cfg.enabled ? `blur(${cfg.panelBlur}px)` : "none");
   root.dataset.bgTextShadow = cfg.textShadow ? "on" : "off";
   return cfg;
 }

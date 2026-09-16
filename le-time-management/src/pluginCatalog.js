@@ -74,7 +74,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "pomodoro",
     "name": "番茄专注",
-    "version": "0.4.0",
+    "version": "0.4.1",
     "author": "Le时间管理内置",
     "icon": "hourglass-half",
     "faIcon": "hourglass-half",

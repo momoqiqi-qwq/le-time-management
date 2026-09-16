@@ -365,7 +365,9 @@
     el2.innerHTML = "";
 
     const card = document.createElement("div");
-    card.style.cssText = "max-width:520px;margin:30px auto;text-align:center;background:var(--panel,#fff);color:var(--ink,#22303A);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:34px 30px;box-shadow:var(--shadow,0 2px 10px rgba(34,48,58,.07))";
+    // 卡片底色走宿主的 --custom-panel-mix：自定义背景开启时跟随「卡片不透明度 / 毛玻璃」
+    // 两个滑块变半透明；未开启时该变量就是 var(--panel)，外观与从前一致。
+    card.style.cssText = "max-width:520px;margin:30px auto;text-align:center;background:var(--custom-panel-mix,var(--panel,#fff));color:var(--ink,#22303A);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:34px 30px;box-shadow:var(--shadow,0 2px 10px rgba(34,48,58,.07));backdrop-filter:var(--custom-panel-glass,none);-webkit-backdrop-filter:var(--custom-panel-glass,none)";
 
     const title = document.createElement("div");
     title.style.cssText = "font-size:11px;letter-spacing:.3em;color:var(--ink-2,#7E8B94);margin-bottom:14px";

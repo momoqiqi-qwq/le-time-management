@@ -49,7 +49,7 @@ assert.match(settingsView, /for \(const preset of BUILTIN_SOUNDS\)/, '设置页�
 const PLUGIN = new URL('../public/plugins/pomodoro/main.js', import.meta.url);
 const manifest = JSON.parse(read('../public/plugins/pomodoro/manifest.json'));
 assert.ok(manifest.permissions.includes('sound'), '番茄专注的 manifest 必须声明 sound 权限，否则 tide.sound 会被宿主拒绝');
-assert.equal(manifest.version, '0.4.0', '提醒面板默认收起 / 提醒开关改滑块之后必须升插件版本');
+assert.equal(manifest.version, '0.4.1', '卡片底色接入自定义背景的卡片不透明度之后必须升插件版本');
 
 const source = fs.readFileSync(PLUGIN, 'utf8');
 for (const marker of ['tide.sound.play', 'tide.sound.presets', 'focusNotify', 'focusSound', 'breakNotify', 'breakSound', 'AUDIO_MAX_BYTES', 'readAsDataURL']) {
@@ -65,6 +65,22 @@ assert.match(source, /soundChips\.style\.cssText = "display:flex;flex-wrap:wrap;
 /* 提醒面板默认收起：body 初始 display:none，展开走 toggle 的 grid */
 assert.match(source, /margin-top:11px;display:none;gap:9px/, '提醒面板必须默认收起 —— 平常不该占一大屏');
 assert.ok(!/margin-top:11px;display:grid/.test(source), '提醒面板不许默认展开');
+
+/* 自定义背景：卡片必须跟随「卡片不透明度 / 卡片毛玻璃」两个滑块。
+   应用自己的 .card 靠 styles.css 生效，插件卡片是内联样式，只能靠宿主
+   background.js 注入的复合变量 —— 变量必须按 cfg.enabled 门控，
+   否则没开自定义背景时卡片也会被调透明。 */
+assert.match(source, /background:var\(--custom-panel-mix,var\(--panel,#fff\)\)/,
+  '番茄卡片必须用 --custom-panel-mix 做底色，设置里「卡片不透明度」才能管到它');
+assert.match(source, /backdrop-filter:var\(--custom-panel-glass,none\)/,
+  '番茄卡片要接 --custom-panel-glass，设置里「卡片毛玻璃」才能管到它');
+const backgroundSrc = read('../src/background.js');
+assert.ok(backgroundSrc.includes('"--custom-panel-mix"') && backgroundSrc.includes('"--custom-panel-glass"'),
+  'background.js 必须注入 --custom-panel-mix / --custom-panel-glass 两个复合变量');
+assert.ok(backgroundSrc.includes('cfg.enabled ? `color-mix(in srgb, var(--panel) ${cfg.panelOpacity}%, transparent)` : "var(--panel)"'),
+  '--custom-panel-mix 必须按 cfg.enabled 门控：开启=半透明 color-mix，关闭=不透明 var(--panel)');
+assert.ok(backgroundSrc.includes('cfg.enabled ? `blur(${cfg.panelBlur}px)` : "none"'),
+  '--custom-panel-glass 必须按 cfg.enabled 门控：关闭时不得残留 blur');
 
 /* 极简 DOM：够 render() 跑起来即可 */
 function fakeEl(tag = 'div') {

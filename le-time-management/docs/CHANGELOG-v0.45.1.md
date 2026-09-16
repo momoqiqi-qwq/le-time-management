@@ -2,8 +2,9 @@
 
 发布日期：2026-09-16
 
-> 本版含三处改动：① 插件开发文档新增「返回按钮」硬性要求；② school-notice 插件站点卡片新增「编辑」按钮；
-> ③ school-notice 插件支持「JSON 接口型」站点（服务端只吐空壳、列表靠 JS 渲染），并登记北航信息门户。
+> 本版含四处改动：① 插件开发文档新增「返回按钮」硬性要求；② school-notice 插件站点卡片新增「编辑」按钮；
+> ③ school-notice 插件支持「JSON 接口型」站点（服务端只吐空壳、列表靠 JS 渲染），并登记北航信息门户；
+> ④ 番茄专注卡片接入自定义背景的「卡片不透明度 / 卡片毛玻璃」。
 
 ## 改动一 · 插件开发文档加「返回按钮」硬性要求
 
@@ -80,6 +81,30 @@
 - **真网络端到端**（`test-results/buaa-adapter-probe.mjs`）：页面 200 / 0 个链接 →
   判定 Nuxt → 命中适配器 → 接口 200 / 74091 字节 → **解析出 100 条**，
   标题、日期、栏目摘要、详情页地址全部正确。
+
+## 改动四 · 番茄专注卡片接入自定义背景的透明度设置
+
+### 问题
+
+开启自定义背景后，应用自己的卡片（`.card` / `.set-card` 等）会跟随设置里的
+「卡片不透明度」「卡片毛玻璃」滑块变半透明、透出壁纸，但**番茄专注的卡片始终是一块
+不透明的纯色矩形** —— 两个透明度滑块对它毫无效果。
+
+根因：应用卡片靠 `styles.css` 的 `:root[data-custom-background="on"]` 规则生效，
+而插件卡片是插件自己写的**内联样式** `background:var(--panel,#fff)`，CSS 规则管不到，
+透明度变量传进去也没被使用。
+
+### 改动
+
+- `src/background.js`：新增两个按 `cfg.enabled` 门控的复合变量 ——
+  `--custom-panel-mix`（开启时 = `color-mix(in srgb, var(--panel) <卡片不透明度>%, transparent)`，
+  关闭时 = 不透明的 `var(--panel)`）与 `--custom-panel-glass`（开启时 = `blur(<卡片毛玻璃>px)`，
+  关闭时 = `none`）。任何插件把卡片底色换成 `var(--custom-panel-mix,…)` 即可自动跟随设置。
+- `public/plugins/pomodoro/main.js`（插件 0.4.0 → **0.4.1**）：卡片底色改用
+  `var(--custom-panel-mix,var(--panel,#fff))`，并接上 `backdrop-filter:var(--custom-panel-glass,none)`。
+- `scripts/test-pomodoro.mjs`：加守卫断言（卡片必须使用两个变量、
+  `background.js` 必须注入且按 `cfg.enabled` 门控），插件版本断言同步 0.4.1。
+- 未开启自定义背景时外观零变化（变量退回不透明 `var(--panel)`、无 blur）。
 
 ## 影响端
 
