@@ -226,18 +226,18 @@ assert.match(subHeadHtml, /class="screen-head sub-head"/, '顶栏必须带 sub-h
 // 关键结构断言：从顶栏开头到 <h2> 之间不能出现 </div>。
 // 只要退回「返回单个 div + 标题另一个 div」的写法，这段里就会冒出 </div> 而变红。
 const beforeTitle = subHeadHtml.slice(0, subHeadHtml.indexOf('<h2'));
-assert.ok(subHeadHtml.includes('data-action="settings"'), '默认返回目标仍是「我的」页');
+assert.ok(subHeadHtml.includes('data-action="back"'), '默认返回必须走历史栈弹出（v0.41.1 前「编辑课程」写死回「我的」设置页，从课程管理进来返回落错页）');
 assert.ok(beforeTitle.includes('‹ 返回'), '返回按钮必须在标题之前');
 assert.ok(!beforeTitle.includes('</div>'), '返回按钮与标题必须同处一个顶栏容器，不能各占一个块级 div');
 assert.equal([...subHeadHtml.matchAll(/<h2>/g)].length, 1, '标题只能有一个');
 assert.ok(!subHeadHtml.includes('back-row'), 'subHead 不能再输出独立的返回行');
 // 带副标题 / 自定义返回目标 / 自定义返回文案的调用（选择学校、适配器列表）也要走同一套
-const subWithSub = fx.subHead('选择学校', 'edu', '官方适配索引 · 42 所学校/工具');
-assert.match(subWithSub, /data-action="edu"/, '自定义返回目标要落到 data-action');
+const subWithSub = fx.subHead('选择学校', 'back', '官方适配索引 · 42 所学校/工具');
+assert.match(subWithSub, /data-action="back"/, '自定义返回目标要落到 data-action');
 assert.match(subWithSub, /官方适配索引 · 42 所学校\/工具/, '副标题要渲染出来');
 assert.equal(headCount(subWithSub), 1, '带副标题时也只能有一个顶栏');
 assert.ok(!subWithSub.slice(0, subWithSub.indexOf('<h2')).includes('</div>'), '带副标题时返回按钮与标题仍须同行');
-assert.ok(fx.subHead('备份与恢复', 'settings', '', '‹ 返回学校列表').includes('‹ 返回学校列表'), '返回按钮的文案可以自定义');
+assert.ok(fx.subHead('备份与恢复', 'back', '', '‹ 返回学校列表').includes('‹ 返回学校列表'), '返回按钮的文案可以自定义');
 // 源码层：旧的返回行标记与样式块要一并清干净，别留死规则
 assert.ok(!ui.includes('back-row'), 'back-row 已废弃（返回行不再独占一行），源码里不该再有它的标记或样式');
 // .sub-head 压的是 .screen-head 的 justify-content / margin，同特异性靠后生效，必须写在它之后
@@ -247,6 +247,20 @@ assert.ok(headAt > -1 && subHeadAt > headAt, '.sub-head 必须写在 .screen-hea
 const subHeadRule = ui.match(/\.sg \.sub-head\{([^}]*)\}/)?.[1] || '';
 assert.match(subHeadRule, /justify-content:flex-start/, 'sub-head 要把 space-between 改成 flex-start，否则标题会被顶到右端');
 console.log('PASS: plugin sub-page headers put 「‹ 返回」 and the title on one row');
+
+/* ── v0.41.1 二级页返回改历史栈：返回 = 回到来时的那一页 ──
+   subHead 的 backTo 原先是写死的目标页（编辑课程默认 'settings'），
+   「课程管理 → 编辑课程 → 返回」会落到「我的」设置页。现在进子页压栈、返回弹栈。 */
+assert.match(ui, /function enterMode\(next\)\{if\(!MAIN_MODES\.has\(next\)&&next!==mode\)\{modeStack\.push\(mode\)/, '进子页必须压入当前页（主视图 week/today 不压栈）');
+assert.match(ui, /case 'back':mode=modeStack\.pop\(\)\|\|'week';break;/, '必须有 back 动作：弹出栈顶，栈空回周视图');
+assert.match(ui, /case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'edu':case 'courses':case 'tables':case 'style':case 'week-picker':enterMode\(a\);break;/, '菜单切子页必须走 enterMode 压栈');
+assert.match(ui, /color:0,remark:''\};enterMode\('edit'\);break;/, '「添加课程」必须压栈后再进编辑页');
+assert.match(ui, /enterMode\('edit'\);paint\(\);/, '「课程管理 → 点课程编辑」也必须压栈');
+assert.match(ui, /enterMode\('schools'\);await loadSchoolIndex\(\);/, '「选择学校」必须压栈');
+assert.match(ui, /enterMode\('adapters'\);break;/, '「选择适配器」必须压栈');
+assert.match(ui, /if\(modeStack\.length>24\)modeStack\.shift\(\);/, '栈要有上限，防长会话无限增长');
+assert.ok(!/subHead\([^)]*'(?:settings|edu|school-list)'/.test(ui), 'subHead 调用不得再写死返回目标页');
+console.log('PASS: 二级页返回走历史栈（课程管理→编辑→返回回到课程管理，不再落错页）');
 
 /* ── v0.33.0 二、课表界面滚轮上下滑动 ── */
 // .schedule-frame 是横向滚动容器。整份 overscroll-behavior:contain 会把纵向滚轮也吃掉，
