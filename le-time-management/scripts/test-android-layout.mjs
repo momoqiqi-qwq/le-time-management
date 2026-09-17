@@ -263,4 +263,16 @@ assert.match(navigatorSrc, /return \{ node, apply, select, panels \}/,
 assert.match(read("../src/views/settings.js"), /\.\.\.settingsNavigator\.panels/,
   "设置视图要渲染 navigator 给的 panels，否则手风琴结构根本不生效");
 
+/* ───────────── v0.49.1 回归：窄屏进设置页先给分类目录，不预展开 ─────────────
+   原先窄屏一进设置页就展开当前分类（「界面与交互」），11 个分区里只看得见它，
+   其余分类被挤到屏幕外。现在初始不展开任何分区，展开与否全由用户点标题行决定。 */
+assert.ok(!/expanded\.add\(active\)/.test(navigatorSrc),
+  "窄屏不许在初始化 / 断点变化时预展开当前分类（v0.49.1：一进来先给一张分类目录）");
+assert.match(navigatorSrc, /^\s*const syncExpanded = \(\) => \{ state\.expanded = \[\.\.\.expanded\]; \};\s*$/m,
+  "展开状态必须写回 state：改一项设置会整页重建，状态只存局部变量会让展开的面板当场塌掉");
+assert.match(navigatorSrc, /^\s*let expanded = new Set\(Array\.isArray\(state\.expanded\) \? state\.expanded : \[\]\);\s*$/m,
+  "重建时要读回 state.expanded，否则上面那句写了也白写");
+assert.match(read("../src/views/settings.js"), /settingsNavState\.expanded = \[\];/,
+  "每次打开设置页要清空展开集合：重新进来仍是目录态，不记住上次展开");
+
 console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, back-key history stack, pinch zoom and the narrow-screen settings accordion");

@@ -22,9 +22,13 @@ import {
 
 let info = null;
 let navUnsub = null;
-const settingsNavState = { query: "", filter: "all" };
+// expanded 是窄屏（手机 / APK）手风琴里已展开的分区 id。它必须活在这里而不是 navigator 内部：
+// 在设置里改任何一项都会重渲染整页，状态存在局部变量里会让刚展开的面板当场塌掉。
+// 但每次「打开设置」都清空 —— 一进来先给一张分类目录，不预展开任何分区（v0.49.1）。
+const settingsNavState = { query: "", filter: "all", expanded: [] };
 
 export function renderSettings(container, opts = {}) {
+  settingsNavState.expanded = [];
   // 插件是异步加载的：注册表变化（导航变化）时重渲染，避免卡片缺位。
   // 批量启停插件时先跳过 —— 每关一个插件都会 emitNavChanged()，不挡就会整页重建 N 次。
   navUnsub?.();

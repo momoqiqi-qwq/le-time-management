@@ -37,7 +37,11 @@ export function createSettingsNavigator(entries, state = {}) {
      全部分区都在同一页里纵向排列。桌面仍是「左侧分类 + 右侧单页」，只是多出来的这些
      标题行在 CSS 里被隐藏（见 .settings-acc-head 的 display:none 规则）。 */
   const narrow = window.matchMedia ? window.matchMedia(NARROW_QUERY) : { matches: false };
-  let expanded = new Set();            // 窄屏下哪些分区是展开的（搜索时会整体替换）
+  /* 窄屏下哪些分区是展开的（搜索时会整体替换）。
+     初始为空集 = 一进设置页先给一张分类目录，谁都不预展开（v0.49.1）。
+     展开状态写回 state 跨重渲染保留 —— 否则在设置里改一项就整页重建，刚展开的面板会当场塌掉。 */
+  let expanded = new Set(Array.isArray(state.expanded) ? state.expanded : []);
+  const syncExpanded = () => { state.expanded = [...expanded]; };
   const heads = new Map();             // entry.id -> { wrap, head, body }
 
   const panels = entries.map((entry) => {
@@ -65,6 +69,7 @@ export function createSettingsNavigator(entries, state = {}) {
     if (!narrow.matches) { select(id); return; }
     if (expanded.has(id)) expanded.delete(id);
     else expanded.add(id);
+    syncExpanded();
     paintPage({ animate: expanded.has(id) });
   }
 
@@ -109,7 +114,7 @@ export function createSettingsNavigator(entries, state = {}) {
     active = id;
     state.active = id;
     const wasExpanded = expanded.has(id);
-    if (narrow.matches) expanded.add(id);
+    if (narrow.matches) { expanded.add(id); syncExpanded(); }
     paintActive();
     paintPage({ animate });
     // 窄屏下选中一个还是收着的分区时，把它滚到视口顶部 —— 否则点了分类名字还得自己往下翻找，
@@ -174,6 +179,7 @@ export function createSettingsNavigator(entries, state = {}) {
         expanded = new Set(expandedBeforeSearch);
         expandedBeforeSearch = null;
       }
+      syncExpanded();
     }
     paintActive();
     paintPage({ animate: false });
@@ -182,14 +188,15 @@ export function createSettingsNavigator(entries, state = {}) {
     list.hidden = visibleIds.size === 0;
   };
 
-  // 断点变化（手机横竖屏切换、桌面窗口拉窄）时重算一次：进入窄屏时至少展开当前分类，
-  // 否则会出现「全都收着、点了设置像打开的是一张目录」。
-  const onModeChange = () => {
-    if (narrow.matches && !expanded.size && active) expanded.add(active);
-    paintPage({ animate: false });
-  };
+  /* 断点变化（手机横竖屏切换、桌面窗口拉窄）时重算一次布局。
+     v0.49.1：这里不再自动展开当前分类，初始化时也不再预展开 —— 窄屏（手机 / APK）
+     进入设置页先给一张分类目录，11 个分区全部收起，展开与否完全交给用户点标题行。
+     原先「进窄屏就展开当前分类」是为了避免「点了设置像打开的是一张目录」，
+     但用户要的正是这张目录：一进来就被摊开的「界面与交互」占掉整屏，反而看不见别的分类。
+     注意：外部点名跳转（select(id)，如更新提示条的「立即更新」）仍会展开目标分区，
+     那属于用户明确指定，不算「一进来就展开」。 */
+  const onModeChange = () => paintPage({ animate: false });
   narrow.addEventListener?.("change", onModeChange);
-  if (narrow.matches && active) expanded.add(active);
 
   search.addEventListener("input", apply);
   paintButtons();
