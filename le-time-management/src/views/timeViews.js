@@ -339,27 +339,41 @@ function wakeupView(data, anchorDate) {
 }
 
 /* ── 里程碑 ──
-   原来是一条横向滚动轨道，每格固定 165px。窄屏改为纵向时间线：
-   箭头块横向铺满，节点信息在下方左对齐，一屏能读完整条链路。 */
+   v0.50.0：从「一条横向轨道排到底」改成蛇形折返跑道（参考「人类科技革命里程碑」那种回环图）——
+   一行排满就掉头，下一行反向铺，行间用竖直段把两端接起来，每个节点带序号
+   （折返之后光看左右位置已经看不出先后，序号是必需的）。
+   DOM 顺序恒为时间顺序，方向只交给 CSS 的 data-dir —— 窄屏把每行拆成单列时不必重排。
+   窄屏（≤760px）仍是纵向铺满，见 styles.css 里程碑段。 */
+const MS_COLS = 4;
 function milestoneView(data) {
   const root = el("section", { class: "tv-panel milestone-view" });
   root.append(head("里程碑时间轴", "参考箭头阶段图：按日期排序展示近期关键任务与时间块。"));
   if (!data.events.length) { root.append(empty()); return root; }
   const list = data.events.slice(0, 12);
-  const track = el("div", { class: "milestone-scroll" }, el("div", { class: "milestone-track" }));
-  const inner = track.firstChild;
-  list.forEach((e, i) => {
-    const c = PALETTE[i % PALETTE.length];
-    const label = e.kind === "截止" ? "目标" : CAT_NAME[e.cat] || "安排";
-    inner.append(el("div", { class: "ms-cell", style: `--ms:${c}` },
-      el("div", { class: "ms-stage" }, label),
-      el("div", { class: "ms-line" }),
-      el("div", { class: "ms-arrow" }, el("b", {}, e.date.slice(0, 4)), el("span", {}, shortDate(e.date))),
-      el("div", { class: "ms-pin" }, "●"),
-      el("div", { class: "ms-copy" }, el("b", {}, e.title), el("span", {}, e.subtitle || e.kind)),
-    ));
-  });
-  root.append(track);
+  const track = el("div", { class: "milestone-track" });
+  for (let start = 0; start < list.length; start += MS_COLS) {
+    const slice = list.slice(start, start + MS_COLS);
+    const rev = (start / MS_COLS) % 2 === 1;
+    const row = el("div", { class: "ms-row", "data-dir": rev ? "rev" : "fwd" });
+    const colors = slice.map((_, k) => PALETTE[(start + k) % PALETTE.length]);
+    slice.forEach((e, k) => {
+      const label = e.kind === "截止" ? "目标" : CAT_NAME[e.cat] || "安排";
+      row.append(el("div", { class: "ms-cell", style: `--ms:${colors[k]}` },
+        el("div", { class: "ms-stage" }, label),
+        el("div", { class: "ms-line" }),
+        el("div", { class: "ms-arrow" }, el("b", {}, e.date.slice(0, 4)), el("span", {}, shortDate(e.date))),
+        el("div", { class: "ms-pin" }, String(start + k + 1)),
+        el("div", { class: "ms-copy" }, el("b", {}, e.title), el("span", {}, e.subtitle || e.kind)),
+      ));
+    });
+    // 跑道线跟着本行节点上色。反向行的视觉从左到右是倒序，渐变要跟着倒过来铺。
+    const rail = rev ? [...colors].reverse() : colors;
+    row.style.setProperty("--ms-rail", `linear-gradient(90deg, ${rail.join(", ")})`);
+    // 行间竖直段接在「本行时间最晚的那个节点」下方：正向行落在右端，反向行落在左端。
+    row.style.setProperty("--ms-joint", colors[colors.length - 1]);
+    track.append(row);
+  }
+  root.append(el("div", { class: "milestone-scroll" }, track));
   return root;
 }
 

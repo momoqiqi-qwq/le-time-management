@@ -209,5 +209,33 @@ assert.match(timeViews, /settings\.timeViewZoom\s*=\s*z/,
 assert.match(timeViews, /clampZoom\(S\.getState\(\)\.settings\.timeViewZoom\)/,
   "恢复持久化缩放时也必须过 clampZoom：旧值或手改过的配置可能越界");
 
+/* ───────────── v0.50.0：里程碑改成蛇形折返跑道 ─────────────
+   原来是一条横向轨道排到底（12 个节点要滑很久），现在一行排满就掉头、
+   下一行反向铺、行间用竖直段把两端接起来。
+   折返之后「左右位置」不再等于时间先后 ⇒ 序号是必需品，不是装饰。
+   几何判据（段中心与末节点中心对齐）由真浏览器探针兜着：
+   技能 letime-settings-ui-probe 的 scripts/probe-milestone.cjs。 */
+assert.match(timeViews, /const MS_COLS = 4;/,
+  "一行排 4 个 —— 改这个数要同步 styles.css 的 grid-template-columns 与 min-width");
+assert.match(timeViews, /const rev = \(start \/ MS_COLS\) % 2 === 1;/,
+  "行方向必须逐行交替（奇数行反向），否则折返断在中间");
+assert.match(timeViews, /"data-dir": rev \? "rev" : "fwd"/,
+  "方向只能由 data-dir 表达：DOM 顺序恒为时间顺序，窄屏把每行拆成单列时才不必重排");
+assert.match(timeViews, /class: "ms-pin" \}, String\(start \+ k \+ 1\)/,
+  "节点必须带序号 —— 折返后光看左右位置已经看不出先后");
+assert.match(timeViews, /const rail = rev \? \[\.\.\.colors\]\.reverse\(\) : colors;/,
+  "反向行的跑道线渐变要跟着倒过来铺，否则颜色与节点对不上");
+
+assert.match(css, /\.ms-row\[data-dir="rev"\]\s*\{\s*direction:\s*rtl;\s*\}/,
+  "反向行用 direction:rtl 让 grid 自动放置从右往左（天然就是「倒序 + 靠右对齐」）");
+assert.match(css, /\.ms-row\[data-dir="fwd"\]::before\s*\{\s*right:\s*calc\(12\.5% - 2px\);\s*\}/,
+  "正向行的行间竖直段接在最右列中心（本行时间最晚的节点在那儿）");
+assert.match(css, /\.ms-row\[data-dir="rev"\]::before\s*\{\s*left:\s*calc\(12\.5% - 2px\);\s*\}/,
+  "反向行的竖直段要接在【最左】列中心：反向行的末节点在屏幕上落在最左列，写成 right 就接错端");
+assert.match(css, /\.ms-row:last-child::before\s*\{\s*display:\s*none;\s*\}/,
+  "最后一行不再往下接");
+assert.match(css, /\.ms-row::before,\s*\.ms-row::after\s*\{\s*display:\s*none;\s*\}/,
+  "窄屏把每行拆成单列，跑道线与行间竖直段必须一并收掉");
+
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
   + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）");

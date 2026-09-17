@@ -1249,9 +1249,38 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .tv-fold-body { display: contents; }
 
 /* 1. 彩色箭头式里程碑：对应参考图 1 */
-.milestone-scroll { overflow-x: auto; padding: 44px 18px 36px; }
-.milestone-track { display: flex; min-width: max-content; align-items: flex-start; }
-.ms-cell { --ms:#2397e5; position: relative; width: 165px; min-height: 250px; text-align: center; color: var(--ink); }
+/* ── 里程碑：蛇形折返跑道（v0.50.0）──
+   一行排满就掉头：奇数行左→右、偶数行右→左，行间用竖直段把两端接起来，
+   跑道线穿过每个节点的图钉。DOM 顺序恒为时间顺序，方向只由 .ms-row[data-dir] 控制 ——
+   窄屏把每行拆成单列时不必重排（见 ≤760px 段）。 */
+.milestone-scroll { overflow-x: auto; padding: 30px 18px 28px; }
+.milestone-track {
+  --ms-gap: 26px;        /* 行间距，同时也是行间竖直段要补的长度 */
+  --ms-rail-y: 164px;    /* 跑道线纵向位置 = 图钉中心（stage 42 + 28 + arrow 48 + pin 上边距 26 + 20） */
+  display: flex; flex-direction: column; gap: var(--ms-gap);
+  min-width: 660px;      /* 4 列 × 165px；再窄交给 .milestone-scroll 横向滚动 */
+}
+.ms-row { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* 反向行：grid 自动放置从右往左，天然就是「靠右对齐 + 倒序」；
+   单元格内容再摆回 ltr，免得文字跟着反向。 */
+.ms-row[data-dir="rev"] { direction: rtl; }
+.ms-row[data-dir="rev"] > .ms-cell { direction: ltr; }
+/* 跑道线：贯穿整行、从图钉中心穿过（图钉自带底色，会把中间那段盖住）。 */
+.ms-row::after {
+  content: ""; position: absolute; left: 0; right: 0; top: var(--ms-rail-y);
+  height: 4px; border-radius: 2px; background: var(--ms-rail, var(--line)); z-index: 0;
+}
+/* 行间竖直段：从本行图钉中心往下伸到下一行的图钉中心。
+   绝对定位里 100% 就是本行高，所以长度 = 本行高 + 行间距。 */
+.ms-row::before {
+  content: ""; position: absolute; top: var(--ms-rail-y);
+  width: 4px; height: calc(100% + var(--ms-gap));
+  background: var(--ms-joint, var(--line)); border-radius: 2px; z-index: 0;
+}
+.ms-row[data-dir="fwd"]::before { right: calc(12.5% - 2px); }   /* 末节点落在最右列的中心 */
+.ms-row[data-dir="rev"]::before { left: calc(12.5% - 2px); }    /* 末节点落在最左列的中心 */
+.ms-row:last-child::before { display: none; }                    /* 最后一行不再往下接 */
+.ms-cell { --ms:#2397e5; position: relative; z-index: 1; min-height: 250px; text-align: center; color: var(--ink); }
 .ms-stage { margin: 0 10px 28px; min-height: 42px; border-radius: 5px 5px 0 0; background: color-mix(in srgb, var(--ms) 28%, white); color: color-mix(in srgb, var(--ms) 88%, #19303c); font-weight: 700; font-size: 15px; display:flex; align-items:center; justify-content:center; padding: 0 8px; border-bottom: 2px solid var(--ms); }
 .ms-line { position:absolute; left:50%; top:42px; width:1.5px; height:60px; background:var(--ms); transform:translateX(-50%); }
 .ms-arrow { position:relative; height:48px; margin: 0 -1px; background:var(--ms); color:white; display:flex; align-items:center; justify-content:center; gap:5px; clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); z-index:2; }
@@ -1393,9 +1422,14 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   .wm-none { margin:0; padding:8px 0; font-size:11.5px; color:var(--ink-3); }
   .wk-tip { margin:0 12px 16px; font-size:11.5px; }
 
-  /* ── 里程碑：横向轨道 → 纵向铺满 ── */
+  /* ── 里程碑：折返跑道 → 纵向铺满 ──
+     窄屏把每行拆成单列，反向行也摆回 ltr（DOM 顺序本来就是时间顺序），
+     跑道线与行间竖直段一并收掉。 */
   .milestone-scroll { overflow:visible; padding:14px 14px 20px; }
   .milestone-track { display:grid; min-width:0; gap:11px; }
+  .ms-row { display:grid; grid-template-columns:1fr; gap:11px; }
+  .ms-row[data-dir="rev"] { direction:ltr; }
+  .ms-row::before, .ms-row::after { display:none; }
   .ms-cell { width:auto; min-height:0; text-align:left; padding-left:14px; border-left:3px solid var(--ms); }
   .ms-stage {
     margin:0 0 8px; min-height:0; border-radius:7px; justify-content:flex-start;
