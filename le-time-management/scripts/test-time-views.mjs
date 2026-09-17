@@ -236,6 +236,11 @@ assert.match(css, /\.ms-row:last-child::before\s*\{\s*display:\s*none;\s*\}/,
   "最后一行不再往下接");
 assert.match(css, /\.ms-row::before,\s*\.ms-row::after\s*\{\s*display:\s*none;\s*\}/,
   "窄屏把每行拆成单列，跑道线与行间竖直段必须一并收掉");
+assert.match(css, /\.ms-row\[data-dir="rev"\] \.ms-arrow\s*\{\s*clip-path:\s*polygon\(100% 0,12% 0,0 50%,12% 100%,100% 100%,88% 50%\);\s*\}/,
+  "反向行的箭头要指向那一行的行进方向（clip-path 左右镜像，尖与缺口对调）");
+assert.match(css, /\.ms-row\[data-dir="rev"\] \.ms-arrow\s*\{\s*clip-path:\s*none;\s*\}/,
+  "窄屏要显式复位箭头：桌面那条镜像规则 specificity 更高（0,3,0 > 0,1,0），"
+  + "窄屏的 .ms-arrow{clip-path:none} 压不住它 —— 跨断点的覆盖只看 specificity，与书写顺序无关");
 
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
   + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）");

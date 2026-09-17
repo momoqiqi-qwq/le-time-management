@@ -1286,6 +1286,10 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ms-arrow { position:relative; height:48px; margin: 0 -1px; background:var(--ms); color:white; display:flex; align-items:center; justify-content:center; gap:5px; clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); z-index:2; }
 .ms-arrow b { font-size:21px; font-variant-numeric: tabular-nums; }
 .ms-arrow span { font-size:11px; opacity:.9; }
+/* 反向行的箭头要指向那一行的行进方向（它从右往左走）。
+   clip-path 左右镜像：原式每个 x 换成 100% − x，尖与缺口对调 ⇒ 左端变尖、右端变缺口。
+   行内相邻箭头「尖插缺口」的衔接关系不变（每个箭头仍是左尖右缺），文字与 DOM 顺序也都不动。 */
+.ms-row[data-dir="rev"] .ms-arrow { clip-path: polygon(100% 0,12% 0,0 50%,12% 100%,100% 100%,88% 50%); }
 .ms-pin { width:32px; height:40px; margin:26px auto 7px; background:var(--ms); color:white; display:flex; align-items:flex-start; justify-content:center; padding-top:6px; font-size:14px; clip-path:polygon(0 0,100% 0,100% 74%,50% 100%,0 74%); }
 .ms-copy { padding:0 10px; display:flex; flex-direction:column; gap:6px; }
 .ms-copy b { font-size:12.5px; line-height:1.35; }
@@ -1429,6 +1433,10 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   .milestone-track { display:grid; min-width:0; gap:11px; }
   .ms-row { display:grid; grid-template-columns:1fr; gap:11px; }
   .ms-row[data-dir="rev"] { direction:ltr; }
+  /* 窄屏的 .ms-arrow 是圆角矩形卡片（下面那条规则把 clip-path 清成 none），
+     但桌面段 [data-dir="rev"] .ms-arrow 的镜像规则 specificity 更高（0,3,0 > 0,1,0），
+     会压过它 —— 跨断点的覆盖只看 specificity，与书写顺序无关 ⇒ 这里必须显式复位。 */
+  .ms-row[data-dir="rev"] .ms-arrow { clip-path: none; }
   .ms-row::before, .ms-row::after { display:none; }
   .ms-cell { width:auto; min-height:0; text-align:left; padding-left:14px; border-left:3px solid var(--ms); }
   .ms-stage {
