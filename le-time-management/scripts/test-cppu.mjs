@@ -90,7 +90,9 @@ assert.ok(source.includes('exportCookies') && source.includes('restoreCookies'),
 assert.ok(source.includes('AUTO_ATTEMPTS'), '验证码识别失败必须有换图重试');
 assert.ok(source.includes('验证码自动识别 ✓'), '登录界面自动登录状态必须如实展示');
 const cppuManifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/cppu-notify/manifest.json', import.meta.url), 'utf8'));
-assert.equal(cppuManifest.version, '1.8.0');
+/* 不钉死具体版本号：插件每次改动都要升版本，钉死了就变成「升一次改两处」。
+   这里只守格式（三段式），catalog 与 manifest 的一致性由下面那条比。 */
+assert.match(cppuManifest.version, /^\d+\.\d+\.\d+$/, '插件版本号必须是三段式 X.Y.Z');
 assert.ok((cppuManifest.permissions || []).includes('vault'), 'manifest 必须声明 vault 权限才能用密钥库');
 assert.ok((cppuManifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限才能打开校园服务链接');
 const catalogSrc = fs.readFileSync(new URL('../src/pluginCatalog.js', import.meta.url), 'utf8');
@@ -116,6 +118,16 @@ assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '�
 assert.match(source, /sideOpen:\s*false/, '校园服务栏必须默认收起');
 assert.match(source, /"pp-shell side-collapsed"/, '默认渲染必须带上 side-collapsed 类');
 assert.ok((source.match(/data-side-toggle/g) || []).length >= 2, '收起与展开都要有开关（侧栏头部一个、收起后左上角把手一个）');
+/* v1.5.0：展开态头部从「10.5px 灰金小字标题 + 右上角 18px 小三角」改成一个像样的按钮
+   （用户反馈「把校园服务变成收起校园服务，按钮长这样」）。两个开关共用同一套视觉。 */
+assert.match(source, /class="pp-side-head-toggle"[^>]*data-side-toggle/,
+  '展开态头部必须是一个带 data-side-toggle 的「收起」按钮');
+assert.ok(!/<div class="pp-side-head"><span>/.test(source),
+  '头部不能再渲染成纯文字标题（那个 10.5px 小灰字看不清）');
+assert.match(source, /\.pp-side-head-toggle\{[^}]*color:var\(--deep\)/,
+  '头部按钮要用与收起把手一致的深青色文字');
+assert.match(source, /\.pp-side-head-toggle\{[^}]*letter-spacing:normal/,
+  '必须显式清掉字距：头部原来带 letter-spacing:.22em，不清会把按钮文字拉散');
 assert.match(source, /applySideOpen\(root, !state\.sideOpen\)/, '开关必须真的切换收起状态');
 assert.match(source, /\.pp-side\{[^}]*transition:width/, '侧栏宽度必须有过渡，否则没有收起/展开动画');
 assert.match(source, /\.pp-shell\.side-collapsed \.pp-side\{width:0/, '收起必须是宽度归零（这样 flex:1 的正文才会跟着移动）');
@@ -133,8 +145,10 @@ assert.match(source, /\.pp-side-toggle\{[^}]*transition:[^}]*max-height/,
   '把手的高度也要参与过渡，收起时才不会突然消失');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-toggle\{[^}]*min-height:44px/,
   '手机端把手的点击区必须 ≥44px，手指才点得准');
+assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-head-toggle\{[^}]*min-height:44px/,
+  '手机端展开态头部的「收起」按钮点击区必须 ≥44px（它是手机上的主要收起入口）');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-sync\{[^}]*min-height:44px/,
-  '手机端侧栏头部「收起」图标的点击区也必须 ≥44px（它是手机上的主要收起入口）');
+  '手机端刷新图标的点击区也必须 ≥44px');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-shell:not\(\.side-collapsed\) \.pp-side-toggle\{[^}]*min-height:0/,
   'min-height 会压过 max-height，窄屏展开时把手必须连 min-height 一起归零');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-btn\{[^}]*min-height:52px[^}]*touch-action:manipulation/,

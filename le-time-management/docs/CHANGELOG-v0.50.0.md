@@ -150,3 +150,129 @@ for (const t of S.getState().tasks) if (!t.done && t.due && t.due < S.todayStr()
 ⇒ 造数据一律**相对今天**生成（`dayOffset(n)`），任务的 due 落在未来。
 并且探针补了一条哨兵断言「节点日期互不相同」—— 因为日期全相同时，
 「编号 1..N」「行方向交替」这些判据**照样全绿**，只有这条能把它拦下来。
+
+---
+
+## 警大门户通知（cppu-notify）1.9.0：校园服务栏的「收起」按钮
+
+### 现象
+
+展开左侧「校园服务」栏后，头部是 **10.5px 灰金小字标题**（字距 2.31px）+ 右上角一个 **18px 小三角 ◂**。
+用户反馈希望这里就是一个像样的按钮（并给了参考图 —— 正是收起后那个把手的样式）。
+
+### 改动
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| 展开态头部 | `<span>校园服务</span>` + ↻ + ◂ 小三角 | **一个按钮** `◂ 校园服务`（`data-side-toggle`，点了收起）+ 右侧只留 ↻ |
+| 按钮视觉 | — | 与收起后的把手 `.pp-side-toggle` **完全同一套**：12px / 600、`var(--deep)`、白底、`1px solid var(--line)`、圆角 11px、`0 1px 6px` 阴影 |
+| 箭头位置 | ◂ 在右边（小图标） | **◂ 在左**（与把手的 `▸` 左右对称，方向跟随状态） |
+| 字距 | 继承头部的 `letter-spacing:.22em` | 按钮上显式 `letter-spacing:normal`，否则按钮文字会被拉散 |
+| 手机端 | ◂ 图标 44px 触控区 | 按钮 `min-height:44px` + `padding:10px 14px` + 13px 字号 |
+
+顺带删掉已无人匹配的 `.pp-side-sync[data-side-toggle]` 规则（那个 ◂ 图标没了）。
+
+### 为什么不复用 `.pp-side-toggle`
+
+它是**收起态的把手**，带 `position:sticky` 与「展开时收到 0 宽」的收合动画
+（`.pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;…}`）—— 展开态里直接复用会被藏掉。
+所以新开 `.pp-side-head-toggle`，**只抄视觉、不抄收合逻辑**。
+两个开关都带 `data-side-toggle`，靠既有的事件委托与 `applySideOpen()` 自动生效。
+
+### 验证
+
+真浏览器探针 `.workbuddy-ai/tmp/probe-cppu-side.cjs`（390×844 与 1440×900 两档，
+量「刚打开 → 点开 → 再收起」三拍）：
+
+| 项 | 实测 |
+|---|---|
+| 打开插件默认 | `side-collapsed=true`、侧栏 `opacity:0`、把手 `▸校园服务` 101×44 可见（**没有回归**） |
+| 展开后头部按钮 | 390 档 `◂校园服务` 262×44；1440 档在 214px 侧栏内正常 |
+| 按钮样式 | `13px / 600 / rgb(15,76,92) / 白底 / 圆角 11px / padding 10px 14px / letter-spacing normal` —— 与把手逐项一致 |
+| 点它 | `side-collapsed` 变回 true、侧栏 `opacity:0` ✓ |
+
+`scripts/test-cppu.mjs` 补 4 条守卫（头部必须是带 `data-side-toggle` 的按钮 / 不能再渲染成纯文字标题 /
+按钮用 `var(--deep)` / 必须显式清字距），并把「手机端收起入口 ≥44px」从 `.pp-side-sync` 改钉到
+`.pp-side-head-toggle`（原来钉的是那个已被删掉的小三角）。
+另把硬编码的 `assert.equal(version,'1.8.0')` 改成三段式格式断言 —— 它和下面那条
+「catalog 与 manifest 版本一致」自相矛盾（后者的注释正写着「版本号只写一处」）。
+
+`npm test` 38 个脚本全过。
+
+---
+
+## 顺带修：`test-back-nav.mjs` 一条脆弱断言
+
+「popstate 监听必须注册在 `initBackNav` 之后」原来用**字符距离窗口**判断：
+
+```
+/initBackNav\(\{[\s\S]{0,300}?\}\);\s*\n[\s\S]{0,200}?window\.addEventListener\("popstate", syncBackButton\)/
+```
+
+并行会话做插件快捷键时把 `attachPluginShortcutKeys({...})` 插在了这两者中间 ——
+**两边语义都没变**，但中间那段（注释 + 调用，约 400 字符）把 200 的窗口撑破，断言变红。
+
+改成按下标先后判断（`indexOf` 比大小），不再受中间插入多少代码影响。
+教训：**用「距离窗口」判断代码顺序是脆的**，语义上是「A 在 B 之前」，就该直接比位置。
+
+---
+
+## 深浅色切换动画：从「瞬间跳变」到圆形揭示
+
+### 需求
+
+切换深色/浅色模式时动画做好，不要突兀。原来点击「深色模式 / 浅色模式」是整页瞬间变色，视觉上「闪一下」。
+
+### 根因（为什么原来零动画）
+
+`src/theme.js` 旧逻辑里 `animate` 的门槛只看**主题 id** 是否变化：
+
+```js
+const changed = root.dataset.theme !== resolved.id || ...;   // 模式变化不计入
+```
+
+纯「深色 ↔ 浅色」模式下 `theme` 不变（还是同一套配色），`changed` 恒 false → 永远走直通路径。
+也就是说**模式切换的动画通道压根没接过电**，CSS 里再怎么写过渡都没用。
+
+### 改动
+
+| 项 | 内容 |
+|---|---|
+| 触发条件 | `changed` 纳入 `themeMode`：主题变化**或**模式变化都算真变化 |
+| 主路径 | `document.startViewTransition(() => paintTheme(...))` —— 旧快照垫底、新快照在上做 clip-path 圆形扩张揭示，全页统一，无「半渐变半闪变」 |
+| 揭示圆心 | 跟随**最近一次 pointerdown** 的位置（模块顶层 capture 监听记录 `lastPointer`）；无坐标（键盘/程序化触发）回退屏幕中心；半径 = 圆心到视口最远角的距离（`ceil(hypot)`） |
+| 注入变量 | `--theme-reveal-x / -y / -r` 写在 `:root` 内联，CSS 端 `@keyframes theme-reveal` 消费（带 50%/150vmax 兜底） |
+| 时长曲线 | 340ms `cubic-bezier(.22,.8,.22,1)` |
+| 降级路径 | 不支持 View Transitions 的旧 WebView → `.theme-transitioning` class 给全元素加 340ms 颜色过渡（原有机制保留） |
+| 减少动效 | `data-ui-motion="reduced"`（应用内设置）或系统 `prefers-reduced-motion` → 直接应用，不进转场（JS 端 `themeMotionAllowed()` 拦 + CSS 端 `animation:none !important` 双保险） |
+| CSS | `styles.css` 新增 `::view-transition-old/new(root)` 层级与 `theme-reveal` keyframes（36 行） |
+
+### 验证
+
+- 新增 `scripts/test-theme-transition.mjs`（vm + stub 真跑 theme.js）：
+  VT 主路径（坐标注入 / 中心回退 / 半径公式 / 重复状态不转场 / night 主题同路径）、
+  降级 class 加/摘、reduced 直接应用、跟随系统变化转场，CSS 静态守卫；
+  3 个变异（模式变化不计入 changed / 砍掉 VT 主路径 / reduced 豁免失效）经子进程重跑**全部拦下**。
+- 真机 CDP 驱动（无头 Chrome 152，390×844 iframe 进真实设置弹窗，**真实鼠标事件**点击）12 项判据全 PASS：
+  - dark→light→dark 两次切换 `startViewTransition` 计数 1→2，**重复点击不再增加**；
+  - **揭示圆心 = 实际点击坐标**（浅色按钮中心 191,475 / 深色 191,547），
+    半径与「到最远角」公式吻合（±1px 取整差）；
+  - 终态正确、无残影。
+- 连帧截图目检（45ms 步进 × 8 帧 × 两方向）：动画中段弧形边缘清晰（顶部两角残留旧主题），
+  340ms 内完成，终态干净。截图在 `output/theme-anim/`（`shot-*` 单帧 + `seq/` 连帧）。
+- `npm test`：38 个测试脚本全部通过；四道 `--check` 全部通过。
+
+### 🔴 验证时踩过的坑（写给下次做动画验证的人）
+
+1. **无头 Chrome 默认 `prefers-reduced-motion`** —— 不显式处理时探针会走「减少动效」豁免路径，
+   测不到主路径。探针须显式设 `data-ui-motion="full"`。
+2. **`--virtual-time-budget` 不推进渲染帧**：实测 1500ms 虚拟时间只跑 **1 帧 rAF**，
+   而 `startViewTransition` 的 callback 恰在「下一次渲染机会」执行 ⇒ 虚拟时间模式下
+   callback 执行时机近乎随机，固定 sleep 等终态必然偶发错乱（表现为「上一步的值」）。
+   **验证动画要用 CDP 真实时间驱动**，别用 `--dump-dom` + 虚拟时间。
+3. **CDP 连接断开后 headless tab 会被冻结**：页面内 `setTimeout` 轮询不再推进，
+   页面内长轮询必然超时。轮询要做成**外部短查询**（每条 `Runtime.evaluate` 都会唤醒上下文）。
+4. **手风琴展开是异步动画**：轮询里每 150ms 重复 `click()` 展开头会与收起/展开动画竞争，
+   最终读到的按钮坐标是过期的（真实点击打在别的分区上，表现为「点击无效 vt=0」）。
+   正确姿势：**单次点击展开 → 只等不点 → 布局稳定（连续多次 rect 相同）→
+   `elementFromPoint` 自校验坐标确实是目标按钮 → 再派发真实鼠标事件**。

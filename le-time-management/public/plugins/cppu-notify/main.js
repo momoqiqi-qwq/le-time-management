@@ -222,11 +222,15 @@
       .pp-side-toggle:hover,.pp-side-toggle:active{background:var(--paper)}
       .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;max-height:0;padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
-      .pp-side-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10.5px;letter-spacing:.22em;color:var(--ink-3);padding:2px 4px 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
-      .pp-side-acts{display:flex;align-items:center;gap:1px;margin-right:7px}
+      /* 头部：左边一个「收起」按钮（与收起后的把手 .pp-side-toggle 同一套视觉），右边只留刷新。
+         原来是 10.5px 灰金小字标题 + 右上角 18px 小三角 —— 两个都太弱，
+         用户反馈「要一个像样的按钮」（v1.5.0）。 */
+      .pp-side-head{display:flex;align-items:center;gap:6px;padding:0 0 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
+      .pp-side-head-toggle{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:normal;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .16s ease}
+      .pp-side-head-toggle:hover,.pp-side-head-toggle:active{background:var(--paper)}
+      .pp-side-head-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      .pp-side-acts{display:flex;align-items:center;gap:1px}
       .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:15px;line-height:1;padding:4px 6px;border-radius:8px;font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-      /* 收起箭头是这一栏的主操作，单独放大加深（13px 灰三角小得看不见——用户实测反馈） */
-      .pp-side-sync[data-side-toggle]{font-size:18px;padding:3px 8px;color:var(--ink-2)}
       .pp-side-sync:active{background:var(--line-soft)}
       .pp-side-sync:hover{background:var(--paper);color:var(--deep)}
       .pp-side-list{display:flex;flex-direction:column;gap:3px}
@@ -248,8 +252,9 @@
         .pp-side{width:100%;position:static;padding:10px;margin-right:0;margin-bottom:12px;max-height:1400px;transition:max-height .34s cubic-bezier(.22,.8,.22,1),margin-bottom .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease}
         .pp-side-inner{width:100%}
         .pp-shell.side-collapsed .pp-side{width:100%;max-height:0;padding-top:0;padding-bottom:0;margin-bottom:0;border-top-width:0;border-bottom-width:0;opacity:0}
-        /* 手机上把手与头部两个小图标都得有 44px 的点击区，手指才点得准 */
+        /* 手机上的两个开关（收起后的把手 / 展开态头部的收起按钮）都要 44px 触控区，手指才点得准 */
         .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%;min-height:44px;padding:10px 14px;font-size:13px}
+        .pp-side-head-toggle{min-height:44px;padding:10px 14px;font-size:13px}
         .pp-side-sync{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;padding:0}
         .pp-side-acts{gap:4px}
         /* 展开时把手要整体藏掉：min-height 会压过 max-height，所以必须把 min-height 也归零，
@@ -1081,10 +1086,10 @@
         + `</button>`;
     }).join("");
     return `<div class="pp-side-inner">`
-      + `<div class="pp-side-head"><span>校园服务</span>`
+      + `<div class="pp-side-head">`
+      + `<button type="button" class="pp-side-head-toggle" data-side-toggle aria-expanded="true" title="收起校园服务" aria-label="收起校园服务"><span aria-hidden="true">◂</span>校园服务</button>`
       + `<span class="pp-side-acts">`
       + `<button type="button" class="pp-side-sync" data-link-sync title="重新识别标题与图标" aria-label="重新识别标题与图标">↻</button>`
-      + `<button type="button" class="pp-side-sync" data-side-toggle aria-expanded="true" title="收起校园服务" aria-label="收起校园服务">◂</button>`
       + `</span></div>`
       + `<div class="pp-side-list">${rows}</div>`
       + `<div class="pp-side-note">标题与图标自动识别<br>点一下用浏览器打开</div>`
