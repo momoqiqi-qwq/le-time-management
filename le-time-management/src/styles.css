@@ -622,6 +622,25 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .tkc .att, .ptask .att { font-size: 11px; color: var(--sea); flex: none; }
 .drawer .att-imgs { display: flex; flex-direction: column; gap: 10px; }
 .drawer .att-imgs img { width: 100%; border-radius: 10px; border: 1px solid var(--line-soft); }
+/* 每张图带一个移除按钮：定位在右上角，半透明底避免压在图上看不清 */
+.drawer .att-item { position: relative; }
+.drawer .att-del {
+  position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  background: var(--panel); color: var(--ink-2); font-size: 13px; line-height: 1;
+}
+.drawer .att-del:hover { color: var(--coral); border-color: var(--coral); }
+.drawer .att-n { color: var(--ink-3); font-weight: 500; }
+/* 拖放区：平时低调，拖近时亮起来 —— 不然抽屉里一堆虚线框会很吵 */
+.drawer .att-zone {
+  margin-top: 8px; padding: 12px; border: 1px dashed var(--line);
+  border-radius: 10px; background: var(--soft); text-align: center;
+  transition: border-color .16s, background .16s;
+}
+.drawer .att-zone.over { border-color: var(--mint); background: color-mix(in srgb, var(--mint) 12%, transparent); }
+.drawer .att-hint { font-size: 12px; color: var(--ink-3); }
+.drawer .att-zone-acts { display: flex; justify-content: center; gap: 8px; margin-top: 8px; }
 
 /* ═══════════ 移动端适配（Android） ═══════════ */
 * { -webkit-tap-highlight-color: transparent; }
@@ -639,6 +658,11 @@ button, .nav { touch-action: manipulation; }
   .app { flex-direction: column; }
   .main { order: 1; flex: 1 1 0; height: var(--ui-vh, 100dvh); }
   .view { padding-bottom: calc(var(--nav-pad, 62px) + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  /* 沉浸式视图（插件声明 immersive:true，如课程表）：窄屏下让出全局底栏。
+     只做窄屏 —— 桌面端 `.rail` 是左侧竖栏，本来就不占底部高度，不需要也不该隐藏。
+     两条必须成对：光藏 .rail 的话，.view 那条为底栏预留的 padding-bottom 会留成一条空白。 */
+  .app.rail-hidden .rail { display: none; }
+  .app.rail-hidden .view { padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .rail { order: 2; }
   /* 底栏：扁平单行核心入口，图标+小字，激活变色不加底。高度档位由设置「底栏高度」控制 */
   .rail {
@@ -1481,6 +1505,11 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .data-actions{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.backup-list{display:grid;gap:7px;margin-top:10px}.backup-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--paper,#fff)}.backup-row span:first-child{display:flex;flex-direction:column;gap:2px}.backup-row small{color:var(--ink-2);font-size:11px}.backup-row span:last-child{display:flex;gap:6px}
 .inbox-wrap{padding:18px 22px 36px;max-width:1180px;margin:0 auto}.inbox-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:14px}.inbox-head h2{margin:0 0 4px}.inbox-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.8fr);gap:14px}.inbox-grid>.card:last-child{grid-column:1/-1}.inbox-item,.auto-log,.automation-rule{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--line)}.inbox-item-main,.auto-log>div,.automation-rule>span{display:flex;flex-direction:column;gap:3px;min-width:0}.inbox-item-main small,.auto-log small,.automation-rule small{color:var(--ink-2);font-size:11px}.inbox-item-main p{margin:3px 0 0;color:var(--ink-2);font-size:12px}.inbox-actions{display:flex;gap:6px;flex:none}.automation-rule input{width:18px;height:18px}.auto-log button{flex:none}
 @media(max-width:800px){.inbox-wrap{padding:12px}.inbox-grid{grid-template-columns:1fr}.inbox-grid>.card:last-child{grid-column:auto}.backup-row,.inbox-item,.auto-log{align-items:flex-start;flex-direction:column}.inbox-actions{width:100%;flex-wrap:wrap}}
+/* 来源插件行：图标 + 名称 + 时间在一行里对齐（small 是 flex column，这里再套一个行内容器） */
+.inbox-item-main small{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.inbox-item-main small .inbox-src{display:inline-flex;align-items:center;gap:4px}
+.inbox-item-main small .inbox-src .plugin-present-icon{width:13px;height:13px}
+.inbox-att{color:var(--mint)}
 
 /* v0.11.2 自定义背景：背景层与内容层分离，保证 cover/contain/模糊在宽屏和手机上都不会撑坏布局 */
 :root[data-custom-background="on"] body { background: var(--custom-bg-color, var(--bg)); position:relative; }

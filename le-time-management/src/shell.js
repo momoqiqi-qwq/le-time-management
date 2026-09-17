@@ -685,6 +685,11 @@ export function renderShell(root) {
       renderNav();
       if (settingsDockBtn) settingsDockBtn.classList.remove("on");
       renderStat();
+      /* 沉浸式视图（插件声明 immersive:true，如课程表）在窄屏下要让出全局底栏，
+         把那 ~50px 还给内容。标记打在 .app 上而不是 .rail 上，是为了让 CSS 能同时
+         收掉底栏与 .view 的 padding-bottom —— 后者是给底栏预留的占位，底栏不在就该一起收，
+         否则底部会留一条空白。判定只看 def.pluginView?.immersive，不认插件 id。 */
+      appFrame.classList.toggle("rail-hidden", def.pluginView?.immersive === true);
       if (def.pluginView) {
         const box = el("div", {
           class: "plugview",

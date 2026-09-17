@@ -179,9 +179,13 @@ function makeApi(man, source) {
     ui: {
       registerView(def) {
         requirePermission(man, pid, "ui");
-        // 课表：默认安装包不带原版 Compose 运行时，所以原生渲染只做增强 ——
-        // 探测不到运行时就把 def.render（插件自带的课表界面）顶上去，别留死面板。
-        pluginViews.push({ ...def, pluginId: pid,
+        // `immersive: true` = 该视图要占满整屏，窄屏下隐藏 APP 全局底栏（见 shell.js 的
+        // `.rail-hidden` 与 styles.css）。适合「一屏内要放下大块内容」的视图（如课程表：
+        // 7 天 × 全部节次要在一屏里排开，底栏那 ~50px 直接决定末尾节次是否要滚动）。
+        // 声明式而不是在 shell 里按插件 id 硬编码，插件才能自己决定要不要沉浸。
+        pluginViews.push({ ...def, pluginId: pid, immersive: def.immersive === true,
+          // 课表：默认安装包不带原版 Compose 运行时，所以原生渲染只做增强 ——
+          // 探测不到运行时就把 def.render（插件自带的课表界面）顶上去，别留死面板。
           ...(pid === "shiguang-schedule" && api.isTauri
             ? { render: (el, ctx) => renderNativeSchedule(el, ctx, def.render) }
             : {}) });

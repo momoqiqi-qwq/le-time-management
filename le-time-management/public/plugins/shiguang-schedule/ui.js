@@ -36,6 +36,13 @@
    窄屏（≤620px）再把标签收成一个圆点，避免把「第 16 周」挤成省略号。 */
 .sg .week-title .title-line{display:flex;align-items:center;gap:7px;min-width:0;max-width:100%}
 .sg .week-title .title-line b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 副标题两版本，默认走宽屏版；窄屏（≤620px）翻过来。理由见 toolbar() 注释②：
+   长副标题会把手机顶栏撑高近 40px，而手机上「第 N 周」自己就占满一行。 */
+.sg .week-title .sub-mini{display:none}
+/* 菜单里的「回到本周」：宽屏顶栏自带那个按钮，菜单里这条就多余，隐藏。
+   窄屏反过来（顶栏放不下），见 @media(max-width:620px)。 */
+.sg .more-menu [data-action="current"].menu-now{display:none}
+.sg .more-menu [data-action="current"].menu-now::before{content:"⟲"}
 .sg .now-tag{flex:none;display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:750;letter-spacing:.04em;background:color-mix(in srgb,var(--sg-coral) 15%,var(--sg-card));color:color-mix(in srgb,var(--sg-coral) 82%,var(--sg-ink));border:1px solid color-mix(in srgb,var(--sg-coral) 32%,var(--sg-line))}
 .sg .now-tag::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--sg-coral)}
 .sg .now-tag.off{background:var(--sg-soft);color:var(--sg-sub);border-color:var(--sg-line-soft)}
@@ -180,7 +187,17 @@
     算出一个下限，课表就按用户设定真正拉长，放不下时由外层 .plugview 正常滚动。 */
  .sg .main-stage{min-height:calc(var(--sg-head-h,52px) + var(--slot-count,10) * var(--sg-slot-height,76px) + 2px)}.sg .transfer-grid{grid-template-columns:1fr}.sg .hero{align-items:flex-start}.sg .brand-badge{display:none}}
  @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:44px;padding:6px}.sg .hero-copy h2{font-size:19px}.sg .hero-copy .muted{font-size:11px}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:13px}.sg .slot-label span{font-size:8px}.sg .day-head{font-size:11px;gap:1px}.sg .day-head .date{font-size:9px}.sg .course-block{margin:1px;padding:4px 3px}.sg .course-block b{font-size:10px;-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:8.5px;margin-bottom:1px}.sg .course-block span{font-size:8.5px}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:17px}.sg .week-title small{font-size:9.5px}/* 窄屏把「本周」标签收成一个圆点：整词排不下，而它必须始终可见 —— 用户扫一眼就知道这是不是当前周。 */
-.sg .now-tag{padding:0;width:16px;height:16px;justify-content:center;font-size:0}.sg .now-tag::before{width:6px;height:6px}.sg .goto-now{padding:4px 8px;font-size:11px}.sg footer{margin-top:6px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
+.sg .now-tag{padding:0;width:16px;height:16px;justify-content:center;font-size:0}.sg .now-tag::before{width:6px;height:6px}/* 窄屏顶栏：①「回到本周」从顶栏挪进「⋯」菜单（顶栏只剩 ‹ 第N周 › ⋯ 四件）；
+   ② 副标题只留周次区间；③ 「第 N 周」降到 16px、按钮缩到 34px —— 顶栏整体压到 ~46px，
+   比原来省下近 30px，正好是一节课的高度。 */
+.sg .goto-now{display:none}.sg .week-title .sub-full{display:none}.sg .week-title .sub-mini{display:block}
+.sg .more-menu [data-action="current"].menu-now{display:flex}.sg .schedule-top{gap:3px;padding:4px 6px}
+.sg .schedule-top .prev,.sg .schedule-top .next{width:34px;min-height:34px;font-size:19px}
+.sg .more-btn{width:34px;min-height:34px;font-size:19px;border-radius:11px}
+.sg .week-title{min-height:0;padding:0 2px;gap:0}
+.sg .week-title b{font-size:16px}
+.sg .week-title small{font-size:9.5px}
+.sg footer{margin-top:6px;padding-top:7px;font-size:9.5px}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
  @media(pointer:coarse){.sg button,.sg input,.sg select{min-height:42px}.sg .course-block{min-height:0}}
  @media(prefers-reduced-motion:reduce){.sg *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
  `;document.head.append(s);
@@ -219,11 +236,15 @@
  function todayCard(c,conflict){return `<button class="today-card tone-${tone(c)} ${conflict?'conflict':''}" data-edit="${esc(c.id)}"><span class="course-time">${esc(c.start)} – ${esc(c.end)}</span><b>${esc(c.name)}</b>${c.position?`<span>${esc(c.position)}</span>`:''}${c.teacher?`<span>${esc(c.teacher)}</span>`:''}${conflict?'<span>⚠ 与其他课程时间重叠</span>':''}</button>`;}
  /* 底部三宫格导航改收进右上角「⋯」菜单，点击才展开。
    周视图要在一屏内放下 7 天 × 全部节次，底栏那 ~76px 得让给课表；
-   视图切换与常用操作一并挂进菜单，点条目即切换、随即重绘收起。 */
+   视图切换与常用操作一并挂进菜单，点条目即切换、随即重绘收起。
+   `showNow` 为真时额外挂一条「回到本周」—— 窄屏顶栏放不下它（见 toolbar() 注释③），
+   但「偏离当前周之后怎么回去」这件事在手机上同样必须可达，所以挪进菜单而不是删掉。
+   宽屏那条菜单也会渲染它，靠 CSS 在宽屏隐藏（.more-menu [data-action="current"]）。 */
 const MENU_VIEWS=[['today','今日课表'],['week','课表'],['settings','我的']];
-function moreMenu(active){
+function moreMenu(active,showNow=false){
   const views=MENU_VIEWS.map(([id,label])=>`<button role="menuitem" data-action="${id}"${active===id?' class="on"':''}>${label}</button>`).join('');
-  return `<div class="more-wrap" data-more-wrap>${button('⋯','menu-toggle','class="more-btn" aria-label="更多菜单" aria-haspopup="menu" aria-expanded="false"')}<div class="more-menu" data-more-menu role="menu" hidden><span class="label">视图</span>${views}<span class="sep"></span><span class="label">操作</span><button role="menuitem" data-action="add">添加课程</button><button role="menuitem" data-action="tables">切换课表</button><button role="menuitem" data-action="style">个性化配置</button></div></div>`;
+  const nowBtn=showNow?`<button role="menuitem" data-action="current" class="menu-now">回到本周</button>`:'';
+  return `<div class="more-wrap" data-more-wrap>${button('⋯','menu-toggle','class="more-btn" aria-label="更多菜单" aria-haspopup="menu" aria-expanded="false"')}<div class="more-menu" data-more-menu role="menu" hidden><span class="label">视图</span>${views}${nowBtn?`<span class="sep"></span>${nowBtn}`:''}<span class="sep"></span><span class="label">操作</span><button role="menuitem" data-action="add">添加课程</button><button role="menuitem" data-action="tables">切换课表</button><button role="menuitem" data-action="style">个性化配置</button></div></div>`;
 }
 function closeMore(){const menu=host?.querySelector('[data-more-menu]');if(!menu||menu.hidden)return;menu.hidden=true;host.querySelector('[data-more-wrap] .more-btn')?.setAttribute('aria-expanded','false');}
 function toggleMore(btn){const menu=btn.closest('[data-more-wrap]')?.querySelector('[data-more-menu]');if(!menu)return;const open=menu.hidden;closeMore();menu.hidden=!open;btn.setAttribute('aria-expanded',open?'true':'false');}
@@ -235,20 +256,23 @@ function bindMoreDismiss(){
   document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMore();});
 }
  function screenHead(title,sub,action=''){return `<div class="screen-head"><div><h2>${esc(title)}</h2>${sub?`<p class="muted">${esc(sub)}</p>`:''}</div>${action}</div>`;}
- /* 顶栏。三件事按优先级排：
-    ① 中间的周标题 —— 当前显示的就是真实当前周时，标题旁挂一个珊瑚色「本周」标签；
-       不是的时候挂灰色「非本周」，并多出一个「回到本周」按钮。
-       用户的需求是「可以让我判断哪个是现在这周」，所以两种状态都必须有明确标识，
-       只标「是本周」会让「不是本周」变成要靠用户自己推断的默认态。
-    ② 副标题从「共 N 周 · 点标题快速跳转」换成当前周进度（本周 · 第 16 周 / 共 20 周）——
-       同一句话里既回答了「现在第几周」也回答了「还剩几周」。
-    ③ 「回到本周」只在偏离当前周时出现，避免常态下多一个用不上的按钮。 */
- function toolbar(){
-   const pack=activePack(),total=table.config.semesterTotalWeeks,now=hasNow(),atNow=now&&week===realWeek();
-   const tag=atNow?'<span class="now-tag">本周</span>':(now?'<span class="now-tag off">非本周</span>':'');
-   const back=now&&!atNow?button('回到本周','current','class="goto-now" title="跳回当前这一周"'):'';
-   return `<div class="schedule-top">${button('‹','prev',`class="prev" aria-label="上一周" ${week===1?'disabled':''}`)}<button class="week-title" data-action="week-picker" title="打开总学期视图，点任意一周即跳转"><span class="title-line"><b>第 ${week} 周</b>${tag}</span><small>${esc(pack?.name||'我的课表')} · ${esc(weekLabel())} · ${esc(weekRange(week))}</small></button>${button('›','next',`class="next" aria-label="下一周" ${week===total?'disabled':''}`)}${back}${moreMenu('week')}</div>`;
- }
+/* 顶栏。三件事按优先级排：
+   ① 中间的周标题 —— 当前显示的就是真实当前周时，标题旁挂一个珊瑚色「本周」标签；
+      不是的时候挂灰色「非本周」，并多出一个「回到本周」按钮。
+      用户的需求是「可以让我判断哪个是现在这周」，所以两种状态都必须有明确标识，
+      只标「是本周」会让「不是本周」变成要靠用户自己推断的默认态。
+   ② 标题下方那行副标题带**两个版本**（.sub-full / .sub-mini，由 CSS 按断点二选一）：
+      宽屏显示「课表名 · 本周 · 第 N 周 / 共 M 周 · 09/14 – 09/20」，
+      窄屏只留「09/14 – 09/20」。原因是手机上 `第 1 周` 已经是大号字占满一行，
+      再挂一句三十多字的长副标题会把顶栏撑到 ~76px，课表被挤掉近一整节课的高度。
+   ③ 「回到本周」只在偏离当前周时出现，避免常态下多一个用不上的按钮；窄屏改挂进「⋯」菜单。 */
+function toolbar(){
+  const pack=activePack(),total=table.config.semesterTotalWeeks,now=hasNow(),atNow=now&&week===realWeek();
+  const tag=atNow?'<span class="now-tag">本周</span>':(now?'<span class="now-tag off">非本周</span>':'');
+  const back=now&&!atNow?button('回到本周','current','class="goto-now" title="跳回当前这一周"'):'';
+  const sub=`<span class="sub-full">${esc(pack?.name||'我的课表')} · ${esc(weekLabel())} · ${esc(weekRange(week))}</span><span class="sub-mini">${esc(weekRange(week))}</span>`;
+  return `<div class="schedule-top">${button('‹','prev',`class="prev" aria-label="上一周" ${week===1?'disabled':''}`)}<button class="week-title" data-action="week-picker" title="打开总学期视图，点任意一周即跳转"><span class="title-line"><b>第 ${week} 周</b>${tag}</span><small>${sub}</small></button>${button('›','next',`class="next" aria-label="下一周" ${week===total?'disabled':''}`)}${back}${moreMenu('week',now&&!atNow)}</div>`;
+}
  function slotIndexForTime(value,isEnd=false){
    const mins=M.minutes(value),slots=table.timeSlots;if(!slots.length)return 0;
    if(isEnd){for(let i=0;i<slots.length;i++)if(M.minutes(slots[i].endTime)>=mins)return i;return slots.length-1;}
@@ -463,5 +487,9 @@ case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.da
    try{const [raw,storedTables,storedId,storedStyle]=await Promise.all([tide.storage.get('table',M.empty()),tide.storage.get('tables',null),tide.storage.get('currentTableId',''),tide.storage.get('style',defaultStyle)]);style={...defaultStyle,...(storedStyle||{})};if(Array.isArray(storedTables)&&storedTables.length){tables=storedTables.map((p,i)=>({id:String(p.id||p.tableId||makeId()),name:String(p.name||p.tableName||`课表 ${i+1}`),createdAt:Number(p.createdAt)||Date.now()+i,data:M.normalize(p.data||p.tableData)}));currentTableId=tables.some(p=>p.id===storedId)?storedId:tables[0].id;}else{table=M.normalize(raw);currentTableId=makeId();tables=[{id:currentTableId,name:'我的课表',createdAt:Date.now(),data:table}];await saveTables();}table=M.normalize(activePack().data);loaded=true;week=currentWeek();if(host===target&&target.isConnected)paint();}
    catch(e){if(host===target)host.textContent='课表读取失败：'+e.message;}
  }
- tide.ui.registerView({id:'shiguang-schedule',title:'课程表',icon:'calendar-days',render});
+ /* immersive:true ⇒ 窄屏下隐藏 APP 全局底栏，把那一截高度让给课表（见 shell.js /
+    styles.css 的 .rail-hidden）。课表是「一屏内要排开 7 天 × 全部节次」的视图，
+    底栏那 ~50px 直接决定末尾节次要不要额外滚动，所以这里明确声明要沉浸。
+    退出插件页后底栏自动恢复（class 由 shell 每次切换视图时按 def 重算）。 */
+ tide.ui.registerView({id:'shiguang-schedule',title:'课程表',icon:'calendar-days',immersive:true,render});
 })();
