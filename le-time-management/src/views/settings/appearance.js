@@ -194,14 +194,15 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   syncWindowRow();
 
   // 点关闭按钮的行为：直接退出 / 隐藏到系统托盘。
-  // 只有桌面端有托盘，选项跟「启动窗口大小」一样按 desktopWindow 门控。
-  // 存 data.json 的 settings.closeToTray，Rust 关闭事件处理时现读（见 setup_tray 注释）。
-  settings.closeToTray ??= false;
-  const closeBox = el("select", {},
+  // closeBox 先声明、后填 click 逻辑：它的状态在上方托盘开关的 onChange 里也要被改写。
+  const closeBox = el("select", {});
+  // 存 data.json 的 settings.closeToTray（默认开 = 隐藏到托盘），Rust 关闭事件处理时现读。
+  settings.closeToTray ??= true;
+  closeBox.append(
     el("option", { value: "exit" }, "直接退出应用"),
     el("option", { value: "tray" }, "隐藏到系统托盘"),
   );
-  closeBox.value = settings.closeToTray ? "tray" : "exit";
+  closeBox.value = settings.closeToTray !== false ? "tray" : "exit";
   closeBox.addEventListener("change", () => {
     settings.closeToTray = closeBox.value === "tray";
     S.saveNow();
@@ -213,6 +214,31 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     el("span", { class: "setting-copy" }, el("b", {}, "点关闭按钮时")),
     closeBox,
   );
+
+  // 系统托盘开关（放在「点关闭按钮时」之后，两者是「总开关 → 细项」的从属关系）。
+  // 关掉后不创建托盘图标（存 data.json 的 settings.trayEnabled，默认开）。
+  // 图标创建是**启动时**行为，运行期增删容易留残留 ⇒ 改完提示重启生效。
+  settings.trayEnabled ??= true;
+  const trayRow = el("div", { class: "setting-row" },
+    el("span", { class: "setting-copy" }, el("b", {}, "系统托盘")),
+    toggleSwitch({
+      checked: settings.trayEnabled !== false,
+      ariaLabel: "启用系统托盘",
+      onChange: (on) => {
+        settings.trayEnabled = on;
+        // 关掉托盘时「关闭窗口」的语义必须跟着改：细项若还停在「隐藏到托盘」，
+        // 点了关闭应用就直接消失、再也叫不回来（Rust 侧另有同样的一手拦截）。
+        if (!on) {
+          settings.closeToTray = false;
+          closeBox.value = "exit";
+        }
+        S.saveNow();
+        closeRow.style.display = on ? "" : "none";
+        toast(on ? "已启用系统托盘（重启应用后出现图标）" : "已关闭系统托盘，点关闭按钮会直接退出（重启后生效）");
+      },
+    }),
+  );
+  closeRow.style.display = settings.trayEnabled !== false ? "" : "none";
 
   const applyPreset = (name, patch) => {
     setUiPreferences(patch);
@@ -245,6 +271,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入")), startup),
     desktopWindow ? windowRow : null,
+    desktopWindow ? trayRow : null,
     desktopWindow ? closeRow : null,
     el("div", { class: "data-actions pref-reset" },
       el("button", { class: "btn ghost sm", onclick: () => {

@@ -1433,21 +1433,33 @@ async fn http_fetch(
 
 /// 主窗口的「关闭」是不是应该隐藏到托盘。
 ///
-/// 行为设置存放在前端 data.json 的 `settings.closeToTray`（默认 false = 直接退出）。
+/// 行为设置存放在前端 data.json 的 `settings.closeToTray`（默认 true = 隐藏到托盘）。
 /// 刻意**每次关闭时现读文件**而不是启动时缓存：设置改完立即生效，不需要重启应用。
 /// data.json 很小，同步读一次的代价可以忽略（CloseRequested 只在用户点关闭时触发）。
 #[cfg(desktop)]
 fn close_to_tray(app: &tauri::AppHandle) -> bool {
+    read_desktop_setting(app, "/settings/closeToTray", true)
+}
+
+/// 「是否创建系统托盘图标」。默认 true —— 与引入该开关之前的行为保持一致。
+#[cfg(desktop)]
+fn tray_enabled(app: &tauri::AppHandle) -> bool {
+    read_desktop_setting(app, "/settings/trayEnabled", true)
+}
+
+/// 从 data.json 里现读一个布尔设置，缺失 / 解析失败 / 类型不符一律返回 `default`。
+#[cfg(desktop)]
+fn read_desktop_setting(app: &tauri::AppHandle, pointer: &str, default: bool) -> bool {
     let Ok(dir) = app.path().app_data_dir() else {
-        return false;
+        return default;
     };
     let Ok(raw) = fs::read_to_string(dir.join("data.json")) else {
-        return false;
+        return default;
     };
     serde_json::from_str::<Value>(&raw)
         .ok()
-        .and_then(|v| v.pointer("/settings/closeToTray").and_then(Value::as_bool))
-        .unwrap_or(false)
+        .and_then(|v| v.pointer(pointer).and_then(Value::as_bool))
+        .unwrap_or(default)
 }
 
 #[cfg(desktop)]
@@ -1461,6 +1473,7 @@ fn show_main_window(app: &tauri::AppHandle) {
 
 /// 构建系统托盘。
 ///
+/// 只有 `settings.trayEnabled` 为真时才创建图标（设置页「系统托盘」开关）。
 /// 左键点按 = 切换主窗口显示/隐藏；右键 = 弹菜单（显示主窗口 / 退出）。
 /// 退出前先广播 `app-quit` 事件，前端收到后把 350ms 防抖里还没落盘的改动写盘
 /// （见 src/store.js persistSoon），这里延迟 800ms 再真正退出。
@@ -1468,6 +1481,12 @@ fn show_main_window(app: &tauri::AppHandle) {
 fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    // 托盘图标开关是**启动时**生效项：图标一旦建立，运行期增删容易留下残留。
+    // 这里只读一次；用户在设置里改完会看到「重启后生效」的提示。
+    if !tray_enabled(app.handle()) {
+        return Ok(());
+    }
 
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "退出 Le时间管理", true, None::<&str>)?;
@@ -1530,16 +1549,22 @@ pub fn run() {
         }));
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
         // 「点关闭按钮隐藏到托盘」：只拦主窗口，教务导入窗等子窗口照常直接关。
-        // 行为设置存前端 data.json 的 settings.closeToTray，关闭时现读，改完立即生效。
+        // 行为设置存前端 data.json 的 settings.closeToTray（默认 true），关闭时现读，改完立即生效。
+        // ⚠️ 托盘图标本身被关掉（settings.trayEnabled=false）时必须直接退出，
+        // 否则窗口一隐藏就再也点不出来 —— 那等于把应用藏没了。
         builder = builder.on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" && close_to_tray(window.app_handle()) {
+                if window.label() == "main"
+                    && tray_enabled(window.app_handle())
+                    && close_to_tray(window.app_handle())
+                {
                     api.prevent_close();
                     let _ = window.hide();
                 }
             }
         });
         // 系统托盘：左键显示/隐藏主窗口，右键弹菜单（显示主窗口 / 退出）
+        // 是否创建由设置页的 settings.trayEnabled 决定，见 setup_tray 注释。
         builder = builder.setup(setup_tray);
     }
     #[cfg(target_os = "android")]
