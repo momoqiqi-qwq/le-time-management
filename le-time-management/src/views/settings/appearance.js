@@ -12,7 +12,7 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
-import { UI_SCALE_LIMITS, UI_SCALE_PRESETS, normalizeUiScale } from "../../uiScale.js";
+import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, getAutoScaleFactor, normalizeUiScale } from "../../uiScale.js";
 import { toggleSwitch } from "../../switchControl.js";
 
 /* 开关行：左侧只有名称，右侧一个滑块开关（说明文字已按要求全部去掉，见 v0.37.19）。 */
@@ -115,9 +115,18 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   const uiScaleHint = el("small", { class: "ui-scale-hint" });
   const paintScaleHint = () => {
     const value = Number(uiScale.value);
-    uiScaleHint.textContent = value === 100
+    const base = value === 100
       ? "当前为标准大小。整页（文字、按钮、间距、图标）会一起缩放；只想放大文字请用上面的「文字大小」。"
       : `整个界面按 ${value}% 显示。手机上界面太小、桌面上想一屏多放些内容都可以用这个。缩小到 80% 可在一屏里看到更多内容；放大后一屏能放的内容变少，必要时窗口需拉大。`;
+    // 窄屏自适应（v0.49.0）：本机布局宽度不足 NARROW_REFERENCE_WIDTH 时会再乘一个系数。
+    // 不提示的话用户会看到「设了 100% 却比预期小」，所以把实际生效值一并写出来。
+    // ⚠️ 这里要用 window.innerWidth（缩放前的布局视口），不是 viewportWidth()
+    //    —— 后者已经除以生效系数，读出来恰好是基准宽度，会把提示语说反。
+    const auto = getAutoScaleFactor();
+    const rawW = typeof window !== "undefined" ? Math.round(window.innerWidth) : 0;
+    uiScaleHint.textContent = auto < 1 && rawW > 0
+      ? `${base}本机布局宽度只有 ${rawW}px（不足 ${NARROW_REFERENCE_WIDTH}px），已自动等比缩小到 ${Math.round(auto * 100)}%，实际生效 ${Math.round((value / 100) * auto * 100)}% —— 否则顶栏与底栏会占掉过多屏幕。`
+      : base;
   };
   paintScaleHint();
   // 拖动与点档位都要刷新提示语，两处都调一次（比在事件里各写一遍稳）。

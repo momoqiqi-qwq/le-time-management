@@ -22,6 +22,11 @@
  * 都改不动它。** 所以断点只能写 `px`，`zoom` 不会让窄屏断点提前命中 —— 这是本功能的
  * 已知边界（缩放只做「整页等比大小」，不改布局断点），不是缺陷。
  * 想让断点跟随缩放只能走 `@container`，属独立改造。
+ *
+ * v0.49.0 追加「窄屏自适应」：`applyUiScale` 除了用户设定，还要乘一个
+ * `narrowAutoFactor(innerWidth)`（低于 360px 才生效）。所以第二条的判据变成
+ * 「zoom = 用户设定 × 自适应」，`--ui-vw/--ui-vh` 必须除以**生效系数**而不是用户设定
+ * —— 这一条最容易写错，下面用 288px 视口钉死。
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -31,13 +36,17 @@ import { fileURLToPath } from "node:url";
 
 import {
   DEFAULT_UI_SCALE,
+  NARROW_MIN_FACTOR,
+  NARROW_REFERENCE_WIDTH,
   UI_SCALE_LIMITS,
   UI_SCALE_PRESETS,
   __resetUiScaleForTest,
   applyUiScale,
+  getAutoScaleFactor,
   getUiScale,
   getUiScaleFactor,
   initUiScale,
+  narrowAutoFactor,
   normalizeUiScale,
 } from "../src/uiScale.js";
 
@@ -93,6 +102,36 @@ for (const value of presetValues) {
 }
 assert.ok(presetValues.includes(DEFAULT_UI_SCALE), "档位里要有「标准」这一档，否则用户没法回到默认");
 
+/* ──────────────── 1b. 窄屏自适应系数（v0.49.0） ──────────────── */
+
+// 基准宽度是功能的对外契约：动它等于改变所有窄屏设备的观感（实测 288px 的 600dpi 屏
+// 上，外壳占屏高 26% → 20.6%）。要改就连同设置页文案一起改。
+assert.equal(NARROW_REFERENCE_WIDTH, 360);
+assert.equal(NARROW_MIN_FACTOR, 0.7);
+
+// 标准手机逻辑宽度（360 / 390 / 412 是最常见的三档）：一律不缩 —— 这是「常规机零影响」的判据
+for (const w of [360, 375, 390, 393, 412, 414, 560, 768, 1024, 1440, 3840]) {
+  assert.equal(narrowAutoFactor(w), 1, `${w}px 不该触发窄屏自适应`);
+}
+
+// 窄于基准：系数 = 宽 / 基准，使内容布局宽度恰好回到基准
+assert.equal(narrowAutoFactor(288), 0.8, "288 → 0.8（布局宽度回到 360）");
+assert.equal(narrowAutoFactor(324), 0.9);
+assert.equal(narrowAutoFactor(320), 320 / 360);
+assert.equal(narrowAutoFactor(252), NARROW_MIN_FACTOR, "触到下限");
+assert.equal(narrowAutoFactor(1), NARROW_MIN_FACTOR, "再窄也不缩过头");
+
+// 拿不到宽度一律退回 1（宁可不缩，也不要因为读不到视口把界面缩坏）
+for (const bad of [undefined, null, NaN, "", "abc", {}, [], 0, -320, Infinity, -Infinity]) {
+  assert.equal(narrowAutoFactor(bad), 1, `宽度 ${JSON.stringify(bad)} 应退回 1（不缩）`);
+}
+
+// 区间内单调：越窄缩得越多
+assert.ok(narrowAutoFactor(300) < narrowAutoFactor(340), "越窄应缩得越多");
+assert.ok(narrowAutoFactor(359) < 1);
+// 纯函数：同输入同输出
+assert.equal(narrowAutoFactor(288), narrowAutoFactor(288));
+
 /* ────────────────────── 2. applyUiScale 的 DOM 写入 ────────────────────── */
 
 // 假 document / window：只要 root.style.setProperty / addEventListener 够用就行。
@@ -125,7 +164,7 @@ const loadModuleInEnv = (env) => {
   const src = readSrc("src/uiScale.js")
     // 剥掉 ESM 导出语法，改成往 globalThis 上挂，好在 vm 里跑
     .replace(/^export\s+/gm, "")
-    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, viewportWidth, viewportHeight, normalizeUiScale, UI_SCALE_LIMITS };\n");
+    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, getAutoScaleFactor, narrowAutoFactor, viewportWidth, viewportHeight, normalizeUiScale, UI_SCALE_LIMITS, NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR };\n");
   const ctx = { console, document: env.document, window: env.window };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
@@ -185,6 +224,55 @@ const loadModuleInEnv = (env) => {
   mod.initUiScale();
   mod.initUiScale();
   assert.equal((env.listeners.get("resize") || []).length, 1, "initUiScale 必须幂等");
+}
+
+{
+  // ── 窄屏（600dpi 的 1080×2376 实测只有 288×633 CSS px）──
+  // 判据：生效系数 = 用户设定 × 自适应，且 --ui-vw/--ui-vh 必须除以**生效系数**。
+  const env = makeEnv({ width: 288, height: 633.6 });
+  const mod = loadModuleInEnv(env);
+  mod.__resetUiScaleForTest();
+
+  assert.equal(mod.applyUiScale(100), 100, "返回值仍是用户设定，不被自适应改写");
+  assert.equal(mod.getUiScale(), 100, "设置页显示用户设定");
+  assert.equal(mod.getAutoScaleFactor(), 0.8);
+  assert.equal(mod.getUiScaleFactor(), 0.8, "生效系数 = 1.0 × 0.8");
+  assert.equal(env.document.documentElement.style.zoom, "0.8");
+  assert.equal(env.vars.get("--ui-scale"), "0.8");
+  assert.equal(env.vars.get("--ui-auto-scale"), "0.8");
+  // 🔴 视口补偿除以生效系数：288 / 0.8 = 360。
+  //    写成「除以用户设定」（288 / 1）会让 width: var(--ui-vw) 的浮层在 360 宽的
+  //    内容坐标系里只画 288 宽 —— 缺一块，且只有窄屏才复现。
+  assert.equal(Math.round(parseFloat(env.vars.get("--ui-vw"))), 360);
+  assert.equal(Math.round(parseFloat(env.vars.get("--ui-vh"))), 792);
+  assert.equal(mod.viewportWidth(), 288 / 0.8);
+
+  // 用户自己再缩到 80%：两段系数相乘（0.8 × 0.8 = 0.64）
+  mod.applyUiScale(80);
+  assert.equal(mod.getUiScale(), 80);
+  assert.equal(mod.getAutoScaleFactor(), 0.8, "自适应部分不随用户设定变");
+  assert.equal(Math.round(mod.getUiScaleFactor() * 100), 64);
+  assert.equal(Math.round(parseFloat(env.vars.get("--ui-vw"))), Math.round(288 / 0.64));
+
+  // 旋屏到 768px 宽：自适应退出，只剩用户设定
+  env.window.innerWidth = 768;
+  env.window.innerHeight = 400;
+  mod.applyUiScale(80);
+  assert.equal(mod.getAutoScaleFactor(), 1);
+  assert.equal(mod.getUiScaleFactor(), 0.8);
+  assert.equal(env.vars.get("--ui-auto-scale"), "1");
+  assert.equal(env.vars.get("--ui-vw"), "960px", "768 / 0.8");
+
+  // 回到标准手机宽度：必须与旧行为逐位一致（这是「常规机零影响」的判据）
+  const env2 = makeEnv({ width: 390, height: 844 });
+  const mod2 = loadModuleInEnv(env2);
+  mod2.__resetUiScaleForTest();
+  mod2.applyUiScale(100);
+  assert.equal(env2.document.documentElement.style.zoom, "1");
+  assert.equal(env2.vars.get("--ui-scale"), "1");
+  assert.equal(env2.vars.get("--ui-auto-scale"), "1");
+  assert.equal(env2.vars.get("--ui-vw"), "390px");
+  assert.equal(env2.vars.get("--ui-vh"), "844px");
 }
 
 /* ───────────────────── 3. 源码守卫（zoom 成立的硬前提） ───────────────────── */
@@ -272,6 +360,18 @@ assert.match(prefsSrc, /applyUiScale/, "applyUiPreferences 里要真的调 apply
 const appearanceSrc = readSrc("src/views/settings/appearance.js");
 assert.match(appearanceSrc, /UI_SCALE_LIMITS/, "设置页滑块的范围要读 UI_SCALE_LIMITS，不能手写数字");
 assert.match(appearanceSrc, /界面缩放/, "设置页要有「界面缩放」这一行");
+
+// 3g. 窄屏自适应不许「悄悄生效」：设置页要把实际生效值写出来，否则用户看到
+//     「设了 100% 却比预期小」无从解释。提示语里的「本机宽度」必须是缩放前的
+//     `window.innerWidth` —— 用 viewportWidth() 会读出生效后的基准宽度，提示语自己说反。
+assert.match(appearanceSrc, /getAutoScaleFactor/, "设置页要提示窄屏自适应的实际生效值");
+assert.match(appearanceSrc, /window\.innerWidth/, "提示语里的本机宽度要用缩放前的 innerWidth");
+// ⚠️ 先剥注释再查：本页的注释里正写着「不是 viewportWidth()」这句解释，
+//    不剥注释就会命中自己（这个坑在插件侧踩过一次，记在这里）。
+const appearanceCode = appearanceSrc
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^[ \t]*\/\/.*$/gm, "");
+assert.ok(!/viewportWidth/.test(appearanceCode), "设置页别用 viewportWidth()（那是生效后的宽度，会把提示语说反）");
 const mainSrc = readSrc("src/main.js");
 assert.match(mainSrc, /initUiScale\(\)/, "启动时要 initUiScale()，否则 resize 监听挂不上");
 

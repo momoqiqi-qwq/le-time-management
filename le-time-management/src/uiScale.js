@@ -45,6 +45,13 @@
 //
 // 实现取向：与 `windowSize.js`、`background.js` 保持一致 —— 只碰 DOM，不落任何额外存储，
 // 偏好值存在 `settings.ui.uiScale`。Android / 浏览器环境完全可用（不依赖 Tauri）。
+//
+// ## v0.49.0 追加：窄屏自适应（窄屏自动等比缩小）
+//
+// 上面的缩放只由用户设定驱动。但手机的 CSS 布局宽度 = 物理宽 ÷ 像素比：同一块 1080p 屏
+// 在 600dpi 下只有 288 CSS px（480dpi 是 360），外壳与字号会被「相对放大」到占掉 26% 屏高。
+// 所以 `applyUiScale()` 现在还要乘一个 `narrowAutoFactor(innerWidth)`（低于 360px 才生效，
+// 最低 0.7）。契约、边界与实测数据见下方「窄屏自适应」一节。
 
 /** 缩放档位的合法区间与步进（百分比）。下限 80% 保证仍在可点范围，上限 150% 保证不把布局撑爆。 */
 export const UI_SCALE_LIMITS = Object.freeze({ min: 80, max: 150, step: 5 });
@@ -60,7 +67,53 @@ export const UI_SCALE_PRESETS = Object.freeze([
   [150, "150%"],
 ]);
 
+/* ── 窄屏自适应（v0.49.0）──
+ *
+ * **为什么需要它**：手机的 CSS 布局宽度 = 物理宽 ÷ 设备像素比，**与屏幕物理大小无关**。
+ * 1080×2376@480dpi = 360×792（标准），但同一块屏在 600dpi 下只有 288×633 ——
+ * 后者会把「按 CSS px 写死」的外壳尺寸（顶栏 54、底栏 46、返回键 40）放大到占掉
+ * 26% 的屏高（标准机约 18%），字号整体显大，窄屏下还会挤压出版式故障
+ * （2026-09-17 用户截图实测：课程表「‹」返回键被切、教务导入「选择学校」压成竖排四字）。
+ *
+ * **做法**：布局宽度不足 `NARROW_REFERENCE_WIDTH` 时，把缩放系数再乘 `宽 / 基准`，
+ * 使**内容布局宽度回到基准值**（288 × 1/0.8 = 360）。外壳与字号一起等比变小，
+ * 而每行可用宽度反而变大 —— 等价于「把窄屏设备当成标准宽度手机来渲染」。
+ *
+ * 两条边界：
+ * - **只按宽度**：宽度才是版式约束（换行、挤压都由它决定）；高度会随缩放自动回来
+ *   （633 → 792），不必单独算。
+ * - **标准机零影响**：360 / 390 / 412 都 ≥ 基准 ⇒ 系数恰为 1；桌面窗口下限是 900px
+ *   （`windowSize.js` 的 `CUSTOM_SIZE_LIMITS.minWidth`），也永不触发。
+ *
+ * **安全区（`--sat/--sab`）会被一起缩放 —— 这是量过之后的有意取舍，不是漏算。**
+ * 原生注入的是 CSS px 常量，`zoom` 会把它们一并乘掉（顶栏 40.3 → 32.6，实机 151 → 123 设备px）。
+ * 不补偿的理由：Android 状态栏图标在栏内**垂直居中**，最坏情况（系数压到下限 0.7）也只侵入
+ * 栏体下缘的 30%，够不到图标 —— 2026-09-17 在 288×633 实机复现（--sat 40.3 / 图标止于 82 设备px，
+ * 顶栏内容起点 123 > 82，无重叠）。要补偿得让 20 多处 `var(--sat, env(...))` 全部除以
+ * `--ui-scale`，或改动「`:root` 不许定义 `--sat`」那条被回归测试守着的铁律（AGENTS.md 铁律四），
+ * 收益与风险不成比例。**若将来把 `NARROW_MIN_FACTOR` 降到 0.7 以下，或顶栏改成贴图标布局，必须重算。**
+ */
+
+/** 窄屏自适应的基准布局宽度（CSS px）：低于它才等比缩小。360 是 Android 的标准逻辑宽度。 */
+export const NARROW_REFERENCE_WIDTH = 360;
+
+/** 自动缩小的下限系数：再窄也不缩过头，否则文字小到读不了。 */
+export const NARROW_MIN_FACTOR = 0.7;
+
+/**
+ * 窄屏自适应系数（1 = 不缩放）。纯函数，便于单测。
+ *
+ * 拿不到宽度时一律返回 1 —— 宁可不缩，也不要因为读不到视口把界面缩坏。
+ * @param {number} viewportWidthPx 布局视口宽度（CSS px，即 `window.innerWidth`）
+ * @returns {number} `NARROW_MIN_FACTOR` ~ 1
+ */
 const clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+
+export function narrowAutoFactor(viewportWidthPx) {
+  const w = Number(viewportWidthPx);
+  if (!Number.isFinite(w) || w <= 0) return 1;
+  return clamp(w / NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR, 1);
+}
 
 /**
  * 把任意输入夹到合法区间并对齐步进。非法值（字符串、NaN、null）退回 100。
@@ -96,9 +149,22 @@ export function getUiScale() {
   return currentScale;
 }
 
-/** 当前缩放系数（1 = 不缩放）。CSS 变量与 fixed 浮层补偿都用这个。 */
+/**
+ * 当前**生效**缩放系数（1 = 不缩放）。CSS 变量与 fixed 浮层补偿都用这个。
+ *
+ * ⚠️ 与 `getUiScale()` 不是一回事：后者是用户在设置里选的百分比，这里是它乘上
+ * 窄屏自适应系数之后的真实值（窄屏上会小于用户设定，见本文件「窄屏自适应」一节）。
+ */
 export function getUiScaleFactor() {
-  return currentScale / 100;
+  return currentFactor;
+}
+
+/**
+ * 窄屏自适应系数（1 = 未触发）。设置页用它提示「已自动缩至 N%」，
+ * 免得用户看见 100% 却发现界面比预期小。
+ */
+export function getAutoScaleFactor() {
+  return currentAutoFactor;
 }
 
 /**
@@ -116,27 +182,39 @@ export function viewportHeight() {
 }
 
 let currentScale = DEFAULT_UI_SCALE;
+/** 生效系数 = 用户设定 × 窄屏自适应。所有「视口补偿」都读它，别再自己乘。 */
+let currentFactor = DEFAULT_UI_SCALE / 100;
+/** 上一次算出的窄屏自适应系数，仅用于设置页提示。 */
+let currentAutoFactor = 1;
 let resizeBound = false;
 
 /**
  * 把缩放应用到界面。幂等，可重复调用。
  *
- * 写三个东西：
- * - `documentElement.style.zoom` —— 布局级缩放本体；
- * - `--ui-scale` —— 供 CSS 侧需要「反算原始尺寸」的场合使用；
- * - `--ui-vw` / `--ui-vh` —— 视口尺寸 ÷ 缩放系数，fixed 浮层与 100vw/100vh 的替代品。
+ * 写四个东西：
+ * - `documentElement.style.zoom` —— 布局级缩放本体（= 用户设定 × 窄屏自适应）；
+ * - `--ui-scale` —— 生效系数，供 CSS 侧需要「反算原始尺寸」的场合使用；
+ * - `--ui-auto-scale` —— 其中的窄屏自适应部分（1 = 未触发），供诊断与提示；
+ * - `--ui-vw` / `--ui-vh` —— 视口尺寸 ÷ 生效系数，fixed 浮层与 100vw/100vh 的替代品。
  *
- * @param {number} scale 百分比（80~150）
- * @returns {number} 实际生效的缩放百分比
+ * 🔴 `--ui-vw/--ui-vh` 必须除以**生效系数**（含窄屏自适应那部分），否则窄屏上
+ * 内容布局宽 360 而 `--ui-vw` 只写 288，`width: var(--ui-vw)` 的浮层会缺一块。
+ *
+ * @param {number} scale 用户设定的百分比（80~150），不含窄屏自适应
+ * @returns {number} 夹取后的用户设定百分比（不是生效系数 —— 设置页要显示这个）
  */
 export function applyUiScale(scale = currentScale) {
   const value = normalizeUiScale(scale);
   currentScale = value;
+  const auto = narrowAutoFactor(typeof window !== "undefined" ? window.innerWidth : 0);
+  const factor = (value / 100) * auto;
+  currentFactor = factor;
+  currentAutoFactor = auto;
   if (typeof document === "undefined") return value;
-  const factor = value / 100;
   const root = document.documentElement;
   root.style.zoom = String(factor);
   root.style.setProperty("--ui-scale", String(factor));
+  root.style.setProperty("--ui-auto-scale", String(auto));
   // 视口补偿：这两个值必须是「缩放前」的长度，所以除以 factor。
   // zoom 是布局级的，fixed 定位的包含块变成了 root，不补偿就会溢出屏幕。
   if (typeof window !== "undefined") {
@@ -166,5 +244,7 @@ export function initUiScale() {
 /** 仅供测试与诊断：重置模块内状态。 */
 export function __resetUiScaleForTest() {
   currentScale = DEFAULT_UI_SCALE;
+  currentFactor = DEFAULT_UI_SCALE / 100;
+  currentAutoFactor = 1;
   resizeBound = false;
 }
