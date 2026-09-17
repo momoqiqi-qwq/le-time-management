@@ -175,8 +175,8 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.9.0",
-    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.9.0 校园服务栏的收起按钮）",
+    "version": "1.10.0",
+    "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.10.0 校园服务栏头部去重）",
     "icon": "building-columns",
     "faIcon": "building-columns",
     "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。左侧「校园服务」栏内置 WebVPN、教育邮箱、教务、学工、一网通办五个入口（默认收起，点左上角把手展开，标题与图标自动识别）；「教务」用统一身份认证会话现场换一次性票据免密直达，无需手填 token。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。",

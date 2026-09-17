@@ -208,11 +208,15 @@
       .pp-shell{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 20px;box-sizing:border-box;width:100%}
       .pp-main{flex:1;min-width:0}
       /* 校园服务栏可收起：收 / 展靠 .pp-side 的 width 过渡，.pp-main 是 flex:1 会跟着一起走
-         （这就是「警大通知随收缩而动」）。内层固定 214px + 外层 overflow:hidden --
+         （这就是「警大通知随收缩而动」）。内层固定宽度 + 外层 overflow:hidden --
          否则宽度动画期间文字一直在重排，看着很脏。
+         🔴 内层宽度必须是【卡片的内容盒】宽，不能照抄卡片的 214px 外框宽：214 会让内层比
+         内容盒宽 24px，多出来的部分被 overflow:hidden 裁掉 —— 右对齐的东西只会剩半个
+         （「重新识别」的 ↻ 就是这么被裁的）。190 = 214 − 2×1px 边框 − 2×11px 内边距，
+         改 .pp-side 的 width 或 padding 时必须一起改（test-cppu.mjs 有算式守卫）。
          展开方向 = 内层 transform-origin:left top 的缩放，内容自左上角往右下角长出来。 */
       .pp-side{width:214px;flex:none;position:sticky;top:16px;margin-right:16px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:11px 11px 9px;box-shadow:0 1px 6px rgba(34,48,58,.05);overflow:hidden;transition:width .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease}
-      .pp-side-inner{width:214px;transform-origin:left top;transition:transform .34s cubic-bezier(.22,.8,.22,1),opacity .26s ease}
+      .pp-side-inner{width:190px;transform-origin:left top;transition:transform .34s cubic-bezier(.22,.8,.22,1),opacity .26s ease}
       .pp-shell.side-collapsed .pp-side{width:0;margin-right:0;padding-left:0;padding-right:0;border-left-width:0;border-right-width:0;opacity:0}
       .pp-shell.side-collapsed .pp-side-inner{transform:scale(.88) translate(-10px,-10px);opacity:0}
       /* 收起后留在原地的把手。它是 .pp-shell 的正经 flex 子项（不是浮层），所以永远压不住正文；
@@ -222,17 +226,15 @@
       .pp-side-toggle:hover,.pp-side-toggle:active{background:var(--paper)}
       .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;max-height:0;padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
-      /* 头部：左边一个「收起」按钮（与收起后的把手 .pp-side-toggle 同一套视觉），右边只留刷新。
-         原来是 10.5px 灰金小字标题 + 右上角 18px 小三角 —— 两个都太弱，
-         用户反馈「要一个像样的按钮」（v1.5.0）。 */
-      .pp-side-head{display:flex;align-items:center;gap:6px;padding:0 0 9px;border-bottom:1px solid var(--line-soft);margin-bottom:7px}
+      /* 头部：就是一个「收起」按钮（与收起后的把手 .pp-side-toggle 同一套视觉）。
+         原来这里是 10.5px 灰金小字标题 + 右上角 18px 小三角，两个都太弱（v1.5.0 换成按钮）；
+         当时还留着一条 border-bottom 分隔线，可卡片边框 + 这条线正好把头部圈成一个多余的方框，
+         右边那个「重新识别」的 ↻ 又因为内层比卡片内容盒宽 24px 被 overflow:hidden 裁掉半个
+         —— 两个都删掉（v1.6.0）。 */
+      .pp-side-head{display:flex;align-items:center;padding:0 0 9px;margin-bottom:7px}
       .pp-side-head-toggle{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:normal;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .16s ease}
       .pp-side-head-toggle:hover,.pp-side-head-toggle:active{background:var(--paper)}
       .pp-side-head-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
-      .pp-side-acts{display:flex;align-items:center;gap:1px}
-      .pp-side-sync{border:0;background:transparent;color:var(--ink-3);cursor:pointer;font-size:15px;line-height:1;padding:4px 6px;border-radius:8px;font-family:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-      .pp-side-sync:active{background:var(--line-soft)}
-      .pp-side-sync:hover{background:var(--paper);color:var(--deep)}
       .pp-side-list{display:flex;flex-direction:column;gap:3px}
       .pp-side-btn{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;border-radius:10px;padding:6px 8px;cursor:pointer;text-align:left;color:var(--ink);font-family:inherit;min-height:46px;transition:background .16s ease,color .16s ease}
       .pp-side-btn:hover{background:var(--paper);color:var(--deep)}
@@ -255,8 +257,6 @@
         /* 手机上的两个开关（收起后的把手 / 展开态头部的收起按钮）都要 44px 触控区，手指才点得准 */
         .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%;min-height:44px;padding:10px 14px;font-size:13px}
         .pp-side-head-toggle{min-height:44px;padding:10px 14px;font-size:13px}
-        .pp-side-sync{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;padding:0}
-        .pp-side-acts{gap:4px}
         /* 展开时把手要整体藏掉：min-height 会压过 max-height，所以必须把 min-height 也归零，
            否则窄屏上会在侧栏与正文之间留一条 44px 的隐形空隙 */
         .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0;min-height:0}
@@ -1088,9 +1088,7 @@
     return `<div class="pp-side-inner">`
       + `<div class="pp-side-head">`
       + `<button type="button" class="pp-side-head-toggle" data-side-toggle aria-expanded="true" title="收起校园服务" aria-label="收起校园服务"><span aria-hidden="true">◂</span>校园服务</button>`
-      + `<span class="pp-side-acts">`
-      + `<button type="button" class="pp-side-sync" data-link-sync title="重新识别标题与图标" aria-label="重新识别标题与图标">↻</button>`
-      + `</span></div>`
+      + `</div>`
       + `<div class="pp-side-list">${rows}</div>`
       + `<div class="pp-side-note">标题与图标自动识别<br>点一下用浏览器打开</div>`
       + `</div>`;
@@ -1179,9 +1177,6 @@
       const go = e.target.closest("[data-goto]");
       if (go) { openSideLink(go.dataset.goto, go); return; }
       if (e.target.closest("[data-side-toggle]")) { applySideOpen(root, !state.sideOpen); return; }
-      if (e.target.closest("[data-link-sync]")) {
-        loadLinkMeta(root, true).then(() => tide.notify("已重新识别校园服务的标题与图标"));
-      }
     });
   }
 

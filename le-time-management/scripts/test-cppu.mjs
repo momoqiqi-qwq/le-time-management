@@ -128,10 +128,31 @@ assert.match(source, /\.pp-side-head-toggle\{[^}]*color:var\(--deep\)/,
   '头部按钮要用与收起把手一致的深青色文字');
 assert.match(source, /\.pp-side-head-toggle\{[^}]*letter-spacing:normal/,
   '必须显式清掉字距：头部原来带 letter-spacing:.22em，不清会把按钮文字拉散');
+/* v1.6.0：头部只留这一个按钮。原来右边还有个「重新识别标题与图标」的 ↻，但它落在内层溢出的
+   那 24px 里，被 overflow:hidden 裁得只剩半个弧；头部的 border-bottom 分隔线又和卡片边框
+   一起把头部圈成一个多余的方框。用户看到的就是「右边多余的按钮 + 多余的 1 个框」，两个都删。 */
+assert.ok(!source.includes("data-link-sync") && !/pp-side-sync/.test(source),
+  '头部右侧的「重新识别」↻ 必须删掉（它被 overflow:hidden 裁掉一半，只剩个残缺的弧）');
+assert.ok(!/pp-side-acts/.test(source),
+  '↻ 的外层包裹 .pp-side-acts 也要一并删掉，别留死代码');
+assert.ok(!/\.pp-side-head\{[^}]*border-bottom/.test(source),
+  '头部不能再有 border-bottom 分隔线：卡片边框 + 这条线会把头部圈成一个多余的方框');
 assert.match(source, /applySideOpen\(root, !state\.sideOpen\)/, '开关必须真的切换收起状态');
 assert.match(source, /\.pp-side\{[^}]*transition:width/, '侧栏宽度必须有过渡，否则没有收起/展开动画');
 assert.match(source, /\.pp-shell\.side-collapsed \.pp-side\{width:0/, '收起必须是宽度归零（这样 flex:1 的正文才会跟着移动）');
-assert.match(source, /\.pp-side-inner\{width:214px/, '内层必须固定宽度，避免动画期间文字一直在重排');
+/* 内层宽度必须等于【卡片的内容盒】宽，不能照抄卡片的 214px 外框宽：214 会让内层比内容盒宽
+   24px，多出来的部分被 overflow:hidden 裁掉 —— 右对齐的元素只会剩半个（↻ 就这么被裁的）。
+   这里按算式核对，改了 .pp-side 的 width / border / padding 却忘了改内层就会被拦下。 */
+{
+  const side = source.match(/\.pp-side\{width:(\d+)px;[^}]*?border:(\d+)px solid[^}]*?padding:(\d+)px (\d+)px (\d+)px/);
+  const inner = source.match(/\.pp-side-inner\{width:(\d+)px/);
+  assert.ok(side && inner, '必须同时写死 .pp-side 的宽/边框/内边距与 .pp-side-inner 的固定宽度');
+  const w = +side[1], bd = +side[2], hpad = +side[4];
+  const want = w - 2 * bd - 2 * hpad;
+  assert.equal(+inner[1], want,
+    `内层固定宽度必须等于卡片的内容盒宽（${w} − 2×${bd}px 边框 − 2×${hpad}px 内边距 = ${want}）：`
+    + '写卡片外框宽会让内层溢出，右对齐的东西被 overflow:hidden 裁掉一半');
+}
 assert.match(source, /transform-origin:left top/, '展开方向必须自左上角起');
 assert.match(source, /\.pp-shell\.side-collapsed \.pp-side-inner\{transform:scale/, '内层收起时要有缩放，形成左上角到右下角的收放');
 assert.match(source, /max-height:0/, '窄屏（≤820px）侧栏是整层叠放，收起要走高度归零');
@@ -147,8 +168,6 @@ assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-toggle\{[^}]*mi
   '手机端把手的点击区必须 ≥44px，手指才点得准');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-head-toggle\{[^}]*min-height:44px/,
   '手机端展开态头部的「收起」按钮点击区必须 ≥44px（它是手机上的主要收起入口）');
-assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-sync\{[^}]*min-height:44px/,
-  '手机端刷新图标的点击区也必须 ≥44px');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-shell:not\(\.side-collapsed\) \.pp-side-toggle\{[^}]*min-height:0/,
   'min-height 会压过 max-height，窄屏展开时把手必须连 min-height 一起归零');
 assert.match(source, /@media\(max-width:820px\)[\s\S]*?\.pp-side-btn\{[^}]*min-height:52px[^}]*touch-action:manipulation/,
