@@ -12,6 +12,7 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
+import { UI_SCALE_LIMITS, UI_SCALE_PRESETS, normalizeUiScale } from "../../uiScale.js";
 import { toggleSwitch } from "../../switchControl.js";
 
 /* 开关行：左侧只有名称，右侧一个滑块开关（说明文字已按要求全部去掉，见 v0.37.19）。 */
@@ -24,6 +25,7 @@ function toggleRow(label, checked, onChange) {
 
 export function createInterfaceCard({ rerender = () => {} } = {}) {
   const prefs = getUiPreferences();
+  const settings = S.getState().settings;
   const densityBox = el("div", { class: "pref-choice", role: "group", "aria-label": "界面密度" });
   for (const [id, label] of [["comfortable", "舒适"], ["compact", "紧凑"]]) {
     densityBox.append(el("button", {
@@ -48,6 +50,80 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     setUiPreferences({ textScale: Number(textScale.value) }, { persist: false });
   });
   textScale.addEventListener("change", () => setUiPreferences({ textScale: Number(textScale.value) }));
+
+  /* ── 界面缩放（80%~150%）──
+     与上面「文字大小」分工不同：文字大小只改 8 条手写 font-size，控件/间距/图标全不动；
+     界面缩放走 documentElement 的 `zoom`，整页等比放大缩小 —— 手机上「整个界面太小」
+     才是主要诉求，光放大字解决不了。两个实现坑（fixed 浮层要走 --ui-vw/--ui-vh、
+     100vw/100vh 不能用）见 src/uiScale.js 头部注释。
+
+     与「启动窗口大小」的区别也说清：那个是**桌面端调整窗口**，这个是**调整窗口里的内容**，
+     手机上后者才是唯一可用的那个。
+
+     ⚠️ 边界（别在文案里许下做不到的承诺）：缩放**不改变布局断点**。
+     媒体查询按真实窗口宽度判定，`zoom` 与 `html { font-size }` 都影响不了它
+     （实测见 src/uiScale.js）。所以放大到 150% 时桌面窗口不会自动变成手机布局，
+     只是内容整体变大、可容纳的列数变少。 */
+  const uiScale = el("input", {
+    type: "range",
+    min: String(UI_SCALE_LIMITS.min),
+    max: String(UI_SCALE_LIMITS.max),
+    step: String(UI_SCALE_LIMITS.step),
+    value: String(prefs.uiScale),
+    "aria-label": "界面缩放",
+  });
+  const uiScaleOut = el("output", {}, `${prefs.uiScale}%`);
+  // 拖动时实时预览（persist:false），松手才落盘 —— 与「自定义背景」的滑块同一套路，
+  // 避免拖动过程中每 5% 写一次盘。
+  uiScale.addEventListener("input", () => {
+    uiScaleOut.textContent = `${uiScale.value}%`;
+    setUiPreferences({ uiScale: Number(uiScale.value) }, { persist: false });
+    paintScalePresets();
+  });
+  uiScale.addEventListener("change", () => {
+    const value = setUiPreferences({ uiScale: Number(uiScale.value) }).uiScale;
+    // 越界输入会被 normalize 夹回区间并对齐步进，写回控件让用户看到真实生效值。
+    uiScale.value = String(value);
+    uiScaleOut.textContent = `${value}%`;
+    paintScalePresets();
+  });
+
+  const scalePresetBox = el("div", { class: "pref-choice", role: "group", "aria-label": "界面缩放档位" });
+  const scalePresetButtons = [];
+  const paintScalePresets = () => {
+    for (const [button, value] of scalePresetButtons) {
+      button.classList.toggle("on", value === Number(uiScale.value));
+    }
+  };
+  for (const [value, label] of UI_SCALE_PRESETS) {
+    const button = el("button", {
+      class: `pref-choice-btn${prefs.uiScale === value ? " on" : ""}`,
+      type: "button",
+      // 档位按钮与滑块是同一个值的两个视图，点档位就等于把滑块拖过去。
+      onclick: () => {
+        uiScale.value = String(value);
+        setUiPreferences({ uiScale: value });
+        uiScaleOut.textContent = `${value}%`;
+        paintScalePresets();
+      },
+    }, label);
+    scalePresetButtons.push([button, value]);
+    scalePresetBox.append(button);
+  }
+  paintScalePresets();
+
+  const uiScaleHint = el("small", { class: "ui-scale-hint" });
+  const paintScaleHint = () => {
+    const value = Number(uiScale.value);
+    uiScaleHint.textContent = value === 100
+      ? "当前为标准大小。整页（文字、按钮、间距、图标）会一起缩放；只想放大文字请用上面的「文字大小」。"
+      : `整个界面按 ${value}% 显示。手机上界面太小、桌面上想一屏多放些内容都可以用这个。缩小到 80% 可在一屏里看到更多内容；放大后一屏能放的内容变少，必要时窗口需拉大。`;
+  };
+  paintScaleHint();
+  // 拖动与点档位都要刷新提示语，两处都调一次（比在事件里各写一遍稳）。
+  uiScale.addEventListener("input", paintScaleHint);
+  uiScale.addEventListener("change", paintScaleHint);
+  for (const [button] of scalePresetButtons) button.addEventListener("click", paintScaleHint);
 
   const motion = el("select", {},
     el("option", { value: "system" }, "跟随系统"),
@@ -108,6 +184,27 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   );
   syncWindowRow();
 
+  // 点关闭按钮的行为：直接退出 / 隐藏到系统托盘。
+  // 只有桌面端有托盘，选项跟「启动窗口大小」一样按 desktopWindow 门控。
+  // 存 data.json 的 settings.closeToTray，Rust 关闭事件处理时现读（见 setup_tray 注释）。
+  settings.closeToTray ??= false;
+  const closeBox = el("select", {},
+    el("option", { value: "exit" }, "直接退出应用"),
+    el("option", { value: "tray" }, "隐藏到系统托盘"),
+  );
+  closeBox.value = settings.closeToTray ? "tray" : "exit";
+  closeBox.addEventListener("change", () => {
+    settings.closeToTray = closeBox.value === "tray";
+    S.saveNow();
+    toast(settings.closeToTray
+      ? "点关闭按钮将隐藏到系统托盘（右键托盘图标可退出）"
+      : "点关闭按钮将直接退出应用");
+  });
+  const closeRow = el("div", { class: "setting-row" },
+    el("span", { class: "setting-copy" }, el("b", {}, "点关闭按钮时")),
+    closeBox,
+  );
+
   const applyPreset = (name, patch) => {
     setUiPreferences(patch);
     toast(`已应用「${name}」界面预设`);
@@ -124,6 +221,14 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "界面密度")), densityBox),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "底栏高度")), navBarBox),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "文字大小")), el("span", { class: "pref-range" }, textScale, textScaleOut)),
+    el("div", { class: "setting-row setting-col" },
+      el("div", { class: "setting-row-head" },
+        el("span", { class: "setting-copy" }, el("b", {}, "界面缩放")),
+        el("span", { class: "ui-scale-value" }, el("span", { class: "pref-range" }, uiScale, uiScaleOut)),
+      ),
+      scalePresetBox,
+      uiScaleHint,
+    ),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "页面动效")), motion),
     toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value })),
     toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value })),
@@ -131,8 +236,15 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入")), startup),
     desktopWindow ? windowRow : null,
+    desktopWindow ? closeRow : null,
     el("div", { class: "data-actions pref-reset" },
-      el("button", { class: "btn ghost sm", onclick: () => { resetUiPreferences(); toast("界面与交互设置已恢复默认"); rerender(); } }, "恢复界面默认"),
+      el("button", { class: "btn ghost sm", onclick: () => {
+        resetUiPreferences();
+        // 界面缩放能到 150%，恢复默认后不重建整页的话，滑块与档位按钮还停在旧值上
+        // （而界面已经跳回 100%），看起来像「点了没反应」—— 所以这里必须重渲染。
+        toast("界面与交互设置已恢复默认");
+        rerender();
+      } }, "恢复界面默认"),
     ),
   );
 }

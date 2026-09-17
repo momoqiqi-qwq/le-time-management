@@ -212,6 +212,15 @@ let info = await U.checkForUpdates();
 assert.equal(info.has_update, false);
 assert.equal(U.getUpdateState().phase, "uptodate", "没有新版必须落在 uptodate，而不是 available");
 assert.equal(updateToast(), null, "没有新版绝不许弹提示条");
+// 「已是最新」必须带检查时刻：只写版本号时，用户无法分辨这是刚查的还是发版前查的陈旧结果
+// —— 线上实测过这个误会（release 从创建到发布之间是草稿，草稿不计入 releases/latest）。
+assert.ok(U.getUpdateState().checkedAt > 0, "成功检查后要记下检查时刻");
+assert.match(U.describeUpdateState(U.getUpdateState()), /已是最新版本（v0\.38\.0） · \d{2}:\d{2} 检查/, "状态回显要标明这条结果是何时查的");
+assert.equal(U.formatCheckTime(0), "", "没有时刻时不渲染尾巴，别显示 1970 或 NaN");
+// 时间戳拼接收敛在 withCheckStamp：状态回显与设置页 idle 行都必须走它，避免拼法漂移
+assert.equal(U.withCheckStamp("尚未检查", 0), "尚未检查", "withCheckStamp：无时刻时原样返回，别拼出「· undefined」");
+assert.match(U.withCheckStamp("已是最新版本（v0.38.0）", Date.now()), /已是最新版本（v0\.38\.0） · \d{2}:\d{2} 检查$/, "withCheckStamp：默认拼成「· HH:MM 检查」");
+assert.equal(U.withCheckStamp("基线", 0, { prefix: "上次自动检查 ", suffix: "" }), "基线", "withCheckStamp：自定义前后缀在无时刻时同样不拼接");
 
 // 有更新
 handler = () => ({ ...RELEASE });
@@ -233,6 +242,7 @@ assert.equal(await U.checkForUpdates(), null, "checkForUpdates 不许把异常�
 const errState = U.getUpdateState();
 assert.equal(errState.phase, "error");
 assert.match(errState.error, /检查更新失败/, "错误文本要保留给设置页显示");
+assert.ok(errState.checkedAt > 0, "失败不许覆盖上一次成功检查的时刻 —— 否则面板会假装「刚查过」");
 
 /* ── ③ 静默检查的三道闸门 ── */
 handler = () => ({ ...RELEASE });
@@ -257,6 +267,8 @@ resetCalls();
 await U.silentUpdateCheck();
 assert.equal(callsTo("update_check").length, 1, "超过节流窗口必须真的去查一次");
 assert.ok(S.getState().settings.update.lastCheckAt > Date.now() - 5000, "成功检查后必须写入 lastCheckAt");
+assert.equal(S.getState().settings.update.lastCheckAt, U.getUpdateState().checkedAt,
+  "节流记录必须复用状态回显的 checkedAt —— 各自取 Date.now() 会有毫秒级分叉，对照时间线时对不上");
 let toast = updateToast();
 assert.ok(toast, "发现可自动安装的新版时应弹提示条");
 assert.match(toast.textContent, /发现新版本 v0\.38\.1/, "提示条要写明新版本号");

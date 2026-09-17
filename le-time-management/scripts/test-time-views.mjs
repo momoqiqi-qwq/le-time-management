@@ -54,6 +54,8 @@ assert.match(timeViews, /document\.querySelectorAll\("\.time-viewmenu"\)\.forEac
 // ⚠️ 别用裸选择器当锚点：基础态规则（媒体查询外）里也写着 `.wakeup-mobile`、`.time-viewtoggle`，
 //    它们会被算进前一个块的尾巴，实测被 `.wakeup-mobile` 误导过一次。
 //    用「选择器 + 花括号 + 声明」的完整规则形态才唯一。
+// 断点用 px：曾一度改成 em 试图让断点跟随界面缩放，实测 em 媒体查询不认 zoom /
+// html font-size（见 styles.css 顶部），已全部回退。
 const narrowBlocks = css.split("@media (max-width: 760px)").slice(1);
 const narrow = narrowBlocks.find((b) => b.includes(".wakeup-mobile { display:block")) ?? "";
 assert.ok(narrow, "必须存在含时间视图适配的 ≤760px 媒体块");

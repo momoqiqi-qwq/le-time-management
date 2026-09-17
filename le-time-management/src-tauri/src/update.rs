@@ -268,6 +268,11 @@ pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> Result<UpdateInfo, S
     let response = crate::shared_http_client()?
         .get(RELEASES_API)
         .header("Accept", "application/vnd.github+json")
+        // 🔴 必须带 no-cache。GitHub 的 API 响应走 Fastly CDN，`releases/latest`
+        // 的响应头是 `cache-control: public, max-age=60, s-maxage=60` —— 刚发布的
+        // release 会在最多一分钟内被缓存里的**上一个**版本顶住，客户端于是答
+        // 「已是最新版本」。带上 no-cache 让 CDN 回源，发版后点「检查更新」必中。
+        .header("Cache-Control", "no-cache")
         .send()
         .await
         .map_err(|e| format!("检查更新失败：{e}"))?;

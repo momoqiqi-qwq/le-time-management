@@ -9,6 +9,9 @@ const appearance = read("../src/views/settings/appearance.js");
 
 // Android 上四象限必须由内容撑高，让 .view 承担整页滚动。若继续继承桌面的
 // height:100% + flex:1，四张卡会被压进一屏，卡内按钮虽在 DOM 中却被 overflow 裁掉。
+// 断点保持 `px`。曾一度改成 `em`（理由是「em 媒体查询会跟着界面缩放走」），
+// 实测证明该理由**不成立**：em 媒体查询按浏览器默认 16px 求值，zoom 与 html font-size
+// 都改不动它（详见 styles.css 顶部那段「被实测推翻的旧结论」），已全部回退。
 assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.quad-wrap\s*\{[^}]*height:\s*auto[^}]*min-height:\s*100%/,
   "窄屏四象限容器必须按内容自然增高");
 assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.quad-grid\s*\{[^}]*flex:\s*none[^}]*grid-auto-rows:\s*max-content/,

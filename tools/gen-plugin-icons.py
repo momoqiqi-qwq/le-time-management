@@ -62,6 +62,7 @@ ICONS = {
     "school-notice":     ("color",      "school",           "学校通知网站 / 校舍"),
     "cn-holiday":        ("color",      "lantern",          "中国节假日 / 中式灯笼"),
     "weekly-report":     ("color",      "statistics",       "周度报告 / 数据看板"),
+    "dorm-duty":         ("color",      "broom",            "轮换值日 / 扫帚"),
 }
 
 # 主导航 key -> (候选 slug 列表, 说明)。Color 风格，候选按序尝试、第一个下载成功的生效；

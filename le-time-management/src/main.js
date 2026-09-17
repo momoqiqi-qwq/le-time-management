@@ -6,6 +6,7 @@ import { api } from "./api.js";
 import { initTheme } from "./theme.js";
 import { initBackground } from "./background.js";
 import { initUiPreferences, getUiPreferences } from "./uiPreferences.js";
+import { initUiScale } from "./uiScale.js";
 import { applyWindowSize } from "./windowSize.js";
 import { applyTouchZoomViewport } from "./mobileViewport.js";
 import { initTaskReminders } from "./taskReminder.js";
@@ -35,6 +36,11 @@ async function boot() {
   initTheme();
   initBackground();
   initUiPreferences();
+  // 界面缩放的 resize 监听必须无条件挂上（即使当前是 100%）：用户随后在设置里调大缩放时，
+  // --ui-vw/--ui-vh 需要跟着窗口尺寸重算，不能等到下次启动才生效。
+  // 缩放值本身已由 initUiPreferences → applyUiPreferences → applyUiScale 套用，
+  // 这里只负责补挂监听（applyUiScale 幂等，重复调用无副作用）。
+  initUiScale();
   // 启动窗口大小：桌面端按设置套一次（不阻塞首屏，失败也不影响启动）
   applyWindowSize(getUiPreferences()).catch(() => {});
   initMotionInteractions();
@@ -62,6 +68,8 @@ async function boot() {
     if (st.lanAuto && st.lanPort && st.lanToken) {
       api.lanStart(Number(st.lanPort), st.lanToken).catch((e) => console.error("联动服务启动失败:", e));
     }
+    // 托盘「退出」：Rust 侧广播 app-quit 后延迟 800ms 再退出，这里赶紧把防抖中的数据落盘
+    listen("app-quit", () => { import("./store.js").then((S) => S.saveNow()).catch(() => {}); });
   }
   // 插件加载放在界面之后，不阻塞首屏
   initPluginHost().catch((e) => console.error("插件宿主初始化失败:", e));

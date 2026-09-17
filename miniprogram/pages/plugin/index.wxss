@@ -95,6 +95,62 @@
 .guide-desc { font-size: 22rpx; color: var(--ink-2); line-height: 1.7; margin: 12rpx 0 4rpx; }
 .guide-step { font-size: 22rpx; color: var(--ink-2); line-height: 1.9; }
 
+/* ════ 轮换值日 ════
+   一个插件里可以有多套轮换（宿舍值日 / 公区卫生…），各有各的成员与周期。
+   窄屏一律竖排（名字行 / 区间 / 倒计时三行），不做桌面端那种三列网格 ——
+   桌面端踩过「grid 自动排布被 grid-column:1/-1 打乱、标签被撑成整行横幅」的坑，
+   手机上直接不给自己留这个机会。 */
+.dd-alert { border-left: 8rpx solid var(--sun); background: rgba(214, 158, 46, .1); }
+.dd-alert-t { font-size: 28rpx; font-weight: 700; color: var(--deep); line-height: 1.5; }
+.dd-who { display: flex; align-items: center; gap: 16rpx; flex-wrap: wrap; margin: 8rpx 0 4rpx; }
+.dd-big { font-size: 56rpx; font-weight: 800; letter-spacing: .01em; }
+.dd-badge { font-size: 20rpx; font-weight: 700; border-radius: 999rpx; padding: 4rpx 16rpx; background: rgba(214, 158, 46, .18); color: var(--sun); }
+.dd-next { display: flex; align-items: baseline; gap: 8rpx; margin: 8rpx 0 4rpx; }
+.dd-next-u { font-size: 26rpx; font-weight: 650; color: var(--deep); }
+.dd-actions { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 20rpx; }
+.dd-actions .btn { margin: 0; }
+
+.dd-row { padding: 18rpx 0; }
+.dd-row + .dd-row { border-top: 1rpx solid var(--line-soft); }
+.dd-row-top { display: flex; align-items: center; gap: 12rpx; }
+.dd-name { font-size: 27rpx; font-weight: 680; }
+.dd-tag { flex: none; font-size: 18rpx; border-radius: 999rpx; padding: 2rpx 12rpx; background: rgba(214, 158, 46, .18); color: var(--sun); }
+.dd-range { display: block; font-size: 22rpx; color: var(--ink-2); margin-top: 6rpx; }
+.dd-days { display: block; font-size: 21rpx; color: var(--ink-3); margin-top: 4rpx; }
+
+.dd-mrow { display: flex; align-items: center; gap: 12rpx; padding: 14rpx 0; }
+.dd-mrow + .dd-mrow { border-top: 1rpx solid var(--line-soft); }
+.dd-mno { flex: none; width: 40rpx; font-size: 21rpx; color: var(--ink-3); text-align: center; font-variant-numeric: tabular-nums; }
+.dd-mname { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10rpx; font-size: 26rpx; font-weight: 600; }
+.dd-cur { flex: none; font-size: 18rpx; border-radius: 999rpx; padding: 2rpx 12rpx; background: var(--deep); color: var(--on-deep); }
+.dd-mbtns { flex: none; display: flex; gap: 8rpx; }
+.dd-mbtns .btn { margin: 0; padding: 0 16rpx; min-height: 56rpx; line-height: 56rpx; font-size: 22rpx; }
+.btn.dd-mini.danger { color: var(--coral); border-color: rgba(176, 53, 53, .4); }
+
+.dd-add { display: flex; gap: 12rpx; align-items: center; margin-top: 18rpx; }
+.dd-in { flex: 1; min-width: 0; height: 72rpx; border: 1rpx solid var(--line); border-radius: 14rpx; padding: 0 18rpx; background: var(--paper); font-size: 23rpx; box-sizing: border-box; }
+.dd-addbtn { flex: none; margin: 0; }
+.dd-removed { margin-top: 20rpx; border-top: 1rpx dashed var(--line); padding-top: 14rpx; }
+.dd-chips { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 10rpx; }
+.dd-chip { font-size: 22rpx; border: 2rpx solid var(--line); background: var(--paper); border-radius: 999rpx; padding: 8rpx 22rpx; color: var(--ink-2); }
+.dd-chip.on { background: var(--deep); color: var(--on-deep); border-color: var(--deep); }
+
+/* 多套轮换的切换条。选中态是深底浅字，当班人跟着走 opacity —— 别给固定色，
+   否则深底上会看不清。
+   ⚠️ 组名与当班人之间用 margin 而不是空格：<text> 里元素边界处的空白在渲染时可能被吞，
+   桌面端那边是靠 flex 的 gap 撑开的，这里得自己给。 */
+.dd-gchips { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 10rpx; }
+.dd-gchip { font-size: 23rpx; border: 2rpx solid var(--line); background: var(--paper); border-radius: 999rpx; padding: 8rpx 22rpx; color: var(--ink-2); }
+.dd-gchip.on { background: var(--deep); color: var(--on-deep); border-color: var(--deep); font-weight: 700; }
+.dd-gwho { font-size: 20rpx; opacity: .75; margin-left: 8rpx; }
+
+.dd-field { display: flex; align-items: center; gap: 16rpx; padding: 14rpx 0; }
+.dd-field + .dd-field { border-top: 1rpx solid var(--line-soft); }
+.dd-field .label { flex: none; width: 150rpx; margin: 0; font-size: 23rpx; color: var(--ink-2); }
+.dd-field .dd-in { flex: 1; }
+.dd-field .dd-chips { flex: 1; margin-top: 0; }
+.dd-pick { height: 72rpx; line-height: 72rpx; border: 1rpx solid var(--line); border-radius: 14rpx; padding: 0 18rpx; background: var(--paper); font-size: 23rpx; color: var(--ink); min-width: 240rpx; box-sizing: border-box; }
+
 /* ════ 微信提醒推送 ════ */
 .push-docs { margin: 12rpx 0; }
 .push-link { font-size: 22rpx; color: var(--sea); padding: 4rpx 0; }

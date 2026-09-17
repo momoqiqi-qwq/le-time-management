@@ -11,7 +11,7 @@ import { uploadWebDav, downloadWebDav, isPotentiallyUnsafeWebDav } from "../sync
 import { fullBackup, parseFullBackup, downloadText, tasksToCsv, blocksToCsv, importTasksCsv, toIcs, importIcs, exportXlsx, importXlsx, listAutoBackups, createAutoBackup, restoreAutoBackup, deleteAutoBackup } from "../dataCenter.js";
 import { createInterfaceCard, createThemeCard, createBackgroundCard } from "./settings/appearance.js";
 import { createSettingsNavigator } from "./settings/navigator.js";
-import { createPluginSettingsCard } from "./settings/plugins.js";
+import { createPluginSettingsCard, isPluginBatchBusy } from "./settings/plugins.js";
 import { createAiSettingsCard } from "./settings/ai.js";
 import { toggleSwitch } from "../switchControl.js";
 import {
@@ -25,9 +25,10 @@ let navUnsub = null;
 const settingsNavState = { query: "", filter: "all" };
 
 export function renderSettings(container, opts = {}) {
-  // 插件是异步加载的：注册表变化（导航变化）时重渲染，避免卡片缺位
+  // 插件是异步加载的：注册表变化（导航变化）时重渲染，避免卡片缺位。
+  // 批量启停插件时先跳过 —— 每关一个插件都会 emitNavChanged()，不挡就会整页重建 N 次。
   navUnsub?.();
-  navUnsub = onNavChanged(() => { if (container.isConnected) render(); });
+  navUnsub = onNavChanged(() => { if (container.isConnected && !isPluginBatchBusy()) render(); });
 
   const wrap = el("div", { class: "set-wrap" });
   container.append(wrap);
@@ -269,21 +270,55 @@ export function renderSettings(container, opts = {}) {
 
     const renderLan = () => {
       lanBody.replaceChildren();
+      // 状态行：两种状态下都展示，填满卡片下方空间
+      const statusRow = (running, port, host) =>
+        el("div", { style: "margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)" },
+          el("div", { style: "display:flex;flex-wrap:wrap;gap:6px 26px;font-size:12.5px;color:var(--ink-2)" },
+            el("span", {}, "状态 ", running
+              ? el("span", { style: "font-weight:600;color:var(--mint)" }, "● 运行中")
+              : el("span", { style: "font-weight:600;color:var(--ink-3)" }, "○ 已停止")),
+            port ? el("span", {}, "端口 ", el("b", {}, port)) : null,
+            host ? el("span", {}, "本机地址 ", el("b", {}, host)) : null,
+          ),
+          running
+            ? el("div", { style: "margin-top:6px;font-size:12px;color:var(--ink-3)" }, "手机需与电脑处于同一 Wi-Fi / 局域网，扫码或打开链接即可配对联动。")
+            : el("div", { style: "margin-top:6px;font-size:12px;color:var(--ink-3)" }, "启动后手机浏览器 / 小程序可通过二维码或链接远程操作本机任务。"),
+        );
       if (lanStatus.running) {
+        const lanPort = (lanStatus.url.match(/:(\d+)/) || [])[1] || st.lanPort;
+        const lanHost = (lanStatus.url.match(/^http:\/\/([^:/]+)/) || [])[1] || "";
         lanBody.append(
           el("div", { class: "path-code" }, lanStatus.url),
           el("div", { style: "display:flex;gap:14px;margin-top:12px;align-items:center" },
             el("img", { src: `${lanStatus.url.replace("/m?", "/qr.svg?")}`, style: "width:132px;height:132px;border-radius:10px;border:1px solid var(--line);background:#fff" }),
             el("div", { style: "flex:1" },
-              el("div", { style: "display:flex;gap:8px;margin-top:10px" },
+              el("div", { style: "display:flex;gap:8px;margin-top:10px;flex-wrap:wrap" },
                 el("button", { class: "btn ghost sm", onclick: () => { navigator.clipboard?.writeText(lanStatus.url); toast("链接已复制"); } }, "复制链接"),
                 el("button", {
+                  class: "btn ghost sm",
+                  onclick: async () => {
+                    try { await api.openExternal(lanStatus.url); }
+                    catch { window.open(lanStatus.url, "_blank"); }
+                  },
+                }, "从浏览器打开"),
+                el("button", {
                   class: "btn danger sm",
-                  onclick: async () => { await api.lanStop(); st.lanAuto = false; S.saveNow(); renderLan(); },
+                  onclick: async () => {
+                    try { await api.lanStop(); }
+                    catch (e) { toast(`停止失败：${e.message || e}`); return; }
+                    // 关键：lanStop 成功后必须更新本地状态再重渲染，
+                    // 否则 lanStatus 仍是 running，界面看起来「按了没反应」。
+                    lanStatus = { running: false };
+                    st.lanAuto = false;
+                    S.saveNow();
+                    toast("联动服务已停止");
+                    renderLan();
+                  },
                 }, "停止服务"),
               ),
             ),
           ),
+          statusRow(true, lanPort, lanHost),
         );
       } else {
         const portIn = el("input", { type: "number", value: st.lanPort, style: "width:110px;height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff" });
@@ -305,6 +340,7 @@ export function renderSettings(container, opts = {}) {
               },
             }, "启动服务"),
           ),
+          statusRow(false, st.lanPort, ""),
         );
       }
     };
@@ -314,7 +350,7 @@ export function renderSettings(container, opts = {}) {
     const aboutCard = createAboutCard(info, regs);
 
     const settingEntries = [
-      { id: "ui", node: uiCard, label: "界面与交互", icon: "sliders", hint: "密度 / 字号 / 动效 / 窗口", keywords: "密度 文字 字号 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题" },
+      { id: "ui", node: uiCard, label: "界面与交互", icon: "sliders", hint: "密度 / 字号 / 缩放 / 动效 / 窗口", keywords: "密度 文字 字号 缩放 界面大小 整体缩放 放大 缩小 太大 太小 看不清 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题 托盘 关闭 退出 最小化" },
       { id: "theme", node: themeCard, label: "主题", icon: "palette", hint: "配色与阅读模式", keywords: "颜色 夜间 深海 樱花 松林 暮光 极简" },
       { id: "background", node: bgCard, label: "自定义背景", icon: "image", hint: "壁纸 / 遮罩 / 毛玻璃", keywords: "壁纸 图片 纯色 透明 模糊 毛玻璃 遮罩 亮度 饱和度" },
       { id: "reminders", node: reminderCard, label: "任务提醒", icon: "bell", hint: "预警时间与提示音", keywords: "提醒 预警 音量 提示音 音频 截止" },

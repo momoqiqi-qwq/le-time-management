@@ -151,6 +151,59 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { height: 100%; }
+
+/* ═══════════════════════════════════════════════════════════
+   界面整体缩放（设置 → 界面与交互 → 界面缩放）· 实现契约
+   ═══════════════════════════════════════════════════════════
+   缩放本体是 `document.documentElement.style.zoom`，由 src/uiScale.js 写入，
+   同时注入两个变量：`--ui-vw` / `--ui-vh`（视口长度 ÷ 系数，即「缩放前」的长度）。
+
+   写新样式时必须遵守的两条（都是 zoom 的布局语义决定的，不是风格问题）：
+
+   1. 🔴 **`position: fixed` 的浮层不能用 `100vw` / `100vh` / `100dvh`，也不能只写
+      `bottom: 22px` 这类「相对视口」的锚点。**
+      zoom 元素的子元素里，fixed 的包含块是 **zoom 元素本身**，被缩放后在视觉上会溢出屏幕
+      （120% 时视口往外溢 20%），`bottom` / `right` 锚点的东西直接掉到屏幕外。
+      正确写法是显式减掉视口尺寸：`calc(var(--ui-vh, 100dvh) - 22px)`。
+      该文件里所有 fixed 浮层都已按此改写。
+
+   2. **别把 `var(--ui-scale)` 乘进尺寸。** zoom 已经把所有布局长度缩放了，
+      再乘一遍就是双倍缩放。它只在「需要反算回原始长度」的极少数场合才用。
+      `--ui-text-scale`（文字大小）是独立的正交功能，两者互不影响、可以叠加。
+
+   ── ⚠️ 一条被实测推翻的旧结论，别照抄 ──
+   本文件一度把所有视口断点从 px 改写成了 em，理由是「em 媒体查询按初始字号求值，
+   而 zoom 会缩放初始字号，于是断点自动跟着缩放走」。**这是错的，已全部回退成 px。**
+
+   无头 Chrome 实测（`--window-size=1280` → 视口 1264px，`zoom=1.5`）：
+     html 计算字号         → 24px        （zoom 确实把 html 的 font-size 缩放到了 24px）
+     max-width: 65em       → 不命中      （16px 基=1040，24px 基=1560；1264 两者都 >，不可分辨）
+     max-width: 79em       → **命中**    （16px 基=1264 <= 1264 ✓；24px 基=1896 > 1264 应不命中 ✗）
+     max-width: 1264px     → 命中
+   ⇒ `79em` 恰在 1264px 命中 = 79 × 16，这是决定性的一行：**em 恒按 16px 求值**。
+   若 em 真按 html 的 24px 算，`79em` 会是 1896px，必然不命中。结论只与「em = 16px」自洽。
+
+   ⇒ **`em` 媒体查询按浏览器初始字号（默认 16px）求值，`zoom` 与 `html { font-size }`
+   都改不动它。** 所以 `zoom` 不会让窄屏断点提前命中：150% 下 1200px 的桌面窗口，
+   界面等效 800px，但 `max-width:900px` 仍判「不命中」，布局停在桌面形态（内容整体变大而已）。
+
+   ⚠️ 因此**断点一律写 px**：写 em 不会带来「跟随缩放」，只会让断点数值与设计稿脱节
+   （还得处处 ÷16）。这条有反向断言钉着（`scripts/test-ui-scale.mjs` 的 3d）。
+
+   这是本功能的**已知边界，不是缺陷**：缩放只做「整页等比大小」，不改变布局断点 ——
+   布局仍由真实窗口宽度决定，与缩放前完全一致。若将来真要让断点跟随缩放，
+   唯一可行的是 `@container`（实测按「缩放前的使用宽度」求值，150% 能正确命中），
+   但它要求被匹配元素是容器的后代，而本文件大量断点目标是 `.topbar` / `.drawer` /
+   `.cmd-palette` / `#toasts` 这类挂在 `#app` 之外的 fixed 浮层 —— 得先改 DOM 挂载结构，
+   属于独立改造，不要在这一版里顺手做。 */
+
+   这是本功能的**已知边界，不是缺陷**：缩放只做「整页等比大小」，不改变布局断点 ——
+   布局仍由真实窗口宽度决定，与缩放前完全一致。若将来真要让断点跟随缩放，
+   唯一可行的是 `@container`（实测按「缩放前的使用宽度」求值，150% 能正确命中），
+   但它要求被匹配元素是容器的后代，而本文件大量断点目标是 `.topbar` / `.drawer` /
+   `.cmd-palette` / `#toasts` 这类挂在 `#app` 之外的 fixed 浮层 —— 得先改 DOM 挂载结构，
+   属于独立改造，不要在这一版里顺手做。 */
+
 body {
   background: var(--bg);
   color: var(--ink);
@@ -182,8 +235,11 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 ::-webkit-scrollbar-thumb { background: #D5CFC3; border-radius: 5px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-#app { height: 100dvh; }
-.app { display: flex; height: 100dvh; }
+/* 全屏高度比照视口尺寸补偿（原因见文件上方「界面整体缩放」契约第 2 条）：
+   zoom 下 100dvh 是布局长度，乘上系数后比屏幕高，固定高度的壳会溢出。
+   变量缺失时（理论上不会，uiScale.js 启动即写）落回原来的 100dvh，行为与旧版一致。 */
+#app { height: var(--ui-vh, 100dvh); }
+.app { display: flex; height: var(--ui-vh, 100dvh); }
 
 /* ── 左侧导航栏 ── */
 .rail {
@@ -313,7 +369,8 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 
 /* 任务详情抽屉 */
 .drawer-mask { position: fixed; inset: 0; background: rgba(20,30,36,.28); z-index: 40; }
-.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 92vw; z-index: 41;
+/* max-width 用 --ui-vw 而不是 92vw：zoom 下 92vw 是布局长度，乘系数后会超出屏幕宽 */
+.drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: calc(var(--ui-vw, 100vw) * 0.92); z-index: 41;
   background: var(--panel); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; }
 .drawer .dh { padding: 20px 24px 0; display: flex; align-items: flex-start; gap: 10px; }
 .drawer .dh h3 { font-size: 17px; line-height: 1.5; flex: 1; }
@@ -517,7 +574,9 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .plugview { height: 100%; overflow-y: auto; padding: 22px 28px; }
 
 /* ═══════════ Toast ═══════════ */
-#toasts { position: fixed; right: 22px; bottom: 22px; z-index: 100; display: flex; flex-direction: column; gap: 9px; }
+/* zoom 下 fixed 的包含块是 html，`bottom:22px` 不再是「距屏幕底 22px」而是「距 zoom 容器底」，
+   放大后整个容器溢出屏幕 ⇒ 必须显式用 --ui-vh 减掉边距（见文件上方「界面整体缩放」契约第 2 条）。 */
+#toasts { position: fixed; right: 22px; bottom: calc(var(--ui-vh, 100dvh) - 22px); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
 .toast { background: #1E2A31; color: #F2F5F4; border-radius: 12px; padding: 12px 17px; font-size: 13px;
   box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px; animation: slidein .18s ease-out; max-width: 380px; }
 .toast button { color: #7FE8B2; font-weight: 700; font-size: 12.5px; flex: none; }
@@ -547,7 +606,7 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 
 .cap-mask { position: fixed; inset: 0; background: rgba(20, 30, 36, .35); z-index: 110; }
 .cap-modal { position: fixed; z-index: 111; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 480px; max-width: 92vw; max-height: 88vh; overflow-y: auto;
+  width: 480px; max-width: calc(var(--ui-vw, 100vw) * 0.92); max-height: calc(var(--ui-vh, 100dvh) * 0.88); overflow-y: auto;
   background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 18px 22px 20px; }
 .cap-h { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 700; margin-bottom: 12px; }
 .cap-img { display: block; width: 100%; max-height: 250px; object-fit: contain; border-radius: 12px;
@@ -578,7 +637,7 @@ button, .nav { touch-action: manipulation; }
   /* 用 order 排序而不是 column-reverse：反向主轴会把溢出裁切方向指向顶部，
      内容一高顶栏就被推出屏幕外（旧写法的隐藏 bug） */
   .app { flex-direction: column; }
-  .main { order: 1; flex: 1 1 0; height: 100dvh; }
+  .main { order: 1; flex: 1 1 0; height: var(--ui-vh, 100dvh); }
   .view { padding-bottom: calc(var(--nav-pad, 62px) + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .rail { order: 2; }
   /* 底栏：扁平单行核心入口，图标+小字，激活变色不加底。高度档位由设置「底栏高度」控制 */
@@ -625,7 +684,7 @@ button, .nav { touch-action: manipulation; }
   .topbar-back.show:active { background: color-mix(in srgb, var(--ink-2) 13%, transparent); }
   .topbar-back-glyph { display: block; font-size: 24px; line-height: 1; transform: translateY(-1px); }
   .topbar { padding-right: 14px; padding-left: 14px; height: calc(52px + var(--sat, env(safe-area-inset-top, 0px))); }
-  .drawer { width: 100vw; max-width: 100vw; padding-top: var(--sat, env(safe-area-inset-top, 0px)); }
+  .drawer { width: var(--ui-vw, 100vw); max-width: var(--ui-vw, 100vw); padding-top: var(--sat, env(safe-area-inset-top, 0px)); }
   .topbar h1 { font-size: clamp(15px, 4.2vw, 17px); }
   .topbar .sub { display: none; }
   .topbar .pill { padding: 4px 10px; font-size: 11px; }
@@ -651,9 +710,10 @@ button, .nav { touch-action: manipulation; }
   .plug-card { align-items: center; gap: 10px; }
   .plug-card > div:last-child { flex-direction: column; align-items: flex-end; }
   .set-card { padding: 16px 14px; }
-  .toast { max-width: calc(100vw - 24px); }
-  /* toast 移到顶栏下方，避免被底栏挡住 */
-  #toasts { right: 12px; bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  .toast { max-width: calc(var(--ui-vw, 100vw) - 24px); }
+  /* toast 移到顶栏下方，避免被底栏挡住。bottom 从「距视口底」改成「距 zoom 容器底」的
+     显式算法（见文件上方「界面整体缩放」契约第 2 条），缩放后位置才跟着屏幕走。 */
+  #toasts { right: 12px; bottom: calc(var(--ui-vh, 100dvh) - 86px - var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 
 @media (max-width: 520px) {
@@ -701,7 +761,13 @@ button, .nav { touch-action: manipulation; }
 .plugin-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:14px 0 4px; padding:10px; border:1px solid var(--line-soft); border-radius:10px; background:var(--paper-2); }
 .plugin-select { width:22px; min-width:22px; padding-top:5px; display:flex; justify-content:center; }
 .plugin-select input { width:16px; height:16px; accent-color:var(--mint); cursor:pointer; }
-.plugin-select-spacer { width:22px; min-width:22px; }
+/* v0.48.0：工具栏右侧的选择计数（勾选只刷新它，不再整页重渲染） */
+.plugin-toolbar-count { margin-left:auto; font-size:11px; color:var(--ink-3); white-space:nowrap; letter-spacing:.02em; }
+.plugin-toolbar-count.on { color:var(--deep); font-weight:700; }
+/* 窄屏：按钮已经要换行，计数单独占一行靠右，别跟按钮抢行 */
+@media (max-width: 760px) {
+  .plugin-toolbar-count { margin-left:0; flex:1 1 100%; text-align:right; }
+}
 .plugin-toolbar .btn:disabled { opacity:.45; cursor:not-allowed; }
 
 /* Icons8 / iGoutu iOS Filled icons used by the main navigation and plugin center. */
@@ -1046,7 +1112,9 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .top-search:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line));color:var(--deep)}
 .top-search kbd{font-size:10px;color:var(--ink-3);background:var(--paper);border:1px solid var(--line-soft);border-radius:5px;padding:2px 5px;box-shadow:none}
 .cmd-mask{position:fixed;inset:0;background:rgba(18,27,31,.28);backdrop-filter:blur(3px);z-index:1900}
-.cmd-palette{position:fixed;z-index:1901;left:50%;top:11vh;transform:translateX(-50%);width:min(680px,calc(100vw - 28px));max-height:min(650px,78vh);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.23);overflow:hidden}
+/* 命令面板：视口相关的量全部走 --ui-vw / --ui-vh（zoom 语义，见文件上方契约第 2 条）。
+   裸用 100vw/1vh/78vh 在缩放下会按布局长度算，放大后面板比屏幕还宽。 */
+.cmd-palette{position:fixed;z-index:1901;left:50%;top:calc(var(--ui-vh, 100dvh) * 0.11);transform:translateX(-50%);width:min(680px,calc(var(--ui-vw, 100vw) - 28px));max-height:min(650px,calc(var(--ui-vh, 100dvh) * 0.78));display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.23);overflow:hidden}
 .cmd-search{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid var(--line-soft);font-size:19px}
 .cmd-input{flex:1;min-width:0;border:0!important;outline:0!important;background:transparent!important;font-size:15px;height:34px;color:var(--ink)}
 .cmd-search kbd{font-size:10px;color:var(--ink-3);border:1px solid var(--line);border-radius:5px;padding:3px 6px;background:var(--paper)}
@@ -1069,7 +1137,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .cmd-enter{width:22px;color:var(--deep);text-align:center}.cmd-empty{padding:36px 20px;text-align:center;color:var(--ink-3);font-size:12px}.cmd-foot{padding:8px 14px;border-top:1px solid var(--line-soft);font-size:10.5px;color:var(--ink-3);background:var(--paper)}.cmd-foot .foot-mobile{display:none}
 
 /* ── v0.10 · 快速捕获 ── */
-.quick-cap{position:fixed;z-index:1901;left:50%;top:18vh;transform:translateX(-50%);width:min(620px,calc(100vw - 28px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.22);padding:16px}
+.quick-cap{position:fixed;z-index:1901;left:50%;top:calc(var(--ui-vh, 100dvh) * 0.18);transform:translateX(-50%);width:min(620px,calc(var(--ui-vw, 100vw) - 28px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.22);padding:16px}
 .quick-cap-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.quick-cap-head b{display:block;font-size:16px}.quick-cap-head small{display:block;color:var(--ink-3);font-size:10.5px;margin-top:4px}.quick-cap-input{width:100%;min-height:138px;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--ink);padding:12px;line-height:1.65;font:inherit}.quick-cap-input:focus{outline:2px solid color-mix(in srgb,var(--deep) 24%,transparent);border-color:var(--deep)}.quick-cap-actions{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
 
 /* ── v0.10 · 插件中心搜索管理 ── */
@@ -1084,7 +1152,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* ── v0.10 · 同步与快捷键 ── */
 .sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}
 
-@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:7vh;max-height:84vh}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:10vh}}
+@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -1109,7 +1177,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 }
 .time-viewtoggle[aria-expanded="true"] .time-viewcaret { transform: rotate(180deg); border-top-color: var(--deep); }
 .time-viewmenu {
-  position: fixed; z-index: 90; width: min(268px, calc(100vw - 20px));
+  position: fixed; z-index: 90; width: min(268px, calc(var(--ui-vw, 100vw) - 20px));
   display: grid; gap: 2px; padding: 7px; border: 1px solid var(--line); border-radius: 15px;
   background: var(--panel); box-shadow: var(--shadow-lg, 0 16px 36px rgba(18,44,54,.2));
 }
@@ -1591,6 +1659,14 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .pref-range { display: flex; align-items: center; gap: 9px; min-width: 230px; justify-content: flex-end; }
 .pref-range input { width: 180px; }
 .pref-range output { min-width: 38px; text-align: right; color: var(--ink-2); font-size: 11px; }
+/* 界面整体缩放（见 src/uiScale.js）—— 标题与滑块同排，右侧读数固定宽度避免抽动。
+   `.setting-row` 作者样式是 display:flex，这里必须显式给宽度与换行，否则
+   滑块会被 flex 压成一条缝（.setting-row-head 是它自己的行，不受 setting-col 的 column 影响）。 */
+.setting-row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; width: 100%; }
+.ui-scale-value { flex: none; }
+.ui-scale-value .pref-range { min-width: 0; }
+/* 提示：讲清「界面缩放」与「文字大小」的分工，别让用户以为两者重复 */
+.ui-scale-hint { display: block; margin-top: 6px; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
 /* 启动窗口大小（桌面端每次打开时的默认尺寸，见 src/windowSize.js） */
 .win-size-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .win-size-row select { width: auto; min-width: 172px; flex: none; }
@@ -1608,6 +1684,9 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .settings-filter { flex: none; }
   .pref-range { width: 100%; min-width: 0; justify-content: flex-start; }
   .pref-range input { flex: 1; min-width: 0; }
+  .setting-row-head { gap: 8px; }
+  .ui-scale-value { width: 100%; }
+  .ui-scale-value .pref-range { width: 100%; }
   .setting-copy small { max-width: 36em; }
 }
 
@@ -1852,7 +1931,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   display: flex;
   flex-direction: column;
   gap: 7px;
-  max-height: calc(100vh - 220px);
+  max-height: calc(var(--ui-vh, 100dvh) - 220px);
   overflow: auto;
   padding-right: 2px;
 }
@@ -1963,7 +2042,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     text-overflow: ellipsis;
   }
   .quick-dock {
-    width: min(156px, calc(100vw - 24px));
+    width: min(156px, calc(var(--ui-vw, 100vw) - 24px));
   }
 }
 
@@ -2121,8 +2200,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(720px, calc(100vw - 28px));
-  max-height: min(760px, calc(100dvh - 32px));
+  width: min(720px, calc(var(--ui-vw, 100vw) - 28px));
+  max-height: min(760px, calc(var(--ui-vh, 100dvh) - 32px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2197,7 +2276,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .ai-rule-row { grid-template-columns: 1fr; }
   .ai-rule-actions { justify-content: flex-start; }
   .ai-editor-schedule { grid-template-columns: 1fr; }
-  .ai-rule-editor { max-height: calc(100dvh - 20px); }
+  .ai-rule-editor { max-height: calc(var(--ui-vh, 100dvh) - 20px); }
 }
 
 /* v0.11.6 custom patch · 彩色侧栏 / 设置单页 / 自绘窗口控制 */
@@ -2299,7 +2378,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   margin: 0 auto;
 }
 .settings-content {
-  min-height: min(680px, calc(100vh - 205px));
+  min-height: min(680px, calc(var(--ui-vh, 100dvh) - 205px));
 }
 /* v0.37.17 起设置分区被 navigator 包进 .settings-acc，直接子元素不再一定是 .settings-section，
    所以两种层级都覆盖。 */
@@ -2691,7 +2770,14 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .settings-modal {
   position: fixed;
-  inset: 36px;
+  /* v0.48.x：左右各压 16px（36 → 20），把横向空间让给内容 —— 设置页的
+     侧栏 + 卡片双列布局在 1440 宽窗口下原本左右共浪费 ~72px 纯留白。
+     上下仍留 36px 给标题栏与窗口边缘，避免顶到屏幕边。
+
+     v0.48.0：`inset: 36px 20px` 的语义在 zoom 下不再等于「距屏幕边 36/20px」，
+     必须写成「视口长度 − 边距」（见文件上方「界面整体缩放」契约第 2 条），
+     否则放大后弹窗会从屏幕四边溢出。 */
+  inset: calc(var(--ui-vh, 100dvh) - 36px) calc(var(--ui-vw, 100vw) - 20px);
   z-index: 1901;
   display: flex;
   flex-direction: column;
@@ -2727,7 +2813,14 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   overflow: auto;
 }
 .settings-modal-body .set-wrap {
-  max-width: 1180px;
+  /* 上限从 1180 放宽到 1400：外层 modal 收到 20px 后可用宽 ~1400，
+     但 1180 的封顶把多出来的横向空间全挡在了外面（实测 layout 只从 1136 → 1140，只吃到 4px）。
+     放开到 1400，宽窗口下压缩出来的留白才真正落到侧栏与卡片上。 */
+  max-width: 1400px;
+  /* 外层 modal 已经收到 20px，这里再从 30px 收到 20px，两级叠加后共 ~40px 侧边距
+     （原先 36+30=66px，1280 窗口下内容区只剩 ~1148px，侧栏吃掉 248px 后正文偏窄）。 */
+  padding-left: 20px;
+  padding-right: 20px;
 }
 .theme-mode {
   display: grid;
@@ -2764,10 +2857,19 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     top: calc(62px + var(--sat, env(safe-area-inset-top, 0px)));
     right: 12px;
     bottom: auto;
-    width: min(292px, calc(100vw - 24px));
+    width: min(292px, calc(var(--ui-vw, 100vw) - 24px));
   }
-  .quick-dock.collapsed { width: min(292px, calc(100vw - 24px)); }
+  .quick-dock.collapsed { width: min(292px, calc(var(--ui-vw, 100vw) - 24px)); }
   .settings-modal { inset: 0; border-radius: 0; border-left: 0; border-right: 0; }
+  /* 桌面端为了压缩留白把 .set-wrap 左右收到 20px；窄屏必须放回 14px ——
+     那条规则是 .settings-modal-body .set-wrap（特异度 0-2-0），会压过上面
+     @media(max-width:900px) 里的 .set-wrap{padding:14px 14px 2px}（0-1-0），
+     不覆盖回来手机上左右会凭空多占 6px。 */
+  .settings-modal-body .set-wrap {
+    max-width: none;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
   .theme-mode { grid-template-columns: 1fr; }
 }
 
@@ -3007,9 +3109,9 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   /* 左下角：右下角已被 #toasts 占用（z-index 100），挤在一起会互相盖住。
      z-index 低于设置弹窗（1900/1901），用户打开设置后提示条自动沉到后面去。 */
   left: 22px;
-  bottom: 22px;
+  bottom: calc(var(--ui-vh, 100dvh) - 22px);
   z-index: 1890;
-  width: min(340px, calc(100vw - 44px));
+  width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
   padding: 13px 15px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -3068,7 +3170,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      等于把那会儿的导航整条挡住（390px 截图实测）。sab 用双路写法：WebView 不实现 env()。 */
   .update-toast {
     left: 12px; right: 12px;
-    bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px)));
+    bottom: calc(var(--ui-vh, 100dvh) - 86px - var(--sab, env(safe-area-inset-bottom, 0px)));
     width: auto;
     padding: 12px 13px;
   }

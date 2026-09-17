@@ -1161,6 +1161,16 @@ fn lan_stop(handle: State<LanHandle>) -> Result<(), String> {
                 .as_bytes(),
             );
         }
+        // 等监听端口真正释放再返回（最多 ~1.5s），
+        // 否则「停止 → 立刻启动」会撞上端口占用报「端口启动失败」。
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+        while std::time::Instant::now() < deadline {
+            // connect 成功 = 端口仍被旧服务占着；connect 失败 = 已释放
+            if std::net::TcpStream::connect(("127.0.0.1", inst.port)).is_err() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(40));
+        }
     }
     Ok(())
 }
@@ -1419,6 +1429,92 @@ async fn http_fetch(
     })
 }
 
+/* ── 系统托盘与关闭行为（仅桌面端）── */
+
+/// 主窗口的「关闭」是不是应该隐藏到托盘。
+///
+/// 行为设置存放在前端 data.json 的 `settings.closeToTray`（默认 false = 直接退出）。
+/// 刻意**每次关闭时现读文件**而不是启动时缓存：设置改完立即生效，不需要重启应用。
+/// data.json 很小，同步读一次的代价可以忽略（CloseRequested 只在用户点关闭时触发）。
+#[cfg(desktop)]
+fn close_to_tray(app: &tauri::AppHandle) -> bool {
+    let Ok(dir) = app.path().app_data_dir() else {
+        return false;
+    };
+    let Ok(raw) = fs::read_to_string(dir.join("data.json")) else {
+        return false;
+    };
+    serde_json::from_str::<Value>(&raw)
+        .ok()
+        .and_then(|v| v.pointer("/settings/closeToTray").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+#[cfg(desktop)]
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.show();
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+    }
+}
+
+/// 构建系统托盘。
+///
+/// 左键点按 = 切换主窗口显示/隐藏；右键 = 弹菜单（显示主窗口 / 退出）。
+/// 退出前先广播 `app-quit` 事件，前端收到后把 350ms 防抖里还没落盘的改动写盘
+/// （见 src/store.js persistSoon），这里延迟 800ms 再真正退出。
+#[cfg(desktop)]
+fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出 Le时间管理", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+
+    let mut builder = TrayIconBuilder::with_id("letime-tray")
+        .tooltip("Le时间管理")
+        .menu(&menu)
+        // 左键留给「显示/隐藏窗口」，右键才弹菜单
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "show" => show_main_window(app),
+            "quit" => {
+                let _ = app.emit("app-quit", ());
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    app.exit(0);
+                });
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    if w.is_visible().unwrap_or(false) {
+                        let _ = w.hide();
+                    } else {
+                        show_main_window(app);
+                    }
+                }
+            }
+        });
+    // 用打包时内嵌的应用图标（tauri.conf.json bundle.icon），失败就退化为系统默认图
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -1433,6 +1529,18 @@ pub fn run() {
             }
         }));
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
+        // 「点关闭按钮隐藏到托盘」：只拦主窗口，教务导入窗等子窗口照常直接关。
+        // 行为设置存前端 data.json 的 settings.closeToTray，关闭时现读，改完立即生效。
+        builder = builder.on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && close_to_tray(window.app_handle()) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        });
+        // 系统托盘：左键显示/隐藏主窗口，右键弹菜单（显示主窗口 / 退出）
+        builder = builder.setup(setup_tray);
     }
     #[cfg(target_os = "android")]
     {

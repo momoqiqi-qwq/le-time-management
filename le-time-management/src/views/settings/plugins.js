@@ -8,6 +8,12 @@ import { pluginAccent, pluginDisplayIcon, pluginDisplayName } from "../../plugin
 const selectedPlugins = new Set();
 let pluginManageQuery = "";
 let pluginManageFilter = "all";
+// 批量启停期间置位：setEnabled() 每次都会 emitNavChanged()，设置页订阅了它并整页重渲染。
+// 12 个插件的批量操作会因此触发 12 次全页重建（闪烁 + 丢滚动位置），所以批量期间先压住，
+// 批量结束自己 rerender() 一次。settings.js 的 onNavChanged 回调据此跳过。
+let pluginBatchBusy = false;
+
+export function isPluginBatchBusy() { return pluginBatchBusy; }
 
 export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   const githubIcon = el("span", { class: "github-doc-icon", "aria-hidden": "true" });
@@ -83,7 +89,7 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   pluginFilter.addEventListener("change", applyPluginManageFilter);
   plugCard.append(el("div", { class: "plugin-search-row" }, pluginSearch, pluginFilter, pluginVisibleCount));
   // 清掉已经不存在的选择，避免重扫后误操作。
-  for (const id of [...selectedPlugins]) if (!userRegs.some((r) => r.id === id)) selectedPlugins.delete(id);
+  for (const id of [...selectedPlugins]) if (!regs.some((r) => r.id === id)) selectedPlugins.delete(id);
 
   const pluginImportInput = el("input", { type: "file", accept: ".zip,application/zip", multiple: true, style: "display:none" });
   pluginImportInput.addEventListener("change", async () => {
@@ -107,7 +113,9 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   });
   plugCard.append(pluginImportInput);
 
+  const selectedIds = () => regs.filter((r) => selectedPlugins.has(r.id)).map((r) => r.id);
   const selectedUserIds = () => userRegs.filter((r) => selectedPlugins.has(r.id)).map((r) => r.id);
+  const selectedBuiltinCount = () => regs.filter((r) => r.source === "builtin" && selectedPlugins.has(r.id)).length;
   const saveZipBase64 = (b64, name) => {
     const raw = atob(b64);
     const bytes = new Uint8Array(raw.length);
@@ -119,51 +127,99 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  /** 批量启停：只翻转状态确实不同的那些，避免无谓的插件重载。 */
+  const applyBulkEnabled = async (on) => {
+    const ids = selectedIds();
+    if (!ids.length) return toast("请先勾选要批量操作的插件");
+    const targets = ids.filter((id) => (S.pluginState(id).enabled !== false) !== on);
+    if (!targets.length) return toast(on ? "选中的插件都已开启" : "选中的插件都已关闭");
+    pluginBatchBusy = true;
+    let done = 0;
+    try {
+      for (const id of targets) {
+        try { await setEnabled(id, on); done++; }
+        catch (e) { toast(`${on ? "开启" : "关闭"}「${id}」失败：${e.message || e}`); }
+      }
+    } finally {
+      pluginBatchBusy = false;
+    }
+    toast(`已${on ? "开启" : "关闭"} ${done} 个插件`);
+    rerender();
+  };
+
+  const toolbarCount = el("span", { class: "plugin-toolbar-count" });
+  const bulkOnBtn = el("button", { class: "btn ghost sm", onclick: () => applyBulkEnabled(true) }, "开启所选");
+  const bulkOffBtn = el("button", { class: "btn ghost sm", onclick: () => applyBulkEnabled(false) }, "关闭所选");
+  const selectAllBtn = el("button", {
+    class: "btn ghost sm",
+    onclick: () => {
+      // v0.48.0：全选范围 = 全部插件（内置 + 用户），因为批量启停对两者都有效。
+      const allOn = regs.length > 0 && regs.every((r) => selectedPlugins.has(r.id));
+      for (const r of regs) allOn ? selectedPlugins.delete(r.id) : selectedPlugins.add(r.id);
+      rerender();
+    },
+  }, "全选");
+  const deleteSelBtn = el("button", {
+    class: "btn danger sm",
+    onclick: async () => {
+      const ids = selectedUserIds();
+      if (!ids.length) return;
+      const skipped = selectedBuiltinCount();
+      const ok = window.confirm(
+        `确定删除选中的 ${ids.length} 个用户插件？\n\n插件文件夹及对应插件状态都会被移除。`
+        + (skipped ? `\n\n（选中的 ${skipped} 个内置插件不能删除，会被跳过 —— 可以改用「关闭所选」。）` : ""),
+      );
+      if (!ok) return;
+      let done = 0;
+      for (const id of ids) {
+        try { await removeExternalPlugin(id); selectedPlugins.delete(id); done++; }
+        catch (e) { toast(`删除 ${id} 失败：${e.message || e}`); }
+      }
+      toast(`已删除 ${done} 个用户插件`);
+      rerender();
+    },
+  }, "删除所选");
+  // 勾选只改工具栏按钮的可用态与文案 —— 不再整页 rerender()：
+  // 每点一个勾就重建整页（含全部设置分区）在插件多时明显卡顿，还会把滚动位置弹回顶部。
+  const paintToolbar = () => {
+    const total = selectedIds().length;
+    toolbarCount.textContent = total ? `已选 ${total} / ${regs.length}` : `未选择 · 共 ${regs.length} 个插件`;
+    toolbarCount.classList.toggle("on", total > 0);
+    bulkOnBtn.disabled = !total;
+    bulkOffBtn.disabled = !total;
+    selectAllBtn.textContent = regs.length && regs.every((r) => selectedPlugins.has(r.id)) ? "取消全选" : "全选";
+    const delCount = selectedUserIds().length;
+    deleteSelBtn.disabled = delCount === 0;
+    deleteSelBtn.textContent = `删除所选${delCount ? ` (${delCount})` : ""}`;
+  };
+
   const toolbar = el("div", { class: "plugin-toolbar" },
     el("button", { class: "btn pri sm", onclick: () => pluginImportInput.click() }, "导入插件"),
+    bulkOnBtn,
+    bulkOffBtn,
     el("button", {
       class: "btn ghost sm",
       onclick: async () => {
         const ids = selectedUserIds();
-        if (!ids.length) return toast("请先勾选要导出的用户插件");
+        const skipped = selectedBuiltinCount();
+        if (!ids.length) return toast(skipped ? "内置插件不能导出，请勾选用户插件" : "请先勾选要导出的用户插件");
         try {
           const b64 = await api.exportPluginsZip(ids);
           saveZipBase64(b64, `Le时间管理-plugins-${S.todayStr()}.zip`);
-          toast(`已导出 ${ids.length} 个插件`);
+          toast(`已导出 ${ids.length} 个用户插件${skipped ? `（跳过 ${skipped} 个内置插件）` : ""}`);
         } catch (e) { toast(`导出失败：${e.message || e}`); }
       },
     }, "导出所选"),
-    el("button", {
-      class: "btn ghost sm",
-      onclick: () => {
-        const allOn = userRegs.length > 0 && userRegs.every((r) => selectedPlugins.has(r.id));
-        for (const r of userRegs) allOn ? selectedPlugins.delete(r.id) : selectedPlugins.add(r.id);
-        rerender();
-      },
-    }, userRegs.length && userRegs.every((r) => selectedPlugins.has(r.id)) ? "取消全选" : "全选用户插件"),
+    selectAllBtn,
     el("button", {
       class: "btn ghost sm",
       onclick: async () => { await S.saveNow(); toast("插件配置已保存"); },
     }, "保存配置"),
-    el("button", {
-      class: "btn danger sm",
-      disabled: selectedUserIds().length ? null : true,
-      onclick: async () => {
-        const ids = selectedUserIds();
-        if (!ids.length) return;
-        const ok = window.confirm(`确定删除选中的 ${ids.length} 个用户插件？\n\n插件文件夹及对应插件状态都会被移除。`);
-        if (!ok) return;
-        let done = 0;
-        for (const id of ids) {
-          try { await removeExternalPlugin(id); selectedPlugins.delete(id); done++; }
-          catch (e) { toast(`删除 ${id} 失败：${e.message || e}`); }
-        }
-        toast(`已删除 ${done} 个用户插件`);
-        rerender();
-      },
-    }, `删除所选${selectedUserIds().length ? ` (${selectedUserIds().length})` : ""}`),
+    deleteSelBtn,
+    toolbarCount,
   );
   plugCard.append(toolbar);
+  paintToolbar();
 
   if (!regs.length) {
     plugCard.append(el("p", { class: "desc", style: "padding:8px 0" }, "尚未发现任何插件。"));
@@ -171,16 +227,22 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   for (const rec of regs) {
     const man = rec.manifest || {};
     const pluginName = pluginDisplayName(rec.id, man.name || rec.id);
-    const selectable = rec.source !== "builtin";
-    const selector = selectable ? el("label", { class: "plugin-select", title: "选择此用户插件" },
+    const deletable = rec.source !== "builtin";
+    // v0.48.0：勾选框覆盖全部插件（内置插件也能选，用于批量开启/关闭）；
+    // 「不能删」只限制删除与导出，不再等于「不能选」，所以不再给内置插件留空位。
+    const selector = el("label", {
+      class: "plugin-select",
+      title: deletable ? "选择此插件（可批量启停 / 导出 / 删除）" : "选择此插件（可批量启停；内置插件不能删除）",
+    },
       el("input", {
         type: "checkbox",
         checked: selectedPlugins.has(rec.id) ? true : null,
+        "aria-label": `选择插件 ${pluginName}`,
         onchange: (e) => {
           e.currentTarget.checked ? selectedPlugins.add(rec.id) : selectedPlugins.delete(rec.id);
-          rerender();
+          paintToolbar();
         },
-      })) : el("span", { class: "plugin-select-spacer", title: "内置插件不可删除" });
+      }));
     const enabledForSwitch = S.pluginState(rec.id).enabled !== false;
     const actions = el("div", { class: "plugin-card-controls" },
       el("span", { class: "plugin-switch-label" }, enabledForSwitch ? "已开启" : "已关闭"),
@@ -207,7 +269,7 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
         },
       }),
     );
-    if (selectable) {
+    if (deletable) {
       actions.append(el("button", {
         class: "btn danger sm",
         title: "从用户插件目录删除",

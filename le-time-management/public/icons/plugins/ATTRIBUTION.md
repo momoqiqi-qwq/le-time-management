@@ -1,6 +1,6 @@
 # public/icons/plugins 素材台账（内置插件图标）
 
-共 12 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）。
+共 13 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）。
 
 图标集入口：<https://igoutu.cn/icons/set/标志--style-color> ｜ CDN 直链格式：`https://img.icons8.com/<style>/96/<slug>.png`
 
@@ -20,6 +20,7 @@
 | `school-notice` | color | `school` | 学校通知网站 / 校舍 | `3a18d8b68b02120f…` |
 | `cn-holiday` | color | `lantern` | 中国节假日 / 中式灯笼 | `15f911412b757f4b…` |
 | `weekly-report` | color | `statistics` | 周度报告 / 数据看板 | `e1bac31ac1bf7621…` |
+| `dorm-duty` | color | `broom` | 轮换值日 / 扫帚 | `17eaff49519fce69…` |
 
 ## 许可
 

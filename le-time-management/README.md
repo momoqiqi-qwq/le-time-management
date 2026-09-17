@@ -37,7 +37,7 @@ Le-time-management/
 │     ├─ drawer.js       # 任务详情抽屉
 │     ├─ timeblock.js    # 时间块视图
 │     └─ settings.js     # 设置（数据 / 插件管理 / 关于）
-├─ public/plugins/       # 12 个内置插件（课程表、网页收集、学校通知网站、番茄专注、学习通、中国节假日等）
+├─ public/plugins/       # 13 个内置插件（课程表、网页收集、学校通知网站、番茄专注、学习通、轮换值日、中国节假日等）
 ├─ miniprogram/          # 微信小程序（连接 Win 控制端局域网服务）
 └─ src-tauri/            # Rust 侧：数据读写(原子写)、插件目录扫描、应用信息
 ```
@@ -213,6 +213,7 @@ tide.util.mmOf("09:30"); tide.util.hhmmOf(570); tide.util.durLabel(90);
 - 内置插件 `public/plugins/chaoxing-notify/`（学习通通知）：需要登录态的场景——`http.session/fetch` 保持 Cookie、`desEncryptHex` 在本机完成超星 DES 登录加密（改造自 chaoxing-notify-skill）。注意：学习通「消息中心」接口有平台 IP 白名单，被拒时插件会明确提示；课程列表与通知分享码查询不受影响。
 - 内置插件 `public/plugins/cppu-notify/`（警大门户通知）：改造自 cppu-notify-skill，完整复刻三段式 SSO 链路（主 SSO 验证码手输 → sso-jw bridge → 门户 tp_up）+ Sudy CAS RSA 加密（BigInt 移植，与原实现逐字节一致）。相比原 skill 移除了 74MB 的 tesseract OCR 运行时——验证码改为界面内手输，CASTGC 有效时可在当前应用运行会话内尝试静默续期免验证码。HTTP Cookie 会话目前只保存在内存，因此退出并重启应用后不能承诺自动登录；密码仍不落盘，验证码仍需手输。
 - 内置插件 `public/plugins/wechat-push/`（微信推送）：时间块开始前 N 分钟经 Server酱 推送到微信，带测试按钮与推送日志。
+- 内置插件 `public/plugins/dorm-duty/`（轮换值日）：把「按成员顺序轮换」的公共事务集中管理 —— **一个插件里可以放多套互相独立的轮换**（宿舍值日 / 公区卫生 / 打水…），各有自己的成员、周期、起始日与提醒时刻，互不影响。每套用「起始日 + 周期」切段、一段一人，所以「每周轮换」时整周都是同一个人、提醒也只在每轮第一天触发一次（不会天天催）；支持每天 / 每 3 天 / 每周 / 每两周与自定义 N 天，成员可增删改名与调序、误删可恢复，某一轮可临时换人（只影响那一轮）。提醒时刻与提示音走应用设置里的同一套音效目录。**三端都已适配**：小程序端是原生页面（逻辑在 `miniprogram/core/pluginRuntime.js`），存储键与桌面端逐字一致，备份可跨端恢复；小程序不能常驻后台，到点提醒只在打开插件页时补一次。
 
 ## 设计来源
 
@@ -223,6 +224,7 @@ tide.util.mmOf("09:30"); tide.util.hhmmOf(570); tide.util.durLabel(90);
 ## 插件管理增强
 
 - 已内置 `exam-calendar`（考试日历）插件。
-- 设置 → 插件支持 ZIP 导入、所选插件 ZIP 导出、保存插件配置、全选用户插件和多选删除。
-- 内置插件只能启用/停用，不能误删；批量删除只作用于用户插件目录。
+- 设置 → 插件支持 ZIP 导入、所选插件 ZIP 导出、保存插件配置、全选、**批量开启 / 关闭所选**和多选删除。
+- **勾选框覆盖全部插件**（内置 + 用户）：内置插件也能勾选用于批量启停；「不能删」只限制删除与导出 ——
+  批量删除与导出始终只作用于用户插件目录，选中内置插件时按钮会说明会被跳过。
 - 设置 → 插件标题旁提供 GitHub 图标「插件开发文档」，点击打开 https://github.com/momoqiqi-qwq/tidebalance 。

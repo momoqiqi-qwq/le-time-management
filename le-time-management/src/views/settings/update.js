@@ -14,7 +14,7 @@ import { toggleSwitch } from "../../switchControl.js";
 import {
   getUpdateSettings, setUpdateSettings, getUpdateState, subscribeUpdateState,
   describeUpdateState, isUpdaterSupported, checkForUpdates, startUpdate,
-  installUpdate, openInstallPermission, clearSkippedVersion,
+  installUpdate, openInstallPermission, clearSkippedVersion, withCheckStamp,
 } from "../../updateChecker.js";
 
 /**
@@ -82,8 +82,15 @@ export function createUpdateSettingsPanel({ currentVersion = "" } = {}) {
 
   function paint() {
     const st = getUpdateState();
+    // 「尚未检查」也要给出上一次自动检查的时刻：面板上只写「已是最新版本」而不写时刻时，
+    // 用户无法分辨这条结果是刚查的还是几十分钟前查的（发版瞬间特别容易误会成「检测不到」）。
+    // 拼接走 updateChecker 的 withCheckStamp —— 与状态回显的「· HH:MM 检查」同一套规则。
     statusLine.textContent = st.phase === "idle"
-      ? `尚未检查（当前 v${currentVersion || "?"}）`
+      ? withCheckStamp(
+          `尚未检查（当前 v${currentVersion || "?"}）`,
+          getUpdateSettings().lastCheckAt,
+          { prefix: "上次自动检查 ", suffix: "" },
+        )
       : describeUpdateState(st);
     statusLine.classList.toggle("is-error", st.phase === "error");
 

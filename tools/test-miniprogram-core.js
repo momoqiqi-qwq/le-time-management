@@ -168,8 +168,8 @@ ok("createFromCapture 有日期建块字段一致",
 console.log("[plugins]");
 const catalog = require("../miniprogram/core/pluginCatalog.js");
 const pluginRuntime = require("../miniprogram/core/pluginRuntime.js");
-ok("内置插件清单同步为 12 个", catalog.plugins.length, 12);
-ok("小程序原生适配 8 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 8);
+ok("内置插件清单同步为 13 个", catalog.plugins.length, 13);
+ok("小程序原生适配 9 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 9);
 ["plugin-guide", "wechat-push", "gx-news", "chaoxing-notify"].forEach((id) =>
   ok("新适配插件 " + id + " 标记 native", (catalog.byId[id].platforms || {}).miniprogram, "native"));
 store.setPluginEnabled("pomodoro", false);
@@ -192,6 +192,386 @@ ok("普通话报名提示说明无全国统一日期并给出官方入口", [pth
 const wr = pluginRuntime.weeklyReport("2026-09-08");
 ok("周度报告适配输出 7 天", wr.days.length, 7);
 
+/* ── 轮换值日（dorm-duty）：多套轮换的纯逻辑真跑，不是源码字符串断言 ──
+   与桌面端 public/plugins/dorm-duty/main.js 同源的规则，这里守五条不变量：
+   ① 按「轮次」切段（周期内每天都是同一个人，否则每周轮换会天天催）
+   ② 只在每轮第一天提醒 ③ 临时换人只影响那一轮
+   ④ 坏时刻不能把提醒静默关掉 ⑤ 多套轮换之间完全隔离（成员/周期/换人/提醒互不串台） */
+const DD = (raw, today) => pluginRuntime.ddNormalizeGroup(raw, today || "2026-09-17");
+const DDG = (today, name, cfg) => DD(Object.assign({ name: name, startDate: "2026-09-14", periodDays: 7 }, cfg || {}), today);
+const ddM = [{ id: "m1", name: "小北" }, { id: "m2", name: "老陈" }, { id: "m3", name: "阿青" }];
+const ddWeek = DDG("2026-09-17", "宿舍值日", { members: ddM });
+
+/* 1. 归一化：坏数据不能把页面画崩 */
+{
+  const bad = DD({ name: "   ", startDate: "不是日期", periodDays: 0, remindTime: "25:99" }, "2026-09-17");
+  ok("空轮换名退回默认「值日」", bad.name, "值日");
+  ok("非法起始日期退回今天", bad.startDate, "2026-09-17");
+  ok("周期为 0 / 非法退回默认 7 天（0 是「没填」不是「每天」）", bad.periodDays, 7);
+  ok("非法时刻退回 08:00", bad.remindTime, "08:00");
+  ok("成员不是数组时当空处理", DD({ members: "坏了" }).members.length, 0);
+  ok("overrides 不是对象时当空处理", Object.keys(DD({ overrides: "坏了" }).overrides).length, 0);
+  ok("缺 id 的组必须补一个（否则切换轮换会指错对象）", !!DD({}).id, true);
+  ok("空白 id 的组也要补（'' 会让两套轮换 id 撞在一起）", /^\S+$/.test(DD({ id: "   " }).id), true);
+  ok("两套空白 id 的组各自拿到不同 id（否则切换轮换会指错对象）",
+    (function () {
+      const gs = pluginRuntime.ddGroups([{ id: "  ", name: "A" }, { id: "  ", name: "B" }], "2026-09-17");
+      return gs.length === 2 && gs[0].id !== gs[1].id;
+    })(), true);
+  ok("显式关掉的提醒必须保留", DD({ remindEnabled: false }).remindEnabled, false);
+  ok("边界 23:59 合法", DD({ remindTime: "23:59" }).remindTime, "23:59");
+  ok("00:00 合法（午夜提醒）", DD({ remindTime: "00:00" }).remindTime, "00:00");
+  ok("24:00 非法（时最大 23）", DD({ remindTime: "24:00" }).remindTime, "08:00");
+  ok("25:99 非法（会静默关掉提醒）", DD({ remindTime: "25:99" }).remindTime, "08:00");
+  ok("「8:5」被拒（分必须两位，与桌面端同规则）", DD({ remindTime: "8:5" }).remindTime, "08:00");
+  ok("「8:05」补零后合法", DD({ remindTime: "8:05" }).remindTime, "08:05");
+  ok("负周期夹到 1 天", DD({ periodDays: -3 }).periodDays, 1);
+  ok("小数周期取整后不小于 1 天", DD({ periodDays: 0.4 }).periodDays, 1);
+  ok("周期上限 365 天", DD({ periodDays: 9999 }).periodDays, 365);
+  ok("未识别的键原样保留（桌面端字段不能被抹掉）", DD({ futureKey: "v" }).futureKey, "v");
+  ok("桌面端选的提示音必须保留", DD({ sound: "chime" }).sound, "chime");
+  ok("轮换名截断到 12 字", DD({ name: "一二三四五六七八九十十一十二十三" }).name.length, 12);
+  ok("成员名截断到 16 字", DD({ members: [{ id: "a", name: "一二三四五六七八九十十一十二十三十四十五十六十七" }] }).members[0].name.length, 16);
+  ok("无 id 的脏成员被剔掉", DD({ members: [{ name: "没 id" }, { id: "ok", name: "有 id" }] }).members.length, 1);
+}
+
+/* 2. 组列表归一化：重复 id / 垃圾条目 / 上限 */
+{
+  ok("组列表不是数组时当空处理", pluginRuntime.ddGroups("坏了", "2026-09-17").length, 0);
+  ok("组列表为 null 时当空处理", pluginRuntime.ddGroups(null, "2026-09-17").length, 0);
+  ok("垃圾条目各自兜成一套可用轮换，而不是整份丢掉",
+    pluginRuntime.ddGroups([null, undefined, 3], "2026-09-17").length, 3);
+  ok("重复 id 必须剔掉（会让「切换轮换」指错对象）",
+    pluginRuntime.ddGroups([{ id: "x" }, { id: "x" }], "2026-09-17").length, 1);
+  const many = [];
+  for (let i = 0; i < pluginRuntime.DD_GROUP_MAX + 5; i++) many.push({ id: "g" + i, name: "组" + i });
+  ok("组数夹到上限（否则界面被撑爆）",
+    pluginRuntime.ddGroups(many, "2026-09-17").length, pluginRuntime.DD_GROUP_MAX);
+}
+
+/* 3. 旧版单套数据迁移 */
+{
+  const legacy = {
+    members: ddM,
+    config: { dutyName: "宿舍值日", startDate: "2026-09-14", periodDays: 7, remindTime: "07:30", remindEnabled: true, sound: "chime" },
+    overrides: { "2026-09-14": "m3" },
+    removed: [{ id: "m9", name: "走的人" }],
+    lastNotified: "2026-09-14",
+  };
+  const m = pluginRuntime.ddMigrateLegacy(legacy, "2026-09-17");
+  ok("旧数据迁移成 1 套轮换", m.length, 1);
+  ok("迁移后保留原轮换名", m[0].name, "宿舍值日");
+  ok("迁移后保留原成员", m[0].members.map((x) => x.name).join(","), "小北,老陈,阿青");
+  ok("迁移后保留原周期", m[0].periodDays, 7);
+  ok("迁移后保留原提醒时刻", m[0].remindTime, "07:30");
+  ok("迁移后保留原提示音（桌面端选的）", m[0].sound, "chime");
+  ok("迁移后保留换人记录", m[0].overrides["2026-09-14"], "m3");
+  ok("迁移后保留已移除名单", m[0].removed.map((x) => x.name).join(","), "走的人");
+  ok("迁移后保留提醒去重标记", m[0].lastNotified, "2026-09-14");
+  ok("完全没有旧数据时不迁移（由调用方建默认组）",
+    pluginRuntime.ddMigrateLegacy({ members: [], config: null, overrides: {}, removed: [], lastNotified: "" }, "2026-09-17").length, 0);
+  ok("旧数据为 null 时不崩", pluginRuntime.ddMigrateLegacy(null, "2026-09-17").length, 0);
+  ok("ddActiveId：存的 id 有效就用它",
+    pluginRuntime.ddActiveId([{ id: "gA" }, { id: "gB" }], "gB"), "gB");
+  ok("ddActiveId：失效 id 退回第一组（否则页面失去当前组）",
+    pluginRuntime.ddActiveId([{ id: "gA" }, { id: "gB" }], "不存在"), "gA");
+  ok("ddActiveId：没有组时返回空串", pluginRuntime.ddActiveId([], "gA"), "");
+}
+
+/* 4. 轮换数学：按轮次切段 */
+{
+  ok("周期 7 天：今天切段到本轮起始日", pluginRuntime.ddCycleStartOf(ddWeek, "2026-09-17"), "2026-09-14");
+  ok("周期内每天都是同一个人（否则每周轮换会天天催）",
+    ["2026-09-14", "2026-09-16", "2026-09-20"].map((d) => pluginRuntime.ddAssigneeFor(ddWeek, d).name), ["小北", "小北", "小北"]);
+  ok("下一轮换到下一个人", pluginRuntime.ddAssigneeFor(ddWeek, "2026-09-21").name, "老陈");
+  ok("第 3 轮回到第一个人", pluginRuntime.ddAssigneeFor(ddWeek, "2026-10-05").name, "小北");
+  ok("起始日之前不排班",
+    [pluginRuntime.ddCycleStartOf(ddWeek, "2026-09-13"), pluginRuntime.ddAssigneeFor(ddWeek, "2026-09-13")], [null, null]);
+  ok("只在每轮第一天算「当天」",
+    ["2026-09-14", "2026-09-15", "2026-09-21"].map((d) => pluginRuntime.ddIsCycleStartDay(ddWeek, d)), [true, false, true]);
+  const per3 = DDG("2026-09-17", "值日", { periodDays: 3, members: ddM });
+  ok("周期 3 天：切段按 3 天推进",
+    ["2026-09-14", "2026-09-16", "2026-09-17"].map((d) => pluginRuntime.ddCycleStartOf(per3, d)), ["2026-09-14", "2026-09-14", "2026-09-17"]);
+  ok("周期 3 天：第 3 天换人", pluginRuntime.ddAssigneeFor(per3, "2026-09-17").name, "老陈");
+  ok("周期 1 天：每天换人",
+    ["2026-09-14", "2026-09-15", "2026-09-16"].map((d) => pluginRuntime.ddAssigneeFor(DDG("2026-09-17", "值日", { periodDays: 1, members: ddM }), d).name),
+    ["小北", "老陈", "阿青"]);
+  ok("周期 14 天：两周内都是同一个人",
+    pluginRuntime.ddAssigneeFor(DDG("2026-09-17", "值日", { periodDays: 14, members: ddM }), "2026-09-27").name, "小北");
+  ok("没有成员时不指派", pluginRuntime.ddAssigneeFor(DDG("2026-09-17", "值日", { members: [] }), "2026-09-17"), null);
+  ok("第 1 个人先当班", pluginRuntime.ddAssigneeFor(ddWeek, "2026-09-14").name, "小北");
+  ok("轮次序号从 1 开始", pluginRuntime.ddCycleIndexAt(ddWeek, "2026-09-14") + 1, 1);
+  ok("第 2 轮序号是 2", pluginRuntime.ddCycleIndexAt(ddWeek, "2026-09-21") + 1, 2);
+}
+
+/* 5. 临时换人：只影响那一轮 */
+{
+  const g = pluginRuntime.ddGroupSetOverride(ddWeek, "2026-09-14", "m3");
+  ok("本轮已换给阿青", pluginRuntime.ddAssigneeFor(g, "2026-09-17").name, "阿青");
+  ok("周期内每天沿用同一次换人", pluginRuntime.ddAssigneeFor(g, "2026-09-18").name, "阿青");
+  ok("下一轮不受影响，回到原排班", pluginRuntime.ddAssigneeFor(g, "2026-09-24").name, "老陈");
+  ok("真换人时 overrideHit 返回的是替补本人", pluginRuntime.ddOverrideHit(g, "2026-09-14").name, "阿青");
+  ok("「原本该谁」是正常轮换的人（不是替补）", pluginRuntime.ddNormalFor(g, "2026-09-14").name, "小北");
+  ok("撤销换人后回到原排班",
+    pluginRuntime.ddAssigneeFor(pluginRuntime.ddGroupSetOverride(g, "2026-09-14", ""), "2026-09-17").name, "小北");
+  ok("撤销换人要把键删掉，而不是留一个空串（否则存量数据越攒越多）",
+    Object.keys(pluginRuntime.ddGroupSetOverride(g, "2026-09-14", "").overrides).length, 0);
+  const gone = pluginRuntime.ddGroupRemoveMember(g, "m3");
+  ok("换人对象被移除后退回原排班", pluginRuntime.ddAssigneeFor(gone, "2026-09-17").name, "小北");
+  ok("指向已移除成员的换人不算换人（否则界面会显示「已换人 · 原 X」而实际当班的就是 X）",
+    pluginRuntime.ddOverrideHit(gone, "2026-09-14"), null);
+  ok("移除成员时顺手清掉指向他的换人（不留永远命中不了的 override）",
+    Object.keys(gone.overrides).length, 0);
+  // 存量脏数据：旧版本可能留下「override 指向已不在名单里的人」。
+  // 这种换人**不算换人** —— 否则界面会显示「已换人 · 原 X」而实际当班的就是 X。
+  const stale = DD({ startDate: "2026-09-14", periodDays: 7, members: [{ id: "m1", name: "小北" }], overrides: { "2026-09-14": "m9" } });
+  ok("存量脏数据：override 指向不在名单的人 → 不算换人", pluginRuntime.ddOverrideHit(stale, "2026-09-14"), null);
+  ok("存量脏数据：当班人退回正常排班", pluginRuntime.ddAssigneeFor(stale, "2026-09-17").name, "小北");
+  ok("存量脏数据：快照也不显示「已换人」", pluginRuntime.ddSnapshot("2026-09-17", stale).swapped, false);
+}
+
+/* 6. 成员增删改序 */
+{
+  const g = DDG("2026-09-17", "值日", { members: ddM });
+  ok("添加成员接在名单末尾（顺序即轮换顺序）",
+    pluginRuntime.ddGroupAddMember(g, "  小新  ").members.map((m) => m.name).join(","), "小北,老陈,阿青,小新");
+  ok("空名成员不添加（不留一个点不动的空条目）",
+    pluginRuntime.ddGroupAddMember(g, "   ").members.length, 3);
+  ok("改名去掉首尾空白",
+    pluginRuntime.ddGroupRenameMember(g, "m2", "  老陈  ").members[1].name, "老陈");
+  ok("改名成空则不动",
+    pluginRuntime.ddGroupRenameMember(g, "m2", "  ").members[1].name, "老陈");
+  ok("上移交换相邻两人",
+    pluginRuntime.ddGroupMoveMember(g, "m2", -1).members.map((m) => m.name).join(","), "老陈,小北,阿青");
+  ok("第一个人不能再上移",
+    pluginRuntime.ddGroupMoveMember(g, "m1", -1).members.map((m) => m.name).join(","), "小北,老陈,阿青");
+  ok("最后一个人不能再下移",
+    pluginRuntime.ddGroupMoveMember(g, "m3", 1).members.map((m) => m.name).join(","), "小北,老陈,阿青");
+  const rm = pluginRuntime.ddGroupRemoveMember(g, "m2");
+  ok("移除成员后名单里没有他", rm.members.map((m) => m.name).join(","), "小北,阿青");
+  ok("移除的成员进「已移除」可恢复", rm.removed.map((m) => m.name).join(","), "老陈");
+  const back = pluginRuntime.ddGroupRestoreMember(rm, "m2");
+  ok("恢复成员接回名单末尾（不会插队打乱已定好的顺序）",
+    back.members.map((m) => m.name).join(","), "小北,阿青,老陈");
+  ok("恢复后从「已移除」里移除", back.removed.length, 0);
+  const many = { id: "g", members: [], removed: [], overrides: {} };
+  let acc = many;
+  for (let i = 0; i < pluginRuntime.DD_REMOVED_KEEP + 6; i++) {
+    const added = pluginRuntime.ddGroupAddMember(acc, "人" + i);
+    acc = pluginRuntime.ddGroupRemoveMember(added, added.members[added.members.length - 1].id);
+  }
+  ok("「已移除」列表截断，不会无限增长", acc.removed.length, pluginRuntime.DD_REMOVED_KEEP);
+  ok("组归一化也要截断「已移除」（存量脏数据兜底）",
+    DD({ removed: new Array(40).fill(0).map((_, i) => ({ id: "r" + i, name: "x" })) }).removed.length, pluginRuntime.DD_REMOVED_KEEP);
+}
+
+/* 7. 多套轮换：完全隔离（本次改造的核心） */
+{
+  const dorm = DDG("2026-09-17", "宿舍值日", { startDate: "2026-09-14", periodDays: 7, members: ddM });
+  const pub = DDG("2026-09-17", "公区卫生", {
+    startDate: "2026-09-18", periodDays: 1,
+    members: [{ id: "p1", name: "甲" }, { id: "p2", name: "乙" }],
+  });
+  ok("两套轮换各有自己的成员", [dorm.members.length, pub.members.length], [3, 2]);
+  ok("两套轮换各有自己的周期", [pluginRuntime.ddPeriod(dorm), pluginRuntime.ddPeriod(pub)], [7, 1]);
+  ok("宿舍组：9/18 整周还是小北（7 天一段）", pluginRuntime.ddAssigneeFor(dorm, "2026-09-18").name, "小北");
+  ok("公区组：9/18 起每天一轮，轮到甲", pluginRuntime.ddAssigneeFor(pub, "2026-09-18").name, "甲");
+  ok("公区组：9/19 轮到乙", pluginRuntime.ddAssigneeFor(pub, "2026-09-19").name, "乙");
+  ok("公区组换人不会带动宿舍组", pluginRuntime.ddAssigneeFor(dorm, "2026-09-19").name, "小北");
+  ok("宿舍组起始日早于公区组（两套起始日独立）",
+    [pluginRuntime.ddCycleStartOf(dorm, "2026-09-17"), pluginRuntime.ddCycleStartOf(pub, "2026-09-17")], ["2026-09-14", null]);
+  ok("公区组未开始时不算出当班人（各自独立判断）", pluginRuntime.ddAssigneeFor(pub, "2026-09-17"), null);
+
+  // A 组换人 → B 组排班不受影响
+  const dorm2 = pluginRuntime.ddGroupSetOverride(dorm, "2026-09-14", "m2");
+  ok("A 组换人后 A 组当班变了", pluginRuntime.ddAssigneeFor(dorm2, "2026-09-18").name, "老陈");
+  ok("A 组换人不改 B 组排班", pluginRuntime.ddAssigneeFor(pub, "2026-09-18").name, "甲");
+
+  // 两组同名成员 id 也不能串台（各自一份名单）
+  const dorm3 = pluginRuntime.ddGroupAddMember(dorm, "只有宿舍有");
+  ok("A 组加成员不影响 B 组", [dorm3.members.length, pub.members.length], [4, 2]);
+
+  // 各自独立的提醒去重
+  const gA = pluginRuntime.ddGroupPatch(dorm, { lastNotified: "2026-09-14" });
+  const gB = pluginRuntime.ddGroupPatch(pub, { lastNotified: "" });
+  ok("A 组已提醒过 → 不再提醒", pluginRuntime.ddReminderDue(gA, "2026-09-14", 600), null);
+  ok("B 组自己的去重标记独立（A 提醒过不影响 B）",
+    pluginRuntime.ddReminderDue(gB, "2026-09-18", 600).whoName, "甲");
+}
+
+/* 8. 组的增删改（纯函数：一组进、一组出） */
+{
+  const g1 = DD({ id: "g1", name: "宿舍值日", members: ddM });
+  const created = pluginRuntime.ddAddGroup([g1], "2026-09-17", "公区卫生");
+  ok("新建一套轮换", !!created, true);
+  ok("新组不能继承上一组的成员", created.members.length, 0);
+  ok("两套轮换的 id 必须不同", created.id === g1.id, false);
+  ok("新建时给的名字生效", created.name, "公区卫生");
+  ok("新建未给名字时用默认名", pluginRuntime.ddAddGroup([g1], "2026-09-17", null).name, "值日");
+  const full = [];
+  for (let i = 0; i < pluginRuntime.DD_GROUP_MAX; i++) full.push(DD({ id: "g" + i }));
+  ok("到上限时新建返回 null（让调用方去提示，而不是假装建成功）",
+    pluginRuntime.ddAddGroup(full, "2026-09-17", "多余的"), null);
+
+  const two = [g1, created];
+  const rmCreated = pluginRuntime.ddRemoveGroup(two, created.id, created.id);
+  ok("删掉当前组后落到还活着的组", [rmCreated.ok, rmCreated.groups.length, rmCreated.activeId], [true, 1, "g1"]);
+  const rmOther = pluginRuntime.ddRemoveGroup(two, created.id, "g1");
+  ok("删掉非当前组时当前组不变", [rmOther.ok, rmOther.activeId], [true, "g1"]);
+  ok("删不存在的组必须失败",
+    pluginRuntime.ddRemoveGroup(two, "不存在", "g1").ok, false);
+  ok("最后一套不许删（删光界面就没有可编辑的对象了）",
+    pluginRuntime.ddRemoveGroup([g1], "g1", "g1").ok, false);
+  ok("只有一套时删除失败且列表不变",
+    pluginRuntime.ddRemoveGroup([g1], "g1", "g1").groups.length, 1);
+  const three = [g1, created, pluginRuntime.ddAddGroup(two, "2026-09-17", "打水")];
+  const rmMid = pluginRuntime.ddRemoveGroup(three, "g1", "g1");
+  ok("删当前那套后落到同一位置的邻居", [rmMid.groups.length, rmMid.activeId], [2, rmMid.groups[0].id]);
+
+  ok("patch 只改指定字段，其余保持",
+    JSON.stringify(pluginRuntime.ddGroupPatch(g1, { name: "新名" }).members) === JSON.stringify(g1.members), true);
+  const patched = pluginRuntime.ddWithGroup([g1, created], "g1", (g) => pluginRuntime.ddGroupPatch(g, { name: "改名了" }));
+  ok("ddWithGroup 只替换目标组", [patched[0].name, patched[1].name], ["改名了", "公区卫生"]);
+}
+
+/* 9. 提醒：只在每轮第一天 + 到点 + 当天只一次 */
+{
+  const g = pluginRuntime.ddGroupPatch(ddWeek, { remindTime: "08:00", lastNotified: "" });
+  ok("周期内非首日不提醒（否则天天催）", pluginRuntime.ddReminderDue(g, "2026-09-16", 600), null);
+  ok("首日但还没到点不提醒", pluginRuntime.ddReminderDue(g, "2026-09-14", 400), null);
+  const due = pluginRuntime.ddReminderDue(g, "2026-09-14", 600);
+  ok("首日到点提醒当班的人", [due.whoName, due.time, due.groupName], ["小北", "08:00", "宿舍值日"]);
+  ok("提醒里带上组 id（多组时页面要按组标记去重）", due.groupId, g.id);
+  ok("当天已提醒过不再提醒",
+    pluginRuntime.ddReminderDue(pluginRuntime.ddMarkNotified([g], [g.id], "2026-09-14")[0], "2026-09-14", 600), null);
+  ok("提醒被关掉时不提醒", pluginRuntime.ddReminderDue(pluginRuntime.ddGroupPatch(g, { remindEnabled: false }), "2026-09-14", 600), null);
+  ok("没有成员时不提醒", pluginRuntime.ddReminderDue(pluginRuntime.ddGroupPatch(g, { members: [] }), "2026-09-14", 600), null);
+  ok("未开始时（起始日前）不提醒", pluginRuntime.ddReminderDue(g, "2026-09-13", 600), null);
+
+  // 坏时刻不能让提醒静默失效（存量数据里存着 25:99 时仍须照常提醒）
+  const badTime = pluginRuntime.ddGroupPatch(g, { remindTime: "25:99" });
+  ok("存量坏时刻被归一化（25:99 → 08:00），提醒不会静默失效",
+    pluginRuntime.ddReminderDue(badTime, "2026-09-14", 600).whoName, "小北");
+
+  // 多组同时到点：各自独立
+  const g2 = DDG("2026-09-17", "公区卫生", { startDate: "2026-09-14", periodDays: 1, members: [{ id: "p1", name: "甲" }] });
+  const dueAll = pluginRuntime.ddDueReminders([g, g2], "2026-09-14", 600);
+  ok("多组同时到点时每套各自提醒一次", dueAll.map((r) => r.groupName).join(","), "宿舍值日,公区卫生");
+  const marked = pluginRuntime.ddMarkNotified([g, g2], [g.id], "2026-09-14");
+  ok("只标记被提醒过的那组（另一组下次仍会提醒）",
+    [marked[0].lastNotified, marked[1].lastNotified], ["2026-09-14", ""]);
+  ok("标记后只剩另一组到点",
+    pluginRuntime.ddDueReminders(marked, "2026-09-14", 600).map((r) => r.groupName).join(","), "公区卫生");
+  ok("标记已提醒后 A 组不再到点",
+    pluginRuntime.ddReminderDue(marked[0], "2026-09-14", 600), null);
+}
+
+/* 10. 视图模型：当前组快照 + 顶部标签条 */
+{
+  const dorm = DDG("2026-09-17", "宿舍值日", { startDate: "2026-09-14", periodDays: 7, members: ddM });
+  const pub = DDG("2026-09-17", "公区卫生", {
+    startDate: "2026-09-14", periodDays: 1,
+    members: [{ id: "p1", name: "甲" }, { id: "p2", name: "乙" }],
+  });
+  const s = pluginRuntime.ddSummaryFrom([dorm, pub], pub.id, "2026-09-17");
+  ok("快照跟着当前组走", s.groupName, "公区卫生");
+  ok("当前组周期标签", s.periodLabel, "每天");
+  ok("标签条列出全部轮换", s.groups.map((x) => x.name).join(","), "宿舍值日,公区卫生");
+  ok("标签条标出当前组", s.groups.map((x) => x.on).join(","), "false,true");
+  ok("标签条给出每组各自的当班人（一眼看出谁在轮）",
+    s.groups.map((x) => x.who).join(","), "小北,乙");
+  ok("组数", s.groupCount, 2);
+  ok("可以继续新建", s.canAddGroup, true);
+  ok("多于一套时可以删", s.canDelGroup, true);
+  ok("只有一套时不许删",
+    pluginRuntime.ddSummaryFrom([dorm], dorm.id, "2026-09-17").canDelGroup, false);
+  ok("activeId 无效时退回第一组",
+    pluginRuntime.ddSummaryFrom([dorm, pub], "不存在", "2026-09-17").groupName, "宿舍值日");
+  ok("没有组时快照不崩（返回空态）",
+    pluginRuntime.ddSummaryFrom([], "", "2026-09-17").groupCount, 0);
+
+  // 空态 / 未开始 / 有成员 三种状态
+  const empty = pluginRuntime.ddSnapshot("2026-09-17", DDG("2026-09-17", "值日", { members: [] }));
+  ok("空态标记", [empty.empty, empty.hasMembers, empty.started], [true, false, true]);
+  ok("空态不给当班人", empty.current, null);
+  ok("空态后续轮次给出占位名", empty.rows[0].whoName, "—");
+  const notStarted = pluginRuntime.ddSnapshot("2026-09-10", DDG("2026-09-17", "值日", { startDate: "2026-09-14", members: ddM }));
+  ok("未开始标记", notStarted.started, false);
+  ok("未开始时不指派当班人", notStarted.current, null);
+  ok("未开始时说的是「开始」而不是「换人」", notStarted.nextVerb, "开始");
+  ok("未开始时下次是起始日", notStarted.nextStart, "2026-09-14");
+  ok("未开始时不给轮次序号", notStarted.cycleIndex, 0);
+
+  const live = pluginRuntime.ddSnapshot("2026-09-17", ddWeek);
+  ok("后续轮次展示 6 条", live.rows.length, 6);
+  ok("后续轮次按顺序循环",
+    live.rows.map((r) => r.whoName).join(","), "老陈,阿青,小北,老陈,阿青,小北");
+  ok("每行倒计时按天算",
+    live.rows.map((r) => r.daysUntil).join(","), "4,11,18,25,32,39");
+  ok("成员行给出序号与是否当班",
+    live.members.map((m) => m.no + (m.isCurrent ? "*" : "")).join(","), "1*,2,3");
+  ok("首尾成员的上下移按钮禁用",
+    [live.members[0].canUp, live.members[0].canDown, live.members[2].canUp, live.members[2].canDown], [false, true, true, false]);
+  ok("周期选项里标出当前档", live.periods.filter((p) => p.on).map((p) => p.label).join(","), "每周");
+  ok("周期选项覆盖 1/3/7/14", live.periods.map((p) => p.days).join(","), "1,3,7,14");
+  ok("快照里带上桌面端的提示音字段（小程序不展示但要原样带回 storage）", live.cfg.sound, "beep");
+  // 周几要标出来但别重复（桌面端曾写成「9月18日（周五）· 周五」，靠眼睛才发现）
+  ok("多日轮次的日期文案带周几、且只出现一次",
+    /^\d+月\d+日 → \d+月\d+日 · 周[一二三四五六日]起$/.test(live.rows[0].range), true);
+  ok("多日轮次的日期里「周X」只出现一次", (live.rows[0].range.match(/周/g) || []).length, 1);
+  const dailyRow = pluginRuntime.ddSnapshot("2026-09-20",
+    DDG("2026-09-20", "值日", { startDate: "2026-09-20", periodDays: 1, members: ddM })).rows[0];
+  ok("单日轮次的日期文案是「M月D日（周X）」",
+    /^\d+月\d+日（周[一二三四五六日]）$/.test(dailyRow.range), true);
+  ok("单日轮次的日期里「周X」只出现一次", (dailyRow.range.match(/周/g) || []).length, 1);
+}
+
+/* 11. 页面入口 dormDutySummary：读 store + 迁移 / 兜底建组必须立刻落盘
+   ⚠️ 这条守的是最容易漏的坑：迁移结果不写回 storage 的话，「已迁移」与「未迁移」在存储上
+   分不出来 —— 每次进页面都会重新建一个**随机 id** 的默认组，用户刚设好的东西下次就没了。
+   判据用「两次调用拿到的组 id 是否一致」，而不是「有没有 groups 键」。 */
+{
+  store.replaceAll({ version: 1, tasks: [], blocks: [], settings: {}, plugins: {} });
+  ok("空 store 时先建一套默认轮换", pluginRuntime.dormDutySummary("2026-09-17").groupCount, 1);
+  const firstId = store.pluginStorageGet("dorm-duty", "groups", null)[0].id;
+  ok("兜底建组必须立刻落盘", !!firstId, true);
+  ok("再进一次页面拿到的是同一套（没有重建随机 id 的组）",
+    pluginRuntime.dormDutySummary("2026-09-17").groups[0].id, firstId);
+
+  // 旧版单套数据 → 迁移成一套，且立刻落盘
+  store.replaceAll({ version: 1, tasks: [], blocks: [], settings: {}, plugins: {} });
+  store.pluginStorageSet("dorm-duty", "members", ddM);
+  store.pluginStorageSet("dorm-duty", "config", { dutyName: "宿舍值日", startDate: "2026-09-14", periodDays: 7, remindTime: "07:30", sound: "chime" });
+  store.pluginStorageSet("dorm-duty", "overrides", { "2026-09-14": "m3" });
+  store.pluginStorageSet("dorm-duty", "lastNotified", "2026-09-14");
+  const migrated = pluginRuntime.dormDutySummary("2026-09-17");
+  ok("旧数据自动迁移成一套轮换", [migrated.groupCount, migrated.groupName], [1, "宿舍值日"]);
+  ok("迁移后成员还在", migrated.members.map((m) => m.name).join(","), "小北,老陈,阿青");
+  ok("迁移后换人还在（本轮是阿青）", migrated.current.name, "阿青");
+  ok("迁移后提醒时刻还在", migrated.cfg.remindTime, "07:30");
+  ok("迁移后桌面端的提示音还在", migrated.cfg.sound, "chime");
+  ok("迁移结果必须立刻落盘", !!store.pluginStorageGet("dorm-duty", "groups", null), true);
+  const migratedId = store.pluginStorageGet("dorm-duty", "groups", null)[0].id;
+  ok("再进一次页面不会重新迁移（组 id 稳定）",
+    pluginRuntime.dormDutySummary("2026-09-17").groups[0].id, migratedId);
+
+  // 新版 groups 已存在时，不能再被旧键盖回去
+  store.replaceAll({ version: 1, tasks: [], blocks: [], settings: {}, plugins: {} });
+  store.pluginStorageSet("dorm-duty", "groups", [
+    DD({ id: "gA", name: "宿舍值日", members: ddM }),
+    DD({ id: "gB", name: "公区卫生", members: [{ id: "p1", name: "甲" }] }),
+  ]);
+  store.pluginStorageSet("dorm-duty", "activeId", "gB");
+  store.pluginStorageSet("dorm-duty", "members", [{ id: "旧", name: "旧数据" }]);
+  const both = pluginRuntime.dormDutySummary("2026-09-17");
+  ok("新版数据存在时不看旧键（否则旧快照会盖回来）", both.groupCount, 2);
+  ok("存的 activeId 生效（下次打开还停在那一套）", both.groupName, "公区卫生");
+  ok("标签条给出两组各自当班人", both.groups.map((g) => g.who).join(","), "小北,甲");
+  store.pluginStorageSet("dorm-duty", "activeId", "不存在");
+  ok("activeId 失效时退回第一套", pluginRuntime.dormDutySummary("2026-09-17").groupName, "宿舍值日");
+  ok("失效的 activeId 会被修正后落盘（不留一个永远无效的指针）",
+    store.pluginStorageGet("dorm-duty", "activeId", ""), store.pluginStorageGet("dorm-duty", "groups", [])[0].id);
+}
 /* ── 学习通适配纯逻辑（chaoxingCore） ── */
 console.log("[chaoxing]");
 const cxCore = require("../miniprogram/core/chaoxingCore.js");

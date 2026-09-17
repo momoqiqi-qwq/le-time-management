@@ -22,7 +22,7 @@ const GUIDE_GROUPS = [
   { name: "学习与校园", ids: ["shiguang-schedule", "school-notice", "chaoxing-notify", "cppu-notify", "exam-calendar"] },
   { name: "效率与专注", ids: ["pomodoro", "weekly-report"] },
   { name: "信息与提醒", ids: ["gx-news", "cn-holiday", "wechat-push"] },
-  { name: "生活与工具", ids: ["web-collector"] },
+  { name: "生活与工具", ids: ["dorm-duty", "web-collector"] },
 ];
 const GUIDE_DOCS = {
   "shiguang-schedule": ["打开课程表，先设置学期与开学日期", "可手动添加，或用“教务导入”粘贴/导入表格", "确认预览后选择合并或替换"],
@@ -36,6 +36,7 @@ const GUIDE_DOCS = {
   "cn-holiday": ["打开即可优先读取本地节假日数据", "需要最新调整时再手动联网更新", "用于课程、计划和休息日判断"],
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
   "web-collector": ["输入网址后点击自动识别并收藏", "检查自动识别的网站名称、favicon 和图标", "添加备注后保存，之后可搜索、刷新和一键打开"],
+  "dorm-duty": ["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响", "选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）", "需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
 };
 
 /* 微信推送：时间块提前分钟选项（与桌面端 wechat-push 一致） */
@@ -73,6 +74,7 @@ Page({
     pomodoro: null,
     weekly: null,
     holiday: null,
+    dd: null,
     exams: [],
     examFilters: runtime.EXAM_FILTERS || [],
     examFilterIndex: 0,
@@ -110,6 +112,8 @@ Page({
 
   onShow() {
     if (this.data.id === "weekly-report") this.loadWeekly();
+    // 轮换值日：跨天 / 到点后回到本页都要重算（提醒判据也在这里，见 loadDormDuty）
+    if (this.data.id === "dorm-duty" && this.data.dd) this.loadDormDuty();
     if (this.data.id === "pomodoro" && this._pomoReady) this.restorePomodoro();
     if (this.data.id === "wechat-push" && this._push) { this.pushTick(); this.startPushTimer(); }
   },
@@ -121,6 +125,7 @@ Page({
     if (id === "pomodoro") this.loadPomodoro();
     else if (id === "weekly-report") this.loadWeekly();
     else if (id === "cn-holiday") this.loadHoliday();
+    else if (id === "dorm-duty") this.loadDormDuty();
     else if (id === "exam-calendar") this.loadExams();
     else if (id === "plugin-guide") this.loadGuide();
     else if (id === "wechat-push") this.loadPush();
@@ -316,6 +321,187 @@ Page({
 
   /* ── 中国节假日 ── */
   loadHoliday() { this.setData({ holiday: runtime.holidaySummary() }); },
+
+  /* ── 轮换值日 ──
+     与桌面端 dorm-duty 同源存储键（groups / activeId）；页面只负责「读 storage → 纯函数算 →
+     写回 storage」，轮换数学全在 core/pluginRuntime.js（那里能在 Node 下真跑边界）。
+     一个插件里可以有多套互相独立的轮换（宿舍值日 / 公区卫生…）。 */
+  /** 读整份轮换列表（已归一化）。 */
+  ddGroups() {
+    return runtime.ddGroups(store.pluginStorageGet("dorm-duty", "groups", null), store.todayStr());
+  },
+  /** 改**当前组**：fn(组) → 新组，写回整份 groups 后重绘。当前组不存在时什么都不做。 */
+  ddCommit(fn) {
+    const groups = this.ddGroups();
+    const id = (this.data.dd && this.data.dd.activeId) || "";
+    if (!groups.some((g) => g.id === id)) return;
+    store.pluginStorageSet("dorm-duty", "groups", runtime.ddWithGroup(groups, id, fn));
+    this.loadDormDuty();
+  },
+  loadDormDuty() {
+    const today = store.todayStr();
+    const dd = runtime.dormDutySummary(today);
+    dd.newMemberName = (this.data.dd && this.data.dd.newMemberName) || "";
+    dd.remindBanner = [];
+    // 到点提醒：小程序不常驻后台、宿主也不给定时回调，只能在打开本页时补一次。
+    // 先落盘「已提醒」再弹提示 —— 万一多个入口同时打开，也只有一个能抢到写入。
+    const groups = this.ddGroups();
+    const due = runtime.ddDueReminders(groups, today);
+    if (due.length) {
+      store.pluginStorageSet("dorm-duty", "groups", runtime.ddMarkNotified(groups, due.map((d) => d.groupId), today));
+      dd.lastNotified = today;
+      dd.remindBanner = due.map((d) => ({ group: d.groupName, name: d.whoName, time: d.time }));
+      wx.showToast({
+        title: due.length > 1
+          ? "有 " + due.length + " 项轮换今天换人"
+          : "今天轮到「" + due[0].whoName + "」" + due[0].groupName,
+        icon: "none",
+      });
+      try { if (wx.vibrateShort) wx.vibrateShort({ type: "light" }); } catch (e) { /* 部分机型不支持，忽略 */ }
+    }
+    this.setData({ dd });
+  },
+  /** 切换当前轮换。 */
+  onDdGroup(e) {
+    const id = e.currentTarget.dataset.id;
+    if (!this.ddGroups().some((g) => g.id === id)) return;
+    store.pluginStorageSet("dorm-duty", "activeId", id);
+    this.loadDormDuty();
+  },
+  onDdGroupNew() {
+    const groups = this.ddGroups();
+    const ng = runtime.ddAddGroup(groups, store.todayStr(), "轮换 " + (groups.length + 1));
+    if (!ng) { wx.showToast({ title: "最多 " + runtime.DD_GROUP_MAX + " 套轮换，先删掉不用的", icon: "none" }); return; }
+    store.pluginStorageSet("dorm-duty", "groups", groups.concat([ng]));
+    store.pluginStorageSet("dorm-duty", "activeId", ng.id);
+    this.loadDormDuty();
+    wx.showToast({ title: "已新建「" + ng.name + "」，在下面改名并加成员", icon: "none" });
+  },
+  onDdGroupDel() {
+    const dd = this.data.dd || {};
+    if (!dd.canDelGroup) { wx.showToast({ title: "至少要留一套轮换", icon: "none" }); return; }
+    wx.showModal({
+      title: "删除轮换",
+      content: "删除「" + dd.groupName + "」？它的成员、换人记录和提醒设置会一起删掉。",
+      success: (res) => {
+        if (!res.confirm) return;
+        const out = runtime.ddRemoveGroup(this.ddGroups(), dd.activeId, dd.activeId);
+        if (!out.ok) return;
+        store.pluginStorageSet("dorm-duty", "groups", out.groups);
+        store.pluginStorageSet("dorm-duty", "activeId", out.activeId);
+        this.loadDormDuty();
+        wx.showToast({ title: "已删除「" + dd.groupName + "」", icon: "none" });
+      },
+    });
+  },
+  onDdNewNameInput(e) { this.setData({ "dd.newMemberName": e.detail.value }); },
+  onDdAddMember() {
+    const dd = this.data.dd || {};
+    const name = String(dd.newMemberName || "").trim();
+    if (!name) { wx.showToast({ title: "先填成员名字", icon: "none" }); return; }
+    this.setData({ "dd.newMemberName": "" });
+    this.ddCommit((g) => runtime.ddGroupAddMember(g, name));
+  },
+  /** 改名走 showModal(editable)：比在列表里塞输入框省空间，也不会误触键盘挡住整屏。 */
+  onDdRename(e) {
+    const id = e.currentTarget.dataset.id;
+    const hit = ((this.data.dd || {}).members || []).filter((m) => m.id === id)[0];
+    if (!hit) return;
+    wx.showModal({
+      title: "改成员名字", editable: true, placeholderText: hit.name, content: hit.name,
+      success: (res) => {
+        if (!res.confirm) return;
+        const name = String(res.content || "").trim();
+        if (!name) { wx.showToast({ title: "名字不能为空", icon: "none" }); return; }
+        this.ddCommit((g) => runtime.ddGroupRenameMember(g, id, name));
+      },
+    });
+  },
+  onDdMemberUp(e) { this.ddMove(e.currentTarget.dataset.id, -1); },
+  onDdMemberDown(e) { this.ddMove(e.currentTarget.dataset.id, 1); },
+  ddMove(id, delta) {
+    const groups = this.ddGroups();
+    const g = groups.filter((x) => x.id === ((this.data.dd || {}).activeId))[0];
+    if (!g) return;
+    if (runtime.ddGroupMoveMember(g, id, delta) === g) return;   // 已在首/末位，别写一次没意义的存储
+    this.ddCommit((cur) => runtime.ddGroupMoveMember(cur, id, delta));
+  },
+  onDdMemberRemove(e) {
+    const id = e.currentTarget.dataset.id;
+    const hit = ((this.data.dd || {}).members || []).filter((m) => m.id === id)[0];
+    if (!hit) return;
+    wx.showModal({
+      title: "移除成员", content: "把「" + hit.name + "」移出这套轮换？之后可以从「已移除」恢复。",
+      success: (res) => {
+        if (!res.confirm) return;
+        this.ddCommit((g) => runtime.ddGroupRemoveMember(g, id));
+      },
+    });
+  },
+  onDdRestore(e) {
+    const id = e.currentTarget.dataset.id;
+    this.ddCommit((g) => runtime.ddGroupRestoreMember(g, id));
+  },
+  onDdPeriod(e) {
+    const days = Number(e.currentTarget.dataset.days) || 7;
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { periodDays: days }));
+  },
+  /** 轮换名 / 起始日 / 时刻都改成失焦或选择后提交：输入过程中反复落盘会把 storage 写爆，也没意义。 */
+  onDdGroupName(e) {
+    const raw = String(e.detail.value || "").trim();
+    const cur = (this.data.dd && this.data.dd.groupName) || "";
+    if (!raw || raw === cur) { this.loadDormDuty(); return; }    // 空值回显原值，不落盘
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { name: raw.slice(0, runtime.DD_NAME_MAX) }));
+  },
+  onDdStartDate(e) {
+    const v = String(e.detail.value || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { this.loadDormDuty(); return; }
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { startDate: v }));
+  },
+  onDdRemindToggle(e) {
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { remindEnabled: !!e.detail.value }));
+  },
+  onDdRemindTime(e) {
+    const v = runtime.ddNormalizeTime(e.detail.value);
+    if (!v) { wx.showToast({ title: "时刻格式不对，已保留原值", icon: "none" }); this.loadDormDuty(); return; }
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { remindTime: v }));
+  },
+  /** 临时换人：一次管一整轮（按轮次起始日记 override），撤销即回到原排班。 */
+  onDdSwap() {
+    const dd = this.data.dd || {};
+    const members = dd.members || [];
+    if (!members.length) return;
+    const cur = dd.current ? dd.current.id : "";
+    wx.showActionSheet({
+      itemList: members.map((m) => m.name + (m.id === cur ? "（本轮已是他）" : "")),
+      success: (res) => {
+        const pick = members[res.tapIndex];
+        if (!pick) return;
+        if (pick.id === cur) { wx.showToast({ title: "本轮已经是他", icon: "none" }); return; }
+        // 用视图模型里的本轮起始日（未开始时为空串），别自己再算一遍
+        const cycle = dd.cycle;
+        if (!cycle) { wx.showToast({ title: "轮换还没开始，无法换人", icon: "none" }); return; }
+        this.ddCommit((g) => runtime.ddGroupSetOverride(g, cycle, pick.id));
+        wx.showToast({ title: "本轮改由「" + pick.name + "」当班", icon: "none" });
+      },
+    });
+  },
+  onDdSwapClear() {
+    const dd = this.data.dd || {};
+    if (!dd.cycle) return;
+    this.ddCommit((g) => runtime.ddGroupSetOverride(g, dd.cycle, ""));
+  },
+  onDdAddTask() {
+    const dd = this.data.dd || {};
+    const who = dd.current;
+    if (!who) { wx.showToast({ title: "这一套还没有当班安排", icon: "none" }); return; }
+    const today = store.todayStr();
+    const title = dd.groupName + " · " + who.name;
+    const dup = (store.getState().tasks || []).filter((t) => !t.done && t.due === today && t.title === title)[0];
+    if (dup) { wx.showToast({ title: "今天的「" + title + "」已经在任务里了", icon: "none" }); return; }
+    store.addTask({ title, due: today, quad: 2, estMin: 15, tags: [dd.groupName] });
+    wx.showToast({ title: "已加入今天的任务", icon: "success" });
+  },
 
   /* ── 考试日历 ── */
   loadExams() {

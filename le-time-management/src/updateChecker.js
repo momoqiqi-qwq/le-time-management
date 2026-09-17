@@ -69,6 +69,16 @@ const state = {
   progress: { received: 0, total: 0 },
   error: "",
   message: "",
+  /**
+   * 本次会话里**最近一次成功检查**的时刻（ms）。失败不覆盖。
+   *
+   * 为什么要有这个：状态回显只写「已是最新版本（vX）」时，用户没法分辨这是刚查的
+   * 还是几十分钟前查的 —— 而 GitHub 的 `releases/latest` 在发版瞬间会有一段时间
+   * 仍返回上一个版本（release 从创建到发布之间是草稿，草稿不计入 latest）。
+   * 于是「我明明刚发了新版，客户端却说已是最新」的误会重复发生。带上时刻，
+   * 用户一眼就能看出这条结果是陈旧的，再点一次即可。
+   */
+  checkedAt: 0,
   /** Android 的安装授权探测结果；其它平台为 null。 */
   installReady: null,
   downloadedPath: "",
@@ -106,13 +116,39 @@ export function isUpdaterSupported() {
   return Boolean(api.isTauri) && typeof api.updateCheck === "function";
 }
 
+/** 把时刻写成 `HH:MM`（不是今天则带上 `M-D`）—— 状态回显里标「这条结果是何时查的」。 */
+export function formatCheckTime(ms) {
+  const time = Number(ms);
+  if (!Number.isFinite(time) || time <= 0) return "";
+  const d = new Date(time);
+  if (Number.isNaN(d.getTime())) return "";
+  const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const today = new Date();
+  return d.toDateString() === today.toDateString() ? hhmm : `${d.getMonth() + 1}-${d.getDate()} ${hhmm}`;
+}
+
+/**
+ * 状态文案统一的时间戳拼接：`base · [前缀]HH:MM[ 后缀]`。
+ *
+ * 时刻为空（0 / 非法）时原样返回 base。所有「文案 + 检查时刻」的拼接必须走这里
+ * （目前两处：`describeUpdateState` 的状态回显、设置页 idle 行的「上次自动检查」），
+ * 避免各处手拼导致分隔符 / 文案顺序漂移。
+ */
+export function withCheckStamp(base, ms, { prefix = "", suffix = "检查" } = {}) {
+  const at = formatCheckTime(ms);
+  if (!at) return base;
+  return `${base} · ${prefix}${at}${suffix ? ` ${suffix}` : ""}`;
+}
+
 /** 人话版的当前状态（状态回显，设置页与提示条共用）。 */
 export function describeUpdateState(value = snapshot()) {
   if (!isUpdaterSupported()) return "浏览器调试模式下不检查更新";
   switch (value.phase) {
     case "checking": return "正在检查…";
-    case "uptodate": return `已是最新版本（v${value.info?.current || "?"}）`;
-    case "available": return `发现新版本 v${value.info?.latest}，当前 v${value.info?.current}`;
+    case "uptodate":
+      return withCheckStamp(`已是最新版本（v${value.info?.current || "?"}）`, value.checkedAt);
+    case "available":
+      return withCheckStamp(`发现新版本 v${value.info?.latest}，当前 v${value.info?.current}`, value.checkedAt);
     case "downloading": {
       const { received, total } = value.progress;
       const pct = total > 0 ? Math.floor((received / total) * 100) : 0;
@@ -121,7 +157,13 @@ export function describeUpdateState(value = snapshot()) {
     case "ready": return value.message || "更新包已下载，可以安装了";
     case "installing": return "已交给系统安装，应用即将关闭";
     case "error": return value.error || "更新失败";
-    default: return value.info?.latest ? `最近检查到 v${value.info.latest}` : "尚未检查";
+    default:
+      // idle 时 checkedAt 恒为 0（会话内还没有成功检查过），withCheckStamp 原样返回 base，
+      // 与旧逻辑「『尚未检查』不带时刻」等价；一旦回显「最近检查到 vX」则必带时刻。
+      return withCheckStamp(
+        value.info?.latest ? `最近检查到 v${value.info.latest}` : "尚未检查",
+        value.checkedAt,
+      );
   }
 }
 
@@ -147,22 +189,25 @@ export async function checkForUpdates({ manual = false } = {}) {
   patchState({ phase: "checking", error: "", message: "" });
   try {
     const info = await api.updateCheck();
+    // 成功拿到结果才记时刻：失败不能盖掉上一次成功的时间（否则用户会以为刚查过）。
+    const checkedAt = Date.now();
     if (!info?.has_update) {
-      patchState({ phase: "uptodate", info, error: "" });
+      patchState({ phase: "uptodate", info, error: "", checkedAt });
       if (manual) toast(`已是最新版本 v${info?.current || "?"}`);
       return info;
     }
     if (!info.supported) {
       // 有新版但本平台没有可自动安装的产物：说清楚原因，别让「更新」按钮点了没反应。
-      patchState({ phase: "available", info, message: info.message || "当前平台暂不支持应用内更新" });
+      patchState({ phase: "available", info, message: info.message || "当前平台暂不支持应用内更新", checkedAt });
       if (manual) toast(info.message || "当前平台暂不支持应用内更新");
       return info;
     }
-    patchState({ phase: "available", info, message: "" });
+    patchState({ phase: "available", info, message: "", checkedAt });
     if (manual) toast(`发现新版本 v${info.latest}`);
     return info;
   } catch (error) {
     const message = String(error?.message || error || "检查更新失败");
+    // 失败时保留旧的 checkedAt：面板上「上次成功检查于 HH:MM」是判断结果新鲜度的唯一线索。
     patchState({ phase: "error", error: message });
     if (manual) toast(message);
     return null;
@@ -178,7 +223,10 @@ export async function silentUpdateCheck() {
 
   const info = await checkForUpdates({ manual: false });
   if (!info) return;                       // 失败：静默，且不写 lastCheckAt，下次启动再试
-  setUpdateSettings({ lastCheckAt: Date.now() });
+  // 复用这次检查写入 state 的 checkedAt，而不是再取一次 Date.now()：
+  // 「状态回显时间」与「节流记录时间」必须同源 —— 两次取时间会有毫秒级分叉，
+  // 排查「上次自动检查」时间线时（比如对照 lastCheckAt 与面板显示的 HH:MM）就对不上了。
+  setUpdateSettings({ lastCheckAt: state.checkedAt });
   if (!info.has_update || !info.supported) return;
   if (info.latest === getUpdateSettings().skipVersion) return;
   // 「有新版本时弹窗提示」关掉后：仍然照常检查、照常把状态写进 state（关于页看得到），

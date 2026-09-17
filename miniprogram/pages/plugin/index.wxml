@@ -67,6 +67,128 @@
     </view>
   </block>
 
+  <!-- 轮换值日 -->
+  <block wx:if="{{id === 'dorm-duty' && dd}}">
+    <view class="card dd-alert" wx:if="{{dd.remindBanner.length}}">
+      <view class="dd-alert-t" wx:for="{{dd.remindBanner}}" wx:key="group">今天轮到「{{item.name}}」{{item.group}}</view>
+      <view class="meta">提醒时刻 {{dd.remindBanner[0].time}} · 小程序不常驻后台，只在打开本页时提示</view>
+    </view>
+
+    <!-- 一个插件里可以有多套轮换：宿舍值日 / 公区卫生…各有各的成员与周期，互不影响 -->
+    <view class="card">
+      <view class="section-title">轮换（{{dd.groupCount}}）</view>
+      <view class="dd-gchips">
+        <text class="dd-gchip {{item.on ? 'on' : ''}}" wx:for="{{dd.groups}}" wx:key="id" data-id="{{item.id}}" bindtap="onDdGroup">{{item.name}}<text class="dd-gwho" wx:if="{{item.who}}">· {{item.who}}</text></text>
+      </view>
+      <view class="dd-add">
+        <button class="btn small pri dd-addbtn" bindtap="onDdGroupNew" disabled="{{!dd.canAddGroup}}">新建轮换</button>
+      </view>
+      <view class="desc hint">每套轮换各有自己的成员、周期、起始日与提醒时刻，互不影响。</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">{{dd.groupName}} · {{dd.periodLabel}}一轮</view>
+      <block wx:if="{{dd.empty}}">
+        <view class="desc">还没有成员。先在下面「成员与轮换顺序」里添加成员，第一个人先当班。</view>
+      </block>
+      <block wx:elif="{{!dd.started}}">
+        <view class="hero-status">还没开始</view>
+        <view class="meta">起始日 {{dd.cfg.startDate}}，到那天才开始轮换。</view>
+      </block>
+      <block wx:else>
+        <view class="dd-who">
+          <text class="dd-big">{{dd.current.name}}</text>
+          <text class="dd-badge" wx:if="{{dd.swapped}}">临时换人 · 原 {{dd.swapName}}</text>
+        </view>
+        <view class="meta">本轮 {{dd.cycleText}} · 第 {{dd.cycleIndex}} 轮</view>
+      </block>
+      <view class="dd-actions">
+        <button class="btn small pri" bindtap="onDdAddTask" disabled="{{!dd.current}}">加入今日任务</button>
+        <button class="btn small" wx:if="{{dd.current}}" bindtap="onDdSwap">临时换人</button>
+        <button class="btn small ghost" wx:if="{{dd.swapped}}" bindtap="onDdSwapClear">撤销换人</button>
+      </view>
+    </view>
+
+    <view class="card" wx:if="{{dd.hasMembers}}">
+      <view class="section-title">下次{{dd.nextVerb}}</view>
+      <view class="dd-next">
+        <text class="dd-big">{{dd.nextBigEm}}</text>
+        <text class="dd-next-u">{{dd.nextBigUnit}}{{dd.nextVerb}}</text>
+      </view>
+      <view class="meta">{{dd.nextStartText}} · 轮到 {{dd.nextWhoName}}</view>
+      <view class="dd-row" wx:for="{{dd.rows}}" wx:key="start">
+        <view class="dd-row-top">
+          <text class="dd-name">{{item.whoName}}</text>
+          <text class="dd-tag" wx:if="{{item.swapped}}">换人</text>
+        </view>
+        <text class="dd-range">{{item.range}}</text>
+        <text class="dd-days">{{item.daysText}} · 第 {{item.index}} 轮</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">成员与轮换顺序（{{dd.members.length}}）</view>
+      <view class="desc">按这里的顺序轮换，第一个人先当班。</view>
+      <view class="dd-mrow" wx:for="{{dd.members}}" wx:key="id">
+        <text class="dd-mno">{{item.no}}</text>
+        <view class="dd-mname" data-id="{{item.id}}" bindtap="onDdRename">
+          <text>{{item.name}}</text>
+          <text class="dd-cur" wx:if="{{item.isCurrent}}">当班</text>
+        </view>
+        <view class="dd-mbtns">
+          <button class="btn small dd-mini" data-id="{{item.id}}" bindtap="onDdMemberUp" disabled="{{!item.canUp}}">↑</button>
+          <button class="btn small dd-mini" data-id="{{item.id}}" bindtap="onDdMemberDown" disabled="{{!item.canDown}}">↓</button>
+          <button class="btn small dd-mini danger" data-id="{{item.id}}" bindtap="onDdMemberRemove">移除</button>
+        </view>
+      </view>
+      <view class="dd-add">
+        <input class="dd-in" placeholder="添加成员（如 小北）" value="{{dd.newMemberName}}" bindinput="onDdNewNameInput" confirm-type="done" bindconfirm="onDdAddMember" />
+        <button class="btn small pri dd-addbtn" bindtap="onDdAddMember">添加</button>
+      </view>
+      <view class="dd-removed" wx:if="{{dd.removed.length}}">
+        <view class="meta">已移除（点名字恢复到名单末尾）</view>
+        <view class="dd-chips">
+          <text class="dd-chip" wx:for="{{dd.removed}}" wx:key="id" data-id="{{item.id}}" bindtap="onDdRestore">{{item.name}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">设置</view>
+      <view class="dd-field">
+        <text class="label">轮换名</text>
+        <input class="dd-in" value="{{dd.groupName}}" maxlength="12" bindblur="onDdGroupName" confirm-type="done" bindconfirm="onDdGroupName" />
+      </view>
+      <view class="dd-field">
+        <text class="label">起始日</text>
+        <picker mode="date" value="{{dd.cfg.startDate}}" bindchange="onDdStartDate">
+          <view class="dd-pick">{{dd.cfg.startDate}}</view>
+        </picker>
+      </view>
+      <view class="dd-field">
+        <text class="label">轮换周期</text>
+        <view class="dd-chips">
+          <text class="dd-chip {{item.on ? 'on' : ''}}" wx:for="{{dd.periods}}" wx:key="days" data-days="{{item.days}}" bindtap="onDdPeriod">{{item.label}}</text>
+        </view>
+      </view>
+      <view class="dd-field">
+        <text class="label">到点提醒</text>
+        <switch checked="{{dd.cfg.remindEnabled}}" bindchange="onDdRemindToggle" color="#0F4C5C" />
+      </view>
+      <view class="dd-field" wx:if="{{dd.cfg.remindEnabled}}">
+        <text class="label">提醒时刻</text>
+        <picker mode="time" value="{{dd.cfg.remindTime}}" bindchange="onDdRemindTime">
+          <view class="dd-pick">{{dd.cfg.remindTime}}</view>
+        </picker>
+      </view>
+      <view class="desc hint">提醒只在每轮第一天触发一次，不会天天催。小程序不能常驻后台，到点提醒只在打开本页时以横幅提示；需要系统通知请用 Windows / Android 端。</view>
+      <view class="dd-add">
+        <button class="btn small dd-mini danger" bindtap="onDdGroupDel" disabled="{{!dd.canDelGroup}}">删除这个轮换</button>
+      </view>
+      <view class="desc hint" wx:if="{{!dd.canDelGroup}}">至少要留一套轮换；想重来可以先改名、再清掉成员。</view>
+    </view>
+  </block>
+
   <!-- 考试日历 -->
   <block wx:if="{{id === 'exam-calendar'}}">
     <view class="card">

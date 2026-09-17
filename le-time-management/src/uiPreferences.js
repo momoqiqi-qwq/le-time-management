@@ -1,9 +1,13 @@
 import * as S from "./store.js";
 import { CUSTOM_SIZE_LIMITS } from "./windowSize.js";
+import { DEFAULT_UI_SCALE, applyUiScale, normalizeUiScale } from "./uiScale.js";
 
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   density: "comfortable",
   textScale: 100,
+  // 界面整体缩放（80~150）：与只动字号的 textScale 分工不同，这里连控件、间距、图标一起缩放。
+  // 实现与三个坑见 src/uiScale.js 头部注释 —— 改这个字段前先读那一页。
+  uiScale: DEFAULT_UI_SCALE,
   motion: "system",
   swipeNavigation: true,
   showTopStats: true,
@@ -62,6 +66,7 @@ export function normalizeUiPreferences(raw = {}) {
   if (!NAVBAR_SIZES.has(next.navBarSize)) next.navBarSize = DEFAULT_UI_PREFERENCES.navBarSize;
   if (!STARTUP_VIEWS.has(next.startupView)) next.startupView = DEFAULT_UI_PREFERENCES.startupView;
   next.textScale = Math.round(clamp(next.textScale, 90, 120) / 5) * 5;
+  next.uiScale = normalizeUiScale(next.uiScale);
   next.swipeNavigation = next.swipeNavigation !== false;
   next.showTopStats = next.showTopStats !== false;
   next.centerTopStats = next.centerTopStats === true;
@@ -92,6 +97,10 @@ export function applyUiPreferences(raw = null) {
   root.dataset.centerTopStats = cfg.centerTopStats ? "on" : "off";
   root.dataset.showViewSubtitle = cfg.showViewSubtitle ? "on" : "off";
   root.style.setProperty("--ui-text-scale", String(cfg.textScale / 100));
+  // 界面整体缩放走独立模块（挂 zoom + 注入 --ui-vw/--ui-vh，见 src/uiScale.js）。
+  // 放在这里而不是 applyUiScale 的调用点，是为了「任何写入偏好的路径都会重算缩放」——
+  // 否则恢复默认、预设切换这些入口会漏掉。
+  applyUiScale(cfg.uiScale);
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("tide:ui-preferences-changed", { detail: { ...cfg } }));
   }

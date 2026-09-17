@@ -478,6 +478,7 @@ async function pressBack(world) {
     "popstate 监听必须注册在 initBackNav 之后：backNav 的 onPopState 先跑完，depth 才是新值");
 
   // CSS：默认不显示 + 只在 ≤900px 显示 + 触控区 ≥40px
+  // （断点用 px：曾改成 em 试图跟随界面缩放，实测 em 媒体查询不认 zoom，已回退）
   assert.match(css, /\.topbar-back\s*\{\s*display:\s*none/, "基础态必须 display:none（桌面端不显示）");
   const mobile900 = css.match(/@media \(max-width: 900px\)\s*\{[\s\S]*?\n\}/)?.[0] ?? "";
   assert.ok(mobile900, "必须存在 ≤900px 媒体块");
