@@ -47,6 +47,10 @@ export function openTaskDrawer(taskId) {
     onChange: (value) => { S.updateTask(t.id, { reminderEnabled: value }); refresh(); },
   });
   const reminderBox = el("div", { class: "reminder-picks" });
+  // 「自定义分钟 + 添加」独立成一条，不再混进 chips 的 flex-wrap 流里。
+  // 🔴 旧版把输入框和按钮直接 append 到 .reminder-picks，9 个元素一起折行 ⇒
+  //    每行长短参差、输入框与按钮被拆到两行、桌面端 max-width:245px 挤成 3 行右侧全空。
+  const reminderCustom = el("div", { class: "reminder-custom-row" });
   const customOffset = el("input", { type: "number", min: "0", max: "43200", placeholder: "自定义分钟", class: "reminder-custom" });
   const renderReminderPicks = () => {
     const cur = S.taskById(t.id);
@@ -66,7 +70,8 @@ export function openTaskDrawer(taskId) {
     for (const off of offsets.filter((x) => !PRESET_OFFSETS.includes(x))) {
       reminderBox.append(el("button", { type: "button", class: "reminder-chip on", onclick: () => { S.updateTask(t.id, { reminderOffsets: offsets.filter((x) => x !== off) }); refresh(); } }, `${off} 分钟 ×`));
     }
-    reminderBox.append(customOffset, el("button", { type: "button", class: "btn ghost sm", onclick: () => {
+    // 自定义行独立渲染（顺序：预设 → 自定义值 → 输入行），保证它永远自成一行
+    reminderCustom.replaceChildren(customOffset, el("button", { type: "button", class: "btn ghost sm", onclick: () => {
       const n = Math.round(Number(customOffset.value));
       if (!Number.isFinite(n) || n < 0 || n > 43200) return toast("请输入 0～43200 分钟");
       S.updateTask(t.id, { reminderOffsets: normalizeOffsets([...offsets, n]) }); customOffset.value = ""; refresh();
@@ -115,7 +120,8 @@ export function openTaskDrawer(taskId) {
     el("div", { class: "kv" }, el("span", {}, "截止日期"), dueInput),
     el("div", { class: "kv" }, el("span", {}, "截止时间"), dueTimeInput),
     el("div", { class: "kv" }, el("span", {}, "任务提醒"), el("label", { class: "reminder-toggle" }, reminderSwitch, el("span", {}, "启用"))),
-    el("div", { class: "kv reminder-kv" }, el("span", { class: "reminder-kv-lab" }, "提前预警"), reminderBox),
+    el("div", { class: "kv reminder-kv" }, el("span", { class: "reminder-kv-lab" }, "提前预警"),
+      el("div", { class: "reminder-fields" }, reminderBox, reminderCustom)),
     el("div", { class: "kv" }, el("span", {}, "所属项目"), projInput),
     el("div", { class: "kv", style: "align-items:flex-start" }, el("span", { style: "padding-top:8px" }, "备注"), noteInput),
     attBox,

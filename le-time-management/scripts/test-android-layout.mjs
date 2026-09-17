@@ -275,4 +275,47 @@ assert.match(navigatorSrc, /^\s*let expanded = new Set\(Array\.isArray\(state\.e
 assert.match(read("../src/views/settings.js"), /settingsNavState\.expanded = \[\];/,
   "每次打开设置页要清空展开集合：重新进来仍是目录态，不记住上次展开");
 
-console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, back-key history stack, pinch zoom and the narrow-screen settings accordion");
+/* ───────────── v0.51.0 回归：任务抽屉「提前预警」布局 ─────────────
+   旧版把 7 个 chip + 自定义输入框 + 「添加」按钮**一起**丢进 `.reminder-picks` 的
+   flex-wrap 流里，再加 `justify-content:flex-end; max-width:245px` ⇒
+   实测 900/1280px 档折成 3 行、行尾对齐行首飘、右侧一半空间全空，
+   第 3 行只剩「到点」孤零零一个（用户截图反馈「太乱」）。
+
+   修法：拆成「chips 容器」+「输入行」两组，并把这一行改成竖排让 chips 拿到全宽。 */
+const drawerSrc = read("../src/views/drawer.js");
+
+// ① 输入框与「添加」必须渲染进独立的 `.reminder-custom-row`，不能留在 chips 容器里。
+assert.match(drawerSrc, /const reminderCustom = el\("div", \{ class: "reminder-custom-row" \}\)/,
+  "「自定义分钟 + 添加」必须有独立容器，混进 chips 的 flex-wrap 流会折出参差的行");
+assert.match(drawerSrc, /reminderCustom\.replaceChildren\(customOffset/,
+  "输入行要渲染到 reminderCustom，而不是 reminderBox");
+assert.ok(!/reminderBox\.append\(customOffset/.test(drawerSrc),
+  "🔴 不许再把输入框塞回 chips 容器（这正是旧版折行错乱的根因）");
+
+// ② chips 行必须左对齐，且不再限宽。
+//    ⚠️ 只断言「flex-start 存在」是假断言：改成 flex-end 也能骗过（变异实测漏过）。
+//    必须**同时钉住反面** —— 这一行里不许出现 flex-end。
+const picksBase = css.match(/^\.reminder-picks\s*\{([^}]*)\}/m)?.[1] ?? "";
+assert.ok(picksBase, "必须存在 .reminder-picks 基础规则");
+assert.match(picksBase, /justify-content:\s*flex-start/,
+  "chips 必须左对齐：flex-end 会让行尾对齐、行首参差，视觉上「飘」");
+assert.ok(!/justify-content:\s*flex-end/.test(picksBase),
+  "🔴 chips 行不许用 flex-end（等价变异会漏过只查 flex-start 的断言）");
+assert.ok(!/max-width:\s*245px/.test(picksBase),
+  "🔴 不许恢复 max-width:245px：抽屉固定 380px 宽，再限宽必然折 3 行、右侧全空");
+assert.match(css, /\.reminder-custom-row\s*\{[^}]*display:\s*flex/,
+  "输入行要自己成一行（display:flex）");
+
+// ③ 这一行改竖排后，`.reminder-kv` 必须 `flex:none` —— 与 v0.37.18 窄屏同一个根因。
+//    `.drawer .dbody` 是纵向 flex 容器，`.kv` 默认 `flex:0 1 auto` 会被压回：
+//    竖排后需要 128.4px，实测被压到 74px，chips 溢出 61.4px 糊到下一行「所属项目」上。
+const reminderKvBase = css.match(/^\.reminder-kv\s*\{([^}]*)\}/m)?.[1] ?? "";
+assert.ok(reminderKvBase, "必须存在 .reminder-kv 基础规则");
+assert.match(reminderKvBase, /flex:\s*none/,
+  "🔴 竖排的 .reminder-kv 必须 flex:none，否则被纵向 flex 容器压缩、chips 溢出糊到下一行");
+assert.match(reminderKvBase, /flex-direction:\s*column/,
+  "抽屉里这一行要竖排：横排时标签列白吃 52px，内容只剩 269px，7 个 chip 必然折 3 行");
+assert.ok(!/min-height:\s*74px/.test(reminderKvBase),
+  "竖排后不许再钉死 min-height:74px 的单行高度，要由内容撑开");
+
+console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, back-key history stack, pinch zoom, the narrow-screen settings accordion and the task-drawer reminder layout");

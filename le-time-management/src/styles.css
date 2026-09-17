@@ -815,12 +815,42 @@ button, .nav { touch-action: manipulation; }
 .rail-bottom > button.on { background: rgba(255,255,255,.12); color: #fff; font-weight: 600; }
 .rail-bottom > button .ic { width: 38px; height: 38px; border-radius: 11px; background: #EDF5F6; display:flex;align-items:center;justify-content:center; color:#17323A; flex:none; }
 .rail-bottom > button.on .ic { background: var(--sun); }
-.reminder-picks { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-end; max-width:245px; }
-.reminder-chip { border:1px solid var(--line); background:var(--paper); color:var(--ink-2); border-radius:999px; padding:6px 9px; font-size:11px; cursor:pointer; }
+/* ═══ v0.51.0 · 任务抽屉「提前预警」布局重做 ═══
+   旧版的乱法（实测 320~1280 十档宽度）：
+   `.reminder-picks` 把 7 个 chip + 自定义输入框 + 「添加」按钮**一起**丢进
+   `flex-wrap` 流里，靠自然折行 ⇒ 9 个元素折出的每行长短参差；
+   `justify-content:flex-end` 又让行尾对齐、行首飘；桌面端 `max-width:245px`
+   更把它压成 3 行、右侧一半空间全空，「添加」还掉到第三行。
+
+   现在的结构：`.reminder-kv` > [标签] + `.reminder-fields` > [`.reminder-picks`(chips) +
+   `.reminder-custom-row`(输入框+添加)]。
+   chips 左对齐换行，输入行**永远自成一行**，桌面端也不再限宽。 */
+.reminder-fields { display:flex; flex-direction:column; gap:8px; min-width:0; flex:1 1 auto; }
+.reminder-picks { display:flex; gap:7px; flex-wrap:wrap; justify-content:flex-start; }
+.reminder-chip { border:1px solid var(--line); background:var(--paper); color:var(--ink-2); border-radius:999px; padding:6px 9px; font-size:11px; cursor:pointer; line-height:1.2; }
 .reminder-chip.on { background:var(--sea); color:var(--on-accent); border-color:var(--sea); }
-.reminder-custom { width:112px !important; min-width:0; }
+.reminder-chip:hover { border-color:var(--sea); }
+/* 输入行：输入框 + 添加同排，整行左对齐，不再参与 chips 的折行计算 */
+.reminder-custom-row { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.reminder-custom { width:118px !important; min-width:0; }
 .reminder-toggle { display:flex; gap:6px; align-items:center; }
-.reminder-kv { min-height:74px; }
+/* 桌面端：`.kv` 默认是「标签 | 内容」横排，但标签列会白吃掉 52px ——
+   实测抽屉固定 380px 宽时 `.reminder-kv` 内容盒 331px，扣掉标签只剩 269px，
+   而 7 个 chip 合计 493.48px，269px 下**必然折 3 行**（第 3 行只有「到点」孤零零一个）。
+   阈值实测在 320px：≥320px 才刚好 2 行。
+   ⇒ 本行改为**纵向**（标签一行、内容一行），让 chips 拿到全部 331px。
+   这与设置页 `.setting-row.setting-col`（「默认提前预警」那一行）的既有做法一致：
+   该页的 chips 同样是宽内容，早就用竖排 + 左对齐处理，抽屉此前是唯一的例外。
+
+   🔴 `flex:none` 是竖排后的**必要配套**，别删：`.drawer .dbody` 是
+   `display:flex; flex-direction:column` 的纵向容器，`.kv` 作为 flex item
+   默认 `flex:0 1 auto` ⇒ 会按 shrink 比例被**压回**。横排时内容只要一行 74px 不暴露问题，
+   一改竖排就需要 128.4px（label 19 + gap 7 + picks 61.4 + gap 8 + 输入行 33），
+   实测被压到 74px、chips 画出盒子外 **61.4px**，正好糊到下一行「所属项目」上。
+   ⇒ 必须 `flex:none` + `height:auto` + 去掉 `min-height` 死值。（与 v0.37.18 窄屏同一根因） */
+.reminder-kv { flex:none; height:auto; min-height:0; flex-direction:column; align-items:stretch; gap:7px; }
+.reminder-kv > .reminder-kv-lab { padding-top:0; }
+.reminder-kv > .reminder-fields { min-width:0; width:100%; }
 .setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 0; border-bottom:1px dashed var(--line-soft); font-size:13px; }
 .setting-row.setting-col { align-items:flex-start; flex-direction:column; }
 .setting-row.setting-col .reminder-picks { justify-content:flex-start; max-width:none; }
@@ -878,7 +908,12 @@ button, .nav { touch-action: manipulation; }
     justify-content: flex-start;
     row-gap: 7px;                  /* 换行后行间不留 0，避免 chips 视觉粘连 */
   }
-  /* 「自定义分钟」在窄屏收窄，让「添加」按钮能与它同排，而不是被挤到单独一行。 */
+  /* 输入行在新结构下本就自成一行，窄屏只需让它撑满可用宽。 */
+  .drawer .dbody .reminder-custom-row {
+    width: 100%;
+    row-gap: 7px;
+  }
+  /* 「自定义分钟」在窄屏收窄，让「添加」按钮能与它同排。 */
   .drawer .dbody .reminder-custom {
     width: 96px !important;
     flex: 0 1 auto;
