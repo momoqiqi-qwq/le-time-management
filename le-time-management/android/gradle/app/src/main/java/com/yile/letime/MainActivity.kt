@@ -1,6 +1,8 @@
 package com.yile.letime
 
+import android.graphics.Insets
 import android.os.Bundle
+import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -86,9 +88,12 @@ class MainActivity : TauriActivity() {
     // 所以四个方向一起监听，不能只取 top/bottom。
     ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { view, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-      // 虚拟键盘弹出时导航栏被顶掉，底栏内边距要跟 ime 取较大者，否则输入框会被键盘压住。
-      val bottom = maxOf(bars.bottom, ime.bottom)
+      // ⚠️ --sab 只代表导航栏高度，绝不能掺 ime（v0.49.0 修的黑屏 bug）：
+      // 旧写法 maxOf(bars.bottom, ime.bottom) 在键盘弹出时把 --sab 撑到 ~370px，
+      // .view 的 padding-bottom、toast、抽屉底栏全部跟着暴涨 —— 页面被凭空撑长一大截，
+      // 聚焦输入框时 Chrome 的 scrollIntoView 把 WebView 滚进这段空白 → 整屏只剩背景色。
+      // 键盘避让的职责已移交给下面的 WebView ime listener（压缩网页视口）。
+      val bottom = bars.bottom
       applyInsets(bars.top, bottom, bars.left, bars.right)
       // 交还系统继续分发：WebView 自己也要拿到 insets，否则软键盘避让会失效。
       ViewCompat.onApplyWindowInsets(view, insets)
@@ -100,6 +105,35 @@ class MainActivity : TauriActivity() {
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     this.webView = webView
+
+    // 键盘避让（v0.49.0）：把 ime inset 真正消费掉 —— 压缩网页视口而不是挪窗口。
+    //
+    // 为什么必须自己做：enableEdgeToEdge() 即 decorFitsSystemWindows=false，
+    // 此模式下系统的 `adjustResize` 不再生效（不会压缩内容视图），默认的
+    // `adjustPan` 只把窗口整体上移、网页视口毫无变化 —— 输入框照样被键盘物理盖住，
+    // 叠加 scrollIntoView 后就是「键盘弹出整屏只剩背景色」的黑屏。
+    // 官方姿势是监听 ime() inset 由应用自己消费；消费方式用 WebView 的
+    // bottomMargin 而不是 setPadding —— **WebView 不尊重 padding**（网页铺满
+    // view 边界，padding 会被无视），而它父容器是 FrameLayout（wry 的实现），
+    // MATCH_PARENT 高度会减去 bottomMargin，等于把网页视口压短。
+    //
+    // 网页侧的连锁反应都是现成的：视口变矮 → window resize → uiScale.js 重算
+    // --ui-vh/--ui-vw → 媒体查询与 fixed 浮层自动重排；Chrome 会把聚焦的输入框
+    // scrollIntoView 到键盘上方的可见区。键盘收起时 ime.bottom 回 0，margin 复原。
+    ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      val lp = v.layoutParams
+      if (lp is ViewGroup.MarginLayoutParams) {
+        if (lp.bottomMargin != ime.bottom) {
+          lp.bottomMargin = ime.bottom
+          v.layoutParams = lp
+        }
+      }
+      // ime 已由我们消费：剥掉再往下传，防止子层级二次消费（WebView 无子级，纯防御）。
+      WindowInsetsCompat.Builder(insets)
+        .setInsets(WindowInsetsCompat.Type.ime(), Insets.NONE)
+        .build()
+    }
 
     // 双指缩放：打开内置缩放机制并隐藏 +/- 悬浮件（配合 mobileViewport.js 放开 user-scalable）
     webView.settings.apply {

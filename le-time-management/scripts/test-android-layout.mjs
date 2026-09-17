@@ -131,7 +131,23 @@ assert.match(mainActivity, /getInsets\(WindowInsetsCompat\.Type\.systemBars\(\)\
 assert.match(mainActivity, /setProperty\('--sat'/,
   "必须把状态栏高度注入成 CSS 变量 --sat");
 assert.match(mainActivity, /setProperty\('--sab'/,
-  "必须把导航栏 / 键盘高度注入成 CSS 变量 --sab");
+  "必须把导航栏高度注入成 CSS 变量 --sab");
+// v0.49.0 回归：键盘弹出整屏只剩背景色（轮换值日插件输成员名字必现）。
+// 旧写法 `val bottom = maxOf(bars.bottom, ime.bottom)` 把 --sab 撑到键盘高（~370px），
+// .view 的 padding-bottom / toast / 抽屉底栏全部暴涨 —— 页面被凭空撑长一大截，
+// 聚焦输入框时 Chrome scrollIntoView 把 WebView 滚进这段空白 → 整屏只剩背景色。
+// 修复：--sab 回归纯导航栏；键盘 inset 由 WebView 自己消费（bottomMargin 压缩网页视口）。
+// ⚠️ 判定前剥掉 Kotlin 注释（/* */ 与 //）—— 本文件的说明性注释会引用旧写法文本，会误伤自己。
+const ktNoComment = mainActivity.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+assert.doesNotMatch(ktNoComment, /maxOf\(bars\.bottom,\s*ime\.bottom\)/,
+  "--sab 严禁掺 ime：键盘高度会撑爆 CSS 布局（黑屏根因），键盘避让必须走 WebView ime listener");
+assert.match(mainActivity, /setOnApplyWindowInsetsListener\(webView\)/,
+  "必须给 WebView 挂 ime inset listener：edge-to-edge 下 adjustResize 不生效、adjustPan 只挪窗口，" +
+  "不消费 ime 的话输入框会被键盘盖住且视口不变");
+assert.match(mainActivity, /bottomMargin\s*=\s*ime\.bottom/,
+  "ime 避让必须用 bottomMargin 压缩 WebView 视口 —— WebView 不尊重 padding，网页会铺满 view 边界");
+assert.match(mainActivity, /WindowInsetsCompat\.Builder\(insets\)/,
+  "WebView 消费 ime 后必须剥掉 ime 再往下传（防子层级二次消费）");
 // 四个方向都要：横屏与折叠屏展开时挖孔会跑到侧边，只补 top 不够。
 for (const v of ["--sal", "--sar"]) {
   assert.ok(mainActivity.includes(`setProperty('${v}'`), `必须注入 ${v}（横屏刘海安全区）`);

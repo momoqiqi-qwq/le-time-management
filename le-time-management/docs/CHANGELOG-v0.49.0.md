@@ -3,6 +3,43 @@
 > 发布日期：2026-09-17（未提交 / 未打 tag 状态下写入本文件，随本版本一并提交）
 > 版本类型：minor（新增功能 + 界面调整）
 
+## Android：修复「键盘弹出整屏只剩背景色」的黑屏（真机必现）
+
+### 现象
+
+真机（Android 15）上，任何输入框聚焦、软键盘弹出后（轮换值日插件输入成员名字必现），
+应用内容区整体消失，只剩深色背景和键盘。
+
+### 根因（两个叠加）
+
+1. **`--sab` 掺了键盘高度**：`MainActivity` 把 `--sab` 写成 `max(导航栏, 键盘)`（v0.37.15
+   为了「吸底输入框不被键盘压住」）。键盘弹出时 `--sab` 从 ~24px 暴涨到 ~370px，
+   `.view` 的 `padding-bottom`（62+370=436px）、toast、抽屉底栏全部跟着暴涨 ——
+   页面被凭空撑长一大截；
+2. **键盘 inset 无人消费**：`enableEdgeToEdge()`（`decorFitsSystemWindows=false`）下
+   系统的 `adjustResize` 不再生效，默认 `adjustPan` 只把窗口整体上移、网页视口不变。
+   聚焦输入框时 Chrome 的 `scrollIntoView` 把 WebView 滚进第 1 条撑出来的空白区
+   → 整屏只剩背景色。
+
+### 修复（原生侧，`MainActivity.kt`）
+
+| 项 | 内容 |
+|---|---|
+| `--sab` 回归纯导航栏 | 去掉 `maxOf(bars.bottom, ime.bottom)`；CSS 布局不再被键盘高度影响 |
+| WebView 消费 ime inset | 新增 `ViewCompat.setOnApplyWindowInsetsListener(webView)`：`ime.bottom` 写入 WebView 的 `bottomMargin`（**不用 setPadding —— WebView 不尊重 padding**），父容器是 FrameLayout，`MATCH_PARENT` 高度减去 margin = 网页视口压缩 |
+| 连锁反应全自动 | 视口变矮 → window resize → `uiScale.js` 重算 `--ui-vh/--ui-vw` → 媒体查询与 fixed 浮层重排；Chrome 把聚焦框 `scrollIntoView` 到键盘上方；键盘收起 margin 归零 |
+| 返回 ime 剥离 | 消费后用 `WindowInsetsCompat.Builder` 剥掉 ime 再往下传（防二次消费） |
+| 回归守卫 | `test-android-layout.mjs` 新增 4 条断言（判定前剥 Kotlin 注释防自误伤），已变异验证 |
+
+### 验证
+
+- 无头探针（`__dd-keyboard-probe.html`，390×844 Android UA）双场景对照：
+  - 修复后路径（视口压到 470 + `--sab`=24px）：聚焦输入框 rect [202,236] **完整落在视口内**，
+    `.view` padding 正常 86px，手动派发 resize 后 `--ui-vh` 正确重算 470px；
+  - 旧代码路径（视口不变 + `--sab`=374px）：`.view` padding 暴涨 436px、`.plugview`
+    可视高度被压到 354px、滚动位置被拉到 404px —— 布局搅乱复现。
+- 原生侧真实键盘行为**需真机验证**（无头无法模拟窗口平移/键盘）。
+
 ## 课程表（手机端）：沉浸式布局 + 紧凑顶栏 · ⋯ 更多菜单
 
 ### 背景
