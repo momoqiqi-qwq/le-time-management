@@ -148,13 +148,22 @@
  .sg footer{margin-top:10px;border-top:1px solid var(--sg-line);padding-top:8px;font-size:10.5px;color:var(--sg-sub)}.sg footer a{color:inherit}.sg .file{padding:8px;background:var(--sg-card)}
  .sg .switch-row{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:14px;background:var(--sg-card);border:1px solid var(--sg-line);border-radius:12px;padding:10px 13px}
  .sg .switch-row .switch-copy{min-width:0}.sg .switch-row .switch-copy b{display:block;font-size:13px}.sg .switch-row .switch-copy small{display:block;color:var(--sg-sub);font-size:11.5px;line-height:1.5;margin-top:2px}
- .sg .switch{position:relative;display:inline-flex;align-items:center;gap:9px;flex:none;cursor:pointer;color:var(--sg-sub);font-size:12px;font-weight:600}
- .sg .switch input{position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;opacity:0;pointer-events:none}
- .sg .switch .track{position:relative;width:46px;height:25px;flex:none;border-radius:999px;background:color-mix(in srgb,var(--sg-ink) 22%,var(--sg-card));border:1px solid var(--sg-line);transition:background .16s ease,border-color .16s ease}
- .sg .switch .track::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--sg-card);box-shadow:0 1px 3px rgba(15,40,50,.3);transition:transform .16s ease}
- .sg .switch input:checked+.track{background:var(--sg-accent);border-color:var(--sg-accent)}
- .sg .switch input:checked+.track::after{transform:translateX(21px)}
- .sg .switch input:focus-visible+.track{outline:2px solid color-mix(in srgb,var(--sg-sea) 76%,#fff);outline-offset:2px}
+ /* 开关：类名必须是 sg-switch，**不能叫 switch**。
+   宿主 src/styles.css 里有一个全局的 .switch 共享组件（设置页/插件中心用，
+   36×20 的胶囊 + 自带 ::after 白色滑块头）。插件把同名类加在 label 上时，
+   那条全局规则会连坐进来：label 被压成 36×20 的灰胶囊、还多出一个 16px 的白滑块头，
+   叠在本插件自己的 .track（46×25）上 —— 外观就是「深色胶囊里两个白圈」，
+   三个开关看起来全是开着的（用户 v0.50.0 报的「按钮样式不对」就是这个）。
+   ⚠️ 插件视图没有样式隔离（没有 shadow DOM），凡是宿主 styles.css 里出现过的
+   裸类名（.switch / .card …）插件一律不能复用，必须带 sg- 前缀。
+   ⚠️ 这段注释在模板字符串里，反引号与美元大括号都会截断它 —— 只用中文引号。 */
+ .sg .sg-switch{position:relative;display:inline-flex;align-items:center;gap:9px;flex:none;cursor:pointer;color:var(--sg-sub);font-size:12px;font-weight:600}
+ .sg .sg-switch input{position:absolute;width:1px;height:1px;min-height:0;padding:0;border:0;opacity:0;pointer-events:none}
+ .sg .sg-switch .track{position:relative;width:46px;height:25px;flex:none;border-radius:999px;background:color-mix(in srgb,var(--sg-ink) 22%,var(--sg-card));border:1px solid var(--sg-line);transition:background .16s ease,border-color .16s ease}
+ .sg .sg-switch .track::after{content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;border-radius:50%;background:var(--sg-card);box-shadow:0 1px 3px rgba(15,40,50,.3);transition:transform .16s ease}
+ .sg .sg-switch input:checked+.track{background:var(--sg-accent);border-color:var(--sg-accent)}
+ .sg .sg-switch input:checked+.track::after{transform:translateX(21px)}
+ .sg .sg-switch input:focus-visible+.track{outline:2px solid color-mix(in srgb,var(--sg-sea) 76%,#fff);outline-offset:2px}
  .sg .style-preview{background:var(--sg-soft);border:1px solid var(--sg-line);border-radius:14px;padding:13px;max-width:980px;margin:0 0 14px}
  .sg .style-preview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(134px,1fr));gap:var(--sg-course-gap,2px);margin-top:10px}
  .sg .style-preview-grid .demo{border-radius:var(--sg-course-radius,8px);border:1px solid color-mix(in srgb,var(--course-accent) 35%,var(--sg-line));background:var(--course-bg);padding:7px 8px;color:var(--sg-ink);opacity:var(--sg-course-opacity,1);min-height:64px}
@@ -371,7 +380,7 @@ function settingsContent(){return `${screenHead('我的',activePack()?.name||'�
  function coursesContent(){const rows=[...table.courses].sort((a,b)=>a.name.localeCompare(b.name,'zh-CN')||a.day-b.day);return `${subHead('课程管理')}<div class="tools">${button('添加课程','add','class="primary"')}</div><div class="course-list">${rows.map(c=>`<button class="course-row" data-edit="${esc(c.id)}"><div><b>${esc(c.name)}</b><span>${days[c.day-1]} · ${c.isCustomTime?`${esc(c.customStartTime)}–${esc(c.customEndTime)}`:`第 ${c.startSection}–${c.endSection} 节`} · ${esc(c.position||'地点未填写')}</span></div><strong>编辑</strong></button>`).join('')||'<div class="panel muted">还没有课程，点击“添加课程”开始。</div>'}</div>`;}
  function tablesContent(){return `${subHead('课表管理')}<form class="form" data-form="table-new"><div class="fields">${field('新课表名称','tableName','新课表','text','required maxlength="40"')}</div><div class="tools"><button type="submit" class="primary">新建课表</button></div></form><div class="table-list" style="margin-top:12px">${tables.map(p=>`<div class="table-card ${p.id===currentTableId?'active':''}"><div><b>${esc(p.name)}</b><span>${p.data.courses.length} 门课程${p.id===currentTableId?' · 当前使用':''}</span></div><div class="inline-actions">${p.id!==currentTableId?button('使用','switch-table',`data-table-id="${esc(p.id)}"`):''}${button('重命名','rename-table',`data-table-id="${esc(p.id)}"`)}${button('复制','copy-table',`data-table-id="${esc(p.id)}"`)}${tables.length>1?button('删除','delete-table',`data-table-id="${esc(p.id)}" class="danger"`):''}</div></div>`).join('')}</div>`;}
  const DEMO_CARDS=[['数字电子技术','@A102 刘小军'],['模拟电子技术','@C204 雷朝军'],['线性代数A','@A103 邵红梅'],['马克思主义基本原理','@A207 张超']];
-function switchRow(label,note,name,checked){return `<div class="switch-row"><div class="switch-copy"><b>${label}</b><small>${note}</small></div><label class="switch"><input type="checkbox" name="${name}" aria-label="${label}" ${checked?'checked':''}><span class="track"></span></label></div>`;}
+function switchRow(label,note,name,checked){return `<div class="switch-row"><div class="switch-copy"><b>${label}</b><small>${note}</small></div><label class="sg-switch"><input type="checkbox" name="${name}" aria-label="${label}" role="switch" ${checked?'checked':''}><span class="track"></span></label></div>`;}
 function stylePreview(){return `<div class="style-preview${style.colorful?' colorful':''}" data-style-preview style="--sg-course-radius:${Number(style.cornerRadius)||0}px;--sg-course-gap:${Number(style.gap)||0}px;--sg-course-opacity:${(Number(style.opacity)||100)/100}"><b>样式预览</b><p class="muted style-preview-note">所有修改即时生效并自动保存。</p><div class="style-preview-grid">${DEMO_CARDS.map((x,i)=>`<div class="demo tone-${i}"><span class="course-time">08:10–08:55</span><b>${esc(x[0])}</b><span>${esc(x[1])}</span></div>`).join('')}</div></div>`;}
 function refreshStylePreview(form){
   const host=form?.parentElement?.querySelector('[data-style-preview]');if(!host)return;
@@ -384,9 +393,30 @@ function refreshStylePreview(form){
 /* 个性化配置即时生效：滑动/开关时读全表单 → 更新 style → 直接改 .sg 的 CSS 变量与类名
    （不整页重绘，避免拖滑块被打断）→ 自动持久化。saveNow=true 立即写，否则 400ms 防抖。 */
 let styleSaveTimer=null;
+/* 读取滑块/开关的**值**并夹取到滑杆范围内。
+   ⚠️ 两个坑（v0.50.0 修）：
+   ① 表单元素必须读 `.value`。`Number(f.slotHeight)` 是 Number(<input>)，恒为 NaN ——
+      于是写进 CSS 的变量成了 `NaNpx`。`NaNpx` 对自定义属性来说是「合法 token 序列」，
+      但对 max-height/border-radius/opacity/margin 是**非法声明值**，var() 的兜底**不会**生效，
+      属性直接退回初始值 ⇒ 格子高度 / 圆角 / 间距 / 透明度四个滑杆全部静默失效
+      （样式预览框却是对的，因为 refreshStylePreview 写的是 .value）。
+   ② 旧版本把 NaN 存进过 storage（JSON 序列化成 null）⇒ **加载时也要过一遍本函数**，
+      否则用户升级后旧配置依旧是坏的。 */
+/* ⚠️ 必须先挡掉 null / undefined / ''：`Number(null)` 是 **0**（不是 NaN），
+   会被当成合法值夹到滑杆下限 —— 旧版本存下来的坏数据正是 null，
+   于是「自愈」反而把格子高度压成 52、透明度压成 35。 */
+const styleNum=(v,def,min,max)=>{if(v===null||v===undefined||v==='')return def;const n=Number(v);return Number.isFinite(n)?Math.min(max,Math.max(min,Math.round(n))):def;};
+function normalizeStyle(raw){
+  const s=raw&&typeof raw==='object'?raw:{};
+  return {slotHeight:styleNum(s.slotHeight,defaultStyle.slotHeight,52,120),
+    cornerRadius:styleNum(s.cornerRadius,defaultStyle.cornerRadius,0,24),
+    gap:styleNum(s.gap,defaultStyle.gap,0,8),
+    opacity:styleNum(s.opacity,defaultStyle.opacity,35,100),
+    hideTimes:!!s.hideTimes,hideDates:!!s.hideDates,colorful:!!s.colorful};
+}
 function liveStyle(form,saveNow){
   const f=form.elements;
-  style={slotHeight:Number(f.slotHeight),cornerRadius:Number(f.cornerRadius),gap:Number(f.gap),opacity:Number(f.opacity),hideTimes:!!f.hideTimes?.checked,hideDates:!!f.hideDates?.checked,colorful:!!f.colorful?.checked};
+  style=normalizeStyle({slotHeight:f.slotHeight?.value,cornerRadius:f.cornerRadius?.value,gap:f.gap?.value,opacity:f.opacity?.value,hideTimes:!!f.hideTimes?.checked,hideDates:!!f.hideDates?.checked,colorful:!!f.colorful?.checked});
   const sg=host?.querySelector('.sg');
   if(sg){sg.style.setProperty('--sg-slot-height',`${style.slotHeight}px`);sg.style.setProperty('--sg-course-radius',`${style.cornerRadius}px`);sg.style.setProperty('--sg-course-gap',`${style.gap}px`);sg.style.setProperty('--sg-course-opacity',String(style.opacity/100));sg.classList.toggle('colorful',!!style.colorful);sg.classList.toggle('hide-times',!!style.hideTimes);sg.classList.toggle('hide-dates',!!style.hideDates);}
   refreshStylePreview(form);
@@ -465,7 +495,7 @@ case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.da
  case 'rename-table':{const p=tables.find(x=>x.id===source?.dataset.tableId);if(!p)return;const next=typeof prompt==='function'?prompt('课表名称',p.name):null;if(next&&next.trim()){p.name=next.trim().slice(0,40);await saveTables();}break;}
  case 'copy-table':{const p=tables.find(x=>x.id===source?.dataset.tableId);if(!p)return;tables.push({id:makeId(),name:p.name+' 副本',createdAt:Date.now(),data:M.normalize(JSON.parse(JSON.stringify(p.data)))});await saveTables();break;}
  case 'delete-table':{const id=source?.dataset.tableId;if(tables.length<=1)return;if(typeof confirm==='function'&&!confirm('删除这张课表？此操作不会删除已加入的时间块。'))return;tables=tables.filter(x=>x.id!==id);if(currentTableId===id){currentTableId=tables[0].id;table=M.normalize(tables[0].data);week=currentWeek();}await saveTables();break;}
- case 'style-reset':clearTimeout(styleSaveTimer);style={...defaultStyle};await tide.storage.set('style',style);break;
+ case 'style-reset':clearTimeout(styleSaveTimer);style=normalizeStyle(defaultStyle);await tide.storage.set('style',style);break;
  }paint();}
  async function submit(form){if(form.dataset.form==='style')return;const f=Object.fromEntries(new FormData(form));if(form.dataset.form==='table-new'){const next=M.empty(tide.util.today());const p={id:makeId(),name:String(f.tableName||'新课表').trim().slice(0,40),createdAt:Date.now(),data:next};tables.push(p);currentTableId=p.id;table=next;week=currentWeek();await saveTables();mode='week';paint();tide.notify('新课表已创建');return;}let next;if(form.dataset.form==='course'){const c={...draft,...f,id:draft.id||makeId(),day:Number(f.day),color:Number(f.color||0),isCustomTime:f.isCustomTime==='true',weeks:M.weeks(f.weeks,table.config.semesterTotalWeeks)};next=M.normalize({...table,courses:[...table.courses.filter(x=>x.id!==c.id),c]});}else{const slots=f.slots.trim().split(/\r?\n/).filter(s=>s.trim()).map(line=>{const [number,startTime,endTime,...rest]=line.trim().split(/\s+/);if(rest.length)throw new Error('每行只填写编号、开始和结束时间');return {number,startTime,endTime};});next=M.normalize({...table,config:{...table.config,semesterStartDate:f.semesterStartDate,semesterTotalWeeks:Number(f.semesterTotalWeeks),firstDayOfWeek:Number(f.firstDayOfWeek)},timeSlots:slots});}await persist(next);week=Math.min(week,table.config.semesterTotalWeeks);mode='week';paint();tide.notify('课表已保存');}
  function bindEvents(el){
@@ -485,7 +515,7 @@ case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.da
    if(loaded&&table){week=currentWeek();mode='week';paint();return;}
    el.innerHTML='<div class="sg"><div class="loading">正在读取课程表…</div></div>';
    const target=el;
-   try{const [raw,storedTables,storedId,storedStyle]=await Promise.all([tide.storage.get('table',M.empty()),tide.storage.get('tables',null),tide.storage.get('currentTableId',''),tide.storage.get('style',defaultStyle)]);style={...defaultStyle,...(storedStyle||{})};if(Array.isArray(storedTables)&&storedTables.length){tables=storedTables.map((p,i)=>({id:String(p.id||p.tableId||makeId()),name:String(p.name||p.tableName||`课表 ${i+1}`),createdAt:Number(p.createdAt)||Date.now()+i,data:M.normalize(p.data||p.tableData)}));currentTableId=tables.some(p=>p.id===storedId)?storedId:tables[0].id;}else{table=M.normalize(raw);currentTableId=makeId();tables=[{id:currentTableId,name:'我的课表',createdAt:Date.now(),data:table}];await saveTables();}table=M.normalize(activePack().data);loaded=true;week=currentWeek();if(host===target&&target.isConnected)paint();}
+   try{const [raw,storedTables,storedId,storedStyle]=await Promise.all([tide.storage.get('table',M.empty()),tide.storage.get('tables',null),tide.storage.get('currentTableId',''),tide.storage.get('style',defaultStyle)]);style=normalizeStyle(storedStyle);if(Array.isArray(storedTables)&&storedTables.length){tables=storedTables.map((p,i)=>({id:String(p.id||p.tableId||makeId()),name:String(p.name||p.tableName||`课表 ${i+1}`),createdAt:Number(p.createdAt)||Date.now()+i,data:M.normalize(p.data||p.tableData)}));currentTableId=tables.some(p=>p.id===storedId)?storedId:tables[0].id;}else{table=M.normalize(raw);currentTableId=makeId();tables=[{id:currentTableId,name:'我的课表',createdAt:Date.now(),data:table}];await saveTables();}table=M.normalize(activePack().data);loaded=true;week=currentWeek();if(host===target&&target.isConnected)paint();}
    catch(e){if(host===target)host.textContent='课表读取失败：'+e.message;}
  }
  /* immersive:true ⇒ 窄屏下隐藏 APP 全局底栏，把那一截高度让给课表（见 shell.js /

@@ -339,3 +339,124 @@ const changed = root.dataset.theme !== resolved.id || ...;   // 模式变化不�
    最终读到的按钮坐标是过期的（真实点击打在别的分区上，表现为「点击无效 vt=0」）。
    正确姿势：**单次点击展开 → 只等不点 → 布局稳定（连续多次 rect 相同）→
    `elementFromPoint` 自校验坐标确实是目标按钮 → 再派发真实鼠标事件**。
+
+## 课程表（shiguang-schedule）3.7.1：个性化配置「四个滑杆全失效 + 开关外观被连坐」
+
+用户报「课程表个性化设置里有一堆设置无效，无法生效」，并指出开关按钮的样式不对。
+实测确认是**两个互不相干的 bug**，都表现为「界面上看着有、实际没生效」。
+
+### 一、四个滑杆全部失效 —— 写进 CSS 的变量是 `NaNpx`
+
+`liveStyle()` 从表单读值时漏了 `.value`：
+
+```js
+// 错：Number(<input>) 恒为 NaN
+style={slotHeight:Number(f.slotHeight),cornerRadius:Number(f.cornerRadius),
+       gap:Number(f.gap),opacity:Number(f.opacity), …}
+// 对：读值并夹取
+style=normalizeStyle({slotHeight:f.slotHeight?.value,cornerRadius:f.cornerRadius?.value, …})
+```
+
+`Number(<input>)` 走的是对象 → 原始值转换，结果恒为 `NaN` ⇒ 写到 `.sg` 上的内联变量是
+`--sg-slot-height:NaNpx` 这类。
+
+🔴 **关键点：`NaNpx` 是「合法的自定义属性值、非法的声明值」。**
+`var()` 的兜底只在变量**未定义**时生效，所以：
+
+```css
+max-height: calc(52px + 10 * var(--sg-slot-height,76px) + 2px)  /* → 整条声明失效 → none */
+border-radius: var(--sg-course-radius,8px)                      /* → unset → 0 */
+opacity: var(--sg-course-opacity,1)                             /* → unset → 1 */
+margin: var(--sg-course-gap,2px)                                /* → unset → 0 */
+```
+
+于是**格子高度 / 圆角 / 间距 / 透明度四个滑杆全部静默失效**，而「样式预览」框却正常
+（`refreshStylePreview()` 写的是 `.value`）—— 这正是用户看到的「预览变了、课表没变」。
+
+实测（真浏览器，1280×900，10 节）：
+
+| | 拖动前 | 拖动后（设 118/22/7/42） |
+|---|---|---|
+| `.sg` 内联变量 | `NaNpx`（无效） | `118px / 22px / 7px / 0.42` |
+| `.schedule-frame` 的 `max-height` | `none`（声明失效） | `1234px` |
+| 课程块 `border-radius` | `0px` | `22px` |
+| 课程块 `opacity` | `1` | `0.42` |
+| 课程块 `margin` | `0px` | `7px` |
+| 窄屏 `.main-stage` 的 `min-height` | `520px`（退回固定值） | `1222px`（= 表头 + 10 × 118 + 2） |
+
+最后一行说明：v0.39.0 为手机补的那条「按节次数给下限」也被同一个 NaN 一起废掉了 ——
+**手机端格子高度滑杆等于完全没接线**。
+
+### 二、旧数据自愈：`Number(null)` 是 0，不是 NaN
+
+坏值已经落过盘（JSON 不认 `NaN`，序列化成 `null`）⇒ 只改 `liveStyle` 不够，
+**加载时必须过一遍归一化**，否则升级后旧配置依旧是坏的。
+
+```js
+const styleNum=(v,def,min,max)=>{
+  if(v===null||v===undefined||v==='')return def;   // ⚠️ 少这一句，null 会被 Number() 变成 0
+  const n=Number(v);return Number.isFinite(n)?Math.min(max,Math.max(min,Math.round(n))):def;
+};
+```
+
+漏了第一句的后果实测：`slotHeight:null` 被夹成滑杆下限 **52**（而不是默认 76）、
+透明度被夹成 **35** —— 「自愈」反而把用户的课表压扁。
+
+### 三、开关外观：插件复用了宿主的全局类名 `.switch`
+
+截图放大后能看到开关是「深色胶囊里**两个白圈**」，且三个开关看起来**全是开着的**。
+
+真因是类名冲突：宿主 `src/styles.css` 有一个全局的 `.switch` 共享组件
+（设置页 / 插件中心用，`36×20` 胶囊 + 自带 `::after` 白色滑块头）。
+插件把**同名类**加在了 `<label>` 上：
+
+```html
+<!-- 错：label 被宿主 .switch 连坐 -->
+<label class="switch"><input type="checkbox"><span class="track"></span></label>
+<!-- 对：插件自带前缀 -->
+<label class="sg-switch">…</label>
+```
+
+实测连坐结果（`getComputedStyle`）：
+
+| 元素 | 属性 | 实测 |
+|---|---|---|
+| `label.switch` | `width × height` | **36×20**（插件要的是内容自适应） |
+| `label.switch` | `background` | 宿主的中性灰胶囊 |
+| `label.switch::after` | `content` | `""`，**16×16 白色圆**（多出来的滑块头） |
+| `.track`（插件自己的） | `width × height` | 46×25 |
+
+两个白色滑块头叠在一起 ⇒ 就是截图里那个「两个白圈」。
+
+> ⚠️ **插件视图没有样式隔离**（没有 shadow DOM）。宿主 `styles.css` 里出现过的
+> **裸类名**（`.switch` / `.card` …）插件一律不能复用，必须带 `sg-` 前缀。
+> 另外三个插件（chaoxing-notify / dorm-duty / wechat-push）的 `class="switch"` 加在
+> `<input type="checkbox">` 上，是宿主设计系统的**正确用法**，不受影响。
+
+### 验证
+
+- 探针：`.workbuddy-ai/tmp/probe-schedule-style-fix.cjs`（真浏览器，18 条判据全绿；
+  含 1280×900 桌面档与 390×844 窄屏档，窄屏做 `--sg-slot-height` 52↔118 的 A/B）。
+- 变异测试 **7/7 被拦下**（改完源码逐字节还原，`已还原：true`）：
+
+| 变异 | 结果 |
+|---|---|
+| 滑杆读成元素本身（`Number(f.slotHeight)`） | 红 8 条 |
+| `styleNum` 不挡 `null` | 红 1 条（滑杆初值 52/0/0/35） |
+| 开关类名改回 `switch` | 红 3 条 |
+| `render()` 不过 `normalizeStyle` | 红（静态守卫） |
+| 静态守卫：`.value` / `styleNum` / 类名 / `normalizeStyle` 四条 | 4/4 红，且报的是对应那条断言 |
+
+- 静态守卫已进 `scripts/test-schedule.mjs`（**断言锚整行**，只查子串会把
+  「实现注释掉、文本留在注释里」漏过去）。
+
+### 已知遗留（未改，属设计取舍）
+
+桌面端（>900px）课表是「一屏全见、行高被容器压」，`--sg-slot-height` 在桌面只当**上限**用：
+窗口装不下 `表头 + 节次数 × 格子高度` 时行高会被压到刚好铺满，所以**往上调格子高度在桌面
+看不到变化**（往下调有效）。窄屏走 v0.39.0 那条 `min-height`，滑杆全程有效。
+要改成「桌面也按设定行高、放不下就滚动」，需要动 `.schedule-grid` 的行轨道定义
+（`minmax(var(--sg-row-min,34px),1fr)`），会推翻「一屏全见」这条既定设计 —— 待定。
+
+---
+

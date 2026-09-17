@@ -394,3 +394,29 @@ assert.match(ui, /<div class="sem-legend">/, '总学期视图要有图例解释�
 // 学期外不该假装有本周
 assert.match(ui, /当前日期不在本学期范围内/, '日期在学期外时要如实说明没有本周标记');
 console.log('PASS: 总学期视图 —— 20 周总览、迷你课条、本周/当前双标记与图例');
+
+/* ── v0.50.0 个性化配置：滑杆写了 NaN + 开关类名被宿主全局样式连坐 ──
+   两个都是「界面上看着有、实际没生效」的 bug，静态断言一律**锚整行**：
+   只查子串时，把实现注释掉、文本留在注释里会照样通过。 */
+// ① 表单元素必须读 .value。Number(<input>) 恒为 NaN ⇒ 写进 CSS 是 `NaNpx`，
+//    而 NaNpx 对 max-height / border-radius / opacity / margin 是**非法声明值**，
+//    var() 的兜底不会生效，属性直接退回初始值 ⇒ 四个滑杆全部静默失效。
+assert.match(ui, /^\s*style=normalizeStyle\(\{slotHeight:f\.slotHeight\?\.value,cornerRadius:f\.cornerRadius\?\.value,gap:f\.gap\?\.value,opacity:f\.opacity\?\.value,/m,
+  'liveStyle 必须从滑杆读 .value（写成 Number(f.slotHeight) 只会得到 NaN）');
+// ② 旧版本已把 NaN 存成 null 落盘（JSON 不认 NaN），所以加载时必须过一遍归一化，
+//    否则用户升级后旧配置依旧是坏的。
+assert.match(ui, /style=normalizeStyle\(storedStyle\);/,
+  'render() 读到的 style 必须过 normalizeStyle（旧数据里数值是 null）');
+assert.match(ui, /^\s*const styleNum=\(v,def,min,max\)=>\{if\(v===null\|\|v===undefined\|\|v===''\)return def;/m,
+  'styleNum 必须先挡 null/undefined/空串 —— Number(null) 是 0，会被夹成滑杆下限');
+assert.match(ui, /^\s*case 'style-reset':clearTimeout\(styleSaveTimer\);style=normalizeStyle\(defaultStyle\);/m,
+  '「恢复默认」也要过 normalizeStyle');
+// ③ 插件视图没有样式隔离：宿主 styles.css 里有个全局 .switch（36×20 胶囊 + 自带 ::after 滑块头），
+//    插件把同名类加在 <label> 上就会连坐，叠出「深色胶囊里两个白圈」——
+//    三个开关看起来全是开着的。插件必须用自己的 sg-switch。
+assert.doesNotMatch(ui, /class="switch"/, '插件不得复用宿主的全局 .switch 类名（应叫 sg-switch）');
+assert.match(ui, /<label class="sg-switch">/, '开关 label 用插件自己的 sg-switch');
+assert.doesNotMatch(ui, /\.sg \.switch[^-]/, '样式里不得再有 .sg .switch 选择器（与宿主同名会互相污染）');
+assert.match(ui, /\.sg \.sg-switch input:checked\+\.track\{background:var\(--sg-accent\)/,
+  'sg-switch 的选中态仍要按插件自己的令牌上色');
+console.log('PASS: 个性化配置 —— 滑杆读 .value 且旧坏数据自愈、开关类名不与宿主 .switch 冲突');
