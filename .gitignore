@@ -55,4 +55,9 @@ upload-keys/
 /.workbuddy/
 /.playwright-cli/
 /output/
+# ⚠️ 上一条 /output/ 是锚定仓库根的，**子目录下的 output/ 不匹配** ——
+#    手机截图 / 探针产物都落在 le-time-management/output/，得单独写一条。
+/le-time-management/output/
+# 与本项目无关的目录（另有归属，只是放在同一工作区里）
+/创客比赛/
 cloudflare-pages/plugin-guide/.wrangler/
