@@ -474,8 +474,16 @@ async function pressBack(world) {
     "syncBackButton 必须排在 noteViewChange 之后 —— 压栈在 noteViewChange 里，放前面按钮会慢一拍");
   assert.match(shell, /window\.addEventListener\("popstate", syncBackButton\)/,
     "关浮层这类回退不走 commit，要单独补一个 popstate 监听刷新按钮");
-  assert.match(shell, /initBackNav\(\{[\s\S]{0,300}?\}\);\s*\n[\s\S]{0,200}?window\.addEventListener\("popstate", syncBackButton\)/,
-    "popstate 监听必须注册在 initBackNav 之后：backNav 的 onPopState 先跑完，depth 才是新值");
+  // 用「下标先后」判断，不用「字符距离窗口」——
+  // 后者被无关新增代码撑破过一次（2026-09-17：插件快捷键的 attachPluginShortcutKeys
+  // 插在两者中间，语义完全没变，断言却红了）。
+  {
+    const initAt = shell.indexOf("initBackNav({");
+    const popAt = shell.indexOf('window.addEventListener("popstate", syncBackButton)');
+    assert.ok(initAt > -1 && popAt > -1, "shell.js 必须同时有 initBackNav 调用与 popstate 监听");
+    assert.ok(initAt < popAt,
+      "popstate 监听必须注册在 initBackNav 之后：backNav 的 onPopState 先跑完，depth 才是新值");
+  }
 
   // CSS：默认不显示 + 只在 ≤900px 显示 + 触控区 ≥40px
   // （断点用 px：曾改成 em 试图跟随界面缩放，实测 em 媒体查询不认 zoom，已回退）
