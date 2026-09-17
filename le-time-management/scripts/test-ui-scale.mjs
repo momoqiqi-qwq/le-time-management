@@ -309,9 +309,28 @@ for (const varName of ["--sat", "--sab", "--sal", "--sar"]) {
   );
 }
 
-// 3c. 三处契约本身在位：固定浮层确实消费了新变量。
-assert.match(styles, /#toasts\s*\{[^}]*bottom:\s*calc\(var\(--ui-vh/, "#toasts 的 bottom 要走 --ui-vh");
-assert.match(styles, /\.settings-modal\s*\{[^}]*inset:\s*calc\(var\(--ui-vh/, ".settings-modal 的 inset 要走 --ui-vh/--ui-vw");
+// 3c. 🔴 固定浮层的边距必须写「÷ --ui-scale」，**不许**再写「视口长 − 边距」。
+//     v0.48.0 曾把 bottom / inset 改成 `calc(var(--ui-vh, 100dvh) - N)`，理由是
+//     「zoom 下 px 会被缩放」。实测（1280×800，zoom=1 与 1.5 两档，
+//     .workbuddy-ai/tmp/probe-inset-zoom.cjs）那是错的：该写法等价于「距屏幕**顶** N」——
+//     toast 跑到屏幕上沿、设置弹窗塌成 2×2 被推出屏幕（桌面 >760px 设置页整个打不开，
+//     v0.48.0 ~ v0.49.1）。正确写法是「物理边距 N ÷ 系数」。推导见 styles.css 顶部契约第 1 条。
+assert.match(styles, /#toasts\s*\{[^}]*bottom:\s*calc\(22px\s*\/\s*var\(--ui-scale/,
+  "#toasts 的 bottom 要写「边距 ÷ --ui-scale」");
+assert.match(styles, /\.settings-modal\s*\{[^}]*inset:\s*calc\(36px\s*\/\s*var\(--ui-scale/,
+  ".settings-modal 的 inset 要写「边距 ÷ --ui-scale」");
+// 反向守卫：定位锚点里出现「--ui-v* − 数值」一律算回归。
+// （`calc(var(--ui-vh) * .11)` 这类「乘比例」是合法用法，不要误伤。）
+const badAnchors = [...styles.matchAll(/(?:^|[\s;{])(bottom|top|left|right|inset)\s*:[^;]*?calc\(var\(--ui-v[wh][^;]*?-\s*[\d.]+px/g)]
+  .map((m) => `${m[1]}: ${m[0].slice(m[0].indexOf("calc")).trim()}`);
+assert.deepEqual(badAnchors, [],
+  "不许再写「视口长 − 边距」（v0.48.0 的错误写法，v0.49.2 已改回「边距 ÷ --ui-scale」）：\n" + badAnchors.join("\n"));
+
+// 3c-2. 窄屏设置弹窗全屏贴顶 ⇒ 顶栏必须自己让开状态栏。
+//       （v0.49.2 用户反馈：APK 里「设置」二字与「关闭」按钮被手机状态栏压住。）
+//       Android WebView 不实现 env(safe-area-inset-*)，只有 --sat 是真的 ⇒ 双路写法。
+assert.match(styles, /\.settings-modal-head\s*\{\s*padding-top:\s*calc\(12px \+ var\(--sat/,
+  "窄屏设置弹窗顶栏要让开状态栏（padding-top 消费 --sat，双路写法）");
 
 // 3d. 🔴 反向守卫：**不许**再把断点写成 em。
 //     实测 em 媒体查询恒定按浏览器默认 16px 求值，zoom 与 html font-size 都影响不了它，

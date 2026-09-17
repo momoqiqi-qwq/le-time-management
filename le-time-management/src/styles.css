@@ -160,12 +160,22 @@ html, body { height: 100%; }
 
    写新样式时必须遵守的两条（都是 zoom 的布局语义决定的，不是风格问题）：
 
-   1. 🔴 **`position: fixed` 的浮层不能用 `100vw` / `100vh` / `100dvh`，也不能只写
-      `bottom: 22px` 这类「相对视口」的锚点。**
-      zoom 元素的子元素里，fixed 的包含块是 **zoom 元素本身**，被缩放后在视觉上会溢出屏幕
-      （120% 时视口往外溢 20%），`bottom` / `right` 锚点的东西直接掉到屏幕外。
-      正确写法是显式减掉视口尺寸：`calc(var(--ui-vh, 100dvh) - 22px)`。
-      该文件里所有 fixed 浮层都已按此改写。
+   1. 🔴 **`position: fixed` 的浮层：边距一律写 `calc(Npx / var(--ui-scale, 1))`。**
+      zoom 是布局级缩放 —— 布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N ÷ 系数。
+      `--ui-vw` / `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**
+      （`calc(var(--ui-vh) * .11)` = 视口的 11%），**不能拿来减边距**。
+
+      ⚠️ **v0.48.0 的「视口长度 − 边距」写法是错的，v0.49.2 已全部改回。**
+      实测（1280×800，zoom=1 与 1.5 两档，脚本 `.workbuddy-ai/tmp/probe-inset-zoom.cjs`）：
+
+      | 写法 | 结果 |
+      |---|---|
+      | `calc(var(--ui-vh) - 22px)` | 等价于「距屏幕**顶** 22px」—— toast 跑到屏幕上沿 |
+      | `inset: calc(--ui-vh - 36px) calc(--ui-vw - 20px)` | 弹窗塌成 2×2 并推到右下角外，**桌面设置页整个打不开** |
+      | `calc(22px / var(--ui-scale))` | zoom=1 与 1.5 下矩形完全一致 ✓ |
+
+      推论：`fixed` 的包含块在 zoom 下确实变成 root，但它的尺寸**仍是视口尺寸**（不是视口 × zoom），
+      所以 left/right/top 的锚点本来就对，只有「物理边距恒定」这一条需要除以系数。
 
    2. **别把 `var(--ui-scale)` 乘进尺寸。** zoom 已经把所有布局长度缩放了，
       再乘一遍就是双倍缩放。它只在「需要反算回原始长度」的极少数场合才用。
@@ -574,9 +584,10 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .plugview { height: 100%; overflow-y: auto; padding: 22px 28px; }
 
 /* ═══════════ Toast ═══════════ */
-/* zoom 下 fixed 的包含块是 html，`bottom:22px` 不再是「距屏幕底 22px」而是「距 zoom 容器底」，
-   放大后整个容器溢出屏幕 ⇒ 必须显式用 --ui-vh 减掉边距（见文件上方「界面整体缩放」契约第 2 条）。 */
-#toasts { position: fixed; right: 22px; bottom: calc(var(--ui-vh, 100dvh) - 22px); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
+/* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处）。
+   ⚠️ 别再写 `calc(var(--ui-vh) - 22px)`：那等价于「距屏幕顶 22px」，提示条会跑到屏幕顶部去
+   （v0.48.0 ~ v0.49.1 就是这个状态，实测 top=22）。 */
+#toasts { position: fixed; right: 22px; bottom: calc(22px / var(--ui-scale, 1)); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
 .toast { background: #1E2A31; color: #F2F5F4; border-radius: 12px; padding: 12px 17px; font-size: 13px;
   box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px; animation: slidein .18s ease-out; max-width: 380px; }
 .toast button { color: #7FE8B2; font-weight: 700; font-size: 12.5px; flex: none; }
@@ -735,9 +746,9 @@ button, .nav { touch-action: manipulation; }
   .plug-card > div:last-child { flex-direction: column; align-items: flex-end; }
   .set-card { padding: 16px 14px; }
   .toast { max-width: calc(var(--ui-vw, 100vw) - 24px); }
-  /* toast 移到顶栏下方，避免被底栏挡住。bottom 从「距视口底」改成「距 zoom 容器底」的
-     显式算法（见文件上方「界面整体缩放」契约第 2 条），缩放后位置才跟着屏幕走。 */
-  #toasts { right: 12px; bottom: calc(var(--ui-vh, 100dvh) - 86px - var(--sab, env(safe-area-inset-bottom, 0px))); }
+  /* toast 抬到底部导航上方（86px = 导航 62 + 间距），避免被底栏挡住。
+     边距 ÷ --ui-scale；--sab 按项目约定不补偿（安全区被 zoom 缩小属已知项）。 */
+  #toasts { right: 12px; bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px))); }
 }
 
 @media (max-width: 520px) {
@@ -2803,10 +2814,18 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      侧栏 + 卡片双列布局在 1440 宽窗口下原本左右共浪费 ~72px 纯留白。
      上下仍留 36px 给标题栏与窗口边缘，避免顶到屏幕边。
 
-     v0.48.0：`inset: 36px 20px` 的语义在 zoom 下不再等于「距屏幕边 36/20px」，
-     必须写成「视口长度 − 边距」（见文件上方「界面整体缩放」契约第 2 条），
-     否则放大后弹窗会从屏幕四边溢出。 */
-  inset: calc(var(--ui-vh, 100dvh) - 36px) calc(var(--ui-vw, 100vw) - 20px);
+     ═══ 边距 ÷ --ui-scale（v0.49.2 修正，别再改回去）═══
+     v0.48.0 曾把这里写成 `calc(var(--ui-vh, 100dvh) - 36px) calc(var(--ui-vw, 100vw) - 20px)`，
+     理由是「zoom 下 px 会被缩放」。**那是错的**，实测（1280×800，zoom=1 / 1.5 两档，
+     脚本 .workbuddy-ai/tmp/probe-inset-zoom.cjs）：
+       `calc(--ui-vh - 36px)` → 弹窗 top=764 left=1260 尺寸 2×2，被推到屏幕右下角外
+       ⇒ 桌面（>760px）设置弹窗整个打不开，v0.48.0 ~ v0.49.1 一直是坏的。
+       `calc(36px / var(--ui-scale))` → top=36 left=20 right=1260 bottom=764，
+       zoom=1 与 1.5 完全一致 ✓
+     道理：zoom 元素里布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N / zoom。
+     `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**（`calc(--ui-vh * .11)`），
+     不能用来**减边距** —— 减出来的东西离屏幕底还有一整个视口那么远。 */
+  inset: calc(36px / var(--ui-scale, 1)) calc(20px / var(--ui-scale, 1));
   z-index: 1901;
   display: flex;
   flex-direction: column;
@@ -2890,6 +2909,14 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   }
   .quick-dock.collapsed { width: min(292px, calc(var(--ui-vw, 100vw) - 24px)); }
   .settings-modal { inset: 0; border-radius: 0; border-left: 0; border-right: 0; }
+  /* 全屏贴顶 ⇒ 顶栏必须自己让开状态栏，否则「设置」二字与「关闭」按钮被状态栏压住
+     （用户反馈：APK 里顶栏挡到手机状态栏）。Android WebView 不实现 env(safe-area-inset-*)，
+     只有 MainActivity 注入的 --sat 是真的 ⇒ 必须走双路写法（铁律四）。
+     实测（291×633 @ dsf 3.76，--sat 40.3px ⇒ 状态栏在布局坐标占 32.6px）：
+     改前「设置」top=15.9、「关闭」top=14.2 双双被压；改后标题 top≈48.5，让开。 */
+  .settings-modal-head {
+    padding-top: calc(12px + var(--sat, env(safe-area-inset-top, 0px)));
+  }
   /* 桌面端为了压缩留白把 .set-wrap 左右收到 20px；窄屏必须放回 14px ——
      那条规则是 .settings-modal-body .set-wrap（特异度 0-2-0），会压过上面
      @media(max-width:900px) 里的 .set-wrap{padding:14px 14px 2px}（0-1-0），
@@ -3138,7 +3165,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   /* 左下角：右下角已被 #toasts 占用（z-index 100），挤在一起会互相盖住。
      z-index 低于设置弹窗（1900/1901），用户打开设置后提示条自动沉到后面去。 */
   left: 22px;
-  bottom: calc(var(--ui-vh, 100dvh) - 22px);
+  /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处） */
+  bottom: calc(22px / var(--ui-scale, 1));
   z-index: 1890;
   width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
   padding: 13px 15px;
@@ -3199,7 +3227,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      等于把那会儿的导航整条挡住（390px 截图实测）。sab 用双路写法：WebView 不实现 env()。 */
   .update-toast {
     left: 12px; right: 12px;
-    bottom: calc(var(--ui-vh, 100dvh) - 86px - var(--sab, env(safe-area-inset-bottom, 0px)));
+    bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
     width: auto;
     padding: 12px 13px;
   }

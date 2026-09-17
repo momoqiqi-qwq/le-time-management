@@ -216,7 +216,11 @@ export function applyUiScale(scale = currentScale) {
   root.style.setProperty("--ui-scale", String(factor));
   root.style.setProperty("--ui-auto-scale", String(auto));
   // 视口补偿：这两个值必须是「缩放前」的长度，所以除以 factor。
-  // zoom 是布局级的，fixed 定位的包含块变成了 root，不补偿就会溢出屏幕。
+  // zoom 是布局级的，fixed 定位的包含块变成了 root。
+  // ⚠️ 但 root 的尺寸**仍然是视口尺寸**（实测，见 styles.css 顶部契约第 1 条）——
+  //   所以这两个变量只能用来**乘比例**（`calc(var(--ui-vh) * .11)` = 视口的 11%）。
+  //   想表达「恒定的物理边距」要写 `calc(Npx / var(--ui-scale))`；
+  //   v0.48.0 曾写成 `calc(var(--ui-vh) - N)`，那等价于「距屏幕顶 N」，是错的。
   if (typeof window !== "undefined") {
     root.style.setProperty("--ui-vw", `${window.innerWidth / factor}px`);
     root.style.setProperty("--ui-vh", `${window.innerHeight / factor}px`);
