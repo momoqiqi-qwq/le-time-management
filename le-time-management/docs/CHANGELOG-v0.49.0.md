@@ -39,6 +39,9 @@
   - 旧代码路径（视口不变 + `--sab`=374px）：`.view` padding 暴涨 436px、`.plugview`
     可视高度被压到 354px、滚动位置被拉到 404px —— 布局搅乱复现。
 - 原生侧真实键盘行为**需真机验证**（无头无法模拟窗口平移/键盘）。
+- 构建期修正（真机 gradle 编译暴露）：`Insets` 导入用错类型 —— `android.graphics.Insets` →
+  `androidx.core.graphics.Insets`（`WindowInsetsCompat.Builder.setInsets()` 期望 AndroidX 类型，
+  静态守卫与无头探针都覆盖不到 Kotlin 类型检查）。无行为变化。
 
 ## 课程表（手机端）：沉浸式布局 + 紧凑顶栏 · ⋯ 更多菜单
 

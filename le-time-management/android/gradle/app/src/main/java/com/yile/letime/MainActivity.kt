@@ -1,10 +1,10 @@
 package com.yile.letime
 
-import android.graphics.Insets
 import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 
