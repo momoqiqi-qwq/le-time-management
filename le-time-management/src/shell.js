@@ -5,13 +5,14 @@ import { api } from "./api.js";
 import { appConfirm, appPrompt, el, toast } from "./ui.js";
 import { renderQuadrant } from "./views/quadrant.js";
 import { renderTimeblock } from "./views/timeblock.js";
+import { renderTimeline } from "./views/timeline.js";
 import { renderSettings } from "./views/settings.js";
 import { renderInbox } from "./views/inbox.js";
 import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
-import { getUiPreferences } from "./uiPreferences.js";
+import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
@@ -26,8 +27,10 @@ function ensureActiveView() {
     const prefs = getUiPreferences();
     const saved = S.getState().settings.lastView;
     const fixedStart = prefs.startupView !== "last" ? prefs.startupView : null;
-    if (fixedStart && ["quadrant", "timeblock", "inbox", "market"].includes(fixedStart)) activeView = fixedStart;
-    else if (["quadrant", "timeblock", "inbox", "market"].includes(saved)) activeView = saved;
+    // v0.52.0：白名单改为按平台取（APK 端没有时间块 / 收件箱，落到四象限兜底）
+    const core = coreViewIds();
+    if (fixedStart && core.includes(fixedStart)) activeView = fixedStart;
+    else if (core.includes(saved)) activeView = saved;
     else if (typeof saved === "string" && saved.startsWith("plug:")) activeView = saved;
     else activeView = "quadrant";
   }
@@ -36,6 +39,9 @@ function ensureActiveView() {
 
 const VIEWS = [
   { id: "quadrant", icon: "table-cells-large", title: "四象限", sub: "先决定，再动手" },
+  // v0.52.0：时间线 —— APK（移动运行时）专属核心视图，替代窄屏下的时间块 / 收件箱；
+  // 桌面端不出这个入口（coreViewIds() 按平台裁剪，见 uiPreferences.js）。
+  { id: "timeline", icon: "timeline", title: "时间线", sub: "按日期串起安排与截止" },
   { id: "timeblock", icon: "clock", title: "时间块", sub: "把任务装进一天的格子" },
   { id: "inbox", icon: "inbox", title: "收件箱", sub: "自动化与待确认事项" },
   { id: "market", icon: "puzzle-piece", title: "插件", sub: "扩展能力集中在这里" },
@@ -74,6 +80,9 @@ function viewDef(id) {
     // 顶栏只保留插件名称；核心视图的短文案副标题不受影响
     return v ? { id, icon: PLUGIN_ICONS[v.pluginId] || v.icon || "puzzle-piece", title: pluginDisplayName(v.pluginId, v.title), sub: "", pluginView: v } : null;
   }
+  // v0.52.0：核心视图按平台裁剪 —— 移动端查不到时间块 / 收件箱（viewDef 返回 null），
+  // 桌面端查不到时间线。switchTo 里有更早的重定向兜底（见下）。
+  if (!coreViewIds().includes(id)) return null;
   return VIEWS.find((v) => v.id === id) || VIEWS[0];
 }
 
@@ -124,9 +133,10 @@ function effectiveShortcutLetter(pluginId) {
   return effectivePluginShortcutLetter(pluginId, shortcutEntries());
 }
 
-// 翻页顺序：滑动/翻页沿此序（插件页夹在时间块和插件市场之间）
+// 翻页顺序：滑动/翻页沿此序（插件页夹在时间线和插件市场之间；APK 端没有时间块 / 收件箱）
 function allViewIds() {
-  return ["quadrant", "timeblock", "inbox", ...orderedPluginViews().map((pv) => `plug:${pv.id}`), "market"];
+  const core = coreViewIds().filter((id) => id !== "market");
+  return [...core, ...orderedPluginViews().map((pv) => `plug:${pv.id}`), "market"];
 }
 
 export function renderShell(root) {
@@ -156,6 +166,37 @@ export function renderShell(root) {
     "aria-label": "返回",
     onclick: () => goBack(),
   }, el("span", { class: "topbar-back-glyph", "aria-hidden": "true" }, "‹"));
+  // v0.52.0：APK 沉浸式外壳的两颗悬浮键（CSS 只在 ≤900px 显示，桌面端恒 display:none）。
+  // 需求（用户）：「apk 默认上下栏都隐藏起来，只有点 3 个点图标的菜单键才会显示出来」+
+  // 「每一页都添加返回按钮，在适合的位置，要小」。
+  // ① 右上角 ⋮ 菜单键（.chrome-toggle）：点它给 .app 挂 .chrome-shown 呼出顶栏 + 底栏，
+  //    再点收回（图标随之变 ✕）；呼出状态下切完视图由下方 commit 自动收回。
+  // ② 左上角小返回键（.mobile-back）：与顶栏返回键共用一份 canGoBack() 状态 ——
+  //    上下栏收起时它是唯一的返回入口，行为与 Android 返回键完全一致（复用 goBack()）。
+  //    两颗都要 data-motion="off"：interactions.css 的
+  //    `button.motion-ripple-host:not([data-motion="off"]) { position: relative }`（0,2,1）
+  //    会把 position: fixed 压掉，悬浮键直接掉回文档流末尾（实测 rect y=850 出屏）；
+  //    带上该属性选择器不命中，fixed 得以保留，顺带免掉 36px 小钮上的波纹动效。
+  const mobileBack = el("button", {
+    class: "mobile-back",
+    type: "button",
+    title: "返回",
+    "aria-label": "返回",
+    "data-motion": "off",
+    onclick: () => goBack(),
+  }, el("span", { class: "mobile-back-glyph", "aria-hidden": "true" }, "‹"));
+  const chromeToggle = el("button", {
+    class: "chrome-toggle",
+    type: "button",
+    title: "显示菜单",
+    "aria-label": "显示或隐藏顶栏与底栏",
+    "aria-expanded": "false",
+    "data-motion": "off",
+    onclick: () => setChromeShown(!chromeShown),
+  },
+    el("span", { class: "chrome-glyph ct-open", "aria-hidden": "true" }, "⋮"),
+    el("span", { class: "chrome-glyph ct-close", "aria-hidden": "true" }, "✕"),
+  );
   const statPill = el("span", { class: "pill" });
   const quickDockToggle = el("button", { class: "top-mini-btn quick-menu-trigger", title: "快捷入口", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
     el("span", { class: "quick-menu-avatar", "aria-hidden": "true" }, "YL"),
@@ -166,6 +207,13 @@ export function renderShell(root) {
   let quickDock = null;
   let pinActionBtn = null;
   let navTransitionSeq = 0;
+  // v0.52.0：沉浸式外壳状态。默认 false ⇒ APK 上下栏默认都收起（需求原文「默认上下栏
+  // 都隐藏起来」）。每次启动都从收起态开始，不做持久化 —— 「默认」就是每次进来的样子。
+  let chromeShown = false;
+  let chromeHideTimer = 0;
+  const mobileQuery = typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(max-width: 900px)")
+    : { matches: false };
 
   const rail = el("aside", { class: "rail" },
       el("div", { class: "brand" },
@@ -260,6 +308,11 @@ export function renderShell(root) {
   const pluginZipInput = el("input", { type: "file", accept: ".zip,application/zip", multiple: true, hidden: true });
   const pluginIconInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", hidden: true });
   root.append(pluginZipInput, pluginIconInput);
+  // v0.52.0：两颗悬浮键必须挂在 .app（appFrame）**里面** —— 呼出态的字形切换与
+  // 返回键让位都靠 `.app.chrome-shown .chrome-toggle …` 后代选择器驱动，挂在 root
+  // 上时是 .app 的兄弟节点，选择器永不命中（实测 ⋮ 永远不变 ✕）。
+  // fixed 定位不受影响：.app 无 transform/filter，不构成 fixed 的包含块。
+  appFrame.append(chromeToggle, mobileBack);
 
   function refreshPluginPresentation() {
     renderNav();
@@ -403,7 +456,8 @@ export function renderShell(root) {
 
   function renderNav() {
     nav.replaceChildren();
-    for (const v of VIEWS.filter((x) => x.id !== "settings")) nav.append(navBtn(v.id));
+    // v0.52.0：导航按平台清单渲染（APK 端 = 四象限 / 时间线 / 插件）
+    for (const id of coreViewIds()) nav.append(navBtn(id));
     if (pluginViews.length) {
       // 桌面端侧栏仍保留插件直达列表；移动端底栏只留核心入口（.plug-list 被隐藏）
       const box = el("div", { class: "plug-list" }, el("div", { class: "sec" }, "插 件 视 图"));
@@ -658,8 +712,14 @@ export function renderShell(root) {
         createQuickDockButton("plus", "快速新建", () => openQuickCapture()),
         createQuickDockButton("magnifying-glass", "命令搜索", () => window.dispatchEvent(new CustomEvent("tide:command-palette"))),
         createQuickDockButton("table-cells", "四象限", () => switchTo("quadrant")),
-        createQuickDockButton("clock", "时间块", () => switchTo("timeblock")),
-        createQuickDockButton("inbox", "收件箱", () => switchTo("inbox")),
+        // v0.52.0：快捷菜单跟随平台 —— APK 端给时间线（fa 精灵图 id="timeline"），
+        // 桌面端保留时间块 / 收件箱直达（桌面没有时间线入口）。
+        ...(desktopWindow ? [
+          createQuickDockButton("clock", "时间块", () => switchTo("timeblock")),
+          createQuickDockButton("inbox", "收件箱", () => switchTo("inbox")),
+        ] : [
+          createQuickDockButton("timeline", "时间线", () => switchTo("timeline")),
+        ]),
         createQuickDockButton("puzzle-piece", "插件中心", () => switchTo("market")),
         createQuickDockButton("gear", "设置", () => openSettingsModal()),
         desktopWindow ? (pinActionBtn = createQuickDockButton("thumbtack", "窗口置顶", async () => {
@@ -691,8 +751,22 @@ export function renderShell(root) {
 
   // 返回按钮只在「确实有地方可回」时出现：首页且无浮层时它会出现但点了等于退出应用，
   // 那种情况不给按钮（与 Android 返回键的语义保持一致，见 backNav.js 的不变量）。
+  // v0.52.0：悬浮小返回键（.mobile-back）与顶栏返回键读同一份 canGoBack() ——
+  // 上下栏收起时顶栏不可见，悬浮键就是每一页的返回入口（需求：「每一页都添加返回按钮」）。
   function syncBackButton() {
-    backBtn.classList.toggle("show", canGoBack());
+    const show = canGoBack();
+    backBtn.classList.toggle("show", show);
+    mobileBack.classList.toggle("show", show);
+  }
+
+  // v0.52.0：沉浸式外壳开关。只切 .app 上的 .chrome-shown 类，CSS 在 ≤900px 媒体块里
+  // 消费它（桌面宽屏下类挂着也没任何视觉效果）。呼出时清掉还没到点的自动收回定时器。
+  function setChromeShown(show) {
+    if (chromeHideTimer) { clearTimeout(chromeHideTimer); chromeHideTimer = 0; }
+    chromeShown = show;
+    appFrame.classList.toggle("chrome-shown", show);
+    chromeToggle.setAttribute("aria-expanded", String(show));
+    chromeToggle.title = show ? "收起菜单" : "显示菜单";
   }
 
   // opts.history=false：程序性重渲染（刷新当前视图、注册表变化后回正、首屏）不该压历史栈，
@@ -702,6 +776,10 @@ export function renderShell(root) {
       openSettingsModal();
       return;
     }
+    // v0.52.0：APK 端收到「时间块 / 收件箱」导航（命令面板「今天的时间块」、
+    // 快速捕获排程后的「查看」、插件联动等历史入口）一律落到时间线 ——
+    // 它是移动端唯一的按日期视图；桌面端不受影响。
+    if (!desktopWindow && (id === "timeblock" || id === "inbox")) id = "timeline";
     if (id.startsWith("plug:") && !viewDef(id)) id = "market";
     const targetId = id;
     const prevId = activeView;
@@ -748,6 +826,7 @@ export function renderShell(root) {
         }
         catch (e) { box.append(el("p", { class: "desc" }, `插件视图出错：${e.message}`)); }
       } else if (targetId === "quadrant") renderQuadrant(view);
+      else if (targetId === "timeline") renderTimeline(view);
       else if (targetId === "timeblock") renderTimeblock(view);
       else if (targetId === "inbox") renderInbox(view);
       else if (targetId === "market") renderMarket(view);
@@ -770,6 +849,13 @@ export function renderShell(root) {
       // 必须排在 noteViewChange 之后：它刚压了一格，返回按钮要立刻反映出来
       // （commit 早于 noteViewChange 跑，放在上面会慢一拍 —— 进插件时按钮不出现）。
       syncBackButton();
+      // v0.52.0：手机端切完视图自动收起菜单（沉浸式外壳的核心体验 —— 呼出菜单是为了
+      // 去某个页面，到了就该把屏幕还给内容；返回靠悬浮键，不必再点 ✕）。
+      // 只在「真的换了界面」且菜单当前是呼出态时排定时器；程序性重渲染不触发。
+      if (prevId !== targetId && chromeShown && mobileQuery.matches) {
+        clearTimeout(chromeHideTimer);
+        chromeHideTimer = setTimeout(() => { chromeHideTimer = 0; setChromeShown(false); }, 380);
+      }
     };
 
     // 「弹 2 下」修复：切视图只保留入场动画，不再先播放旧页滑出——
@@ -932,10 +1018,12 @@ export function renderShell(root) {
     paintCards();
   }
 
-  // ── 内容区左右滑动 = 翻页（与底栏点按互补）──
-  // 只排除真正占有横向手势的元素：可拖拽时间块、横向滚动池、抽屉、输入控件，
-  // 以及时间块那 5 个「自己能横向滚」的画布（触控屏上横滑它们必须滚动内容，
-  // 否则会一边滚一边翻页 —— 课表宽 900px、泳道 1250px，横滑是常规操作）。
+  // ── 内容区左右滑动 = 返回上一页（v0.52.0 应用户要求改语义）──
+  // 原来是「按 allViewIds 顺序翻到上/下一个视图」，用户反馈：滑动不该切界面，
+  // 左右滑应该和 Android 返回键一个语义。现在 touchend 直调 backNav 的 goBack()：
+  // 先关最上层浮层，没有浮层才回上一个视图，没有格子可回就静默忽略（不会误退应用）。
+  // SWIPE_SKIP 的排除清单照旧：横滑课表 / 泳道 / 甘特这类「自己能横向滚」的内容时
+  // 必须滚内容，不能被手势抢去当返回。
   let swX = 0, swY = 0, swOn = false;
   const SWIPE_SKIP = ".plist, .block, .drawer, .popmenu, input, textarea, select, [data-noswipe], " +
     ".wakeup-scroll, .milestone-scroll, .chronicle-scroll, .gantt-scroll, .swim-scroll";
@@ -952,12 +1040,9 @@ export function renderShell(root) {
     swOn = false;
     const dx = e.changedTouches[0].clientX - swX;
     const dy = e.changedTouches[0].clientY - swY;
-    // 横向主导 + 足够长才翻页，避免误伤纵向滚动
+    // 横向主导 + 足够长才算滑动手势，避免误伤纵向滚动；方向不限 —— 左滑右滑都是返回
     if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-    const ids = allViewIds();
-    const i = ids.indexOf(activeView);
-    const next = dx < 0 ? ids[i + 1] : ids[i - 1];
-    if (next) switchTo(next, dx < 0 ? "left" : "right");
+    goBack();
   }, { passive: true });
 
   mountQuickDock();

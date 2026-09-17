@@ -71,6 +71,7 @@ ICONS = {
 # capture 是「快速捕获」入口，与收件箱同形，只为 key 独立落一份文件。
 NAV_ICONS = {
     "quadrant":  (["grid-2", "four-squares", "grid"],       "四象限 / 田字格"),
+    "timeline":  (["vertical-timeline", "timeline", "time-span"], "时间线 / 垂直时间轴（v0.52.0 新增，APK 端核心视图）"),
     "timeblock": (["clock", "clock--v1"],                   "时间块 / 时钟"),
     "inbox":     (["inbox", "filled-in-box", "inbox--v1"],  "收件箱 / 收件托盘"),
     "market":    (["puzzle", "puzzle-piece"],               "插件中心 / 拼图"),

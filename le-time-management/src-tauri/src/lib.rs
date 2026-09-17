@@ -1477,16 +1477,17 @@ fn show_main_window(app: &tauri::AppHandle) {
 /// 只用于托盘菜单的「退出」——窗口关闭按钮走的是隐藏到托盘那条路，不涉及退出。
 /// 之所以要握手而不是固定 sleep：`app.exit(0)` 会直接掐掉进程，
 /// 前端 `saveNow()` 的 IPC 一旦没跑完，用户最后的改动就静默丢了。
-#[cfg(desktop)]
+// ⚠️ 退出握手这一组（QuitGate / QUIT_GATE / quit_gate / quit_ack）**不能**加 `#[cfg(desktop)]`：
+// `invoke_handler` 的命令列表没有平台门控，一旦 `quit_ack` 只在桌面存在，
+// Android 编译会断在 `cannot find macro __cmd__quit_ack`（v0.52.0 实测）。
+// 移动端无人调用它，零成本。
 struct QuitGate {
     acked: Mutex<bool>,
     cv: Condvar,
 }
 
-#[cfg(desktop)]
 static QUIT_GATE: OnceLock<Arc<QuitGate>> = OnceLock::new();
 
-#[cfg(desktop)]
 fn quit_gate() -> &'static Arc<QuitGate> {
     QUIT_GATE.get_or_init(|| {
         Arc::new(QuitGate {
@@ -1497,7 +1498,6 @@ fn quit_gate() -> &'static Arc<QuitGate> {
 }
 
 /// 前端存盘完成后调用，放行正在等待的退出线程。
-#[cfg(desktop)]
 #[tauri::command]
 fn quit_ack(gate: State<'_, Arc<QuitGate>>) {
     if let Ok(mut acked) = gate.acked.lock() {
@@ -1640,6 +1640,9 @@ pub fn run() {
         .manage(HttpSessions(Mutex::new(HashMap::new())))
         .manage(LanHandle(Mutex::new(None)))
         .manage(native_schedule::NativeSchedule::default())
+        // 退出握手的状态必须注册，否则 `State<'_, Arc<QuitGate>>` 注入失败，
+        // quit_ack 永远敲不响 → 每次退出都要空等满 2 秒超时才走。
+        .manage(quit_gate().clone())
         .invoke_handler(tauri::generate_handler![
             native_schedule::native_schedule,
             system_bar::system_bar,

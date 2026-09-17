@@ -1,6 +1,17 @@
 import * as S from "./store.js";
 import { CUSTOM_SIZE_LIMITS } from "./windowSize.js";
+import { isDesktopRuntime } from "./windowSize.js";
 import { DEFAULT_UI_SCALE, applyUiScale, normalizeUiScale } from "./uiScale.js";
+
+/* ── 核心视图的平台清单（v0.52.0）──
+   APK（移动运行时）用「时间线」替代「时间块 / 收件箱」：手机上没有拖拽排程的交互价值，
+   时间线按日期串起安排与截止更适合竖屏浏览。桌面端保持原四视图，且没有时间线入口。
+   消费方：shell.js（导航 / 翻页序 / 快捷菜单）与 settings/appearance.js（启动页下拉）。 */
+export const MOBILE_CORE_VIEWS = Object.freeze(["quadrant", "timeline", "market"]);
+export const DESKTOP_CORE_VIEWS = Object.freeze(["quadrant", "timeblock", "inbox", "market"]);
+export function coreViewIds() {
+  return isDesktopRuntime() ? DESKTOP_CORE_VIEWS : MOBILE_CORE_VIEWS;
+}
 
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   // 默认紧凑：小屏与笔记本上信息密度优先；想要宽松的用户可在设置里切回「舒适」
@@ -32,6 +43,7 @@ export const NAVBAR_SIZE_OPTIONS = Object.freeze([
 export const STARTUP_VIEW_OPTIONS = Object.freeze([
   ["last", "继续上次页面"],
   ["quadrant", "四象限"],
+  ["timeline", "时间线（手机端）"],
   ["timeblock", "时间块"],
   ["inbox", "收件箱"],
   ["market", "插件中心"],

@@ -8,6 +8,7 @@ import { BUILTIN_PLUGINS } from "./pluginCatalog.js";
 //  · 随包 PNG 加载失败才回落同风格 CDN 直链，URL 形如 img.icons8.com/color/96/<slug>.png。
 const NAV_ICONS8 = {
   quadrant: ["four-squares", "grid-2", "grid"],
+  timeline: ["timeline", "vertical-timeline"],
   timeblock: ["clock", "clock--v1"],
   inbox: ["inbox", "filled-in-box"],
   market: ["puzzle", "puzzle-piece"],

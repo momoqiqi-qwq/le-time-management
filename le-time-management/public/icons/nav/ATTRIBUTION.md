@@ -1,6 +1,6 @@
 # public/icons/nav 素材台账（主导航图标）
 
-共 6 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**，与插件图标同一套方案（v0.42.0 起随包化，此前导航走 iOS Filled CDN 直链）。
+共 7 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**，与插件图标同一套方案（v0.42.0 起随包化，此前导航走 iOS Filled CDN 直链）。
 
 `capture`（快速捕获）与 `inbox`（收件箱）同形，是刻意为之的两份独立文件。
 
@@ -11,6 +11,7 @@
 | key | 生效 slug | 说明 | sha256 |
 |---|---|---|---|
 | `quadrant` | `four-squares` | 四象限 / 田字格 | `37585dbcdc4c74af…` |
+| `timeline` | `timeline` | 时间线 / 垂直时间轴（v0.52.0 新增，APK 端核心视图） | `8074baa850a95f84…` |
 | `timeblock` | `clock` | 时间块 / 时钟 | `1bdcbd1576ce1162…` |
 | `inbox` | `inbox` | 收件箱 / 收件托盘 | `ea16388e2a54e4cd…` |
 | `market` | `puzzle` | 插件中心 / 拼图 | `97a33df64947a367…` |

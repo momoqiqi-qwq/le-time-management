@@ -664,6 +664,10 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 html, body { overscroll-behavior: none; }
 button, .nav { touch-action: manipulation; }
 
+/* v0.52.0：沉浸式外壳的两颗悬浮键（⋮ 菜单键 + 小返回键）。它们在 shell.js 里无条件
+   挂进 DOM，桌面 / 宽屏必须恒隐藏，只有下面 ≤900px 媒体块里才让它们显示。 */
+.chrome-toggle, .mobile-back { display: none; }
+
 /* 手机底栏高度档位（设置 → 界面与交互 → 底栏高度）：变量只被 ≤900px 的底栏规则消费 */
 :root[data-navbar="compact"] { --nav-btn-h: 40px; --nav-ic: 19px; --nav-pad: 54px; }
 :root[data-navbar="standard"] { --nav-btn-h: 46px; --nav-ic: 22px; --nav-pad: 62px; }
@@ -761,6 +765,81 @@ button, .nav { touch-action: manipulation; }
   /* toast 抬到底部导航上方（86px = 导航 62 + 间距），避免被底栏挡住。
      边距 ÷ --ui-scale；--sab 按项目约定不补偿（安全区被 zoom 缩小属已知项）。 */
   #toasts { right: 12px; bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  /* ── v0.52.0：沉浸式外壳（需求：APK 默认上下栏都藏，点 ⋮ 菜单键才呼出）──
+     结构：.app 挂 .chrome-shown ⇔ 顶栏 + 底栏显示（shell.js 的 setChromeShown）。
+     默认不挂 ⇒ 两栏都 display:none，内容独占整屏；呼出状态下切完视图自动收回。
+     两颗悬浮键都必须吃 --sat（状态栏是透明浮层，edge-to-edge）与 --sal/--sar
+     （横屏挖孔在侧边）—— 铁律四：一律 var(--s…, env(…)) 双路，不裸用 env()。 */
+  .chrome-toggle {
+    display: inline-flex; align-items: center; justify-content: center;
+    position: fixed;
+    /* v0.52.1：贴顶会压住视图右上角 ⇒ 落到右侧偏中间（45% 高度）。
+       ⚠️ 为什么不是正中间 50%：实测在四象限视图 50% 处会压住右列格子的
+       「添加到这个象限」按钮（悬浮层会吃掉点击）。45% 是实测扫描里
+       离中间最近、且各视图交互控件遮挡为 0 的档位（见 scan-fab.cjs）。
+       ⚠️ 用 `calc(% - 半高)`，不要 `transform:translateY(-50%)`：
+       `:active` 要覆写 transform 做 scale(.94)，两者打架会让按下瞬间跳位。 */
+    top: calc(45% - 18px);
+    right: calc(6px + var(--sar, env(safe-area-inset-right, 0px)));
+    /* 底栏(55)之上 —— 两栏呼出时它必须保持可点；popmenu(60)/遮罩(40+) 之下 */
+    z-index: 58;
+    width: 36px; height: 36px; padding: 0; flex: none;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    color: var(--ink-2); cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 10px rgba(13, 31, 38, .18);
+    -webkit-tap-highlight-color: transparent;
+    transition: background .12s ease, color .12s ease, transform .08s ease;
+  }
+  .chrome-toggle:hover { color: var(--ink); }
+  .chrome-toggle:active { transform: scale(.94); }
+  .chrome-glyph { display: block; font-size: 14px; line-height: 1; font-weight: 700; }
+  .chrome-toggle .ct-close { display: none; }
+  .app.chrome-shown .chrome-toggle .ct-open { display: none; }
+  .app.chrome-shown .chrome-toggle .ct-close { display: block; }
+  /* 左上角小返回键：与右上角 ⋮ 对称。⚠️ 这里绝不写无条件 display —— 显示与否完全由
+     媒体块外的 `.chrome-toggle, .mobile-back { display:none }` 兜底 + 下方 .show 门控：
+     只有 canGoBack() 为真（syncBackButton 挂上 .show）才 inline-flex；
+     两栏呼出时顶栏里已有返回键，悬浮键让位 —— 免得同屏摆两颗「返回」。 */
+  .mobile-back {
+    align-items: center; justify-content: center;
+    position: fixed;
+    /* 与 ⋮ 菜单键对称：同样落到左侧 45% 高度（v0.52.1）。同上，不用 transform 居中。 */
+    top: calc(45% - 18px);
+    left: calc(6px + var(--sal, env(safe-area-inset-left, 0px)));
+    z-index: 58;
+    width: 36px; height: 36px; padding: 0; flex: none;
+    border: 1px solid var(--line); border-radius: 50%;
+    background: color-mix(in srgb, var(--panel) 80%, transparent);
+    color: var(--ink-2); cursor: pointer;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 10px rgba(13, 31, 38, .18);
+    -webkit-tap-highlight-color: transparent;
+    transition: background .12s ease, color .12s ease, transform .08s ease;
+  }
+  .mobile-back:hover { color: var(--ink); }
+  .mobile-back:active { transform: scale(.94); }
+  .mobile-back.show { display: inline-flex; }
+  .app.chrome-shown .mobile-back { display: none; }
+  .mobile-back-glyph { display: block; font-size: 19px; line-height: 1; transform: translateY(-1px); }
+  /* 上下栏默认收起。:not(…) 里的类名参与特异性（0,3,0），稳压 .rail-hidden 那组 (0,2,1)。
+     收起时 .view 自己给状态栏让位（需求：「距离手机状态栏合适的距离」）：悬浮键
+     底缘在 41px + --sat 处，内容从 46px + --sat 起步；底部同理只留 --sab + 4px。 */
+  .app:not(.chrome-shown) .topbar { display: none; }
+  .app:not(.chrome-shown) .rail { display: none; }
+  .app:not(.chrome-shown) .view {
+    padding-top: calc(46px + var(--sat, env(safe-area-inset-top, 0px)));
+    padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px)));
+  }
+  /* ⋮ 呼出两栏。必须写在上面 .rail-hidden 两条规则之后：同为 (0,2,1) 靠后者胜 ——
+     沉浸式插件页（rail-hidden，如课程表）里点 ⋮ 也要能把底栏呼出来。 */
+  .app.chrome-shown .rail { display: flex; }
+  /* 呼出态顶栏右边距：v0.52.1 起 ⋮ 不再压顶栏，这里只是常规右边距 */
+  /* v0.52.1：⋮ 菜单键已从「贴顶」挪到右侧 45% 高度，不再压在顶栏上 ⇒
+     顶栏右侧不必再为它让出 46px（窄屏 288 档那 46px 会让「快捷入口」被挤得贴住标题）。
+     留 12px 常规右边距即可。 */
+  .app.chrome-shown .topbar { padding-right: calc(12px + var(--sar, env(safe-area-inset-right, 0px))); }
 }
 
 @media (max-width: 520px) {
@@ -3382,4 +3461,141 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .update-toast-actions .btn { flex: 1 1 auto; min-height: 34px; }
   .update-actions { flex-direction: column; }
   .update-actions .btn { width: 100%; min-height: 34px; }
+}
+
+/* ═══════════════════ 时间线视图（v0.52.0 新增）═══════════════════
+   APK 端核心视图：参照「America in the World」年表 —— 中轴贯穿、
+   年份徽章跨轴、日期徽章骑轴、卡片左右交错。
+   收起露「时间点 + 标题」，点开显示具体到点的时间与正文。
+   全部使用主题令牌（夜间与深色派生自动跟随），不引入新的硬编码色。 */
+.tlv { position: relative; max-width: 760px; margin: 0 auto; padding: 14px 4px 28px; }
+.tlv-axis {
+  position: absolute; top: 0; bottom: 0; left: 50%; width: 3px; transform: translateX(-50%);
+  border-radius: 99px; background: linear-gradient(180deg,
+    color-mix(in srgb, var(--deep) 12%, transparent), var(--deep) 8%,
+    var(--deep) 92%, color-mix(in srgb, var(--deep) 12%, transparent));
+  opacity: .5; pointer-events: none;
+}
+.tlv-lane { position: relative; display: flex; flex-direction: column; gap: 14px; }
+/* 行中列固定宽（=日期徽章直径）：每行是独立 grid，若用 auto，
+   「点行」与「徽章行」的中列宽不同会导致两侧卡片宽度逐行跳动 */
+.tlv-row {
+  --tlv-mid: 52px;
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--tlv-mid) minmax(0, 1fr);
+  align-items: center; gap: 10px;
+}
+.tlv-year-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+.tlv-row .tlv-cards { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tlv-row.side-left .tlv-cards { grid-column: 1; }
+.tlv-row.side-left .tlv-badge { grid-column: 2; }
+.tlv-row.side-right .tlv-cards { grid-column: 3; }
+.tlv-row.side-right .tlv-badge { grid-column: 2; }
+.tlv-row.side-right::before { content: ""; grid-column: 1; }
+/* 稀疏自动放置陷阱：side-right 行 DOM 序为 ::before(col1)→cards(col3)→badge/dot(col2)，
+   badge/dot 列号小于游标所在列会被推到第 2 行（实测徽章掉到卡片组尾部、与卡片脱节）。
+   全部子项显式钉在第 1 行修掉。 */
+.tlv-row > .tlv-cards, .tlv-row > .tlv-badge, .tlv-row > .tlv-dot, .tlv-row.side-right::before { grid-row: 1; }
+/* 年份徽章：跨轴的胶囊，两侧细线连到边缘（年表分段感） */
+.tlv-year-row { gap: 0; margin: 2px 0; }
+.tlv-year-row::before, .tlv-year-row::after {
+  content: ""; height: 1px; flex: 1; align-self: center;
+  background: color-mix(in srgb, var(--deep) 30%, transparent);
+}
+.tlv-year-label {
+  grid-column: 2; justify-self: center; align-self: center;
+  padding: 5px 14px; border-radius: 99px; background: var(--deep); color: var(--on-deep);
+  font-size: 13px; letter-spacing: .12em; white-space: nowrap;
+}
+.tlv-year { position: absolute; left: -9999px; }   /* 供无障碍读取，视觉只留标签 */
+/* 日期徽章：骑在轴上的圆片（参考图样式） */
+.tlv-badge {
+  position: relative; z-index: 1; display: grid; justify-items: center; gap: 1px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--panel); border: 2px solid var(--deep); color: var(--deep);
+  box-shadow: var(--shadow); place-self: center;
+}
+.tlv-badge b { font-size: 13.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tlv-badge-today {
+  font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .08em;
+  color: var(--panel); background: var(--deep); border-radius: 99px; padding: 0 6px; line-height: 1.5;
+}
+.tlv-row.is-today .tlv-badge { background: var(--deep); color: var(--on-deep); }
+.tlv-row.is-today .tlv-badge .tlv-badge-today { background: color-mix(in srgb, var(--sun) 82%, black); color: #fff; }
+.tlv-badge-dot {
+  position: absolute; top: -2px; right: -2px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--coral); border: 2px solid var(--panel);
+}
+/* 组内非首行：轴上的小节奏点（逐行交错的轴位记号） */
+.tlv-dot {
+  justify-self: center; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--panel); border: 2px solid color-mix(in srgb, var(--deep) 55%, transparent);
+}
+.tlv-row.is-today .tlv-dot { border-color: var(--deep); }
+/* 卡片 */
+.tlv-card {
+  position: relative; width: 100%; text-align: left; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--tc, var(--deep));
+  border-radius: 12px; padding: 9px 11px; box-shadow: var(--shadow);
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.tlv-card:focus-visible { outline: 2px solid var(--deep); outline-offset: 2px; }
+.tlv-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-1px); }
+.tlv-card.is-past:not(.is-done) { opacity: .82; }
+.tlv-card.is-done .tlv-title { text-decoration: line-through; color: var(--ink-3); }
+.tlv-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tlv-time {
+  font-weight: 800; font-size: 12px; color: var(--tc, var(--deep));
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.tlv-kind {
+  flex: none; font-size: 10.5px; font-weight: 700; line-height: 1.6; padding: 0 7px; border-radius: 99px;
+  color: var(--tc, var(--deep)); background: color-mix(in srgb, var(--tc, var(--deep)) 13%, transparent);
+}
+.tlv-flag { font-size: 10.5px; font-weight: 700; margin-left: auto; white-space: nowrap; }
+.tlv-flag.done { color: var(--mint); }
+.tlv-flag.overdue { color: var(--coral); }
+.tlv-title { margin: 3px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+.tlv-brief { display: block; margin-top: 2px; font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+/* 展开体：grid-rows 0fr → 1fr 动画 */
+.tlv-card-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
+.tlv-card-body-inner { overflow: hidden; min-height: 0; }
+.tlv-card.open .tlv-card-body { grid-template-rows: 1fr; }
+.tlv-when { margin: 9px 0 6px; font-size: 12px; font-weight: 700; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.tlv-note { display: flex; flex-direction: column; gap: 3px; margin: 0 0 8px; padding: 8px 10px; border-radius: 9px; background: var(--paper); border: 1px dashed var(--line); }
+.tlv-note b { font-size: 10.5px; letter-spacing: .1em; color: var(--ink-3); }
+.tlv-note span { font-size: 12.5px; line-height: 1.65; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tlv-note .dim { color: var(--ink-3); }
+.tlv-more { align-self: flex-start; margin-bottom: 2px; }
+/* 回到今天：sticky 小胶囊 */
+.tlv-jump {
+  position: sticky; top: 8px; z-index: 5; display: flex; width: max-content; margin: 0 4px 2px auto;
+  align-items: center; padding: 5px 12px; border-radius: 99px; border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, transparent); backdrop-filter: blur(6px);
+  color: var(--deep); font-size: 12px; font-weight: 700; box-shadow: var(--shadow); cursor: pointer;
+}
+/* 空态 */
+.tlv-empty {
+  display: grid; justify-items: center; gap: 6px; padding: 56px 18px; text-align: center;
+  border: 1px dashed var(--line); border-radius: var(--radius); background: var(--paper);
+}
+.tlv-empty-icon { font-size: 30px; color: var(--ink-3); }
+.tlv-empty b { font-size: 14.5px; color: var(--ink); }
+.tlv-empty span { font-size: 12.5px; color: var(--ink-2); }
+
+@media (max-width: 760px) {
+  .tlv { --tlv-mid: 46px; padding: 10px 2px 24px; }
+  .tlv-lane { gap: 12px; }
+  .tlv-row, .tlv-year-row { gap: 7px; }
+  .tlv-badge { width: 46px; height: 46px; }
+  .tlv-badge b { font-size: 12px; }
+  .tlv-card { padding: 8px 9px; border-radius: 10px; }
+  .tlv-title { font-size: 12.5px; }
+  .tlv-time { font-size: 11px; }
+  .tlv-kind { font-size: 9.5px; padding: 0 5px; }
+  .tlv-when { font-size: 11px; margin-top: 7px; }
+  .tlv-note span { font-size: 12px; }
+  .tlv-jump { top: 6px; padding: 4px 10px; font-size: 11.5px; }
 }

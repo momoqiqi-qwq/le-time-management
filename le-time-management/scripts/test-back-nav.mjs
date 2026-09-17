@@ -464,8 +464,15 @@ async function pressBack(world) {
     "返回按钮必须直接调 backNav 的 goBack()，保证与 Android 返回键同一条路");
   assert.doesNotMatch(shell, /class: "topbar-back"[\s\S]{0,200}?history\.back\(\)/,
     "返回按钮不能自己写 history.back() —— 那样会绕过浮层优先的规则");
-  assert.match(shell, /backBtn\.classList\.toggle\("show", canGoBack\(\)\)/,
+  // v0.52.0：syncBackButton 抽出了 show 变量（悬浮键 .mobile-back 与顶栏键共用），
+  // 断言跟着改成「同一份 canGoBack() 结果喂给两颗按钮」——不变量本身没变：
+  // 没地方可回时不显示，否则点了等于退出应用。
+  assert.match(shell, /const show = canGoBack\(\);/,
     "按钮显隐必须由 canGoBack() 决定：没地方可回时不显示，否则点了等于退出应用");
+  assert.match(shell, /backBtn\.classList\.toggle\("show", show\);/,
+    "顶栏返回键的显隐跟随 canGoBack() 的结果");
+  assert.match(shell, /mobileBack\.classList\.toggle\("show", show\);/,
+    "悬浮返回键与顶栏返回键共用同一份 canGoBack() 状态，不能各算各的");
   // 挂点：必须在标题卡内、且排在小框前面（`[‹][图标] 标题`）
   assert.match(shell, /class: "topbar-title-card"[\s\S]{0,400}?\bbackBtn,\s*\n\s*titleMark,/,
     "backBtn 必须在标题卡里、排在 titleMark 之前");
@@ -504,6 +511,23 @@ async function pressBack(world) {
   }
   assert.ok(!/^\.topbar-back\.show\s*\{/m.test(css),
     ".topbar-back.show 的显示规则不能写在基础态：桌面端顶栏不该多出按钮");
+
+  // v0.52.0：内容区左右滑动 = 返回上一页（用户要求删掉「滑动翻页切界面」）。
+  // 手势段必须走 backNav 的 goBack()（与返回键同一条路），不得再按 allViewIds 顺序翻页。
+  {
+    const swipeAt = shell.indexOf("内容区左右滑动 = 返回上一页");
+    assert.ok(swipeAt > -1, "滑动段注释锚存在（v0.52.0 改语义后的标记）");
+    const swipeBlock = shell.slice(swipeAt).match(/addEventListener\("touchend"[\s\S]*?\}, \{ passive: true \}\);/)?.[0] ?? "";
+    assert.ok(swipeBlock, "滑动段必须有 touchend 监听");
+    assert.match(swipeBlock, /\bgoBack\(\)/,
+      "左右滑动必须调 backNav 的 goBack()：先关浮层再回上一视图，与返回键同一条路");
+    assert.doesNotMatch(swipeBlock, /allViewIds|switchTo\(/,
+      "滑动不得再翻页切视图 —— 用户明确要求删除「滑动切换应用界面」");
+    assert.match(swipeBlock, /getUiPreferences\(\)\.swipeNavigation/,
+      "滑动返回要受设置里既有的滑动开关控制（键名不回退，语义改为返回）");
+    assert.match(swipeBlock, /Math\.abs\(dx\) < 56/,
+      "横滑阈值守卫保留：足够长且横向主导才触发，别误伤纵向滚动");
+  }
 }
 
 // 14. 同一个模块实例重新挂载（热重载 / 宿主重建）：depth 必须归零。
@@ -521,4 +545,5 @@ async function pressBack(world) {
 }
 
 console.log("PASS: 返回键历史栈（视图回退 / 浮层优先 / 空格子回收 / 各类遮罩类名）"
-  + " + 顶栏返回按钮的数据源与接线（canGoBack / goBack / 断点 / 调用顺序）");
+  + " + 顶栏返回按钮的数据源与接线（canGoBack / goBack / 断点 / 调用顺序）"
+  + " + 内容区左右滑动 = 返回上一页（v0.52.0，翻页手势已删）");

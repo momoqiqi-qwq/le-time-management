@@ -7,6 +7,7 @@ import {
   NAVBAR_SIZE_OPTIONS,
   STARTUP_VIEW_OPTIONS,
   WINDOW_SIZE_OPTIONS,
+  coreViewIds,
   getUiPreferences,
   resetUiPreferences,
   setUiPreferences,
@@ -143,7 +144,13 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   motion.addEventListener("change", () => setUiPreferences({ motion: motion.value }));
 
   const startup = el("select", {});
-  for (const [id, label] of STARTUP_VIEW_OPTIONS) startup.append(el("option", { value: id }, label));
+  // v0.52.0：启动页选项按平台裁剪 —— APK 端不出现时间块 / 收件箱（没有这两个入口），
+  // 桌面端不出现时间线。核心视图清单的单一事实源在 uiPreferences.coreViewIds()。
+  const coreSet = new Set(coreViewIds());
+  for (const [id, label] of STARTUP_VIEW_OPTIONS) {
+    if (id !== "last" && !coreSet.has(id)) continue;
+    startup.append(el("option", { value: id }, label));
+  }
   startup.value = prefs.startupView;
   startup.addEventListener("change", () => { setUiPreferences({ startupView: startup.value }); toast("启动页设置将在下次打开应用时生效"); });
 
@@ -268,7 +275,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value })),
     toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value })),
     toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value })),
-    toggleRow("触摸左右滑动翻页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
+    toggleRow("触摸左右滑动返回上一页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入")), startup),
     desktopWindow ? windowRow : null,
     desktopWindow ? trayRow : null,
