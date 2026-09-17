@@ -3,7 +3,7 @@
     {name:"学习与校园",ids:["shiguang-schedule","school-notice","chaoxing-notify","cppu-notify","exam-calendar"]},
     {name:"效率与专注",ids:["pomodoro","weekly-report"]},
     {name:"信息与提醒",ids:["gx-news","cn-holiday","wechat-push"]},
-    {name:"生活与工具",ids:["dorm-duty","web-collector"]},
+    {name:"生活与工具",ids:["dorm-duty","web-collector","inbox-drop"]},
   ];
   const docs={
     "shiguang-schedule":["打开课程表，先设置学期与开学日期","可手动添加，或用“教务导入”粘贴/导入表格","确认预览后选择合并或替换"],
@@ -18,6 +18,7 @@
     "wechat-push":["按插件页面配置 PushPlus / 推送参数","选择需要推送的提醒","先测试连接，再开启日常使用"],
     "web-collector":["输入网址后点击自动识别并收藏","检查自动识别的网站名称、favicon 和图标","添加备注后保存，之后可搜索、刷新和一键打开"],
     "dorm-duty":["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响","选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）","需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
+    "inbox-drop":["把聊天文字、通知截图、网页段落或文件直接拖到面板上；聊天里选中的消息也可以 Ctrl+V 粘贴","插件自动认出来源平台、消息类型与日期时间，在确认条上改错了的字段再收下","确认后进应用收件箱，可一键转成任务或排进时间块；重复消息自动去重","截图会跟着任务走（图片附件）；可执行文件会被拒收并说明原因"],
   };
   function esc(s){return String(s||"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
   function platformText(p){const out=[];if(p.windows!=="unavailable")out.push("Windows");if(p.android!=="unavailable")out.push("Android");if(p.miniprogram&&p.miniprogram!=="unavailable")out.push("小程序");return out.join(" · ")||"暂不可用";}

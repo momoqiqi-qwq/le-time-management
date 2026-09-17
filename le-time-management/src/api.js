@@ -33,6 +33,12 @@ export const api = {
     localStorage.setItem(LS_KEY, JSON.stringify(data));
   },
 
+  // 托盘菜单「退出」的存盘回执：写完（或失败）后敲一下，Rust 收到就立即退出。
+  // 浏览器里没有这个通道，退化成空操作。
+  async quitAck() {
+    if (isTauri) return invoke("quit_ack");
+  },
+
   async listPlugins() {
     if (!isTauri) return [];
     return invoke("list_plugins");
@@ -218,5 +224,24 @@ export const api = {
   async aiChat(messages, temperature = 0.2) {
     if (!isTauri) throw new Error("AI 请求仅在 Tauri 应用中可用");
     return invoke("ai_chat", { messages, temperature });
+  },
+
+  /**
+   * 把网页的实际亮度同步给系统栏（状态栏 / 导航栏）的图标。
+   *
+   * 为什么必须同步：Android 端 enableEdgeToEdge() 后系统栏是**透明浮层**盖在 WebView 上，
+   * 图标颜色却由 Android 按**系统深色模式**决定，与网页 `data-theme-mode` 无关。
+   * 两者不一致时图标就消失在背景里（实测对比度 1.02 / 1.16，判据 3.0）。详见
+   * `src-tauri/src/system_bar.rs` 与 `android/gradle/.../SystemBarPlugin.kt`。
+   *
+   * `darkIcons` 语义与 Android 的 `isAppearanceLightStatusBars` 一致：
+   * **浅色背景 ⇒ true（要深色图标）**。
+   *
+   * 非 Tauri（纯浏览器调试）与桌面端都安全无副作用 —— 桌面端窗口不铺满整屏，
+   * Rust 侧对非 Android 平台直接返回 `{applied:false}`，不报错。
+   */
+  async systemBar(darkIcons) {
+    if (!isTauri) return { applied: false };
+    return invoke("system_bar", { darkIcons });
   },
 };

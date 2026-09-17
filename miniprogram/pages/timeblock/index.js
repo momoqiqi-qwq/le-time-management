@@ -350,6 +350,17 @@ Page({
     (st.tasks || []).filter((t) => !t.done && t.due).forEach((t) => events.push({ date: t.due.slice(0, 10), title: t.title, sub: t.project || "任务截止", cat: "work" }));
     events.sort((a, b) => a.date.localeCompare(b.date));
     const ve = events.slice(0, 16).map((e, i) => ({ ...e, color: colors[i % colors.length], side: i % 2 ? "right" : "left", catLabel: catNames[e.cat] || "安排", year: e.date.slice(0,4), md: e.date.slice(5).replace("-", "/") }));
+    // 长间隔省略提示（与桌面端 chronicle 同一口径：>60 天且占跨度 15%+）——
+    // 纵向列表没有「叠卡」问题，但同样要让用户看出「这里跳过了很多天」。
+    if (ve.length > 1) {
+      const ts = (s) => new Date(s + "T00:00:00").getTime();
+      const spanTotal = Math.max(1, Math.round((ts(ve[ve.length - 1].date) - ts(ve[0].date)) / 86400000));
+      const gapThreshold = Math.max(60, Math.round(spanTotal * 0.15));
+      for (let i = 1; i < ve.length; i++) {
+        const d = Math.round((ts(ve[i].date) - ts(ve[i - 1].date)) / 86400000);
+        if (d > gapThreshold) ve[i].gapLabel = d;
+      }
+    }
 
     const year = +(anchorDate || store.todayStr()).slice(0, 4);
     const y0 = year + "-01-01", y1 = year + "-12-31";

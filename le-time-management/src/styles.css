@@ -286,6 +286,12 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .nav button.on { background: rgba(255, 255, 255, .12); color: #fff; font-weight: 600; }
 .nav button.on .ic { background: var(--sun); color: #17323A; }
 .nav .pv-count { margin-left: auto; font-size: 10px; background: rgba(255,255,255,.1); padding: 1px 7px; border-radius: 8px; }
+/* 插件快捷键徽标（深色侧栏基线；≥901px 浅色栏在下方覆盖）。平时 opacity:0，
+   悬停 / 选中 / 键盘聚焦才现形 —— 不给常驻导航添噪，又不丢可发现性。 */
+.nav .nav-kbd { margin-left: 4px; flex: none; font-size: 10px; font-weight: 600; color: #B9CCC8;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; padding: 1px 5px;
+  opacity: 0; transition: opacity .12s ease; }
+.nav button:hover .nav-kbd, .nav button.on .nav-kbd, .nav button:focus-visible .nav-kbd { opacity: 1; }
 
 /* ── 主区 ── */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -682,6 +688,12 @@ button, .nav { touch-action: manipulation; }
     padding: 2px calc(6px + var(--sar, env(safe-area-inset-right, 0px))) calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))) calc(6px + var(--sal, env(safe-area-inset-left, 0px)));
     border-top: 1px solid rgba(255, 255, 255, .07);
     box-shadow: 0 -8px 24px rgba(13, 31, 38, .18);
+    /* 固定底栏提升为独立合成层。真机（APK）实测：点开任意插件时底栏会「闪/跳一帧」——
+       插件视图挂载与数据到达时，observePluginMotion 对新节点跑 WAAPI 透明度动画 +
+       大段 DOM 替换，触发整帧重光栅化；底栏若与内容同层，就会被拖着重绘这一帧。
+       核心页（四象限/时间块/收件箱）是同步一次成型，不走 observePluginMotion，所以不弹。
+       translateZ(0) 让底栏的合成层常驻，内容层怎么翻腾都不带它（仅窄屏固定底栏需要）。 */
+    transform: translateZ(0);
   }
   .brand { display: none; }
   .nav { flex: 1; display: flex; flex-direction: row; gap: 0; overflow: visible; }
@@ -1008,6 +1020,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   }
   .nav button.on .ic { background: color-mix(in srgb, var(--deep) 12%, transparent); color: var(--deep); }
   .nav .pv-count { background: var(--paper); color: var(--ink-3); border: 1px solid var(--line); }
+  .nav .nav-kbd { color: var(--ink-3); background: var(--paper); border: 1px solid var(--line); }
   .rail-bottom > .on { background: var(--active-bg); }
 
   .main {
@@ -1220,7 +1233,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .conflict-preview{border:1px solid color-mix(in srgb,var(--sun) 50%,var(--line));background:color-mix(in srgb,var(--sun) 9%,var(--panel));border-radius:10px;padding:9px 10px;font-size:11px;color:var(--ink-2);line-height:1.55}.conflict-preview.ok{border-color:color-mix(in srgb,var(--mint) 40%,var(--line));background:color-mix(in srgb,var(--mint) 8%,var(--panel))}.conflict-alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
 
 /* ── v0.10 · 同步与快捷键 ── */
-.sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}
+.sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:11px;color:var(--ink-3);line-height:1.65;margin-top:8px}.plugin-shortcut-block{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}.shortcut-sub-title{display:block;font-size:13.5px;color:var(--ink);margin-bottom:2px}.shortcut-hint{font-size:11px;color:var(--ink-3);line-height:1.65;margin:2px 0 0}.shortcut-name{display:flex;align-items:center;gap:8px;min-width:0}.shortcut-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shortcut-kbd{flex:none;font-size:10.5px;font-weight:600;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:1px 6px;white-space:nowrap}.shortcut-none{flex:none;font-size:10.5px;color:var(--ink-3)}
 
 @media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
 
@@ -1349,6 +1362,17 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ce-date { position:absolute; left:50%; transform:translateX(-50%); background:var(--ec); color:var(--on-accent); font-size:10px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; }
 .chronicle-event.up .ce-date { top:207px; transform:translate(-50%, -50%); }
 .chronicle-event.down .ce-date { top:-35px; transform:translate(-50%, -50%); }
+/* 长空档省略号（v0.50.0）：两个事件相隔太久时把中轴「剪断」，位置让给密集段。
+   芯片挂在轴上（上 9px ~ 下 10px，恰好盖住 10px 高的轴线，看起来是真断口）；
+   「省略 N 天」小字落在 +12px ~ +25px —— 上方是事件日期徽章（-9~+8），
+   下方 +26px 起才是 down 卡片，竖向两不相碰；横向的避让由 JS 留的段尾尾巴保证。 */
+.ce-gap { position:absolute; top:calc(50% - 9px); transform:translateX(-50%); text-align:center; z-index:2; }
+.ce-gap-mark {
+  display:block; line-height:17px; padding:0 6px; font-size:14px; font-weight:700;
+  letter-spacing:1px; color:var(--ink-2);
+  background:var(--panel); border:1px solid var(--line-soft); border-radius:9px;
+}
+.ce-gap-days { display:block; margin-top:2px; font-size:9.5px; font-weight:600; color:var(--ink-2); white-space:nowrap; }
 
 /* 3. 左右交错卡片时间轴：对应参考图 3 */
 .card-timeline { width:min(840px, 94%); margin:34px auto 48px; position:relative; padding:4px 0; }
@@ -1515,6 +1539,8 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   }
   .cv-card b { font-size:12.5px; line-height:1.4; overflow-wrap:anywhere; }
   .cv-card span { font-size:11px; color:var(--ink-2); overflow-wrap:anywhere; }
+  /* 长间隔省略提示（v0.50.0）：与桌面省略号同语义 —— 两个事件之间跳过了很多天 */
+  .cv-gap { margin:2px 0 12px; font-size:10.5px; font-weight:700; letter-spacing:1px; text-align:center; color:var(--ink-2); }
 
   /* ── 卡片时间轴：收紧单列 ──
      .card-timeline 带 `margin:34px auto`，窄屏若只覆盖左右 margin，box 会按
@@ -2777,6 +2803,42 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   :root.theme-transitioning .card { transition-duration: .001ms; }
 }
 
+/* ── 主题 / 深浅模式切换 · View Transitions 圆形揭示（v0.50.0 批次）──
+   主路径：document.startViewTransition()（theme.js）——整页快照，新配色从最近按下位置
+   旋转扩散揭示，全页统一，无「半渐变半闪变」。旧快照在下、新快照在上做 clip-path 圆形扩张。
+   不支持 View Transitions 的旧 WebView 走上面的 .theme-transitioning 降级（全元素过渡）。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) {
+  z-index: 2;
+  animation: theme-reveal 340ms cubic-bezier(.22, .8, .22, 1) both;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0px at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)); }
+  to { clip-path: circle(var(--theme-reveal-r, 150vmax) at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)); }
+}
+/* 动效偏好「减少动效」（应用内设置 data-ui-motion=reduced，或系统 prefers-reduced-motion）
+   时不做揭示 —— theme.js 的 themeMotionAllowed() 已经直接跳过 startViewTransition，
+   这两条是双保险（比如切换动画进行中偏好才改成 reduced）。 */
+:root[data-ui-motion="reduced"]::view-transition-old(root),
+:root[data-ui-motion="reduced"]::view-transition-new(root),
+:root[data-ui-motion="reduced"]::view-transition-group(root),
+:root[data-ui-motion="reduced"]::view-transition-image-pair(root) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(root),
+  ::view-transition-image-pair(root) {
+    animation: none !important;
+  }
+}
+
 /* v0.12.1 · 右上角快捷入口、全屏设置弹窗与浅深色模式 */
 .quick-menu-trigger {
   gap: 8px;
@@ -2903,6 +2965,15 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**（`calc(--ui-vh * .11)`），
      不能用来**减边距** —— 减出来的东西离屏幕底还有一整个视口那么远。 */
   inset: calc(36px / var(--ui-scale, 1)) calc(20px / var(--ui-scale, 1));
+  /* v0.50.0：用户反馈「左右太宽」。全宽铺开是 v0.48.x 为让内容吃满横向空间改的，
+     但设置页多数分区内容偏窄（如「可选同步」右侧大片空白），反而显空。
+     限宽 + margin auto 水平居中：inset 上下仍定死（高度行为不变），
+     左右 inset 定死后 margin auto 居中的是受 max-width 约束后的盒子。
+     max-width 用裸值、**不 ÷ --ui-scale**：zoom 放大时字号一起放大，
+     若上限也 ÷scale，大字号会被挤进没放大的宽度里；裸值在 zoom 大时
+     被 inset 可用宽自然盖过（≈满宽），与 v0.48.x 行为无缝衔接。 */
+  max-width: 1120px;
+  margin: auto;
   z-index: 1901;
   display: flex;
   flex-direction: column;
@@ -2938,10 +3009,10 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   overflow: auto;
 }
 .settings-modal-body .set-wrap {
-  /* 上限从 1180 放宽到 1400：外层 modal 收到 20px 后可用宽 ~1400，
-     但 1180 的封顶把多出来的横向空间全挡在了外面（实测 layout 只从 1136 → 1140，只吃到 4px）。
-     放开到 1400，宽窗口下压缩出来的留白才真正落到侧栏与卡片上。 */
-  max-width: 1400px;
+  /* v0.50.0：外层 .settings-modal 已限宽 1120px 并居中，这里的上限从 1400
+     收到 1096（= 1120 - 自身左右 padding 40 - modal 边框 2），数字上封顶一致，
+     实际布局不变（外层可用宽本来就小于它）。 */
+  max-width: 1096px;
   /* 外层 modal 已经收到 20px，这里再从 30px 收到 20px，两级叠加后共 ~40px 侧边距
      （原先 36+30=66px，1280 窗口下内容区只剩 ~1148px，侧栏吃掉 248px 后正文偏窄）。 */
   padding-left: 20px;

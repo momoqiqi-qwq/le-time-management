@@ -3,6 +3,7 @@ import { el, toast } from '../ui.js';
 import { toggleSwitch } from '../switchControl.js';
 import { getLogs, undoLog, getRules, setRuleEnabled, runAutomation } from '../automation.js';
 import { createAiAutomationCard } from './aiAutomationPanel.js';
+import { pluginDisplayName, pluginDisplayIcon } from '../pluginAppearance.js';
 
 export function renderInbox(container){
   const st=S.getState(); st.inbox??=[];
@@ -13,11 +14,36 @@ export function renderInbox(container){
   const open=st.inbox.filter(x=>x.status!=='done');
   if(!open.length) inboxCard.append(el('p',{class:'desc'},'没有待处理事项。'));
   for(const item of open.slice(0,30)){
-    inboxCard.append(el('div',{class:'inbox-item'},el('div',{class:'inbox-item-main'},el('b',{},item.title),el('small',{},`${item.source||'自动化'}${item.when?` · ${item.when}`:''}`),item.note?el('p',{},item.note):null),el('div',{class:'inbox-actions'},
-      item.suggestion==='create-task'?el('button',{class:'btn pri sm',onclick:()=>{S.addTask({title:item.title,note:item.note||'',due:item.when||null,quad:1,tags:[item.source||'收件箱']});item.status='done';S.saveNow();renderInbox(container);toast('已创建任务');}},'建任务'):null,
-      item.suggestion==='open-course'?el('button',{class:'btn ghost sm',onclick:()=>window.dispatchEvent(new CustomEvent('tide:navigate',{detail:'plug:shiguang-schedule'}))},'打开课程表'):null,
-      el('button',{class:'btn ghost sm',onclick:()=>{item.status='done';S.saveNow();renderInbox(container);}},'完成')
-    )));
+    // 来源插件：带上插件图标，一眼看出这条是谁放进来的（通知 / 考试 / 收纳…）。
+    // 图标走 pluginDisplayIcon，和抽屉里的「来源插件」完全是同一套 —— 免得同一个插件两处长得不一样。
+    const srcLabel = item.source || (item.sourcePlugin ? pluginDisplayName(item.sourcePlugin) : '自动化');
+    const srcNode = item.sourcePlugin
+      ? el('span',{class:'inbox-src'},pluginDisplayIcon(item.sourcePlugin, srcLabel),el('span',{},srcLabel))
+      : el('span',{class:'inbox-src'},srcLabel);
+    // 附件（收纳进来的截图）：显示张数即可，点「建任务」会把它们一起带过去
+    const nAtt = Array.isArray(item.attachments) ? item.attachments.length : 0;
+    inboxCard.append(el('div',{class:'inbox-item'},
+      el('div',{class:'inbox-item-main'},
+        el('b',{},item.title),
+        el('small',{},srcNode,item.when?el('span',{},` · ${item.when}`):null,
+          nAtt?el('span',{class:'inbox-att'},` · 图 ${nAtt} 张`):null),
+        item.note?el('p',{},item.note):null),
+      el('div',{class:'inbox-actions'},
+        item.suggestion==='create-task'?el('button',{class:'btn pri sm',onclick:()=>{
+          // ⚠️ `item.when` 是「2026-01-08 23:59」这种**拼好的展示串**，直接塞进 due 会写出
+          // 非法日期（宿主按 YYYY-MM-DD 解析，带时间的会被判废 → 提醒静默失效）。
+          // 分开取真正的结构化字段，取不到就留空。
+          S.addTask({
+            title:item.title, note:item.note||'',
+            due:item.date||null, dueTime:item.time||'23:59',
+            quad:1, tags:[srcLabel],
+            attachments:nAtt?item.attachments.slice():undefined,
+          });
+          item.status='done';S.saveNow();renderInbox(container);toast('已创建任务');
+        }},'建任务'):null,
+        item.suggestion==='open-course'?el('button',{class:'btn ghost sm',onclick:()=>window.dispatchEvent(new CustomEvent('tide:navigate',{detail:'plug:shiguang-schedule'}))},'打开课程表'):null,
+        el('button',{class:'btn ghost sm',onclick:()=>{item.status='done';S.saveNow();renderInbox(container);}},'完成')
+      )));
   }
   const ruleCard=el('section',{class:'card set-card'},el('h3',{},'自动化规则'));
   for(const r of getRules()){

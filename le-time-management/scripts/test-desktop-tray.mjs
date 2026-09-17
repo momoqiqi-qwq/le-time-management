@@ -109,4 +109,51 @@ assert.ok(closeDeclAt < trayDeclAt,
 assert.ok(trayDeclAt < appearance.indexOf("closeRow.style.display = settings.trayEnabled"),
   "初始显隐逻辑要放在 trayRow 之后，读的才是已经归一过的 settings");
 
+/* ── 八、Rust：托盘「退出」必须等前端存盘回执，不能盲等事后掐进程 ── */
+// 背景：`app.exit(0)` 直接掐掉进程。如果前端 `saveNow()` 的 IPC 还没跑完，
+// 用户最后的改动就静默丢了。固定 sleep 是在赌「IPC 一定比它快」—— 赌输就丢数据。
+const quitBranch = libRs.match(/"quit" => \{([\s\S]*?)\n            \}/)?.[1] ?? "";
+assert.ok(quitBranch, "托盘菜单必须有 quit 分支");
+assert.match(quitBranch, /app\.emit\("app-quit", \(\)\)/,
+  "退出前必须先广播 app-quit，否则前端根本不知道要赶紧存盘");
+assert.match(quitBranch, /wait_quit_ack\(&gate, 2000\)/,
+  "🔴 必须等前端回执（带超时兜底），不能盲等固定时长");
+assert.ok(quitBranch.indexOf('app.emit("app-quit"') < quitBranch.indexOf("wait_quit_ack("),
+  "广播必须在等待之前：反过来的话前端永远收不到通知，只能每次等满超时");
+assert.ok(quitBranch.indexOf("wait_quit_ack(") < quitBranch.indexOf("app.exit(0)"),
+  "等待必须在 app.exit(0) 之前，否则进程已经没了，回执照样收不到");
+// 反面：固定 sleep 必须消失。留着它等于「等 800ms 再退出」和「等回执」两条路并存，
+// 实际生效的是先到的那条 —— 也就是 sleep 仍然会在慢机器上抢跑。
+assert.doesNotMatch(quitBranch, /thread::sleep/,
+  "🔴 不能再有固定 sleep：它会在慢机器上抢跑于存盘完成，把回执机制整个架空");
+assert.doesNotMatch(quitBranch, /from_millis\(800\)/, "800ms 的拍脑袋超时必须换掉");
+
+/* ── 九、Rust：回执机制本身要「成功失败都能放行、且超时必退」 ── */
+assert.match(libRs, /struct QuitGate \{/, "必须有 QuitGate 承载回执状态");
+assert.match(libRs, /acked: Mutex<bool>/, "回执状态要能被退出线程与命令线程共享");
+// wait_timeout_while 而非 wait：没有超时的话，前端一旦崩了（或压根没加载完）
+// 退出线程会永久挂住 —— 用户点了「退出」却退不掉，只能去任务管理器。
+assert.match(libRs, /wait_timeout_while\(acked, std::time::Duration::from_millis\(timeout_ms\), \|a\| !\*a\)/,
+  "🔴 必须用 wait_timeout_while + 谓词：无超时会让「点了退出退不掉」变成真 bug");
+assert.match(libRs, /if \*acked \{\s*return true;\s*\}/,
+  "进 wait 前要先看一次已回执的情况，否则会白等满超时");
+// 命令必须注册进 invoke_handler，否则前端调 quit_ack 会「命令不存在」，
+// 而前端那边是 .catch(() => {}) —— 失败被吞掉，症状是「偶尔退出慢 2 秒」，极难查。
+assert.match(libRs, /generate_handler!\[[\s\S]*?\bquit_ack\b/,
+  "🔴 quit_ack 必须注册进 generate_handler：漏了的话前端调用报「命令不存在」，且被 catch 静默吞掉");
+
+/* ── 十、前端：存盘回执必须成功、失败都发 ── */
+const mainJs = read("../src/main.js");
+const apiJs = read("../src/api.js");
+assert.match(mainJs, /listen\("app-quit"/, "前端必须监听 app-quit");
+assert.match(mainJs, /S\.saveNow\(\)/, "收到 app-quit 后必须立刻存盘（saveNow 会跳过防抖）");
+// `.then(ack, ack)` —— 两个槽位都挂 ack。只挂成功槽的话，写盘报错时 Rust 白等满 2s。
+assert.match(mainJs, /\.then\(ack, ack\)/,
+  "🔴 回执必须成功、失败两条路都发：只发成功的话写盘报错时 Rust 会白等满超时");
+assert.match(mainJs, /api\.quitAck\(\)/, "回执要真的调用 quitAck");
+assert.match(apiJs, /async quitAck\(\) \{\s*if \(isTauri\) return invoke\("quit_ack"\);/,
+  "api.quitAck 必须按 isTauri 降级：浏览器里要退化成空操作，不能抛错");
+// 反面：回执不能挂在「存盘成功」的独木桥上
+assert.doesNotMatch(mainJs, /\.then\(ack\)\s*;/, "别写成只挂成功槽的 .then(ack)");
+
 console.log("PASS: desktop tray toggle + close-button behavior (settings wired end to end, no \"app hidden forever\" combination)");

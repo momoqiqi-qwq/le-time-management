@@ -68,8 +68,14 @@ async function boot() {
     if (st.lanAuto && st.lanPort && st.lanToken) {
       api.lanStart(Number(st.lanPort), st.lanToken).catch((e) => console.error("联动服务启动失败:", e));
     }
-    // 托盘「退出」：Rust 侧广播 app-quit 后延迟 800ms 再退出，这里赶紧把防抖中的数据落盘
-    listen("app-quit", () => { import("./store.js").then((S) => S.saveNow()).catch(() => {}); });
+    // 托盘「退出」：Rust 侧广播 app-quit 后**等这里的存盘回执**再退出（最多 2s 兜底）。
+    // 回执必须成功、失败都发 —— 否则写盘报错时 Rust 会白等满 2s 才退出。
+    listen("app-quit", () => {
+      const ack = () => api.quitAck().catch(() => {});
+      import("./store.js")
+        .then((S) => S.saveNow())
+        .then(ack, ack);
+    });
   }
   // 插件加载放在界面之后，不阻塞首屏
   initPluginHost().catch((e) => console.error("插件宿主初始化失败:", e));

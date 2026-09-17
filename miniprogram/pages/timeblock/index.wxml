@@ -237,14 +237,18 @@
     <!-- 原为 3900rpx 画布 + 绝对定位左右交错，窄屏文字叠成一团 → 纵向年表 -->
     <view class="chron-v">
       <view wx:if="{{!visualEvents.length}}" class="fold-empty">添加带日期的任务或时间块后，这里会自动生成</view>
-      <view wx:for="{{visualEvents}}" wx:key="index" class="chron-v-item {{item.side}}" style="--ec:{{item.color}}">
-        <view class="chron-v-card">
-          <text class="cv-title">{{item.title}}</text>
-          <text class="cv-sub">{{item.date}} · {{item.sub}}</text>
+      <!-- 长间隔省略提示：与桌面端 chronicle 同语义，两个事件之间跳过了很多天 -->
+      <block wx:for="{{visualEvents}}" wx:key="index">
+        <text wx:if="{{item.gapLabel}}" class="chron-v-gap">⋯ 间隔 {{item.gapLabel}} 天 ⋯</text>
+        <view class="chron-v-item {{item.side}}" style="--ec:{{item.color}}">
+          <view class="chron-v-card">
+            <text class="cv-title">{{item.title}}</text>
+            <text class="cv-sub">{{item.date}} · {{item.sub}}</text>
+          </view>
+          <view class="chron-v-dot"></view>
+          <text class="chron-v-date" style="background:{{item.color}}">{{item.md}}</text>
         </view>
-        <view class="chron-v-dot"></view>
-        <text class="chron-v-date" style="background:{{item.color}}">{{item.md}}</text>
-      </view>
+      </block>
     </view>
   </view>
 

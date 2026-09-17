@@ -43,6 +43,7 @@ const SOURCES = [
   "SchoolImportActivity.kt",
   "NativeSchedulePlugin.kt",
   "ApkInstallerPlugin.kt",
+  "SystemBarPlugin.kt",
 ];
 const MANIFEST = "app/src/main/AndroidManifest.xml";
 const FILE_PATHS = "app/src/main/res/xml/file_paths.xml";

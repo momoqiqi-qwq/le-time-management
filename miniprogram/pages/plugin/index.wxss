@@ -206,7 +206,7 @@
 .cx-cat { min-width: 160rpx; line-height: 72rpx; min-height: 72rpx; }
 .cx-kpis { display: flex; gap: 12rpx; flex-wrap: wrap; margin: 14rpx 0; }
 .cx-kpi { background: var(--paper); border: 2rpx solid var(--line); border-radius: 10rpx; padding: 8rpx 14rpx; font-size: 20rpx; color: var(--ink-2); }
-.cx-card { background: var(--paper); border: 2rpx solid var(--line); border-left: 8rpx solid var(--line); border-radius: 14rpx; padding: 18rpx; margin-bottom: 14rpx; }
+.cx-card { background: var(--cx-read-bg, var(--paper)); border: 2rpx solid var(--line); border-left: 8rpx solid var(--line); border-radius: 14rpx; padding: 18rpx; margin-bottom: 14rpx; }
 /* 分类强调色。class 一律用 ASCII（exam/work/checkin/notice）——
    WXSS 选择器不支持非 ASCII 标识符，写 `.cat-考试` 会让编译器把多字节字符切碎，
    上传时报 `unexpected \`�\` at pos ...` 直接拒绝整个包（v0.40.0 实测）。
@@ -215,7 +215,22 @@
 .cx-card.cat-work { border-left-color: var(--sun); }
 .cx-card.cat-checkin { border-left-color: var(--mint); }
 .cx-card.cat-notice { border-left-color: var(--deep); }
-.cx-card.unread { background: rgba(46, 196, 182, .07); }
+/* 未读/已读背景差：未读 = 海青染色 + 三边海青描边（左边框保持类型色，不能写 border-color 简写）；
+   已读 = 往 --ink 灰化。变量按深浅模式各给一组（WXSS 无 color-mix，色值由桌面端同幅度换算）。
+   page 级选择器在页面 wxss 里合法且只作用于本页，不污染其他页面。 */
+page {
+  --cx-read-bg: #ECEBE6;      /* paper 混 ink 5%（暖灰化） */
+  --cx-unread-bg: #D5E5E8;    /* paper 混 sea 15% */
+  --cx-unread-edge: #94BEC8;  /* line 混 sea 38% */
+}
+@media (prefers-color-scheme: dark) {
+  page {
+    --cx-read-bg: #252E34;
+    --cx-unread-bg: #203945;
+    --cx-unread-edge: #386C82;
+  }
+}
+.cx-card.unread { background: var(--cx-unread-bg); border-top-color: var(--cx-unread-edge); border-right-color: var(--cx-unread-edge); border-bottom-color: var(--cx-unread-edge); }
 .cx-card.open .cx-body { display: block; -webkit-line-clamp: unset; max-height: 640rpx; overflow: auto; }
 .cx-title { font-size: 26rpx; font-weight: 650; line-height: 1.5; word-break: break-all; }
 .cx-meta { display: flex; gap: 12rpx; flex-wrap: wrap; align-items: center; margin: 8rpx 0; font-size: 20rpx; color: var(--ink-2); }
@@ -243,3 +258,31 @@
 .cx-mark { float: right; font-size: 18rpx; font-weight: 500; border-radius: 999rpx; padding: 2rpx 12rpx; }
 .cx-mark.st-red { background: #dc2626; color: #fff; } .cx-mark.st-blue { background: #2563eb; color: #fff; }
 .cx-mark.st-green { background: #16a34a; color: #fff; } .cx-mark.st-gray { background: #9ca3af; color: #fff; }
+
+/* ════ 拖入消息收纳（inbox-drop）════
+   小程序端只用这一组 id-* 类；桌面端的 .id-* 是 DOM 插件样式，两者不共享。 */
+.id-ta { width: 100%; box-sizing: border-box; min-height: 180rpx; padding: 20rpx; margin-top: 12rpx;
+  border: 2rpx solid var(--line); border-radius: 14rpx; background: var(--paper); color: var(--ink);
+  font-size: 25rpx; line-height: 1.6; }
+.id-acts { display: flex; gap: 16rpx; margin-top: 16rpx; }
+.id-acts .btn { flex: 1; margin: 0; }
+.id-count { float: right; font-size: 21rpx; font-weight: 500; color: var(--ink-2); }
+.id-empty { padding: 40rpx 0 24rpx; text-align: center; font-size: 26rpx; font-weight: 650; color: var(--ink-2); }
+.id-row { border: 2rpx solid var(--line); border-radius: 14rpx; padding: 18rpx 20rpx; margin-top: 16rpx; background: var(--paper); }
+.id-row.done { opacity: .62; }
+.id-top { display: flex; align-items: baseline; gap: 10rpx; }
+.id-seq { flex: none; font-size: 20rpx; font-weight: 700; color: var(--ink-3); }
+.id-title { flex: 1; font-size: 26rpx; font-weight: 650; line-height: 1.5; word-break: break-all; }
+.id-pin { flex: none; font-size: 18rpx; border-radius: 999rpx; padding: 2rpx 10rpx;
+  background: rgba(214, 158, 46, .18); color: var(--sun); }
+.id-tags { display: flex; flex-wrap: wrap; gap: 10rpx; margin: 10rpx 0 8rpx; }
+.id-tag { font-size: 19rpx; border-radius: 999rpx; padding: 3rpx 12rpx;
+  background: rgba(15, 76, 92, .12); color: var(--deep); }
+.id-tag.ok { background: rgba(46, 196, 182, .18); color: var(--mint); }
+.id-raw { font-size: 22rpx; color: var(--ink-2); line-height: 1.7; white-space: pre-line;
+  max-height: 220rpx; overflow: hidden; word-break: break-all; padding-left: 20rpx;
+  border-left: 4rpx solid var(--line-soft); }
+.id-rowacts { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 16rpx; }
+.id-rowacts .btn { margin: 0; }
+.id-foot { display: flex; align-items: center; gap: 14rpx; margin-top: 20rpx; }
+.id-foot .btn { flex: none; margin: 0; }

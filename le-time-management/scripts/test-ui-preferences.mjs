@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { DEFAULT_UI_PREFERENCES, normalizeUiPreferences } from "../src/uiPreferences.js";
 
 assert.deepEqual(normalizeUiPreferences({}), DEFAULT_UI_PREFERENCES);
-assert.equal(normalizeUiPreferences({ density: "weird" }).density, "comfortable");
+assert.equal(normalizeUiPreferences({ density: "weird" }).density, "compact");
 assert.equal(normalizeUiPreferences({ motion: "none" }).motion, "system");
 assert.equal(normalizeUiPreferences({ startupView: "settings" }).startupView, "last");
 assert.equal(normalizeUiPreferences({ textScale: 117 }).textScale, 115);

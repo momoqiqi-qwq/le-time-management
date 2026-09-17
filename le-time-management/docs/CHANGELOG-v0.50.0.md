@@ -460,3 +460,235 @@ const styleNum=(v,def,min,max)=>{
 
 ---
 
+## 插件快捷键：Alt + 字母直达插件视图
+
+### 需求
+
+每个插件都可以加快捷键，默认 `Alt + 插件 ID 首字母` 打开对应插件。
+
+### 分配规则（一处规则，三处界面同源）
+
+核心是 `src/pluginShortcuts.js` 的 `computePluginShortcutMap(entries, customs)`，两遍分配：
+
+1. **显式指定优先**：`settings.pluginShortcuts` 里手动设过的字母先登记（不管插件排在第几）；
+2. **其余按插件 ID 首字母自动补**：字母被占就让位（留空 = 无快捷键），同首字母多个插件时
+   **按注册顺序先到先得**。
+
+「注册顺序」= manifest 声明顺序（`pluginViews`），不是设置页里的显示顺序 —— 这是实景探针抓出来的
+设计修正，见下文。
+
+### 三处入口
+
+| 入口 | 位置 | 能力 |
+|---|---|---|
+| 侧栏徽标 | 插件入口右侧 `Alt+X` kbd 徽标 | 平时隐藏，悬停 / 选中 / 键盘聚焦时现形 |
+| 右键菜单 | 侧栏插件入口右键 →「快捷键 · Alt+X / 未设置」 | 输入字母改显式值，留空恢复自动；冲突时 toast 提示占用者 |
+| 设置页 | 设置 → 全局快捷键 →「插件快捷键」 | 每插件一行：名称 + 生效徽标 + maxlength=1 输入框 |
+
+命令面板的插件条目 sub 也同步亮出 `打开插件 · Alt+X`。
+
+### 按键命中的安全守卫（`resolveShortcutActivation`）
+
+- 只认 `Alt`（`ctrlKey` / `metaKey` 组合一律不触发）；
+- 焦点在 INPUT / TEXTAREA / SELECT / contentEditable 时不触发（打字不受干扰）；
+- 命令面板 / 设置弹窗 / 快速捕获等浮层打开时整体跳过；
+- macOS Option 会把 `e.key` 变成变音字符（如 Alt+P → "π"），用 `e.code`（`KeyP`）兜底还原物理键。
+
+### 🔴 探针抓出的设计缺陷：先到先得不能按显示顺序
+
+首轮探针实测徽标分配错误：`plugin-guide`（插件使用说明）抢走了 Alt+P，番茄专注空手。
+根因：`shortcutEntries()` 最初用了 `orderedPluginViews()`（按标题 zh-CN 拼音排序的**显示顺序**）
+——「插(chā)」排在「番(fān)」前面。而且用户拖动排序会**洗牌字母**，今天 Alt+P 是番茄，
+拖一下就变别的插件了。改用 `pluginViews` 注册顺序（= manifest order，稳定且符合策划重要度）后
+分配正确。
+
+### 本次默认分配（14 插件实测）
+
+| 插件 | 字母 | | 插件 | 字母 |
+|---|---|---|---|---|
+| 课程表 shiguang-schedule | Alt+S | | 学习通 chaoxing-notify | Alt+C |
+| 网页收集 web-collector | Alt+W | | 警大门户通知 cppu-notify | 无（C 被占） |
+| 考试日历 exam-calendar | Alt+E | | 微信提醒推送 wechat-push | 无 |
+| 番茄专注 pomodoro | Alt+P | | 中国节假日 cn-holiday | 无 |
+| 竞赛消息雷达 gx-news | Alt+G | | 周度报告 weekly-report | 无 |
+| 轮换值日 dorm-duty | Alt+D | | 学校通知网站 school-notice | 无 |
+| 拖入消息收纳 inbox-drop | Alt+I | | 插件使用说明 plugin-guide | 无 |
+
+提示：小程序端没有物理键盘，此功能只在桌面 + Android（WebView 同源，外接键盘可用）生效。
+
+### 验证
+
+- 新增 `scripts/test-plugin-shortcuts.mjs`：归一化 7 例、分配规则真跑
+  （显式优先与顺序无关 / 自动撞字母 / 重复显式退回自动 / viewId 透传 / 非字母 ID）、
+  `resolveShortcutActivation` 12 例、store 访问器真跑（localStorage 垫片 + `initStore`）、
+  shell / palette / settings / styles 四处静态接线断言。
+- **变异测试 4/4 被真断言拦下**（不是崩溃式红，是语义断言红）：
+  显式顺序变异 → `显式指定必须生效 'P' !== 'W'`；e.code 兜底删除、输入守卫删除、
+  徽标渲染改死代码，各自被对应断言红（断言锚整行正则，死代码字样过不了关）。
+- 实景探针 `.workbuddy-ai/tmp/probe-plugin-shortcut.cjs`（vite 5173 + 无头 Chrome CDP 9222）：
+  徽标分配与上表一致、悬停现形（opacity 0→1）、**CDP `Input.dispatchKeyEvent` 模拟物理键
+  Alt+P 真切到番茄专注**、未分配的 Alt+Z 不误触、设置页 14 行回显、命令面板行含 Alt+P；
+  产出 4 张截图目检通过（`shot-shortcut-nav/pomodoro-preview/settings/palette.png`）。
+- `npm test` 39 个脚本全过；四道 `--check` 全过。
+
+### 🔴 探针又抓出一个真 bug：settings.js 漏导入 `getRegistry`
+
+`paintPluginShortcuts()` 里用了 `getRegistry()` 查插件显示名，但 import 行漏了它 ⇒
+`ReferenceError: getRegistry is not defined` 把整个设置渲染打断，`.set-wrap` **整页空白**
+（静态测试没拦住：断言只查了「源码里有这个调用」没查「真的导入了」）。
+已修导入行，并在 `test-plugin-shortcuts.mjs` 补静态守卫锁死 import。
+教训：**「源码含某字样」的静态守卫拦不住「漏导入」**，这类接线必须靠真浏览器探针兜底。
+
+### 探针踩坑（写法问题，不是功能问题）
+
+Chrome 会把内联 `style.cssText` 规范化成 `display: flex;`（**带空格**），
+`/display:flex/.test(cssText)` 必然失配。判布局状态用 `getComputedStyle(el)`，别正则裸匹配 cssText。
+
+---
+
+## 番茄专注：提醒设置旁的常驻「试听」按钮
+
+### 需求
+
+在番茄专注界面加提示音试听按钮。原来的「试听」藏在提醒面板内部（要展开面板才能点）。
+
+### 改动（`public/plugins/pomodoro/main.js`）
+
+| 项 | 前 | 后 |
+|---|---|---|
+| 试听按钮位置 | 提醒面板**内部**（展开才可见） | 「提醒设置」标题行右侧，**常驻可见**（面板收起也能试听） |
+| 布局 | 面板内 `row(...)` 一行 | 标题行 `display:flex`：开关（`flex:1`）+ 试听按钮并排 |
+| title | 无 | 「试听当前提示音（无视提醒开关；音量过低时按可听下限播放）」 |
+| 插件版本 | 0.4.1 | **0.5.0**（manifest description 同步更新） |
+
+随后 `node tools/sync-plugins.js` 重新生成 `src/pluginCatalog.js` 与 `miniprogram/core/pluginCatalog.js`
+（铁律二：改了事实源必须重跑生成器）。
+
+### 验证
+
+- `scripts/test-pomodoro.mjs`：版本断言改 0.5.0，新增守卫
+  `head.append(toggle, previewBtn)`（按钮必须真实渲染进标题行）与反向断言
+  （面板内部旧的 `row("提示音", chip("试听"...` 必须消失）。
+- 实景探针（与插件快捷键同一跑）：试听按钮**恰好一个**、与提醒设置开关同一行（computed display flex）、
+  **面板收起状态下按钮可见**（rect height > 0）、点击真的走播放链路
+  （AudioContext 换假类计数 = 1）；截图目检通过。
+
+### 影响端
+
+桌面 + Android（共用 WebView）；小程序端不受影响，但插件版本随 pluginCatalog 同步。
+
+---
+
+## 横向时间轴：长间隔用省略号截断，修复时间堆积
+
+### 需求
+
+横向时间轴（年表）按真实天数硬铺中轴：两个事件相隔太久时（寒暑假、学期之间），
+长空档把密集事件挤到轴的一小段里叠成一团。要求：**相隔太久就用省略号**。
+
+### 改动（`src/views/timeViews.js` 的 `chronicleView()` 重写 + `src/styles.css`）
+
+| 项 | 内容 |
+|---|---|
+| 「相隔太久」口径 | 同时满足 **>60 天** 与 **>跨度 15%**：只看占比会把短跨度的普通间隔切碎；只看天数在长跨度里切不动（半年空档在十年轴上只占 5%） |
+| 分段 | 按长空档把事件切成密集段；空档处中轴渲染「⋯⋯ + 省略 N 天」芯片（`.ce-gap`），`title` 悬浮给出起止日期 |
+| 位置分配 | 每个空档固定占 6% 轴宽，剩余按各段天数比例分配；每段保底 `(n-1)*MIN_STEP`，保底放不下整体压步长 |
+| 段内防叠 | 时间比例落位后做「前推 + 后收」两遍扫描（MIN_STEP = 5.1%）：只前推会把段尾挤出段外；宽度保底在手，后收最坏是把整段压成等距，不会推出段外 |
+| 芯片避让 | 「后面跟着省略号」的段留 4% 段尾尾巴，芯片居中在「尾巴 + 空档」安静带里 —— 段尾事件的日期徽章（半宽约 38px）压不到芯片（实测间隙 14px+） |
+| 两端裁切 | 事件落位范围从 3%~97% 收到 5.5%~94.5%：首末事件的 150px 卡片原来各被画布裁掉 30px（旧版就有的毛病，顺手修掉） |
+| 窄屏 | 纵向年表在长间隔处插入「⋯ 间隔 N 天 ⋯」分隔（`.cv-gap`），与桌面省略号同语义 |
+| 小程序 | `miniprogram/pages/timeblock` 的年表（本就是纵向、无叠卡问题）同步加 `gapLabel` 分隔行，三端语义一致 |
+
+### 验证
+
+- `scripts/test-time-views.mjs` 补 11 条静态守卫（口径 / 分段 / 步长压缩 / 前推后收 /
+  芯片与悬浮说明 / 安静带居中 / 窄屏提示 / 样式存在）。
+- 真浏览器探针（无头 Chrome + iframe 真视口；种子数据**相对今天**生成 ——
+  automation 会把过期任务顺延到今天，日期写死必踩坑）：
+  - 桌面 1280×900：13 事件 / 3 段 / 2 芯片（「省略 105 天」「省略 165 天」，title 含起止日期）；
+    相邻事件最小间距 **77.6px**（≥5.1%×1500 = 76.5），同侧卡片最小间距 **194px**（≥卡宽 150）；
+    **芯片与日期徽章 / 圆点 / 卡片零相交**；事件卡片全部完整落进画布（左缘 0.5%、右缘 89.5%+75px ≤ 1500）。
+  - 窄屏 390×844：纵向年表 + 2 条「⋯ 间隔 N 天 ⋯」分隔、13 项、横向溢出 **0px**。
+  - 截图目检：桌面全景 / 芯片特写 / 深色 / 窄屏（`output/preview/chron-gap-*.png`）。
+- `scripts/run-tests.mjs` 39 个测试脚本逐个全过；四道 `--check` 全过。
+
+### 🔴 探针踩过的坑（写给下次）
+
+1. **`import.meta.url` 的中文路径是百分号编码的** —— 临时服务器脚本里把
+   `new URL(".", import.meta.url).pathname` 直接当目录用，ROOT 变成字面
+   `%E6%97%B6%E9%97%B4...`：全部 404（内层应用加载不了 → 探针 waitFor 超时），
+   还会在仓库外悄悄 mkdir 一棵乱码目录树。必须用 `fileURLToPath(import.meta.url)`。
+2. 种子要走 **`localStorage["tidebalance-data"]`**（`api.js` 浏览器降级键，不是 letime-data），
+   且要同时给 `settings.lastView:"timeblock"` + `settings.timeViewMode:"chronicle"` ——
+   只给 timeViewMode 的话应用落在四象限，探针等到超时。
+3. 无头 Chrome 的系统色偏好是**深色**：种子不写 `themeMode` 时应用跟随系统进深色
+   （探针顺带把深色下的芯片可读性也验了）。
+
+### 学习通收件箱：未读 / 已读卡片背景差距拉大
+
+用户反馈浅色下未读（海青 7% 染底）与已读（纯面板色）几乎看不出区别。
+双向拉开，桌面 / Android（共用插件源码）与小程序同步改：
+
+| 端 | 未读 | 已读 |
+|---|---|---|
+| 桌面 / Android（`public/plugins/chaoxing-notify/main.js`） | 海青 15% 染底 + 右/上/下三边海青描边（38% 混线色） | 基础卡往 `--ink` 方向灰化 5% |
+| 小程序（`miniprogram/pages/plugin/index.wxss`） | `--cx-unread-bg` / `--cx-unread-edge`（深浅两套硬色值，WXSS 无 color-mix） | `--cx-read-bg` |
+
+- **不能写 `border-color` 简写**：会覆盖 `border-left-color`，吞掉类型色（作业黄/考试红）左边框；只写 top/right/bottom 三边。
+- 已读灰化幅度刻意小（5%）：保证 `--ink` 文字对比度几乎不变。
+- 验证：CDP 探针断言浅色底差 26/255、边框差 120/255、未读卡左边框仍为类型色；深 / 浅双主题截图目检（`output/cx-read-bg/probe-{light,dark}.png`）；`scripts/test-chaoxing.mjs` PASS。发版构建时 vite 自动把 `public/` 拷入 dist，无需手动同步。
+- ⚠️ 写这段 CHANGELOG 时踩了「含反引号文本走 bash 内联 heredoc → 命令替换吞代码」的坑，首版入库内容残缺，后用 Edit 工具重写。**教训：任何含 `` ` `` 的文本一律用文件工具写入，不走 shell。**
+
+### 收纳区（inbox-drop）：概览压成紧凑条 + 原文展开/收起动画
+
+用户反馈两点：收纳概览卡片内容少却占一大块；「原文」展开/收起是瞬间跳变。
+
+| 改动 | 实现 |
+|---|---|
+| 收纳概览紧凑条 | 大标题与两行说明移除，kicker + 分布 chips + 清理按钮压成一行（`.id-stats`），高度约 230px → 50px；说明文字收进 `title` 悬停提示；窄屏同步收窄 padding |
+| 原文展开/收起动画 | 原生 `<details>`（无动画）改为 button + `grid-template-rows 0fr→1fr` 过渡（240ms 缓动），`.id-fold-clip` 需 `overflow:hidden; min-height:0` 才能压到 0；`prefers-reduced-motion: reduce` 退回瞬切 |
+| 重绘保展开态 | 宿主会因 store 订阅在背后重绘插件视图（`switchTo(activeView, history:false)`），用户展开着的原文会被无关重绘悄悄收起 —— 新增 `foldOpen` Set 记录展开行 id，`paint()` 重绘后原样恢复；删除行时清记录 |
+
+- **不能写 `border-color` 简写**的同类坑在这里不存在，但 `<details>`→button 后要自己维护 `aria-expanded`（键盘可达性靠 button 原生 Enter/Space）。
+- 验证：`scripts/test-inbox-drop.mjs` PASS；CDP 实测展开高度序列 `0→82→132→152→161→165→167→167.7`（缓入 8 中间帧）、收起 `167.7→85→55→24→10.6→4.3→1.4→0`（缓出 9 中间帧），无跳变；三张截图目检（`output/inboxdrop-compact/`：`stats-bar.png` / `row-open.png` / `row-closed.png`）。
+- 验证坑：给 dev 环境种 `localStorage` 数据会被运行实例的持久化时序覆盖（`drops` 键被清、只剩 `stats`/`gen`），改用运行时注入行 + 手动绑事件验证动画；采样窗口必须压在过渡时长内（≤300ms），否则宿主周期重绘会把注入节点整个换掉。
+
+---
+
+## 设置弹窗限宽居中（用户反馈「左右太宽」）
+
+### 需求
+
+用户看着宽屏下的设置弹窗反馈：「设置界面左右太宽，弄窄一些」。此前 v0.48.0 批次把留白压缩后，
+弹窗在 1440/1600 宽窗里内容铺到近全宽，行太长读起来吃力。
+
+### 改动（`src/styles.css`，2 处）
+
+| 项 | 前 | 后 |
+|---|---|---|
+| `.settings-modal` | 无 max-width（内容宽随 `inset: 36px 20px` 拉满可用宽） | **`max-width: 1120px` + `margin: auto`**（超过 1120 后两侧留白自动均分，居中） |
+| `.settings-modal-body .set-wrap` | `max-width: 1400px`（实际永远够不着，摆设） | **`max-width: 1096px`**（与弹窗 1120 − 左右 padding 2×12 对齐，内层跟随外层一起收） |
+
+**zoom 语义（重要，别改错）**：`max-width` 是**内容上限**，必须用**裸值**，不许写
+`calc(1120px / var(--ui-scale))`。理由：zoom 放大时字号/内容一起放大，÷scale 会把放大后的内容
+挤进没放大的宽度里（内容上限被缩水）；而裸值在 zoom 大时会被 `inset` 提供的可用宽自然盖过
+（可用宽 = 视口 ÷ scale，zoom 越大可用宽越小），行为安全。这与 `inset` 的「物理边距 N 要写
+N ÷ 系数」是**同一契约的两面**：边距类求恒定物理值 → ÷scale；上限类跟内容走 → 裸值。
+
+### 验证
+
+- 干净 1280×800 实测（重启 chrome 摆脱 emulation 残留 + `--force-device-scale-factor=1`）：
+  弹窗 `w=1120`，`leftGap=rightGap=72`，严格居中。
+- 1600 视口实测：弹窗仍 `w=1120`，两侧各 **240px** 居中留白 —— 「弄窄」在宽窗里成立。
+- 截图目检：`output/settings-narrow/modal-1280.png` / `modal-1600.png`。
+- `scripts/test-ui-scale.mjs` 新增两条防回归守卫：
+  ① `.settings-modal` 必须有 `max-width: 1120px` + `margin: auto`（不许改回全宽铺开）；
+  ② **反向守卫**：`.settings-modal` 的 max-width 不许出现 `calc(… --ui-scale`（防有人按
+  「fixed 浮层长度 ÷ scale」的口诀误改，把内容上限缩水）。
+- 变异验证有牙：把 1120px 临时改成 1400px → 测试红（第一条守卫命中）；还原 → PASS 绿。
+- `test-ui-scale.mjs` PASS；改动并入 v0.50.0（未提交批次并进本版）。
+
+### 影响端
+
+桌面 + Android（共用 WebView）。zoom 缩放用户不受影响：max-width 裸值在大 zoom 下被
+可用宽覆盖（≈满宽），与 v0.48.x 行为自然衔接。窄屏 ≤760px 仍是全屏浮层，不经过此上限。

@@ -319,6 +319,13 @@ assert.match(styles, /#toasts\s*\{[^}]*bottom:\s*calc\(22px\s*\/\s*var\(--ui-sca
   "#toasts 的 bottom 要写「边距 ÷ --ui-scale」");
 assert.match(styles, /\.settings-modal\s*\{[^}]*inset:\s*calc\(36px\s*\/\s*var\(--ui-scale/,
   ".settings-modal 的 inset 要写「边距 ÷ --ui-scale」");
+// v0.50.0 用户反馈「设置弹窗左右太宽」：限宽 1120px + margin auto 居中。
+// max-width 必须是裸值、不许 ÷ --ui-scale —— zoom 放大时字号一起放大，
+// ÷scale 会把大字号挤进没放大的宽度里（与 inset 的「物理边距」语义相反，别搞混）。
+assert.match(styles, /\.settings-modal\s*\{[^}]*max-width:\s*1120px[^}]*margin:\s*auto/,
+  ".settings-modal 要限宽 1120px 并 margin auto 居中（不许改回全宽铺开）");
+assert.doesNotMatch(styles, /\.settings-modal\s*\{[^}]*max-width:\s*calc\([^)]*--ui-scale/,
+  ".settings-modal 的 max-width 不许 ÷ --ui-scale（会挤压 zoom 放大后的内容）");
 // 反向守卫：定位锚点里出现「--ui-v* − 数值」一律算回归。
 // （`calc(var(--ui-vh) * .11)` 这类「乘比例」是合法用法，不要误伤。）
 const badAnchors = [...styles.matchAll(/(?:^|[\s;{])(bottom|top|left|right|inset)\s*:[^;]*?calc\(var\(--ui-v[wh][^;]*?-\s*[\d.]+px/g)]

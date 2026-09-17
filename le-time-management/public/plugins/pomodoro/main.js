@@ -180,7 +180,9 @@
 
     const toggle = document.createElement("button");
     toggle.type = "button";
-    toggle.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;background:transparent;border:0;padding:2px 0;cursor:pointer;color:var(--ink,#22303A);font:inherit;font-size:13px;font-weight:650";
+    // 面板头一行 = 「提醒设置」开关(flex:1) + 常驻「试听」按钮：收起状态也能直接试听，
+    // 不必先展开面板（试听按钮在 head 里、toggle 外面，点它不会触发展开/收起）。
+    toggle.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0;background:transparent;border:0;padding:2px 0;cursor:pointer;color:var(--ink,#22303A);font:inherit;font-size:13px;font-weight:650";
     const toggleText = document.createElement("span");
     toggleText.textContent = "提醒设置";
     const summary = document.createElement("span");
@@ -317,7 +319,6 @@
     body.append(
       row("专注结束", check("focusNotify", "通知"), check("focusSound", "声音")),
       row("休息结束", check("breakNotify", "通知"), check("breakSound", "声音")),
-      row("提示音", chip("试听", () => playReminderSound(true), true)),
       soundChips,
       soundNote,
       row("音量", vol, volText),
@@ -355,8 +356,16 @@
       body.style.display = body.style.display === "none" ? "grid" : "none";
     });
 
+    // 常驻试听按钮：挂在面板头部、开关旁边，收起状态也看得到、点得到
+    const head = document.createElement("div");
+    head.style.cssText = "display:flex;align-items:center;gap:8px;width:100%";
+    const previewBtn = chip("试听", () => playReminderSound(true));
+    previewBtn.type = "button";
+    previewBtn.title = "试听当前提示音（无视提醒开关；音量过低时按可听下限播放）";
+    head.append(toggle, previewBtn);
+
     sync();
-    wrap.append(toggle, body);
+    wrap.append(head, body);
     return { node: wrap, sync };
   }
 

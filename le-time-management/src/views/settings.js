@@ -2,7 +2,9 @@
 import { api } from "../api.js";
 import * as S from "../store.js";
 import { el, toast } from "../ui.js";
-import { onNavChanged } from "../pluginHost.js";
+import { getRegistry, onNavChanged, pluginViews } from "../pluginHost.js";
+import { computePluginShortcutMap, getPluginShortcutCustoms, setPluginShortcut } from "../pluginShortcuts.js";
+import { pluginDisplayName } from "../pluginAppearance.js";
 import { DEFAULT_REMINDER_SETTINGS, PRESET_OFFSETS, normalizeOffsets, playReminderSound, reminderLabel } from "../taskReminder.js";
 import { BUILTIN_SOUNDS, CUSTOM_SOUND_ID, DEFAULT_SOUND_ID, resolveSound } from "../sound.js";
 import { createAboutCard } from "./aboutCard.js";
@@ -223,6 +225,47 @@ export function renderSettings(container, opts = {}) {
       else shortcutStatus.textContent = [...(status.registered || []).map((x) => `已注册 ${x}`), ...(status.errors || []).map((x) => `失败 ${x}`)].join(" · ") || "全局快捷键已关闭";
     };
     paintShortcutStatus();
+
+    /* 插件快捷键：Alt + 字母直达插件视图。分配规则与侧栏徽标 / 按键命中同源
+       （computePluginShortcutMap）：显式指定优先，没设的按插件 ID 首字母自动分配，
+       字母先到先得。插件视图是异步注册的 —— 每次重渲染现取 pluginViews。 */
+    const pluginShortcutBox = el("div", {});
+    const paintPluginShortcuts = () => {
+      pluginShortcutBox.replaceChildren();
+      const entries = pluginViews.map((v) => ({ pluginId: v.pluginId, viewId: v.id }));
+      if (!entries.length) {
+        pluginShortcutBox.append(el("p", { class: "shortcut-hint" }, "暂无已启用且有界面的插件；启用插件后可在这里给它分配 Alt + 字母快捷键。"));
+        return;
+      }
+      const map = computePluginShortcutMap(entries, getPluginShortcutCustoms());
+      pluginShortcutBox.append(
+        el("p", { class: "shortcut-hint" }, "按 Alt + 字母直接打开对应插件（桌面键盘生效）。输入框留空 = 按插件 ID 首字母自动分配；字母先到先得，重复时先设置的生效。"),
+        el("div", { class: "shortcut-grid" },
+          ...[...map.entries()].flatMap(([pluginId, info]) => {
+            const name = pluginDisplayName(pluginId, getRegistry().find((r) => r.id === pluginId)?.manifest?.name || pluginId);
+            const input = el("input", {
+              type: "text", maxlength: "1", spellcheck: "false",
+              value: getPluginShortcutCustoms()[pluginId] || "",
+              placeholder: "自动", "aria-label": `${name}的快捷键字母`,
+            });
+            input.addEventListener("change", () => {
+              setPluginShortcut(pluginId, input.value);
+              S.saveNow();
+              paintPluginShortcuts();
+            });
+            return [
+              el("span", { class: "shortcut-name" },
+                el("span", { class: "shortcut-name-text" }, name),
+                info.letter ? el("kbd", { class: "shortcut-kbd" }, `Alt+${info.letter}`) : el("span", { class: "shortcut-none" }, "无"),
+              ),
+              input,
+            ];
+          }),
+        ),
+      );
+    };
+    paintPluginShortcuts();
+
     const shortcutCard = el("div", { class: "card set-card" },
       el("h2", {}, "全局快捷键"),
       el("div", { class: "setting-row" }, el("span", {}, "启用系统级快捷键"), shortcutEnabled),
@@ -251,6 +294,10 @@ export function renderSettings(container, opts = {}) {
         } }, "恢复默认"),
       ),
       shortcutStatus,
+      el("div", { class: "plugin-shortcut-block" },
+        el("b", { class: "shortcut-sub-title" }, "插件快捷键"),
+        pluginShortcutBox,
+      ),
     );
 
     /* AI：凭据在 Rust 侧加密保存；自动任务只拿白名单操作。 */
@@ -361,7 +408,7 @@ export function renderSettings(container, opts = {}) {
       { id: "data", node: dataCard, label: "数据中心", icon: "database", hint: "备份 / 恢复 / 交换", keywords: "备份 恢复 JSON CSV Excel ICS 自动恢复点 导入 导出" },
       { id: "sync", node: syncCard, label: "可选同步", icon: "cloud-arrow-up", hint: "WebDAV 双向同步", keywords: "WebDAV 上传 下载 Nextcloud 坚果云" },
       { id: "ai", node: aiCard, label: "AI 与自动任务", icon: "wand-magic-sparkles", hint: "Base / API Key / 安全边界", keywords: "AI Base API Key 模型 自动任务 加密 定时" },
-      { id: "shortcuts", node: shortcutCard, label: "全局快捷键", icon: "keyboard", hint: "命令面板与快速捕获", keywords: "快捷键 命令面板 快速捕获 Ctrl" },
+      { id: "shortcuts", node: shortcutCard, label: "全局快捷键", icon: "keyboard", hint: "命令面板 / 快速捕获 / 插件快捷键", keywords: "快捷键 命令面板 快速捕获 Ctrl Alt 插件快捷键 字母" },
       { id: "lan", node: lanCard, label: "局域网联动", icon: "network-wired", hint: "手机联动与二维码", keywords: "手机 WiFi 二维码 端口 配对" },
       { id: "plugins", node: plugCard, label: "插件管理", icon: "puzzle-piece", hint: "启用 / 导入 / 导出", keywords: "插件 权限 导入 ZIP 启用 停用 开发文档" },
       // 更新入口在「关于」里（软件更新）：关键词挂这儿，搜「更新 / 升级」也能落到关于。

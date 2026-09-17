@@ -28,4 +28,44 @@ assert.match(drawer, /pluginDisplayIcon\(t\.sourcePlugin/, "抽屉来源行必�
 assert.match(css, /\.tkc \.tt \.tt-top \.src-ic \.app-icon \{ width: 15px/, "任务卡来源图标要有小尺寸规则");
 assert.match(css, /\.kv \.src-plug \.app-icon \{ width: 18px/, "抽屉来源图标要有尺寸规则");
 
-console.log("PASS: 插件联动提醒（sourcePlugin 注入 + 四象限/抽屉来源插件图标）");
+/* 5. 🔴 回归守卫：原生 append() 会把假值字符串化，`append(null)` 落成文本 "null"
+   ── 曾经的 bug（v0.48.0 用户截图报的「抽屉里多一行 null」）：
+   `body.append(..., t.sourcePlugin ? <行> : null, ...)` 用的是**原生** Element.append，
+   不经过 el() 的 null 过滤；手动创建的任务（无 sourcePlugin，占绝大多数）取到 : null 分支，
+   于是抽屉里渲染出一个裸 `null` 文本节点（在「任务名称」与「标签」之间）。
+   修法：把这一串实参先收进数组、`filter(Boolean)` 之后再展开。
+   下面两条断言分别守「确实过滤了」与「没退回成裸实参」。 */
+assert.match(drawer, /\]\.filter\(Boolean\)/, "抽屉 dbody 的 append 实参必须先滤掉假值再展开");
+
+// 取向上的实参区（body.append( 到与之配对的 ); ），确认「三元收尾的 : null」不再作为裸实参存在。
+// 判据：三元结尾的 ))) : null, 之后紧邻的必须是数组元素分隔或闭括号，而**不是直接跑到 el(...)** 那一层。
+// 更稳的写法：整个 body.append(<单个表达式>); 里，实参只能有 1 个（即那个被展开的数组）。
+{
+  const idx = drawer.indexOf("body.append(");
+  assert.ok(idx > 0, "抽屉里应当有 body.append(");
+  // 手工配对括号找到调用结束
+  let depth = 0, end = -1, started = false;
+  for (let i = idx + "body.append".length; i < drawer.length; i++) {
+    const ch = drawer[i];
+    if (ch === "(") { depth++; started = true; }
+    else if (ch === ")") { depth--; if (started && depth === 0) { end = i; break; } }
+  }
+  assert.ok(end > idx, "能配对到 body.append( 的右括号");
+  const argBlock = drawer.slice(idx + "body.append(".length, end).trim();
+  assert.ok(
+    argBlock.startsWith("...["),
+    "抽屉 body.append 的唯一实参应当是 `...[…].filter(Boolean)`（先过滤再展开），实际开头是：" + argBlock.slice(0, 40),
+  );
+  assert.ok(
+    argBlock.endsWith("filter(Boolean)") || argBlock.endsWith("filter(Boolean),"),
+    "抽屉 body.append 的实参结尾应当是 .filter(Boolean)",
+  );
+  // 断言：整个实参区里没有「裸 xx,」形式的顶层实参（顶层只有 1 个 —— 被展开的数组）
+  assert.equal(
+    argBlock.includes(") : null,") && !argBlock.includes("].filter(Boolean)"),
+    false,
+    "三元 : null 必须在被过滤的数组里，不能作为裸实参",
+  );
+}
+
+console.log("PASS: 插件联动提醒（sourcePlugin 注入 + 四象限/抽屉来源插件图标 + 原生 append 假值守卫）");

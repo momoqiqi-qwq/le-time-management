@@ -189,6 +189,61 @@
     </view>
   </block>
 
+  <!-- 拖入消息收纳（小程序以粘贴 / 手输为入口；记录与桌面端共用一份存储） -->
+  <block wx:if="{{id === 'inbox-drop' && dropsWrap}}">
+    <view class="card">
+      <view class="section-title">把消息粘贴进来</view>
+      <textarea class="id-ta" value="{{idInput}}" placeholder="把聊天里的通知复制到这里 —— 例如「【学习通】作业《高数》提交截止 2026-01-08 23:59，请及时提交。」&#10;也可以只写一句话，如「明天下午三点组会」。" bindinput="onIdInput" maxlength="2000" auto-height />
+      <view class="id-acts">
+        <button class="btn small" bindtap="onIdPaste">读剪贴板</button>
+        <button class="btn small pri" bindtap="onIdAdd">收纳</button>
+      </view>
+      <view class="desc hint">会自动认出来源平台、消息类型和其中的日期时间；认错了可以在记录里改。同一条消息重复粘贴只会收一次。</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">收纳区
+        <text class="id-count" wx:if="{{dropsWrap.stats.total}}">共 {{dropsWrap.stats.total}} · 待处理 {{dropsWrap.stats.open}}</text>
+      </view>
+
+      <block wx:if="{{dropsWrap.empty}}">
+        <view class="id-empty">还没有收纳记录</view>
+        <view class="desc hint">上面粘一条消息试试。桌面 / Android 端拖进来的消息也会出现在这里。</view>
+      </block>
+
+      <block wx:else>
+        <view class="id-row {{item.done ? 'done' : ''}}" wx:for="{{dropsWrap.drops}}" wx:key="id">
+          <view class="id-top">
+            <text class="id-seq" wx:if="{{item.seqLabel}}">{{item.seqLabel}}</text>
+            <text class="id-title">{{item.title}}</text>
+            <text class="id-pin" wx:if="{{item.pinned}}">置顶</text>
+          </view>
+          <view class="id-tags">
+            <text class="id-tag" wx:if="{{item.platformLabel}}">{{item.platformLabel}}</text>
+            <text class="id-tag" wx:if="{{item.typeLabel}}">{{item.typeLabel}}</text>
+            <text class="id-tag" wx:if="{{item.when}}">{{item.when}}</text>
+            <text class="id-tag" wx:if="{{item.source}}">{{item.source}}</text>
+            <text class="id-tag" wx:if="{{item.sizeLabel}}">{{item.sizeLabel}}</text>
+            <text class="id-tag ok" wx:if="{{item.doneLabel}}">{{item.doneLabel}}</text>
+          </view>
+          <view class="id-raw">{{item.raw}}</view>
+          <view class="id-rowacts">
+            <button class="btn small" bindtap="onIdTask" data-id="{{item.id}}" disabled="{{item.done === 'task'}}">建任务</button>
+            <button class="btn small" bindtap="onIdBlock" data-id="{{item.id}}" disabled="{{item.done === 'block'}}">排日程</button>
+            <button class="btn small ghost" bindtap="onIdPin" data-id="{{item.id}}">{{item.pinned ? '取消置顶' : '置顶'}}</button>
+            <button class="btn small ghost" wx:if="{{item.done}}" bindtap="onIdReopen" data-id="{{item.id}}">撤销</button>
+            <button class="btn small ghost danger" bindtap="onIdDel" data-id="{{item.id}}">删除</button>
+          </view>
+        </view>
+      </block>
+
+      <view class="id-foot" wx:if="{{dropsWrap.canClearDone}}">
+        <button class="btn small ghost" bindtap="onIdClearDone">清除已处理的</button>
+        <text class="desc hint">置顶的和还没处理的一律保留。</text>
+      </view>
+    </view>
+  </block>
+
   <!-- 考试日历 -->
   <block wx:if="{{id === 'exam-calendar'}}">
     <view class="card">

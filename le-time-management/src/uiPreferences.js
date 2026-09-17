@@ -3,7 +3,8 @@ import { CUSTOM_SIZE_LIMITS } from "./windowSize.js";
 import { DEFAULT_UI_SCALE, applyUiScale, normalizeUiScale } from "./uiScale.js";
 
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
-  density: "comfortable",
+  // 默认紧凑：小屏与笔记本上信息密度优先；想要宽松的用户可在设置里切回「舒适」
+  density: "compact",
   textScale: 100,
   // 界面整体缩放（80~150）：与只动字号的 textScale 分工不同，这里连控件、间距、图标一起缩放。
   // 实现与三个坑见 src/uiScale.js 头部注释 —— 改这个字段前先读那一页。

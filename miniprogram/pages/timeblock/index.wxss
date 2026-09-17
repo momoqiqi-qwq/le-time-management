@@ -454,6 +454,12 @@
 }
 .chron-v-item.left .chron-v-date { left:calc(50% + 22rpx); }
 .chron-v-item.right .chron-v-date { right:calc(50% + 22rpx); }
+/* 长间隔省略提示（与桌面端 chronicle 同语义） */
+.chron-v-gap {
+  display:block; text-align:center; margin:4rpx 0 20rpx; padding:0 16rpx;
+  font-size:20rpx; font-weight:700; letter-spacing:2rpx; color:var(--ink-3);
+  background:var(--panel);
+}
 
 /* ── 年度甘特：按月折叠后的行 ── */
 .gm-folds { padding:14rpx 20rpx 4rpx; }

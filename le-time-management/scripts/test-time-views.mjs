@@ -242,5 +242,34 @@ assert.match(css, /\.ms-row\[data-dir="rev"\] \.ms-arrow\s*\{\s*clip-path:\s*non
   "窄屏要显式复位箭头：桌面那条镜像规则 specificity 更高（0,3,0 > 0,1,0），"
   + "窄屏的 .ms-arrow{clip-path:none} 压不住它 —— 跨断点的覆盖只看 specificity，与书写顺序无关");
 
+/* ───────────── v0.50.0：横向时间轴「时间堆积」修复 —— 长空档用省略号截断 ─────────────
+   两个事件相隔太久（>60 天且占跨度 15%+）时，中轴不再按真实天数硬铺 ——
+   长空档换成省略号芯片，省出的位置按天数比例还给密集段；
+   段内再做「前推 + 后收」两遍扫描，密集事件不再叠卡。 */
+assert.match(timeViews, /const gapThreshold = Math\.max\(60, Math\.round\(total \* 0\.15\)\)/,
+  "「隔太久」必须同时满足绝对下限与相对占比：只看占比会把短跨度的普通间隔切碎，"
+  + "只看天数在长跨度里又切不动（半年空档在十年轴上只占 5%）");
+assert.match(timeViews, /if \(d > gapThreshold\) \{\s*\n\s*gaps\.push\(/,
+  "必须先按长空档把事件切成密集段再分配位置 —— 直接线性映射，长空档会把密集段挤成一团");
+assert.match(timeViews, /const step = Math\.min\(MIN_STEP, Math\.max\(1\.5, \(remaining - gaps\.length \* TAIL_UNIT\) \/ Math\.max\(1, events\.length - segments\.length\)\)\)/,
+  "段内最小步长必须有兜底压缩：各段保底宽度放不下时压步长，而不是让卡片叠上");
+assert.match(timeViews, /for \(let i = 1; i < px\.length; i\+\+\) px\[i\] = Math\.max\(px\[i\], px\[i - 1\] \+ step\);/,
+  "段内落位必须「前推」：时间比例落位后，相邻间距不足 step 的事件要向右推");
+assert.match(timeViews, /for \(let i = px\.length - 2; i >= 0; i--\) px\[i\] = Math\.min\(px\[i\], px\[i \+ 1\] - step\);/,
+  "段内落位必须「后收」：只前推会把段尾挤出段外（比例位置贴近段尾时）；"
+  + "宽度保底在手，后收不会把队首推出段外");
+assert.match(timeViews, /class: "ce-gap"/, "桌面长空档必须渲染省略号芯片");
+assert.match(timeViews, /title: `此处省略 \$\{g\.days\} 天（\$\{g\.from\} → \$\{g\.to\}）`/,
+  "省略号芯片必须带悬浮说明：省略多少天、从哪天到哪天");
+assert.match(timeViews, /gapCenters\.push\(end \+ \(GAP_UNIT - TAIL_UNIT\) \/ 2\)/,
+  "芯片必须居中在「段尾尾巴 + 省略号区」的安静带里 —— 直接放在段边界上的话，"
+  + "段尾事件的日期徽章（半宽约 38px）会压到芯片上");
+assert.match(timeViews, /if \(d > gapThreshold\) vertical\.append\(el\("div", \{ class: "cv-gap" \}/,
+  "窄屏纵向年表的长间隔也要给省略提示，两端语义一致");
+assert.match(css, /\.ce-gap\s*\{[^}]*position:\s*absolute/, "桌面省略号芯片必须有定位样式");
+assert.match(css, /\.ce-gap-mark\s*\{[^}]*background:\s*var\(--panel\)/,
+  "芯片要垫 panel 底色盖住轴线 —— 否则渐变轴线从「⋯⋯」字缝里穿出来，不像断口");
+assert.match(css, /\.cv-gap\s*\{/, "窄屏省略提示必须有样式");
+
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
   + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）");

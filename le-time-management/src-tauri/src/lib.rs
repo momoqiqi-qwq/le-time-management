@@ -4,11 +4,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt as _;
 
 mod lan;
+mod system_bar;
 mod update;
 
 /// 应用数据目录（Windows: %APPDATA%，Linux: ~/.local/share，Android: 应用内部存储）
@@ -1471,6 +1472,62 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// 退出前的存盘握手：前端把防抖中未落盘的改动写完后来敲一下。
+///
+/// 只用于托盘菜单的「退出」——窗口关闭按钮走的是隐藏到托盘那条路，不涉及退出。
+/// 之所以要握手而不是固定 sleep：`app.exit(0)` 会直接掐掉进程，
+/// 前端 `saveNow()` 的 IPC 一旦没跑完，用户最后的改动就静默丢了。
+#[cfg(desktop)]
+struct QuitGate {
+    acked: Mutex<bool>,
+    cv: Condvar,
+}
+
+#[cfg(desktop)]
+static QUIT_GATE: OnceLock<Arc<QuitGate>> = OnceLock::new();
+
+#[cfg(desktop)]
+fn quit_gate() -> &'static Arc<QuitGate> {
+    QUIT_GATE.get_or_init(|| {
+        Arc::new(QuitGate {
+            acked: Mutex::new(false),
+            cv: Condvar::new(),
+        })
+    })
+}
+
+/// 前端存盘完成后调用，放行正在等待的退出线程。
+#[cfg(desktop)]
+#[tauri::command]
+fn quit_ack(gate: State<'_, Arc<QuitGate>>) {
+    if let Ok(mut acked) = gate.acked.lock() {
+        *acked = true;
+        gate.cv.notify_all();
+    }
+}
+
+/// 等前端回执，最长等 `timeout_ms`。
+///
+/// 超时也照常退出 —— 宁可丢一次写盘，也不能让用户点了「退出」却退不掉。
+/// 返回 `true` 表示拿到了回执（正常路径），`false` 表示超时兜底。
+#[cfg(desktop)]
+fn wait_quit_ack(gate: &Arc<QuitGate>, timeout_ms: u64) -> bool {
+    let Ok(acked) = gate.acked.lock() else {
+        return false;
+    };
+    // 已回执就不用等了（比如前端快得在 spurious wakeup 之外先敲了门）
+    if *acked {
+        return true;
+    }
+    match gate
+        .cv
+        .wait_timeout_while(acked, std::time::Duration::from_millis(timeout_ms), |a| !*a)
+    {
+        Ok((guard, _)) => *guard,
+        Err(_) => false,
+    }
+}
+
 /// 构建系统托盘。
 ///
 /// 只有 `settings.trayEnabled` 为真时才创建图标（设置页「系统托盘」开关）。
@@ -1501,9 +1558,11 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             "show" => show_main_window(app),
             "quit" => {
                 let _ = app.emit("app-quit", ());
+                let gate = quit_gate().clone();
                 let app = app.clone();
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(800));
+                    // 等前端存盘回执，最多 2s；超时（或前端根本没起来）也照常退出。
+                    wait_quit_ack(&gate, 2000);
                     app.exit(0);
                 });
             }
@@ -1572,6 +1631,9 @@ pub fn run() {
         builder = builder.plugin(native_schedule::init());
         // 应用内一键升级：Android 侧需要原生插件把 content:// 交给系统安装器
         builder = builder.plugin(update::init());
+        // 状态栏 / 导航栏图标明暗：edge-to-edge 下系统栏图标压在网页上，
+        // 必须由网页把真实亮度同步过来（否则「系统深色 + 网页浅色」时图标看不见）
+        builder = builder.plugin(system_bar::init());
     }
     builder
         .plugin(tauri_plugin_opener::init())
@@ -1580,8 +1642,10 @@ pub fn run() {
         .manage(native_schedule::NativeSchedule::default())
         .invoke_handler(tauri::generate_handler![
             native_schedule::native_schedule,
+            system_bar::system_bar,
             load_data,
             save_data,
+            quit_ack,
             list_plugins,
             read_plugin_file,
             delete_plugin,

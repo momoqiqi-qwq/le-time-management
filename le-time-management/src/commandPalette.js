@@ -2,6 +2,7 @@
 import * as S from "./store.js";
 import { el } from "./ui.js";
 import { getRegistry, pluginViews } from "./pluginHost.js";
+import { computePluginShortcutMap, getPluginShortcutCustoms } from "./pluginShortcuts.js";
 import { openTaskDrawer } from "./views/drawer.js";
 import { openQuickCapture } from "./capture.js";
 import { closeLayer } from "./motion.js";
@@ -94,15 +95,21 @@ function entries() {
   }));
 
   const regs = getRegistry();
+  // 生效的 Alt 字母（与侧栏徽标同一套分配规则），有就亮在副标题里
+  const shortcutMap = computePluginShortcutMap(
+    pluginViews.map((v) => ({ pluginId: v.pluginId, viewId: v.id })),
+    getPluginShortcutCustoms(),
+  );
   const plugins = regs.map((rec) => {
     const man = rec.manifest || {};
     const pv = pluginViews.find((v) => v.pluginId === rec.id);
     const enabled = S.pluginState(rec.id).enabled !== false;
+    const sc = enabled && pv ? shortcutMap.get(rec.id)?.letter || "" : "";
     return {
       kind: enabled ? "插件" : "已停用插件",
       pluginId: rec.id,
       title: man.name || rec.id,
-      sub: enabled && pv ? "打开插件" : enabled ? "插件已开启 · 前往插件设置" : "插件已关闭 · 前往插件设置",
+      sub: enabled && pv ? (sc ? `打开插件 · Alt+${sc}` : "打开插件") : enabled ? "插件已开启 · 前往插件设置" : "插件已关闭 · 前往插件设置",
       keywords: `${rec.id} ${man.description || ""} ${man.author || ""}`,
       priority: enabled ? 40 : 10,
       run: () => enabled && pv ? navigate(`plug:${pv.id}`) : navigate("settings"),

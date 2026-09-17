@@ -48,7 +48,7 @@ const context = vm.createContext({
   tide,
 });
 
-const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks,noticeAcademicYear,catYears,catsHtml,inboxCardHtml}';
+const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks,noticeAcademicYear,catYears,catsHtml,inboxCardHtml,cxInitials,cxKwHit}';
 vm.runInContext(
   source.replace('  tide.ui.registerView({', `  globalThis.cx = ${EXPORTS};\n  tide.ui.registerView({`),
   context,
@@ -57,7 +57,7 @@ const { state, pickTargetLink, isAnonymousUrl, cardActionsHtml, ignoreNotice, re
   visibleInbox, filteredInbox, todos, openTarget, fetchInbox, LOGIN_JUMP,
   loadCourses, termOf, currentTerm, gradeOf, detectEnrollYear, courseStatus, courseGroups, coursesHtml,
   parseWorkRef, statusOf, gradingBadge, probeWorkStatus, probePendingWorks,
-  noticeAcademicYear, catYears, catsHtml, inboxCardHtml } = context.cx;
+  noticeAcademicYear, catYears, catsHtml, inboxCardHtml, cxInitials, cxKwHit } = context.cx;
 
 const HW = 'https://mooc1.chaoxing.com/mooc-ans/work/doHomeWorkNew?courseId=1&workId=99';
 const EXAM = 'https://mooc1.chaoxing.com/mooc-ans/exam/test/reVersionTestStartNew?examId=5';
@@ -170,7 +170,7 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.11.0');
+assert.equal(manifest.version, '2.12.0');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
@@ -199,7 +199,8 @@ assert.match(source, /\.slice\(0, 5\)[\s\S]{0,120}\.map\(\(x\) => \(\{ title: x\
 
 /* ── 6d. 通知分类页（v2.10.0）：学年下拉 + 按分类分区 ──
    学年按中国学年制（9 月至次年 8 月）从通知时间推导；下拉选学年后只显示该学年的通知。 */
-assert.ok(source.includes('["cats", "通知分类"]'), '导航必须有「通知分类」标签页');
+assert.match(source, /\["cats", `通知分类 <span class="cx2-pill">\$\{visibleInbox\(\)\.length\}<\/span>`\]/,
+  '「通知分类」标签页必须带计数胶囊（和收件箱 / 待办 / 课程一致）');
 assert.match(source, /data-cat-year/, '分类页必须有学年下拉栏');
 assert.match(source, /state\.filter\.catYear/, '选中的学年必须持久化到 filter');
 assert.equal(noticeAcademicYear({ time: '2025-09-01 08:00' }), '2025-2026', '9 月属新学年');
@@ -393,3 +394,39 @@ assert.match(src2, /data-act="mark"/, '卡片必须有「标记」按钮');
 assert.match(src2, /CAT_FRAME/, '彩色框必须按类型映射（通知/作业/考试/签到）');
 assert.match(src2, /cx2-card\.cat-sun/, '作业卡要有 sun 色框');
 assert.match(src2, /button\.acc/, '标记按钮要有海青色框样式');
+
+/* ── 9. 拼音首字母缩写搜索（v2.12.0）：bj → 北京、dx → 大学 ──
+   数据表由 tools/gen-chaoxing-pinyin.js 生成（pinyin-pro 多音字全读音），标记区勿手改。 */
+assert.ok(source.includes('CX_PY_DATA BEGIN'), '桌面端必须包含生成的拼音数据标记区');
+assert.match(source, /tools\/gen-chaoxing-pinyin\.js/, '数据区注释要指回生成脚本，方便重生成');
+assert.equal(cxInitials('北京'), 'bj', '北京 → bj');
+assert.equal(cxInitials('大学英语四级'), 'dxyysj', '逐字取首字母');
+assert.ok(cxKwHit('重庆', 'cq'), '多音字按次常用读音命中（重 chong）');
+assert.ok(cxKwHit('郑重声明', 'zc'), '多音字在任何位置都能按次读音命中');
+assert.equal(cxInitials('安晓伟').includes('a'), true, '零声母字（安 an）也要进首字母流');
+assert.equal(cxInitials('25防火2队1班'), '25fh2d1b', '数字与字母原样保留，可混拼');
+assert.ok(cxKwHit('北京理工大学期末通知', 'bj'), '纯字母关键词走首字母流');
+assert.ok(cxKwHit('大学英语四级', 'yy'), 'yy → 英语');
+assert.ok(cxKwHit('大学英语四级', '英语'), '含中文的关键词退回原文 includes（旧行为不变）');
+assert.ok(!cxKwHit('大学英语四级', 'bj'), '不相关缩写不误报');
+assert.ok(cxKwHit('高等数学（理）1', 'gds'), '标点当分隔符不影响命中');
+
+/* 端到端：收件箱与课程两条过滤链都要吃到缩写搜索 */
+state.ignoredIds.clear(); state.newIds.clear(); state.readOverrides.clear();
+state.inbox = [
+  { id: 'py-a', title: '北京实习动员会', body: '', sender: '学工处', time: '2025-09-10 10:00', unread: false },
+  { id: 'py-b', title: '南京会议纪要', body: '', sender: '教务处', time: '2025-09-11 10:00', unread: false },
+];
+state.filter.kw = 'bj';
+assert.equal(filteredInbox().length, 1, '收件箱搜索 bj 只命中北京');
+assert.ok(filteredInbox()[0].title.includes('北京'), '命中的是北京那条');
+state.filter.kw = '上海';
+assert.equal(filteredInbox().length, 0, '中文关键词旧行为不变');
+state.filter.kw = 'dx';
+const courses4 = state.courses.length ? state.courses : courses;
+state.courses = courses4;
+state.course = { year: 2025, searchOpen: true };
+const abbrHtml = coursesHtml();
+assert.ok(abbrHtml.includes('大学英语2'), '课程搜索 dx 命中大学英语');
+assert.ok(!abbrHtml.includes('线性代数A'), '课程搜索 dx 不该带出线性代数');
+state.filter.kw = '';

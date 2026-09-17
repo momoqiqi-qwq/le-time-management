@@ -10,6 +10,7 @@ import { renderInbox } from "./views/inbox.js";
 import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
+import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
 import { getUiPreferences } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
@@ -106,6 +107,21 @@ function movePluginBefore(sourcePluginId, targetPluginId) {
   S.getState().settings.pluginOrder = current;
   S.persistSoon();
   return true;
+}
+
+// ── 插件快捷键（Alt + 字母直达插件视图）──
+// 取数统一走这里：侧栏徽标、按键命中、右键菜单看到的必须是同一份分配结果。
+// 顺序刻意用 pluginViews 的**注册顺序**（= manifest order），而不是显示顺序：
+// ① 内置插件的 order 是策划过的重要度，「番茄专注」这类旗舰不该被「插件使用说明」抢走首字母；
+// ② 用户拖动调整显示顺序时，已自动分配的字母不能跟着洗牌。
+function shortcutEntries() {
+  return pluginViews.map((pv) => ({ pluginId: pv.pluginId, viewId: pv.id }));
+}
+function effectiveShortcutMap() {
+  return computePluginShortcutMap(shortcutEntries(), getPluginShortcutCustoms());
+}
+function effectiveShortcutLetter(pluginId) {
+  return effectivePluginShortcutLetter(pluginId, shortcutEntries());
 }
 
 // 翻页顺序：滑动/翻页沿此序（插件页夹在时间块和插件市场之间）
@@ -308,6 +324,7 @@ export function renderShell(root) {
     if (!rec) return;
     const fallbackName = rec.manifest?.name || pluginViews.find((item) => item.pluginId === pluginId)?.title || pluginId;
     const displayName = pluginDisplayName(pluginId, fallbackName);
+    const effSc = effectiveShortcutLetter(pluginId);
     const menuButton = (label, onClick, { danger = false, disabled = false, title = "" } = {}) => el("button", {
       class: `plugin-context-item${danger ? " danger" : ""}`,
       type: "button",
@@ -331,6 +348,27 @@ export function renderShell(root) {
       menuButton("修改图标…", () => {
         pendingPluginIconId = pluginId;
         pluginIconInput.click();
+      }),
+      menuButton(`快捷键 · ${effSc ? `${PLUGIN_SHORTCUT_MODIFIER}+${effSc}` : "未设置"}`, async () => {
+        const value = await appPrompt("设置插件快捷键", {
+          label: `输入一个字母（A–Z），按 ${PLUGIN_SHORTCUT_MODIFIER} + 字母直接打开「${displayName}」。留空恢复自动分配（按插件 ID 首字母，先到先得）。`,
+          value: getPluginShortcutCustoms()[pluginId] || effSc || "",
+          confirmText: "保存",
+        });
+        if (value === null) return;
+        const wanted = normalizeShortcutLetter(value);
+        setPluginShortcut(pluginId, value);
+        renderNav();
+        const nowSc = effectiveShortcutLetter(pluginId);
+        if (wanted && wanted !== nowSc) {
+          // 想要的字母被别的插件占了（显式指定之间也是先到先得）
+          const holder = [...effectiveShortcutMap()].find(([, info]) => info.letter === wanted)?.[0];
+          toast(`Alt+${wanted} 已被「${pluginDisplayName(holder, holder)}」占用，本插件生效 ${nowSc ? `Alt+${nowSc}` : "无"}`);
+        } else if (wanted) {
+          toast(`快捷键 Alt+${wanted} 已保存`);
+        } else {
+          toast("已清除，恢复自动分配");
+        }
       }),
       menuButton("恢复默认名称与图标", () => {
         resetPluginOverride(pluginId);
@@ -378,16 +416,20 @@ export function renderShell(root) {
     if (!def) return null;
     // 插件市场高亮条件：在市场页或任何插件页里（插件从市场进入）
     const on = activeView === id || (id === "market" && activeView.startsWith("plug:"));
+    // 生效的 Alt 字母快捷键（显式指定优先，否则按插件 ID 首字母自动分配，先到先得）
+    const sc = isPlug && def.pluginView?.pluginId ? effectiveShortcutLetter(def.pluginView.pluginId) : "";
     const b = el("button", { class: on ? "on" : "", "data-view": id },
       el("span", { class: "ic", style: isPlug ? `--plugin-accent:${pluginAccent(def.pluginView?.pluginId)}` : null }, isPlug ? pluginDisplayIcon(def.pluginView.pluginId, def.title) : appIcon(id)),
       el("span", { class: "lb" }, def.title),
       isPlug ? el("span", { class: "pv-count" }, "插件") : null,
+      // 快捷键徽标：平时收着（opacity:0），悬停 / 选中 / 键盘聚焦时现形，不挤占常驻空间
+      sc ? el("kbd", { class: "nav-kbd", "aria-hidden": "true" }, `${PLUGIN_SHORTCUT_MODIFIER}+${sc}`) : null,
     );
     b.addEventListener("click", () => switchTo(id));
     if (desktopWindow && isPlug && def.pluginView?.pluginId) {
       b.draggable = true;
       b.dataset.pluginId = def.pluginView.pluginId;
-      b.title = `${def.title} · 可拖动调整插件顺序`;
+      b.title = `${def.title} · ${sc ? `快捷键 ${PLUGIN_SHORTCUT_MODIFIER}+${sc} · ` : ""}可拖动调整插件顺序`;
       b.addEventListener("contextmenu", (event) => openPluginContextMenu(event, def.pluginView.pluginId));
       b.addEventListener("dragstart", (e) => {
         b.classList.add("nav-dragging");
@@ -938,6 +980,13 @@ export function renderShell(root) {
   initBackNav({
     readView: () => activeView,
     applyView: (id) => switchTo(id, undefined, { history: false }),
+  });
+  // 插件快捷键：Alt + 字母直达插件视图。取数走回调，每次按键现查 ——
+  // 插件是启动后期异步注册的，监听先挂上也没问题。 Alt+←（后退）不含字母，互不干扰。
+  attachPluginShortcutKeys({
+    getEntries: shortcutEntries,
+    getCustoms: getPluginShortcutCustoms,
+    navigate: (viewId) => switchTo(`plug:${viewId}`),
   });
   // 关浮层这类回退不会走 commit，返回按钮得自己跟一次。
   // 注册在 initBackNav 之后：backNav 的 onPopState 先跑完（depth 已更新），这里读到的才是新值。

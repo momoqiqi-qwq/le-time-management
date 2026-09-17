@@ -408,6 +408,10 @@ export function parseJsonSiteList(id, body, baseUrl, options = {}) {
 // 再用「文本量 × (1 − 链接密度)」挑最像正文的块 —— 导航和页脚恰恰是链接密度最高的。
 const ARTICLE_SELECTORS = [
   "#vsb_content", "#vsb_content_2", "#vsb_content_4", ".v_news_content", ".wp_articlecontent",
+  // 实测（北大本科招生网 bkzs.pku.edu.cn 详情页，2026-09-17 抓取）：gpower CMS 的正文
+  // 在 `.article-cont > #articleDiv.gpCmsArticle00` 里，正文只有一句话 —— 上面的选择器
+  // 全部落空，就会退到整页兜底，把两翼的菜单页脚全吞进「正文」。
+  "#articleDiv", ".article-cont", ".gpCmsArticle00",
   "#content", ".content", ".article-content", ".article_content", ".article-content-wrap",
   "#article", ".article", ".news_content", "#news_content", ".news-content",
   ".entry-content", ".post-content", ".detail-content", ".detail_content",
@@ -433,6 +437,14 @@ export function extractArticleText(html, baseUrl, options = {}) {
   }
   const doc = new DOMParser().parseFromString(source, "text/html");
   for (const el of doc.querySelectorAll("script,style,noscript,iframe,form,nav,header,footer,aside,button,select,svg")) el.remove();
+  // 实测（北大本科招生网 bkzs.pku.edu.cn 详情页，2026-09-17 抓取）：侧栏 / 导航 / 页脚
+  // 全是「div 带 class」（.sidebar-mod / .x-header / .nav-mod / .x-footer），整页一个
+  // <nav>/<footer> 标签都没有 —— 只按标签删，正文兜底就会把菜单和页脚全吞进「正文」。
+  // 所以再按 id/class 特征删一轮容器，判据与公告链接筛选共用同一套 NAV_SIGNATURE_RE。
+  for (const el of [...doc.querySelectorAll("body *")]) {
+    const sig = `${el.id || ""} ${typeof el.className === "string" ? el.className : ""}`;
+    if (sig.trim() && NAV_SIGNATURE_RE.test(sig)) el.remove();
+  }
   const title = (metaContent(source, ["og:title", "twitter:title"])
     || cleanText(doc.querySelector("h1")?.textContent || "")
     || cleanText(doc.querySelector("title")?.textContent || "")).trim();

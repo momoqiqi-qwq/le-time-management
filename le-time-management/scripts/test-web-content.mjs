@@ -124,6 +124,38 @@ if (typeof DOMParser !== 'undefined') {
     'https://jwc.example.edu.cn/tzgg/1.htm');
   assert.ok(art.text.includes('现将 2026 年秋季学期本科生选课工作安排通知如下'), '正文没抽对');
   assert.ok(art.text.split('\n').length >= 3, '段落之间要保留换行');
+
+  /* ── 真实取证：北大本科招生网 bkzs.pku.edu.cn 详情页（2026-09-17 抓取）──
+     正文在 `.article-cont > #articleDiv` 里、只有一句话；而侧栏/导航/面包屑/页脚
+     全是 div 带 class（.sidebar-mod/.x-header/.nav-mod/.bread-mod/.x-footer），
+     整页没有 <nav>/<footer> 标签 —— 旧规则会退到整页兜底，把菜单页脚全吞进「正文」。
+     结构照实压：① gpower CMS 的选择器要命中；② class 型导航/页脚不能进正文。 */
+  const pkuArt = extractArticleText(`<html><body>
+    <div class="sidebar-mod"><a href="../cjwt/index.htm">常见问题</a><div class="t">返回顶部</div></div>
+    <div class="x-header"><div class="nav-mod"><a href="../index.htm">首页</a><a href="../zslb/qjjh/index.htm">强基计划</a><a href="../xkzy/xy/index.htm">学科专业</a></div></div>
+    <div class="article-page"><div class="bread-mod"><a href="../index.htm">返回列表</a></div>
+      <div class="article-head"><div class="t">北京大学2026年强基计划测试准考证打印通知</div>
+        <div class="info"><span class="s">时间：2026.06.27 16:28</span></div></div>
+      <div class="article-cont"><style>.gpCmsArticle00 p{line-height:180%}</style>
+        <div id="articleDiv" class="gpCmsArticle00"><p>各位考生：</p>
+          <p>北京大学2026年强基计划测试准考证已开放打印，请确认参加测试的考生登录北京大学本科招生网上报名平台（点击进入）查阅测试安排和打印准考证。</p>
+          <p>北京大学招生办公室</p><p>2026年6月27日</p></div></div></div>
+    <div class="x-footer"><div class="tit">友情链接：</div><span class="s">电话：010-62751407</span><a class="s" href="">京ICP备05065075号-8</a></div>
+    </body></html>`, 'https://bkzs.pku.edu.cn/tzgg/b4238f5f73cf4165a49d1817a2e0434c.htm');
+  assert.ok(pkuArt.text.includes('准考证已开放打印'), 'gpower CMS 的正文（#articleDiv/.article-cont）必须抽得到');
+  assert.ok(!pkuArt.text.includes('常见问题') && !pkuArt.text.includes('学科专业') && !pkuArt.text.includes('返回列表'),
+    `选择器命中时两翼导航不能混进正文，实际：${pkuArt.text.slice(0, 120)}`);
+  assert.ok(!pkuArt.text.includes('友情链接') && !pkuArt.text.includes('京ICP备'),
+    '页脚不能混进正文');
+  // 没有 CMS 特征选择器可命中时走整页兜底 —— class 型导航/页脚同样要摘干净
+  const pkuFallback = extractArticleText(`<html><body>
+    <div class="nav-mod"><a href="index.htm">首页</a><a href="list.htm">通知公告</a></div>
+    <div class="mainWrap"><p>现将 2026 年秋季学期本科生选课工作安排通知如下，请于 9 月 20 日前完成第一轮选课，逾期系统将自动关闭，请各位同学相互转告。</p></div>
+    <div class="x-footer"><span class="s">电话：010-62751407</span></div></body></html>`,
+    'https://jwc.example.edu.cn/tzgg/2.htm');
+  assert.ok(pkuFallback.text.includes('选课工作安排通知如下'), '兜底路径要能抽到正文');
+  assert.ok(!pkuFallback.text.includes('首页') && !pkuFallback.text.includes('电话'),
+    `class 型导航/页脚（div.nav-mod/.x-footer）要从兜底里摘掉，实际：${pkuFallback.text.slice(0, 120)}`);
 }
 
 /* ── 响应体编码：中文站点常只在 <meta> 里声明 gb2312 ──

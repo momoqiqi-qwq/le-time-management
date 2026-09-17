@@ -168,8 +168,9 @@ ok("createFromCapture 有日期建块字段一致",
 console.log("[plugins]");
 const catalog = require("../miniprogram/core/pluginCatalog.js");
 const pluginRuntime = require("../miniprogram/core/pluginRuntime.js");
-ok("内置插件清单同步为 13 个", catalog.plugins.length, 13);
-ok("小程序原生适配 9 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 9);
+/* 数量与 tools/sync-plugins.js 的输出对齐（v0.51.0 批次新增 inbox-drop 后为 14 / 10） */
+ok("内置插件清单同步为 14 个", catalog.plugins.length, 14);
+ok("小程序原生适配 10 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 10);
 ["plugin-guide", "wechat-push", "gx-news", "chaoxing-notify"].forEach((id) =>
   ok("新适配插件 " + id + " 标记 native", (catalog.byId[id].platforms || {}).miniprogram, "native"));
 store.setPluginEnabled("pomodoro", false);
@@ -632,6 +633,22 @@ ok("年级按入学学年推算", cxCore.gradeOf(2025, 2025), "大一");
 const cg = cxCore.courseGroups(courses, now, "");
 ok("课程分组视图模型带学年 tab", cg.years, [2025]);
 ok("分组视图模型含入学学年推断", cg.enrollYear, 2025);
+
+/* 拼音首字母缩写搜索（v2.12.0，与桌面端同一套规则）：
+   数据表由 tools/gen-chaoxing-pinyin.js 生成（pinyin-pro 多音字全读音），标记区勿手改。 */
+ok("缩写搜索 北京 → bj 命中", cxCore.cxKwHit("北京理工大学期末通知", "bj"), true);
+ok("缩写搜索逐字首字母", cxCore.cxInitials("大学英语四级"), "dxyysj");
+ok("多音字按次常用读音命中（重 chong）", cxCore.cxKwHit("重庆", "cq"), true);
+ok("多音字在任何位置都能按次读音命中", cxCore.cxKwHit("郑重声明", "zc"), true);
+ok("零声母字（安 an）进首字母流", cxCore.cxInitials("安晓伟").charAt(0), "a");
+ok("数字与字母原样保留可混拼", cxCore.cxInitials("25防火2队1班"), "25fh2d1b");
+ok("含中文的关键词退回原文 includes", cxCore.cxKwHit("大学英语四级", "英语"), true);
+ok("不相关缩写不误报", cxCore.cxKwHit("大学英语四级", "bj"), false);
+ok("收件箱过滤吃到缩写搜索",
+  cxCore.filteredInbox([n1], { ignoredIds: new Set(), readOverrides: new Map(), filter: { kw: "zy", category: "全部", onlyUnread: false } }).length, 1,
+  );
+ok("课程分组过滤吃到缩写搜索", cxCore.courseGroups(courses, now, "swhx").yearMap.get(2025).length, 1);
+ok("缩写不命中时课程分组为空", cxCore.courseGroups(courses, now, "bj").yearMap.size, 0);
 
 /* ── 汇总 ── */
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

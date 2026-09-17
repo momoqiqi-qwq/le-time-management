@@ -22,7 +22,7 @@ const GUIDE_GROUPS = [
   { name: "学习与校园", ids: ["shiguang-schedule", "school-notice", "chaoxing-notify", "cppu-notify", "exam-calendar"] },
   { name: "效率与专注", ids: ["pomodoro", "weekly-report"] },
   { name: "信息与提醒", ids: ["gx-news", "cn-holiday", "wechat-push"] },
-  { name: "生活与工具", ids: ["dorm-duty", "web-collector"] },
+  { name: "生活与工具", ids: ["dorm-duty", "web-collector", "inbox-drop"] },
 ];
 const GUIDE_DOCS = {
   "shiguang-schedule": ["打开课程表，先设置学期与开学日期", "可手动添加，或用“教务导入”粘贴/导入表格", "确认预览后选择合并或替换"],
@@ -37,6 +37,7 @@ const GUIDE_DOCS = {
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
   "web-collector": ["输入网址后点击自动识别并收藏", "检查自动识别的网站名称、favicon 和图标", "添加备注后保存，之后可搜索、刷新和一键打开"],
   "dorm-duty": ["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响", "选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）", "需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
+  "inbox-drop": ["小程序没有系统级拖放，用「粘贴消息」把聊天里的通知复制进来，或直接手输一句话", "插件会自动认出来源平台、消息类型和其中的日期时间，认错了可以改", "确认无误后收纳；需要动起来的点「建任务」，会带着象限和截止时间进四象限", "收纳记录与桌面端共用一份存储，桌面拖进来的消息在这里也能看到"],
 };
 
 /* 微信推送：时间块提前分钟选项（与桌面端 wechat-push 一致） */
@@ -116,6 +117,8 @@ Page({
     if (this.data.id === "dorm-duty" && this.data.dd) this.loadDormDuty();
     if (this.data.id === "pomodoro" && this._pomoReady) this.restorePomodoro();
     if (this.data.id === "wechat-push" && this._push) { this.pushTick(); this.startPushTimer(); }
+    // 收纳区可能被桌面端改了（共用一份存储），回到本页重读一次
+    if (this.data.id === "inbox-drop" && this.data.dropsWrap) this.loadInboxDrop();
   },
 
   onHide() { this.stopTickOnly(); this.stopPushTimer(); },
@@ -131,6 +134,7 @@ Page({
     else if (id === "wechat-push") this.loadPush();
     else if (id === "gx-news") this.loadGx();
     else if (id === "chaoxing-notify") this.loadCx();
+    else if (id === "inbox-drop") this.loadInboxDrop();
   },
 
   /* ── 番茄专注 ── */
@@ -645,6 +649,160 @@ Page({
     const ev = this._examMap && this._examMap[e.currentTarget.dataset.key];
     if (!ev || !ev.url) return;
     wx.setClipboardData({ data: ev.url });
+  },
+
+  /* ════ 拖入消息收纳（inbox-drop）════
+     小程序没有系统级拖放 / 剪贴板读图，这里的入口是「粘贴或手输一段消息文本」。
+     纯识别逻辑全在 runtime 里（与桌面端同名表），页面只负责「读 storage → 算 → 写回 → 渲染」。 */
+
+  loadInboxDrop() {
+    const sum = runtime.inboxDropSummary(store.todayStr());
+    this._idDrops = sum.drops;
+    this.setData({
+      dropsWrap: sum,
+      idInput: this.data.idInput || "",
+      idEdit: this._idEdit || null,
+    });
+  },
+
+  onIdInput(e) { this.setData({ idInput: e.detail.value }); },
+
+  /** 粘贴按钮：不能直接读剪贴板文本（wx.getClipboardData 会弹系统提示，体验割裂），
+      所以用 textarea 承接 —— 用户长按粘贴，这里只负责把已粘贴的内容收下来。
+      真正「一键粘」走 wx.getClipboardData，失败（用户拒绝授权）就提示去 textarea 手动粘。 */
+  onIdPaste() {
+    wx.getClipboardData({
+      success: (res) => {
+        const t = String(res.data || "").trim();
+        if (!t) { wx.showToast({ title: "剪贴板是空的", icon: "none" }); return; }
+        this.setData({ idInput: t });
+        wx.showToast({ title: "已读入剪贴板内容", icon: "none" });
+      },
+      fail: () => wx.showToast({ title: "读不到剪贴板，请手动粘贴到输入框", icon: "none" }),
+    });
+  },
+
+  /** 收纳：跑纯逻辑 → 落盘 → 重读渲染。识别错的字段用户可以在下面改。 */
+  onIdAdd() {
+    const text = String(this.data.idInput || "").trim();
+    if (!text) { wx.showToast({ title: "先粘贴或输入一条消息", icon: "none" }); return; }
+    // drops + seq 一起读（idLoadAll）：台账被上限裁剪后，只看台账最大 seq 会重号
+    const { list: cur, seq } = runtime.idLoadAll();
+    const out = runtime.idAddDrops(cur, { raw: text }, store.todayStr(), seq);
+    if (out.duplicated) { wx.showToast({ title: "这条已经收过了", icon: "none" }); return; }
+    if (!out.added) { wx.showToast({ title: "没读到可收纳的内容", icon: "none" }); return; }
+    store.pluginStorageSet("inbox-drop", "drops", out.list);
+    store.pluginStorageSet("inbox-drop", "seq", Math.max(seq, out.row.seq));
+    this.setData({ idInput: "" });
+    this.loadInboxDrop();
+    const r = out.row;
+    const bits = [runtime.idPlatformLabel(r.platform), runtime.idTypeLabel(r.msgType)].filter(Boolean).join(" · ");
+    wx.showToast({ title: bits ? "已收纳 · " + bits : "已收纳", icon: "none" });
+  },
+
+  /** 抽屉里改某一条（标题 / 日期 / 时间 / 平台 / 类型）。改完重新算一遍去重键 —— 
+      runtime 里没有「编辑」函数，因为编辑只是 patch + 重新规范化，放页面里更直接。 */
+  onIdEdit(e) { this._idEdit = e.currentTarget.dataset.id; this.setData({ idEdit: this._idEdit }); },
+  onIdEditCancel() { this._idEdit = null; this.setData({ idEdit: null }); },
+  onIdEditInput(e) {
+    const f = e.currentTarget.dataset.f;
+    const patch = {}; patch[f] = e.detail.value;
+    this._idPatch = Object.assign(this._idPatch || {}, patch);
+  },
+  onIdEditSave() {
+    const id = this._idEdit;
+    if (!id) return;
+    const cur = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    const list = cur.map((d) => (d.id === id ? runtime.idNormalizeDrop(Object.assign({}, d, this._idPatch || {}), store.todayStr()) : d));
+    store.pluginStorageSet("inbox-drop", "drops", list);
+    this._idEdit = null; this._idPatch = null;
+    this.setData({ idEdit: null });
+    this.loadInboxDrop();
+    wx.showToast({ title: "已修改", icon: "success" });
+  },
+
+  /** 建任务：象限与分类来自类型表，due 来自识别到的日期。 */
+  onIdTask(e) {
+    const id = e.currentTarget.dataset.id;
+    const d = (this._idDrops || []).find((x) => x.id === id);
+    if (!d) return;
+    // 已经在台账里标过 done 的不重复建 —— 这个标记就是为跨端去重留的
+    if (d.done === "task") { wx.showToast({ title: "这条已经建过任务了", icon: "none" }); return; }
+    const src = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr()).find((x) => x.id === id);
+    if (!src) return;
+    store.addTask(runtime.idToTaskPatch(src));
+    this._idMarkDone(id, "task");
+    wx.showToast({ title: "已加入四象限", icon: "success" });
+  },
+
+  /** 排日程：认得出时刻的排到那个点，认不出的排当天 09:00 一小时。 */
+  onIdBlock(e) {
+    const id = e.currentTarget.dataset.id;
+    const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    const d = all.find((x) => x.id === id);
+    if (!d) return;
+    if (!d.date) { wx.showToast({ title: "这条没识别到日期，先改一下再排", icon: "none" }); return; }
+    if (d.done === "block") { wx.showToast({ title: "这条已经排过了", icon: "none" }); return; }
+    const meta = runtime.idTypeMeta(d.msgType);
+    store.addBlock({
+      date: d.date,
+      start: d.time || "09:00",
+      durMin: 60,
+      title: d.title.slice(0, 40),
+      cat: meta ? meta.cat : "life",
+    });
+    this._idMarkDone(id, "block");
+    wx.showToast({ title: "已排进时间块", icon: "success" });
+  },
+
+  _idMarkDone(id, kind) {
+    const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    store.pluginStorageSet("inbox-drop", "drops", all.map((d) => (d.id === id ? Object.assign({}, d, { done: kind }) : d)));
+    this.loadInboxDrop();
+  },
+
+  onIdReopen(e) {
+    const id = e.currentTarget.dataset.id;
+    const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    store.pluginStorageSet("inbox-drop", "drops", all.map((d) => (d.id === id ? Object.assign({}, d, { done: "" }) : d)));
+    this.loadInboxDrop();
+  },
+
+  onIdPin(e) {
+    const id = e.currentTarget.dataset.id;
+    const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    store.pluginStorageSet("inbox-drop", "drops", all.map((d) => (d.id === id ? Object.assign({}, d, { pinned: !d.pinned }) : d)));
+    this.loadInboxDrop();
+  },
+
+  onIdDel(e) {
+    const id = e.currentTarget.dataset.id;
+    wx.showModal({
+      title: "删除这条收纳记录？",
+      content: "只是从收纳区里去掉，已经建出来的任务或时间块不受影响。",
+      success: (res) => {
+        if (!res.confirm) return;
+        const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+        store.pluginStorageSet("inbox-drop", "drops", all.filter((d) => d.id !== id));
+        this.loadInboxDrop();
+      },
+    });
+  },
+
+  onIdClearDone() {
+    const all = runtime.idDrops(store.pluginStorageGet("inbox-drop", "drops", null), store.todayStr());
+    const n = all.filter((d) => d.done).length;
+    if (!n) { wx.showToast({ title: "没有已处理的记录", icon: "none" }); return; }
+    wx.showModal({
+      title: "清除已处理的 " + n + " 条？",
+      content: "置顶的和还没处理的一律保留。",
+      success: (res) => {
+        if (!res.confirm) return;
+        store.pluginStorageSet("inbox-drop", "drops", all.filter((d) => !d.done || d.pinned));
+        this.loadInboxDrop();
+        wx.showToast({ title: "已清除 " + n + " 条", icon: "success" });
+      },
+    });
   },
 
   /* ════ 插件使用说明（静态文档，清单数据与桌面端说明同源） ════ */

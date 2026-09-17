@@ -381,22 +381,89 @@ function milestoneView(data) {
    桌面是 1500px 画布上的绝对定位年表，靠左右交错区分事件。
    窄屏无法靠滚动了事：1500px 画布里 150px 的卡片挤在同一水平线上，
    文字直接叠成一团（用户截图证实）。窄屏换成纵向年表 ——
-   一条中轴 + 左右交错卡片，靠日期标签定位，不再有横向滚动。 */
+   一条中轴 + 左右交错卡片，靠日期标签定位，不再有横向滚动。
+   v0.50.0：修复时间堆积 —— 两个事件相隔太久（>60 天且占跨度 15%+）时，
+   中轴用「省略号」截断长空档，省出的横向位置按天数比例还给密集段；
+   段内再做「前推 + 后收」两遍扫描，保证相邻卡片不叠。 */
 function chronicleView(data) {
   const root = el("section", { class: "tv-panel chronicle-view" });
   root.append(head("横向时间轴", "参考机器人发展史年表：适合信息密度高、事件多的长期回顾。"));
   if (!data.events.length) { root.append(empty()); return root; }
   const events = data.events.slice(0, 30);
-  const minDate = events[0].date, maxDate = events.at(-1).date;
-  const total = Math.max(1, dayDiff(minDate, maxDate));
+  const total = Math.max(1, dayDiff(events[0].date, events.at(-1).date));
+  // 「相隔太久」要同时满足绝对下限与相对占比：只看占比，短跨度里相邻两个月
+  // 的间隔也会被切得粉碎；只看天数，十年跨度里半年的空档在轴上只占 5%，切了反而丢信息。
+  const gapThreshold = Math.max(60, Math.round(total * 0.15));
+
+  // 1) 按长空档把事件切成密集段（gaps[k] = 第 k 段之后的那个空档）
+  const segments = [[]];
+  const gaps = [];
+  for (let i = 0; i < events.length; i++) {
+    if (i > 0) {
+      const d = dayDiff(events[i - 1].date, events[i].date);
+      if (d > gapThreshold) {
+        gaps.push({ seg: segments.length - 1, days: d, from: events[i - 1].date, to: events[i].date });
+        segments.push([]);
+      }
+    }
+    segments.at(-1).push(events[i]);
+  }
+
+  // 2) 横向预算：轴上可用 5.5%~94.5%（89 份）—— 收进 5.5/94.5 是为了让首末事件
+  //    的 150px 卡片完整落进 1500px 画布（原 3%~97% 时两端各被裁掉 30px，实测）。
+  //    省略号区固定占 GAP_UNIT 份；剩余按各段天数比例分，
+  //    且每段保底 (n-1)*MIN_STEP，保底放不下就整体压步长。
+  const MIN_STEP = 5.1;  // 相邻事件最小间距（%）：150px 卡片 / 1500px 画布 = 10%，
+                         // 上下交错布局下同侧相邻卡恰好 10.2%，不叠
+  const GAP_UNIT = Math.max(2, Math.min(6, Math.floor((89 * 0.45) / Math.max(1, gaps.length))));
+  const remaining = 89 - gaps.length * GAP_UNIT;
+  // 段尾余量：段尾事件若贴着省略号区落位，日期徽章（半宽约 38px）会压到省略号芯片上。
+  // 给「后面跟着省略号」的段留 4 份尾巴，让徽章与芯片之间保有 ≥14px 空隙；
+  // 空档太多预算放不下时（极端孤立事件场景）放弃尾巴 —— 那种密度本来就必然叠卡。
+  const TAIL_UNIT = remaining - gaps.length * 4 >= 12 ? 4 : 0;
+  const step = Math.min(MIN_STEP, Math.max(1.5, (remaining - gaps.length * TAIL_UNIT) / Math.max(1, events.length - segments.length)));
+  const mins = segments.map((s, k) => (s.length - 1) * step + (gaps[k] ? TAIL_UNIT : 0));
+  const spare = Math.max(0, remaining - mins.reduce((a, b) => a + b, 0));
+  const weights = segments.map((s) => Math.max(1, dayDiff(s[0].date, s.at(-1).date)));
+  const weightSum = weights.reduce((a, b) => a + b, 0) || 1;
+
+  // 3) 逐段落位：先按真实时间比例，再「前推 + 后收」各扫一遍。
+  //    只前推会在段尾溢出（比例位置贴近段尾时，后面的事件被推出段外）；
+  //    宽度保底 (n-1)*step 在手，后收最坏也只是把整段压成等距，不会推出段外。
+  const xs = [];
+  const gapCenters = [];
+  let cursor = 5.5;
+  segments.forEach((seg, k) => {
+    const start = cursor;
+    const width = mins[k] + spare * weights[k] / weightSum;
+    const end = start + width;
+    const usable = width - (gaps[k] ? TAIL_UNIT : 0);
+    const span = Math.max(1, dayDiff(seg[0].date, seg.at(-1).date));
+    const px = seg.map((e) => start + (dayDiff(seg[0].date, e.date) / span) * usable);
+    for (let i = 1; i < px.length; i++) px[i] = Math.max(px[i], px[i - 1] + step);
+    px[px.length - 1] = Math.min(px[px.length - 1], start + usable);
+    for (let i = px.length - 2; i >= 0; i--) px[i] = Math.min(px[i], px[i + 1] - step);
+    xs.push(...px);
+    cursor = end;
+    if (gaps[k]) {
+      // 芯片居中在「段尾尾巴 + 省略号区」拼成的安静带里，离两侧日期徽章各 ≥14px
+      gapCenters.push(end + (GAP_UNIT - TAIL_UNIT) / 2);
+      cursor += GAP_UNIT;
+    }
+  });
 
   // 桌面：横向年表
   const canvas = el("div", { class: "chronicle-canvas" });
   canvas.append(el("div", { class: "chronicle-axis" }));
+  gaps.forEach((g, i) => {
+    canvas.append(el("div", {
+      class: "ce-gap", style: `left:${gapCenters[i]}%`,
+      title: `此处省略 ${g.days} 天（${g.from} → ${g.to}）`,
+    }, el("span", { class: "ce-gap-mark" }, "⋯⋯"), el("span", { class: "ce-gap-days" }, `省略 ${g.days} 天`)));
+  });
   events.forEach((e, i) => {
-    const x = clamp(dayDiff(minDate, e.date) / total * 94 + 3, 2, 97);
     const upper = i % 2 === 0;
-    canvas.append(el("div", { class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${x}%;--ec:${PALETTE[i % PALETTE.length]}` },
+    canvas.append(el("div", { class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${xs[i]}%;--ec:${PALETTE[i % PALETTE.length]}` },
       el("div", { class: "ce-card" }, el("b", {}, e.title), el("span", {}, `${e.date} · ${e.subtitle || e.kind}`)),
       el("div", { class: "ce-stem" }), el("div", { class: "ce-dot" }),
       el("div", { class: "ce-date" }, e.date),
@@ -404,9 +471,13 @@ function chronicleView(data) {
   });
   root.append(el("div", { class: "chronicle-scroll" }, canvas));
 
-  // 窄屏：纵向年表
+  // 窄屏：纵向年表（长间隔同样给省略提示，两端语义一致）
   const vertical = el("div", { class: "chronicle-vertical" });
   events.forEach((e, i) => {
+    if (i > 0) {
+      const d = dayDiff(events[i - 1].date, e.date);
+      if (d > gapThreshold) vertical.append(el("div", { class: "cv-gap" }, `⋯ 间隔 ${d} 天 ⋯`));
+    }
     const side = i % 2 ? "right" : "left";
     vertical.append(el("article", { class: `cv-item ${side}`, style: `--ec:${PALETTE[i % PALETTE.length]}` },
       el("span", { class: "cv-date" }, e.date),

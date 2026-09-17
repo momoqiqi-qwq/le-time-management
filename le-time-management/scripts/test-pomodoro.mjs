@@ -49,7 +49,7 @@ assert.match(settingsView, /for \(const preset of BUILTIN_SOUNDS\)/, '设置页�
 const PLUGIN = new URL('../public/plugins/pomodoro/main.js', import.meta.url);
 const manifest = JSON.parse(read('../public/plugins/pomodoro/manifest.json'));
 assert.ok(manifest.permissions.includes('sound'), '番茄专注的 manifest 必须声明 sound 权限，否则 tide.sound 会被宿主拒绝');
-assert.equal(manifest.version, '0.4.1', '卡片底色接入自定义背景的卡片不透明度之后必须升插件版本');
+assert.equal(manifest.version, '0.5.0', '试听按钮提到提醒面板头部（收起也可试听）之后必须升插件版本');
 
 const source = fs.readFileSync(PLUGIN, 'utf8');
 for (const marker of ['tide.sound.play', 'tide.sound.presets', 'focusNotify', 'focusSound', 'breakNotify', 'breakSound', 'AUDIO_MAX_BYTES', 'readAsDataURL']) {
@@ -65,6 +65,10 @@ assert.match(source, /soundChips\.style\.cssText = "display:flex;flex-wrap:wrap;
 /* 提醒面板默认收起：body 初始 display:none，展开走 toggle 的 grid */
 assert.match(source, /margin-top:11px;display:none;gap:9px/, '提醒面板必须默认收起 —— 平常不该占一大屏');
 assert.ok(!/margin-top:11px;display:grid/.test(source), '提醒面板不许默认展开');
+/* v0.50.0：试听按钮必须挂在面板头部（head.append(toggle, previewBtn)），
+   收起状态也能直接试听；面板内部不许再留第二个试听行。 */
+assert.match(source, /head\.append\(toggle, previewBtn\)/, '试听按钮必须与「提醒设置」开关同行挂在面板头部');
+assert.ok(!/row\("提示音", chip\("试听"/.test(source), '面板内部不许再有第二个试听按钮 —— 头部那个收起状态也能用');
 
 /* 自定义背景：卡片必须跟随「卡片不透明度 / 卡片毛玻璃」两个滑块。
    应用自己的 .card 靠 styles.css 生效，插件卡片是内联样式，只能靠宿主

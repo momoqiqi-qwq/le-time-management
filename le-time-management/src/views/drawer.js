@@ -98,35 +98,109 @@ export function openTaskDrawer(taskId) {
     }
   };
 
+  // 图片附件：可加可删。加的三条路子 —— Ctrl+V 粘贴截图、把图片拖到这一块、点「选择图片」。
+  // 都走 `readImageAsDataUrl` 在本地压到长边 1280 再存，避免一张手机截图十几 MB 撑爆 localStorage。
   const attBox = el("div", {});
+  const attBusy = { v: false };
+  const saveAtts = (list) => { S.updateTask(t.id, { attachments: list }); refresh(); renderAtts(); };
+  const addAttFiles = async (files) => {
+    const imgs = Array.from(files || []).filter((f) => /^image\//.test(f.type || ""));
+    if (!imgs.length) { toast("只认图片文件"); return; }
+    if (attBusy.v) return;
+    attBusy.v = true;
+    try {
+      const cur = () => (S.taskById(t.id)?.attachments) || [];
+      const next = cur().slice();
+      let ok = 0;
+      for (const f of imgs.slice(0, 6)) {
+        try { next.push(await readImageAsDataUrl(f)); ok += 1; } catch { /* 单张失败不打断其余的 */ }
+      }
+      if (!ok) { toast("这些图片读不出来"); return; }
+      saveAtts(next);
+      toast(ok > 1 ? `已添加 ${ok} 张图片` : "已添加 1 张图片");
+    } finally { attBusy.v = false; }
+  };
+
   const renderAtts = () => {
     attBox.replaceChildren();
     const atts = (S.taskById(t.id)?.attachments) || [];
-    if (!atts.length) return;
-    attBox.append(el("div", { class: "lab" }, "图 片 附 件"), el("div", { class: "att-imgs" },
-      ...atts.map((u) => el("img", { src: u, onclick: () => window.open(u, "_blank") }))));
-  };
+    const pick = el("input", { type: "file", accept: "image/*", multiple: true, style: "display:none" });
+    pick.addEventListener("change", () => { addAttFiles(pick.files); pick.value = ""; });
 
+    const zone = el("div", { class: "att-zone" },
+      el("div", { class: "att-hint" }, atts.length ? "把图片拖到这里，或 Ctrl+V 粘贴" : "拖入图片 / Ctrl+V 粘贴截图"),
+      el("div", { class: "att-zone-acts" },
+        el("button", { class: "btn ghost sm", onclick: () => pick.click(), type: "button" }, "选择图片"),
+      ),
+      pick,
+    );
+    // dragover 必须 preventDefault，否则 drop 根本不触发
+    zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("over"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+    zone.addEventListener("drop", (e) => {
+      e.preventDefault(); zone.classList.remove("over");
+      addAttFiles(e.dataTransfer?.files);
+    });
+
+    const list = atts.length ? el("div", { class: "att-imgs" },
+      ...atts.map((u, i) => el("div", { class: "att-item" },
+        el("img", { src: u, onclick: () => window.open(u, "_blank") }),
+        el("button", { class: "att-del", title: "移除这张", type: "button",
+          onclick: () => saveAtts(atts.filter((_, k) => k !== i)) }, "✕"),
+      ))) : null;
+
+    attBox.append(
+      el("div", { class: "lab" }, "图 片 附 件", atts.length ? el("span", { class: "att-n" }, ` ${atts.length} 张`) : null),
+      list, zone,
+    );
+  };
+  // 粘贴：只要剪贴板里有图片就收下（这才是「Ctrl+V 贴截图」的直觉）；
+  // 但若用户正在输入框里，且剪贴板**同时**有文本，就别抢 —— 那时他要的是粘文字。
+  const onAttPaste = (e) => {
+    if (!document.body.contains(drawer)) return;
+    const cd = e.clipboardData;
+    if (!cd) return;
+    const tgt = e.target;
+    const typing = tgt && (tgt.tagName === "INPUT" || tgt.tagName === "TEXTAREA" || tgt.isContentEditable);
+    // files 在截图上常常是空的，items 才是可靠的来源
+    const fromItems = Array.from(cd.items || [])
+      .filter((it) => it.kind === "file" && /^image\//.test(it.type || ""))
+      .map((it) => it.getAsFile()).filter(Boolean);
+    const imgs = fromItems.length ? fromItems : Array.from(cd.files || []).filter((f) => /^image\//.test(f.type || ""));
+    if (!imgs.length) return;
+    if (typing && String(cd.getData?.("text/plain") || "").trim()) return;   // 粘文字，别抢
+    e.preventDefault();
+    addAttFiles(imgs);
+  };
+  document.addEventListener("paste", onAttPaste, true);
+
+  // ⚠️ 这里是**原生** `Element.append()`，不是 `el()` —— 原生 append 会把非 Node 参数
+  // 字符串化后插入，`append(null)` 会真的写出一个文本节点 "null"。
+  // 下面 `t.sourcePlugin ? … : null` 在「手动创建的任务」（占绝大多数）时正好取到 null，
+  // 于是抽屉里会多出一行裸 `null`（v0.48.0 用户截图报的 bug）。
+  // 所以这一串必须先滤掉假值再 append，不能直接照抄 `el()` 的写法。
   body.append(
-    el("div", { class: "kv" }, el("span", {}, "任务名称"), titleInput),
-    // 插件联动提醒：显示来源插件图标与名称（手动创建的任务没有这一行）
-    t.sourcePlugin ? el("div", { class: "kv" }, el("span", {}, "来源插件"),
-      el("span", { class: "src-plug", title: "这条提醒由插件创建" },
-        pluginDisplayIcon(t.sourcePlugin, pluginDisplayName(t.sourcePlugin)),
-        el("span", {}, pluginDisplayName(t.sourcePlugin)))) : null,
-    el("div", { class: "kv" }, el("span", {}, "标签"), tagsInput),
-    el("div", { class: "kv" }, el("span", {}, "所属象限"), el("span", { class: "quadpick" }, ...quadBtns)),
-    el("div", { class: "kv" }, el("span", {}, "预估耗时"), estSel),
-    el("div", { class: "kv" }, el("span", {}, "截止日期"), dueInput),
-    el("div", { class: "kv" }, el("span", {}, "截止时间"), dueTimeInput),
-    el("div", { class: "kv" }, el("span", {}, "任务提醒"), el("label", { class: "reminder-toggle" }, reminderSwitch, el("span", {}, "启用"))),
-    el("div", { class: "kv reminder-kv" }, el("span", { class: "reminder-kv-lab" }, "提前预警"),
-      el("div", { class: "reminder-fields" }, reminderBox, reminderCustom)),
-    el("div", { class: "kv" }, el("span", {}, "所属项目"), projInput),
-    el("div", { class: "kv", style: "align-items:flex-start" }, el("span", { style: "padding-top:8px" }, "备注"), noteInput),
-    attBox,
-    el("div", { class: "lab" }, "快 捷 操 作"),
-    plugBox,
+    ...[
+      el("div", { class: "kv" }, el("span", {}, "任务名称"), titleInput),
+      // 插件联动提醒：显示来源插件图标与名称（手动创建的任务没有这一行）
+      t.sourcePlugin ? el("div", { class: "kv" }, el("span", {}, "来源插件"),
+        el("span", { class: "src-plug", title: "这条提醒由插件创建" },
+          pluginDisplayIcon(t.sourcePlugin, pluginDisplayName(t.sourcePlugin)),
+          el("span", {}, pluginDisplayName(t.sourcePlugin)))) : null,
+      el("div", { class: "kv" }, el("span", {}, "标签"), tagsInput),
+      el("div", { class: "kv" }, el("span", {}, "所属象限"), el("span", { class: "quadpick" }, ...quadBtns)),
+      el("div", { class: "kv" }, el("span", {}, "预估耗时"), estSel),
+      el("div", { class: "kv" }, el("span", {}, "截止日期"), dueInput),
+      el("div", { class: "kv" }, el("span", {}, "截止时间"), dueTimeInput),
+      el("div", { class: "kv" }, el("span", {}, "任务提醒"), el("label", { class: "reminder-toggle" }, reminderSwitch, el("span", {}, "启用"))),
+      el("div", { class: "kv reminder-kv" }, el("span", { class: "reminder-kv-lab" }, "提前预警"),
+        el("div", { class: "reminder-fields" }, reminderBox, reminderCustom)),
+      el("div", { class: "kv" }, el("span", {}, "所属项目"), projInput),
+      el("div", { class: "kv", style: "align-items:flex-start" }, el("span", { style: "padding-top:8px" }, "备注"), noteInput),
+      attBox,
+      el("div", { class: "lab" }, "快 捷 操 作"),
+      plugBox,
+    ].filter(Boolean),
   );
 
   const foot = el("div", { class: "dfoot" },
@@ -171,7 +245,12 @@ export function openTaskDrawer(taskId) {
     noteInput.value = cur.note || "";
     renderPlugActions();
   }
-  function close() { closeLayer(drawer, mask, () => document.removeEventListener("keydown", onKey)); }
+  function close() { closeLayer(drawer, mask, () => {
+    document.removeEventListener("keydown", onKey);
+    // 粘贴是挂在 document 上的，抽屉关了必须摘掉 —— 否则下次开别的任务会多一个监听者，
+    // 贴一张图会被加上两遍（在旧抽屉里就已经加过的那一份还指着已经删掉的任务）。
+    document.removeEventListener("paste", onAttPaste, true);
+  }); }
 }
 
 // 找今天第一个放得下的空闲时段；失败时保留已有安排。
@@ -180,4 +259,45 @@ export function scheduleToToday(t) {
     const b = S.placeTask(t, S.todayStr());
     toast(`已排入今天 ${b.start} · ${S.durLabel(b.durMin)}`);
   } catch (e) { toast(e.message); }
+}
+
+/** 图片文件 → 压缩后的 dataURL。
+    为什么一定要压：原图直接进 localStorage，一张 4MB 的截图 base64 之后约 5.3MB，
+    而 localStorage 的配额通常只有 5MB —— 存两张就写不进去，整个 store 的保存都会开始抛。
+    所以统一把长边限制在 1280、按 JPEG 0.82 重编码；已经够小的图原样返回，不重复损失画质。
+    压缩用 canvas，拿不到 canvas（极老 WebView）就退回 FileReader 原样转 —— 能用比完美重要。 */
+export function readImageAsDataUrl(file, maxSide = 1280, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const readRaw = () => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result || ""));
+      fr.onerror = () => reject(new Error("图片读取失败"));
+      fr.readAsDataURL(file);
+    };
+    // 已经小于 400KB 的没必要重编码（重编码对小图是纯粹的画质损失）
+    if (!file || !file.size || file.size < 400 * 1024) { readRaw(); return; }
+    const fr = new FileReader();
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width * scale));
+          const h = Math.max(1, Math.round(img.height * scale));
+          const cv = document.createElement("canvas");
+          cv.width = w; cv.height = h;
+          const ctx = cv.getContext("2d");
+          if (!ctx) { resolve(String(fr.result || "")); return; }
+          ctx.drawImage(img, 0, 0, w, h);
+          const out = cv.toDataURL("image/jpeg", quality);
+          // 少数情况下「压缩后」反而更大（本来就是高压缩比的 PNG）→ 用小的那个
+          resolve(out && out.length < String(fr.result).length ? out : String(fr.result || ""));
+        } catch { resolve(String(fr.result || "")); }
+      };
+      img.onerror = readRaw;
+      img.src = String(fr.result || "");
+    };
+    fr.onerror = () => reject(new Error("图片读取失败"));
+    fr.readAsDataURL(file);
+  });
 }
