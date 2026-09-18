@@ -254,8 +254,11 @@ export function renderShell(root) {
     makeWindowControl("close", "关闭", () => withCurrentWindow((win) => win.close())),
   ) : null;
 
-  const topSearch = el("button", { class: "top-search", title: "全局搜索 / 命令面板（Ctrl+K）· 拖动可调整位置", type: "button", onclick: () => window.dispatchEvent(new CustomEvent("tide:command-palette")) },
-    el("span", {}, "⌕"), el("span", { class: "top-search-label" }, "搜索 / 命令"), el("kbd", {}, "Ctrl K"));
+  // v0.57.0：搜索钮收成纯放大镜图标（用户需求「搜索/命令也弄成一个放大镜图标，不用文字」），
+  // 与快捷入口瓷砖（.quick-menu-trigger）同观感 —— 文字与 Ctrl K 角标从 DOM 移除，
+  // 快捷键说明挪进 title；命令面板入口（tide:command-palette）与拖动排序不变。
+  const topSearch = el("button", { class: "top-search", title: "全局搜索 / 命令面板（Ctrl+K）· 拖动可调整位置", "aria-label": "全局搜索 / 命令", type: "button", onclick: () => window.dispatchEvent(new CustomEvent("tide:command-palette")) },
+    el("span", { class: "top-search-glyph", "aria-hidden": "true" }, faIcon("magnifying-glass")));
   const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
   const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },

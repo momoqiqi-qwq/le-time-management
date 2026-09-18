@@ -1373,9 +1373,12 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 @media (max-width:520px) { .about-head { flex-direction:column; } .about-list-row { align-items:flex-start; } .about-list-main { flex-direction:column; gap:2px; } .about-list-main span { white-space:normal; } .about-tag { max-width:42%; text-align:right; } }
 
 /* ── v0.10 · 全局搜索 / 命令面板 ── */
-.top-search{height:34px;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink-2);padding:0 9px;cursor:pointer;margin-right:10px;font:inherit}
+/* v0.57.0：搜索钮 = 纯放大镜图标瓷砖（34×34，圆角对齐 .quick-menu-trigger 的 11px），
+   文字 / kbd 已从 DOM 移除（shell.js），尺寸观感与快捷入口、窗口钮同一条直线。 */
+.top-search{height:34px;width:34px;min-width:34px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:11px;background:var(--panel);color:var(--ink-2);padding:0;cursor:pointer;margin-right:10px;font:inherit}
 .top-search:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line));color:var(--deep)}
-.top-search kbd{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);background:var(--paper);border:1px solid var(--line-soft);border-radius:5px;padding:2px 5px;box-shadow:none}
+.top-search .top-search-glyph{display:inline-flex}
+.top-search .top-search-glyph .fa-ic{width:15px;height:15px;display:block;fill:currentColor}
 .cmd-mask{position:fixed;inset:0;background:rgba(18,27,31,.28);backdrop-filter:blur(3px);z-index:1900}
 /* 命令面板：视口相关的量全部走 --ui-vw / --ui-vh（zoom 语义，见文件上方契约第 2 条）。
    裸用 100vw/1vh/78vh 在缩放下会按布局长度算，放大后面板比屏幕还宽。 */
@@ -1417,7 +1420,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 /* ── v0.10 · 同步与快捷键 ── */
 .sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin-top:8px}.plugin-shortcut-block{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}.shortcut-sub-title{display:block;font-size:calc(13.5px * var(--ui-text-scale));color:var(--ink);margin-bottom:2px}.shortcut-hint{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin:2px 0 0}.shortcut-name{display:flex;align-items:center;gap:8px;min-width:0}.shortcut-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shortcut-kbd{flex:none;font-size:calc(10.5px * var(--ui-text-scale));font-weight:600;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:1px 6px;white-space:nowrap}.shortcut-none{flex:none;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3)}
 
-@media(max-width:700px){.top-search-label,.top-search kbd{display:none}.top-search{padding:0 10px}.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
+@media(max-width:700px){.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -3372,16 +3375,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   transform: translate(-50%, -50%);
   box-shadow: 0 7px 22px rgba(15, 23, 42, .1);
 }
-@media (max-width: 1280px) and (min-width: 761px) {
-  :root[data-center-top-stats="on"] .top-search {
-    width: 34px;
-    min-width: 34px;
-    justify-content: center;
-    padding: 0;
-  }
-  :root[data-center-top-stats="on"] .top-search-label,
-  :root[data-center-top-stats="on"] .top-search kbd { display: none; }
-}
+/* v0.57.0：搜索钮已是恒定纯图标（.top-search 34×34 瓷砖），
+   原「统计居中时 761~1280px 把搜索折成图标」的媒体块随结构一并移除。 */
 
 .rail-bottom > .settings-icon-button {
   width: 40px;

@@ -28,7 +28,9 @@ export const DEFAULT_UI_PREFERENCES = Object.freeze({
   motion: "system",
   swipeNavigation: true,
   showTopStats: true,
-  centerTopStats: false,
+  // v0.57.0：默认居中（用户需求「待办/已完成默认居中」）。归一化用 !==false：
+  // 老数据里没写过这个键 → 落新默认 true；显式关过（false）的用户保持关闭。
+  centerTopStats: true,
   showViewSubtitle: true,
   startupView: "last",
   // 手机底栏高度档位：紧凑 40px / 标准 46px / 宽松 54px（按钮最小高，CSS 变量消费）
@@ -87,7 +89,10 @@ export function normalizeUiPreferences(raw = {}) {
   next.uiScale = normalizeUiScale(next.uiScale);
   next.swipeNavigation = next.swipeNavigation !== false;
   next.showTopStats = next.showTopStats !== false;
-  next.centerTopStats = next.centerTopStats === true;
+  // v0.57.0 起 centerTopStats 默认 true：只有显式 false 才算关（缺省 = 开）。
+  // 上一版语义是 ===true（缺省 = 关），默认值翻转后必须同步放宽，否则存档里
+  // 没有该键的老用户会永远停在「不居中」，新默认形同虚设。
+  next.centerTopStats = next.centerTopStats !== false;
   next.showViewSubtitle = next.showViewSubtitle !== false;
   if (!WINDOW_SIZE_MODES_SET.has(next.startupWindowMode)) next.startupWindowMode = DEFAULT_UI_PREFERENCES.startupWindowMode;
   next.startupWindowWidth = Math.round(clamp(next.startupWindowWidth, CUSTOM_SIZE_LIMITS.minWidth, CUSTOM_SIZE_LIMITS.maxWidth));

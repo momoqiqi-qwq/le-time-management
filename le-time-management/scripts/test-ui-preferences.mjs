@@ -17,8 +17,11 @@ assert.equal(normalizeUiPreferences({ textScale: 84 }).textScale, 85);   // 步�
 assert.equal(normalizeUiPreferences({ textScale: "110" }).textScale, 110);
 assert.equal(normalizeUiPreferences({ swipeNavigation: false }).swipeNavigation, false);
 assert.equal(normalizeUiPreferences({ showTopStats: false }).showTopStats, false);
+// v0.57.0：centerTopStats 默认翻转为 true，归一化改「!==false」（只有显式 false 才算关）
+assert.equal(normalizeUiPreferences({}).centerTopStats, true);                          // 缺省 = 居中（新默认）
 assert.equal(normalizeUiPreferences({ centerTopStats: true }).centerTopStats, true);
-assert.equal(normalizeUiPreferences({ centerTopStats: "true" }).centerTopStats, false);
+assert.equal(normalizeUiPreferences({ centerTopStats: false }).centerTopStats, false);  // 显式关过的用户保持关闭
+assert.equal(normalizeUiPreferences({ centerTopStats: "true" }).centerTopStats, true);
 assert.equal(normalizeUiPreferences({ showViewSubtitle: false }).showViewSubtitle, false);
 // 底栏高度档位：非法值回标准档，三档合法值原样保留（CSS 变量消费，见 styles.css :root[data-navbar]）
 assert.equal(normalizeUiPreferences({ navBarSize: "weird" }).navBarSize, "standard");

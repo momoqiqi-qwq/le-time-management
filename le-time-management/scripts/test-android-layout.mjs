@@ -70,6 +70,27 @@ assert.match(overridden, /border:\s*0/, "顶栏右侧工具外层不能有边框
 assert.match(overridden, /background:\s*none/, "顶栏右侧工具外层不能有底色");
 assert.match(overridden, /box-shadow:\s*none/, "顶栏右侧工具外层不能有阴影");
 
+// v0.57.0 回归：顶栏工具行改「图标一行 + 统计居中」。
+// ① 搜索钮必须是纯放大镜图标（用户原话「搜索/命令也弄成一个放大镜图标，不用文字」）：
+//    DOM 里不许再出现文字 label 与 Ctrl K 角标 —— 结构回退（重新塞回
+//    top-search-label / <kbd>）而 CSS 没跟着回退时，按钮会被 34px 瓷砖裁成残废。
+assert.ok(shell.includes("faIcon(\"magnifying-glass\")"), "搜索钮必须用 Font Awesome 放大镜图标");
+assert.ok(shell.includes("top-search-glyph"), "放大镜字形必须有专用容器（.top-search-glyph）");
+assert.doesNotMatch(shell, /top-search-label/, "搜索文字 label 必须从 DOM 移除（v0.57.0 起纯图标）");
+assert.doesNotMatch(shell, /class: "top-search"[\s\S]{0,200}<kbd/, "搜索钮里不许再挂 Ctrl K 角标");
+// ② 瓷砖规格：34×34 方形、零内边距、居中放字形 —— 与快捷入口 / 窗口钮同高同排。
+const topSearchRule = css.match(/\.top-search\{[^}]*\}/)?.[0] ?? "";
+assert.match(topSearchRule, /width:\s*34px/, "搜索图标钮必须是 34px 宽的瓷砖");
+assert.match(topSearchRule, /height:\s*34px/, "搜索图标钮必须是 34px 高（与快捷入口/窗口钮同排）");
+assert.match(topSearchRule, /padding:\s*0/, "图标瓷砖不能保留横向内边距（旧文字态残留会撑成椭圆)");
+assert.doesNotMatch(css, /\.top-search kbd/, "kbd 角标样式必须随 DOM 一并移除");
+// ③ 统计默认居中：居中规则必须存在，且默认值翻转为 true（归一化断言在 test-ui-preferences.mjs）。
+assert.match(css, /\[data-center-top-stats="on"\]\s+\.topbar-action-card\s*>\s*\.pill\s*\{[^}]*position:\s*absolute[^}]*left:\s*50%/,
+  "统计居中必须由 data-center-top-stats=on 驱动（绝对定位水平居中）");
+// ④ 拖动排序保留：居中只是默认姿态，四个部件仍可在顶栏一行内自由换位。
+assert.ok(shell.includes("TOPBAR_PARTS"), "顶栏四部件（search/quick/stats/window）清单必须保留");
+assert.match(shell, /moveTopbarPart/, "拖动换位逻辑必须保留（用户：可以自由拖动切换位置）");
+
 // v0.39.0 回归：顶栏标题左侧小框回归（紧凑版）。前史：v0.38.2 之前是一颗 42×42
 // 死框、恒装 Le 应用图标，用户嫌噪音删掉（v0.38.2）；随后用户回头表示想要框 ——
 // 但要小（不顶开顶栏两条横线），且图标必须跟随当前视图（插件页 = 插件自己的图标）。
