@@ -21,7 +21,7 @@ const CX_CAT_CLS = { "考试": "exam", "作业": "work", "签到": "checkin", "�
 const GUIDE_GROUPS = [
   { name: "学习与校园", ids: ["shiguang-schedule", "school-notice", "chaoxing-notify", "cppu-notify", "exam-calendar"] },
   { name: "效率与专注", ids: ["pomodoro", "weekly-report"] },
-  { name: "信息与提醒", ids: ["gx-news", "cn-holiday", "wechat-push"] },
+  { name: "信息与提醒", ids: ["rss-reader", "gx-news", "cn-holiday", "wechat-push"] },
   { name: "生活与工具", ids: ["dorm-duty", "web-collector", "inbox-drop"] },
 ];
 const GUIDE_DOCS = {
@@ -33,6 +33,7 @@ const GUIDE_DOCS = {
   "pomodoro": ["选择预设时间或输入自定义倒计时", "选择已有任务，或直接新建一个专注任务", "开始计时；完成后自动累计专注统计"],
   "weekly-report": ["打开后自动读取任务与时间块", "查看每天投入、分类占比和完成情况", "用周报复盘下一周安排"],
   "gx-news": ["设置竞赛关键词和筛选条件", "刷新获取竞赛通知", "重要消息可直接转成提醒"],
+  "rss-reader": ["在桌面端展开「订阅管理」，粘贴 RSS / Atom 地址或网站首页（会自动发现订阅）", "回到列表点「刷新」抓取内容，未读条目带 NEW 标记", "点标题打开原文；要跟进的条目点「提醒」转成 Le 提醒"],
   "cn-holiday": ["打开即可优先读取本地节假日数据", "需要最新调整时再手动联网更新", "用于课程、计划和休息日判断"],
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
   "web-collector": ["输入网址后点击自动识别并收藏", "检查自动识别的网站名称、favicon 和图标", "添加备注后保存，之后可搜索、刷新和一键打开"],

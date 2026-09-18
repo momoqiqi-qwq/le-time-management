@@ -218,6 +218,12 @@ CJK 文本的 `min-content` 又只有 1 个字宽 ⇒ flex 一压缩就逐字断
 > storage 计数 1→2 真写回、events 自发 ping 带载荷收回 —— 无头 Chrome CDP 真实交互，
 > `output/preview/example-plugin-{sidebar,view,subpage,market}.png`。
 
+> **后续（同日）：应用户要求「这个专门做的示例插件可以删除」，插件本体已从产品移除**——
+> 删 `public/plugins/example-plugin/` 与双端印章 PNG，`TEXT_ICONS` 清空（绘制管线保留备用），
+> pluginCatalog 回 14 个内置插件（随后并行批次的 rss-reader 使其仍为 15），两份文档的
+> example-plugin 引用回退。本节其余记录（文档修旧、图标管线、探针抓到的三个 bug 修法）保持有效。
+> 插件 zip 交付物 `D:\Downloads\example-plugin.zip` 按用户先前要求保留。
+
 ### 影响端
 
 - 桌面 + Android（共用 WebView）：✅ 示例插件随包可用。小程序端 unavailable（小程序本就没有插件宿主）。

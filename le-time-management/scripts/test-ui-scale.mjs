@@ -38,6 +38,7 @@ import {
   DEFAULT_UI_SCALE,
   NARROW_MIN_FACTOR,
   NARROW_REFERENCE_WIDTH,
+  UI_SCALE_ANIM_MS,
   UI_SCALE_LIMITS,
   UI_SCALE_PRESETS,
   __resetUiScaleForTest,
@@ -48,6 +49,7 @@ import {
   initUiScale,
   narrowAutoFactor,
   normalizeUiScale,
+  parseCustomScaleInput,
 } from "../src/uiScale.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,6 +104,57 @@ for (const value of presetValues) {
 }
 assert.ok(presetValues.includes(DEFAULT_UI_SCALE), "档位里要有「标准」这一档，否则用户没法回到默认");
 
+/* ────────── 1c. 自定义输入框的取舍判据（v0.54.0） ──────────
+ *
+ * 4 个固定档位覆盖不到中间值，所以设置页多了一个直接敲数字的输入框。
+ * 它和滑杆的关键差别是：**输入框是逐字符变化的**。敲「1」（打算输 120）时若照单应用，
+ * `normalizeUiScale` 会把它夹成 80% —— 界面在打字途中乱跳。
+ *
+ * 三态，不是一个布尔 —— 尤其别把「越界」和「半截」混成一类：
+ * - `skip`    ：真的没输入内容（空 / 半截 / 非法类型）⇒ 预览与落定都不动界面；
+ * - `preview` ：区间内 ⇒ 输入途中就能应用；
+ * - `clamp`   ：有数字但越界 ⇒ 输入途中不动（敲「999」的前两下是 9、99），
+ *               **落定时照常夹到边界** —— 丢掉用户的输入是错的。 */
+
+// preview：区间内的整数与数字字符串要即时应用，且**夹取对齐后**的值与落定完全一致
+for (const [raw, expect] of [
+  ["120", 120], [120, 120], [" 110 ", 110], ["100", 100],
+  ["80", 80], ["150", 150], ["83", 85], ["117", 115], ["120.5", 120],
+]) {
+  assert.deepEqual(
+    parseCustomScaleInput(raw),
+    { mode: "preview", value: expect },
+    `${JSON.stringify(raw)} 应即时预览为 ${expect}%`,
+  );
+}
+// clamp：越界要给「夹到边界」的值，且与 normalizeUiScale 同一口径
+for (const [raw, expect] of [
+  ["79", 80], ["10", 80], ["-40", 80], ["151", 150], ["999", 150], ["1e9", 150],
+]) {
+  assert.deepEqual(
+    parseCustomScaleInput(raw),
+    { mode: "clamp", value: expect },
+    `${JSON.stringify(raw)} 越界，落定应夹到 ${expect}%`,
+  );
+}
+// 口径必须单一：preview 与 clamp 的值都不许和 normalizeUiScale 分家，
+// 否则会出现「预览 110、落定 115」或「输 999 落定成 140」这类分裂。
+for (const raw of ["83", "117", "120.5", "99.4", "112", "79", "999", "1e9"]) {
+  assert.equal(parseCustomScaleInput(raw).value, normalizeUiScale(raw), `预览/落定口径必须一致：${raw}`);
+}
+
+// skip①：半截输入 —— 这些不是「要设成 0 / NaN」，是还没输完
+for (const raw of ["", " ", "  ", "-", "+", ".", "abc", "1e", "12x"]) {
+  assert.equal(parseCustomScaleInput(raw).mode, "skip", `${JSON.stringify(raw)} 是半截输入，不许动界面`);
+}
+// skip②：非法类型 —— 而不是「兜底成 100」，那等于替用户改了设置
+for (const bad of [null, undefined, {}, [], true, false, NaN, Infinity]) {
+  assert.equal(parseCustomScaleInput(bad).mode, "skip", `非法类型 ${JSON.stringify(bad)} 不许应用`);
+}
+// skip③：空串必须**显式**走 skip，不能靠「Number("") === 0 越界」这条巧合 ——
+// 区间一旦放宽到 0，「没输入」就会被当成「设成 0」（这是有意保留的前置守卫）。
+assert.equal(parseCustomScaleInput("").mode, "skip");
+
 /* ──────────────── 1b. 窄屏自适应系数（v0.49.0） ──────────────── */
 
 // 基准宽度是功能的对外契约：动它等于改变所有窄屏设备的观感（实测 288px 的 600dpi 屏
@@ -135,28 +188,44 @@ assert.equal(narrowAutoFactor(288), narrowAutoFactor(288));
 /* ────────────────────── 2. applyUiScale 的 DOM 写入 ────────────────────── */
 
 // 假 document / window：只要 root.style.setProperty / addEventListener 够用就行。
-function makeEnv({ width = 1440, height = 900 } = {}) {
+// root 必须带 dataset（v0.54.0 起缩放动画的动效门槛要读 data-ui-motion）。
+// raf: true 时 window 挂一个**手动驱动**的 rAF —— 测试用 env.advance(ts) 逐帧喂时间戳，
+// 完全可控地推动画（浏览器里 rAF 回调收到的那个 timestamp 就是这么用的）。
+function makeEnv({ width = 1440, height = 900, raf = false } = {}) {
   const vars = new Map();
   const listeners = new Map();
+  const rafQueue = [];
   const root = {
+    dataset: {},
     style: {
       zoom: "",
       setProperty(name, value) { vars.set(name, value); },
       getPropertyValue(name) { return vars.has(name) ? vars.get(name) : ""; },
     },
   };
+  const win = {
+    innerWidth: width,
+    innerHeight: height,
+    addEventListener(type, fn) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+  };
+  if (raf) {
+    win.requestAnimationFrame = (fn) => { rafQueue.push(fn); return rafQueue.length; };
+    win.matchMedia = (query) => ({ matches: false, media: query });
+  }
   return {
     vars,
     listeners,
-    document: { documentElement: root },
-    window: {
-      innerWidth: width,
-      innerHeight: height,
-      addEventListener(type, fn) {
-        if (!listeners.has(type)) listeners.set(type, []);
-        listeners.get(type).push(fn);
-      },
+    rafQueue,
+    /** 执行当前排队的一帧回调，把 ts 作为 rAF 时间戳传入。 */
+    advance(ts) {
+      const batch = rafQueue.splice(0);
+      for (const fn of batch) fn(ts);
     },
+    document: { documentElement: root },
+    window: win,
   };
 }
 
@@ -164,7 +233,7 @@ const loadModuleInEnv = (env) => {
   const src = readSrc("src/uiScale.js")
     // 剥掉 ESM 导出语法，改成往 globalThis 上挂，好在 vm 里跑
     .replace(/^export\s+/gm, "")
-    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, getAutoScaleFactor, narrowAutoFactor, viewportWidth, viewportHeight, normalizeUiScale, UI_SCALE_LIMITS, NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR };\n");
+    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, getAutoScaleFactor, narrowAutoFactor, viewportWidth, viewportHeight, normalizeUiScale, UI_SCALE_LIMITS, UI_SCALE_ANIM_MS, NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR };\n");
   const ctx = { console, document: env.document, window: env.window };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
@@ -273,6 +342,130 @@ const loadModuleInEnv = (env) => {
   assert.equal(env2.vars.get("--ui-auto-scale"), "1");
   assert.equal(env2.vars.get("--ui-vw"), "390px");
   assert.equal(env2.vars.get("--ui-vh"), "844px");
+}
+
+/* ──────────────── 2b. 切换动画（v0.54.0）：rAF 插值 ──────────────── */
+
+{
+  const env = makeEnv({ width: 1440, height: 900, raf: true });
+  const mod = loadModuleInEnv(env);
+  mod.__resetUiScaleForTest();
+
+  // 起点 100%
+  mod.applyUiScale(100);
+  assert.equal(env.document.documentElement.style.zoom, "1");
+  assert.equal(UI_SCALE_ANIM_MS > 100 && UI_SCALE_ANIM_MS < 500, true, "动画时长应在合理观感区间");
+
+  // animate 路径：返回值与 currentScale 立即到位，DOM 未推帧前仍是旧系数
+  let ret = mod.applyUiScale(150, { animate: true });
+  assert.equal(ret, 150, "返回值立即是目标设定（设置页显示不撒谎）");
+  assert.equal(mod.getUiScale(), 150, "currentScale 立即到位");
+  assert.equal(env.document.documentElement.style.zoom, "1", "未推帧时 DOM 仍是旧系数");
+
+  // 首帧：t=0，eased=0，仍画起点（无害帧），并建立时间基准
+  env.advance(1000);
+  assert.equal(parseFloat(env.document.documentElement.style.zoom), 1, "首帧仍在起点");
+
+  // 中段帧：130ms / 260ms = t=0.5 → easeOutCubic eased=0.875 → factor ≈ 1.4375
+  env.advance(1130);
+  const z1 = parseFloat(env.document.documentElement.style.zoom);
+  assert.ok(z1 > 1 && z1 < 1.5, `中段帧必须落在开区间 (1, 1.5)：${z1}`);
+  assert.ok(z1 > 1.2, `easeOutCubic 前半程应推过 1.2（不是匀速也不是迟迟不动）：${z1}`);
+  assert.ok(
+    Math.abs(parseFloat(env.vars.get("--ui-vw")) - 1440 / z1) < 1e-9,
+    "同一帧里 --ui-vw 必须除以**同一个**插值系数（错帧 = 闪烁来源）",
+  );
+  assert.ok(
+    Math.abs(parseFloat(env.vars.get("--ui-vh")) - 900 / z1) < 1e-9,
+    "--ui-vh 同样与 zoom 严格同帧",
+  );
+
+  // 终帧：t≥1，精确落在目标上（不是渐近尾差），补偿变量与直设逐位一致
+  env.advance(1400);
+  assert.equal(env.document.documentElement.style.zoom, "1.5", "终帧精确落点");
+  assert.equal(env.vars.get("--ui-scale"), "1.5");
+  assert.equal(env.vars.get("--ui-vw"), "960px", "1440 / 1.5，与直设逐位一致");
+  assert.equal(env.vars.get("--ui-vh"), "600px");
+  assert.equal(mod.getUiScaleFactor(), 1.5);
+  // 动画结束后不得再排帧（泄漏的循环会一直重写 DOM）
+  assert.equal(env.rafQueue.length, 0, "动画结束不得残留 rAF 回调");
+
+  // ── 中途重触发：动画到一半换新目标，从**当前插值位置**续走 ──
+  mod.applyUiScale(100); // 不带 animate → 直设回起点
+  assert.equal(env.document.documentElement.style.zoom, "1");
+  mod.applyUiScale(150, { animate: true });
+  env.advance(2000); // 首帧（t=0）
+  env.advance(2130); // t=0.5 → 中途 1.4375
+  const mid = parseFloat(env.document.documentElement.style.zoom);
+  assert.ok(mid > 1 && mid < 1.5, `重触发前应处于插值中途：${mid}`);
+  mod.applyUiScale(80, { animate: true });
+  assert.equal(
+    env.document.documentElement.style.zoom,
+    String(mid),
+    "重触发瞬间 DOM 不回跳（仍显示旧动画的中途值）",
+  );
+  // 新动画从 mid 平滑走到 0.8：中段必须夹在 (0.8, mid) 内 —— 若实现错误地从旧起点 1
+  // 或旧目标 1.5 出发，中段就会越界
+  env.advance(3000); // 新动画首帧（t=0，仍 mid）
+  assert.equal(parseFloat(env.document.documentElement.style.zoom), mid, "新动画首帧仍在中途值");
+  env.advance(3130); // t=0.5
+  const zr = parseFloat(env.document.documentElement.style.zoom);
+  assert.ok(zr > 0.8 && zr < mid, `续走的中段帧应落在 (0.8, ${mid})：${zr}`);
+  env.advance(3400); // 终帧
+  assert.equal(env.document.documentElement.style.zoom, "0.8", "重触发后的终值精确落点");
+  assert.equal(env.rafQueue.length, 0, "重触发后旧循环已死、新循环已结束，不残留帧");
+
+  // ── reduced 动效偏好：传了 animate 也必须直设（theme.js 同一门槛规则）──
+  env.document.documentElement.dataset.uiMotion = "reduced";
+  mod.applyUiScale(125, { animate: true });
+  assert.equal(env.document.documentElement.style.zoom, "1.25", "reduced 偏好直接落定，不出动画");
+  assert.equal(env.rafQueue.length, 0, "reduced 偏下不该排帧");
+  env.document.documentElement.dataset.uiMotion = "full";
+  mod.__resetUiScaleForTest();
+  env.rafQueue.length = 0;
+  mod.applyUiScale(100);
+  env.advance(4000);
+  env.rafQueue.length = 0;
+  mod.applyUiScale(80, { animate: true });
+  assert.equal(env.document.documentElement.style.zoom, "1", "full 偏好下未推帧应是旧值（动画在飞）");
+  env.document.documentElement.dataset.uiMotion = "";
+
+  // ── 值没变：animate:true 也不出动画（短路，不排帧）──
+  mod.__resetUiScaleForTest();
+  env.rafQueue.length = 0;
+  mod.applyUiScale(100);
+  env.advance(5000);
+  env.rafQueue.length = 0;
+  mod.applyUiScale(100, { animate: true });
+  assert.equal(env.document.documentElement.style.zoom, "1");
+  assert.equal(env.rafQueue.length, 0, "值没变不该排 rAF 帧");
+
+  // ── resize 取消在飞动画并直设：视口变了，插值前提失效 ──
+  mod.initUiScale(); // 2b 块此前没挂过监听，resize 用例要显式初始化（幂等）
+  mod.__resetUiScaleForTest();
+  env.rafQueue.length = 0;
+  mod.applyUiScale(100);
+  env.advance(6000);
+  env.rafQueue.length = 0;
+  mod.applyUiScale(150, { animate: true });
+  env.advance(6000); // 首帧
+  env.advance(6130); // 中段
+  assert.ok(parseFloat(env.document.documentElement.style.zoom) > 1, "动画中段已推进");
+  const resizeHandlers = env.listeners.get("resize") || [];
+  assert.ok(resizeHandlers.length >= 1, "resize 监听应已挂上");
+  env.window.innerWidth = 288; // 视口窄到 288 → 自适应系数 0.8
+  resizeHandlers[0](); // applyUiScale(currentScale=150) 直设：150% × 0.8 = 1.2
+  // ⚠️ 浮点上 1.5 × 0.8 = 1.2000000000000002 —— 旧直设路径就是这个值（非动画引入），用容差断言
+  assert.ok(
+    Math.abs(parseFloat(env.document.documentElement.style.zoom) - 1.2) < 1e-9,
+    `resize 立即直设新状态（150 × 0.8）：${env.document.documentElement.style.zoom}`,
+  );
+  env.advance(9000); // 旧动画循环若未被取消，这次推进会把 zoom 写走
+  assert.ok(
+    Math.abs(parseFloat(env.document.documentElement.style.zoom) - 1.2) < 1e-9,
+    "取消后的旧循环不得再写 DOM",
+  );
+  assert.equal(env.rafQueue.length, 0, "取消后不得残留帧");
 }
 
 /* ───────────────────── 3. 源码守卫（zoom 成立的硬前提） ───────────────────── */
@@ -402,4 +595,46 @@ assert.ok(!/viewportWidth/.test(appearanceCode), "设置页别用 viewportWidth(
 const mainSrc = readSrc("src/main.js");
 assert.match(mainSrc, /initUiScale\(\)/, "启动时要 initUiScale()，否则 resize 监听挂不上");
 
-console.log("PASS: UI scale normalization, zoom/vw-vh emission and zoom-safety guards");
+// 3f-2. 缩放动画接线（v0.54.0）：离散入口走动画、连续入口保持直设，透传链路不许断。
+const prefsCode = prefsSrc
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^[ \t]*\/\/.*$/gm, "");
+assert.match(
+  prefsCode,
+  /applyUiScale\(cfg\.uiScale,\s*\{\s*animate\s*\}\)/,
+  "applyUiPreferences 必须把 animate 透传给 applyUiScale（否则设置页传了也白传）",
+);
+const appearanceAnimCode = appearanceSrc
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^[ \t]*\/\/.*$/gm, "");
+assert.ok(
+  (appearanceAnimCode.match(/animate:\s*true/g) || []).length >= 3,
+  "设置页至少 3 处离散入口（松手 change / 缩放档位按钮 / 界面预设）要传 animate: true",
+);
+assert.ok(
+  appearanceAnimCode.includes("{ persist: false }") && !/persist:\s*false[^}]*animate/.test(appearanceAnimCode),
+  "滑杆 input 拖动必须保持 persist:false 直设、不带动画（拖动本身就是连续输入）",
+);
+
+// 3f-3. 自定义缩放输入（v0.54.0）：4 个固定档位覆盖不到 110%/135% 这类中间值，要能直接敲数字。
+assert.match(appearanceSrc, /type:\s*"number"/, "设置页要有数字输入框（自定义缩放）");
+// 两个入口（input 预览 / change 落定）**都**要走同一判据。只查「出现过」是不够的：
+// 实测变异「input 里改成就地判据、change 里保留调用」能漏过 —— 于是输入途中乱跳而测试全绿。
+assert.ok(
+  (appearanceSrc.match(/parseCustomScaleInput\(/g) || []).length >= 2,
+  "自定义输入的 input 与 change 两个入口都要走 uiScale.js 的同一判据，不能就地再写一套",
+);
+// 落定只对 skip 短路 —— 把 clamp（越界）也一起跳过，就是「输了 999 松手后毫无反应」。
+assert.match(appearanceAnimCode, /mode === "skip"/, "落定只对「真的没输入」短路，越界要照常夹取落盘");
+// 预览只认 preview —— 对 clamp 也预览的话，敲「999」的前两下（9、99）会把界面拽到 80%。
+assert.match(appearanceAnimCode, /mode !== "preview"/, "输入途中只预览区间内的值，越界不许预览");
+assert.match(appearanceSrc, /pref-choice-custom/, "自定义输入要挂在档位组里（与 4 个固定档位同排）");
+// 「是不是档位值」必须按 UI_SCALE_PRESETS 判：手写 80/100/125/150 的话，改档位时会漏改，
+// 输入框就会在档位值上仍显示数字（或把自定义值当成档位）。
+assert.match(appearanceAnimCode, /UI_SCALE_PRESETS\.some/, "「是否命中档位」要按 UI_SCALE_PRESETS 判，不能手写档位数字");
+assert.ok(!/min:\s*"80"/.test(appearanceAnimCode), "自定义输入的范围要读 UI_SCALE_LIMITS，不能手写 80/150");
+// 样式：输入框宽度写死（否则输入时整组宽度抽动）、档位组允许换行（极窄屏 5 项不许横向溢出）
+assert.match(styles, /\.pref-choice-input\s*\{/, "styles.css 要有自定义缩放输入框的样式");
+assert.match(styles, /\.scale-presets\s*\{[^}]*flex-wrap:\s*wrap/, "档位组要允许换行，否则极窄屏 5 项会横向溢出");
+
+console.log("PASS: UI scale normalization, custom-input parsing, zoom/vw-vh emission, animation interpolation and zoom-safety guards");

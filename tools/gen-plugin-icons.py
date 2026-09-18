@@ -55,6 +55,7 @@ ICONS = {
     "pomodoro":          ("color",      "tomato",           "番茄专注 / 番茄"),
     "cppu-notify":       ("color",      "university",       "警大门户通知 / 大学建筑"),
     "gx-news":           ("color",      "trophy",           "竞赛消息雷达 / 奖杯"),
+    "rss-reader":        ("color",      "rss",              "RSS 信息流 / RSS 信号波"),
     "exam-calendar":     ("color",      "test-passed",      "考试日历 / 考核清单"),
     "shiguang-schedule": ("color",      "timetable",        "课程表 / 日历+时钟"),
     "web-collector":     ("color",      "bookmark-ribbon",  "网页收集 / 书签"),
@@ -70,9 +71,8 @@ ICONS = {
 # 印章式文字图标：plugin-id -> (文字(至多 2 字，竖排堆叠), 说明)。
 # 图标系统没有合适图形素材时用代码绘制：圆角渐变朱红底 + 白字，
 # 视觉上是一枚中式印章。不依赖网络，输出确定性（同机重生成 sha 一致，--check 可校验）。
-TEXT_ICONS = {
-    "example-plugin": ("示例", "内置示例插件 / 印章式文字图标（代码绘制，非 Icons8 素材）"),
-}
+# 当前没有使用者（example-plugin 曾用过，已随插件移除）——需要时把插件 ID 加进下方即可。
+TEXT_ICONS = {}
 
 # 主导航 key -> (候选 slug 列表, 说明)。Color 风格，候选按序尝试、第一个下载成功的生效；
 # 选定后要把同一个 slug 同步进 src/icons.js 的 NAV_ICONS8（做 CDN 回落与外部 key 兜底）。
@@ -117,14 +117,14 @@ def fetch(style: str, slug: str, offline: bool) -> bytes:
 
 
 def fetch_first(style: str, candidates: list, offline: bool):
-    """按候选顺序尝试下载，返回 (bytes, 生效的 slug)；全部失败才报错。"""
+    """按候选顺序尝试下载，返回 (bytes, 生效的 slug)；全部失败才报错。
+    offline 也继续试下一个候选——首选 slug 在 CDN 上可能根本不存在（如 grid-2 恒 404），
+    它永远不会有缓存，offline 时不应因此放弃后续候选。"""
     last = None
     for slug in candidates:
         try:
             return fetch(style, slug, offline), slug
         except SystemExit as exc:
-            if offline:
-                raise
             last = exc
     raise SystemExit(f"候选 slug 全部失败 {style}/{candidates}：{last}")
 

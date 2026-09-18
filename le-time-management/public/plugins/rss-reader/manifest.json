@@ -1,0 +1,26 @@
+{
+  "id": "rss-reader",
+  "name": "RSS 信息流",
+  "version": "1.1.0",
+  "author": "Le时间管理内置",
+  "icon": "rss",
+  "faIcon": "rss",
+  "description": "订阅 RSS / Atom 源并聚合成一条信息流：多源并发抓取、RSS 2.0 / Atom / RDF 解析、按源与关键词过滤、未读与星标标记、摘要展开、一键把带时间的条目转成Le时间管理提醒；粘贴网站首页还能自动发现订阅地址。",
+  "permissions": [
+    "ui",
+    "storage",
+    "notify",
+    "http",
+    "openUrl",
+    "tasks",
+    "blocks",
+    "timeParse"
+  ],
+  "entry": "main.js",
+  "order": 6,
+  "platforms": {
+    "windows": "full",
+    "android": "full",
+    "miniprogram": "unavailable"
+  }
+}

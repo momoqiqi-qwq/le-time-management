@@ -201,9 +201,9 @@ export function renderShell(root) {
     el("span", { class: "chrome-glyph ct-close", "aria-hidden": "true" }, "✕"),
   );
   const statPill = el("span", { class: "pill" });
+  // v0.54.0：触发钮改为圆方形图标瓷砖（无文字），样式对齐快捷菜单的图标网格观感
   const quickDockToggle = el("button", { class: "top-mini-btn quick-menu-trigger", title: "快捷入口", type: "button", "aria-haspopup": "menu", "aria-expanded": "false" },
-    el("span", { class: "quick-menu-avatar", "aria-hidden": "true" }, "YL"),
-    el("span", { class: "quick-menu-trigger-label" }, "快捷入口"),
+    el("span", { class: "quick-menu-trigger-glyph", "aria-hidden": "true" }, faIcon("bolt")),
   );
 
   // v0.53.0：操作条里的设置按钮由 renderRailDock() 建好后回填 —— 切换视图时要摘掉它的 .on

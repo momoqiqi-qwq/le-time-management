@@ -13,7 +13,7 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
-import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, getAutoScaleFactor, normalizeUiScale } from "../../uiScale.js";
+import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, getAutoScaleFactor, normalizeUiScale, parseCustomScaleInput } from "../../uiScale.js";
 import { toggleSwitch } from "../../switchControl.js";
 
 /* 开关行：左侧只有名称，右侧一个滑块开关（说明文字已按要求全部去掉，见 v0.37.19）。 */
@@ -76,20 +76,29 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   const uiScaleOut = el("output", {}, `${prefs.uiScale}%`);
   // 拖动时实时预览（persist:false），松手才落盘 —— 与「自定义背景」的滑块同一套路，
   // 避免拖动过程中每 5% 写一次盘。
+  // 动画分工（v0.54.0）：input 拖动**直设不动画** —— 拖动本身就是连续输入，
+  // 每一档立即生效才是「跟手」；动画留给离散入口（松手落定、点档位、界面预设），
+  // 那些才会一步跨 20%+，不动画就是「一闪一闪」。
   uiScale.addEventListener("input", () => {
     uiScaleOut.textContent = `${uiScale.value}%`;
     setUiPreferences({ uiScale: Number(uiScale.value) }, { persist: false });
     paintScalePresets();
+    paintCustomScale(); // 滑杆动了，自定义输入框要跟着变成「当前值的真实状态」
   });
   uiScale.addEventListener("change", () => {
-    const value = setUiPreferences({ uiScale: Number(uiScale.value) }).uiScale;
+    // 松手落定走动画：值通常与拖动末态相同（applyUiScale 内「值没变」短路）；
+    // 拖到越界位置松手被夹回档位时，才有一次小幅平滑修正。
+    const value = setUiPreferences({ uiScale: Number(uiScale.value) }, { animate: true }).uiScale;
     // 越界输入会被 normalize 夹回区间并对齐步进，写回控件让用户看到真实生效值。
     uiScale.value = String(value);
     uiScaleOut.textContent = `${value}%`;
     paintScalePresets();
+    paintCustomScale();
   });
 
-  const scalePresetBox = el("div", { class: "pref-choice", role: "group", "aria-label": "界面缩放档位" });
+  // `.scale-presets` 只加「允许换行」：档位 4 个 + 自定义输入共 5 项，
+  // 极窄屏（窄屏自适应把布局宽压到 288 那种）宁可换行也不许横向溢出。
+  const scalePresetBox = el("div", { class: "pref-choice scale-presets", role: "group", "aria-label": "界面缩放档位" });
   const scalePresetButtons = [];
   const paintScalePresets = () => {
     for (const [button, value] of scalePresetButtons) {
@@ -101,17 +110,85 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
       class: `pref-choice-btn${prefs.uiScale === value ? " on" : ""}`,
       type: "button",
       // 档位按钮与滑块是同一个值的两个视图，点档位就等于把滑块拖过去。
+      // 点档位是一步跨 20%~70% 的离散跳变，必须走动画（v0.54.0），否则整页「闪一下」。
       onclick: () => {
         uiScale.value = String(value);
-        setUiPreferences({ uiScale: value });
+        setUiPreferences({ uiScale: value }, { animate: true });
         uiScaleOut.textContent = `${value}%`;
         paintScalePresets();
+        paintCustomScale(); // 命中档位 ⇒ 输入框留空，不重复显示同一个状态
       },
     }, label);
     scalePresetButtons.push([button, value]);
     scalePresetBox.append(button);
   }
   paintScalePresets();
+
+  /* ── 自定义缩放值（与 4 个固定档位同排）──
+     4 个档位只覆盖常用值，110% / 135% 这类中间值此前只能靠滑杆一点点拖。
+     这里给一个直接输入数字的入口，就放在档位组末尾（用户要求：固定档位在滑块下面，
+     自定义也跟在这一排）。
+
+     三条契约（每条都对应一个真实会出问题的地方）：
+     - **输入途中只预览「落在区间内」的值**：敲「1」（打算输 120）时若照单应用会被
+       `normalizeUiScale` 夹成 80%，界面在打字过程中乱跳 —— 半截输入与越界值都不预览。
+     - **落定（回车 / 失焦）才夹取并落盘**：越界值此时照常接住（夹到边界），
+       再把真实生效值写回输入框 —— 与滑杆松手夹取同一行为，不丢用户的输入。
+     - **命中档位时输入框留空**（placeholder「自定义」），非档位值才填数字并高亮 ——
+       否则「标准」高亮着、输入框里又写着 100，同一个状态显示两遍。 */
+  const customScale = el("input", {
+    type: "number",
+    class: "pref-choice-input",
+    min: String(UI_SCALE_LIMITS.min),
+    max: String(UI_SCALE_LIMITS.max),
+    step: String(UI_SCALE_LIMITS.step),
+    inputmode: "numeric",
+    placeholder: "自定义",
+    "aria-label": "自定义界面缩放百分比",
+  });
+  const isPresetScale = (value) => UI_SCALE_PRESETS.some(([preset]) => preset === value);
+  // 高亮单独一个出口：输入途中**只能改这个**，绝不能改输入框的 value（会把用户正在敲的字抹掉）。
+  const paintCustomOn = (value) => customScale.classList.toggle("on", !isPresetScale(value));
+  const paintCustomScale = () => {
+    const value = normalizeUiScale(uiScale.value);
+    customScale.value = isPresetScale(value) ? "" : String(value);
+    paintCustomOn(value);
+  };
+  customScale.addEventListener("input", () => {
+    // 逐字符输入：只有「落在区间内」才预览。半截（"1" / "-"）与越界都不动界面 ——
+    // 判据在 parseCustomScaleInput 里（可单测），两个入口共用同一处。
+    const { mode, value } = parseCustomScaleInput(customScale.value);
+    if (mode !== "preview") return;
+    uiScale.value = String(value);
+    uiScaleOut.textContent = `${value}%`;
+    setUiPreferences({ uiScale: value }, { persist: false });
+    paintScalePresets();
+    paintCustomOn(value);
+    paintScaleHint();
+  });
+  customScale.addEventListener("change", () => {
+    const { mode, value } = parseCustomScaleInput(customScale.value);
+    if (mode === "skip") {
+      paintCustomScale(); // 真的没输入内容（空 / 半截）= 不改动，把输入框还原成当前状态
+      return;
+    }
+    // 与点档位同为一步到位的离散跳变（可能跨 30%+），走动画；滑杆那种连续输入才直设。
+    // `clamp`（越界）在这里**照常落定** —— 与滑杆松手夹取同一语义：
+    // 用户输完了，就该夹到边界并把真实生效值写回输入框，而不是丢掉他的输入。
+    const applied = setUiPreferences({ uiScale: value }, { animate: true }).uiScale;
+    uiScale.value = String(applied);
+    uiScaleOut.textContent = `${applied}%`;
+    paintScalePresets();
+    paintScaleHint();
+    paintCustomScale();
+  });
+  scalePresetBox.append(
+    el("span", { class: "pref-choice-custom" },
+      customScale,
+      el("span", { class: "pref-choice-unit", "aria-hidden": "true" }, "%"),
+    ),
+  );
+  paintCustomScale();
 
   const uiScaleHint = el("small", { class: "ui-scale-hint" });
   const paintScaleHint = () => {
@@ -248,7 +325,9 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   closeRow.style.display = settings.trayEnabled !== false ? "" : "none";
 
   const applyPreset = (name, patch) => {
-    setUiPreferences(patch);
+    // 界面预设（含「舒适预设」的 uiScale:100）可能一并改缩放档位，同样走动画；
+    // 没改缩放的预设会命中 applyUiScale 的「值没变」短路，不会有假动画。
+    setUiPreferences(patch, { animate: true });
     toast(`已应用「${name}」界面预设`);
     rerender();
   };

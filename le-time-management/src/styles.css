@@ -1926,6 +1926,25 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .ui-scale-value .pref-range { min-width: 0; }
 /* 提示：讲清「界面缩放」与「文字大小」的分工，别让用户以为两者重复 */
 .ui-scale-hint { display: block; margin-top: 6px; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
+/* 界面缩放档位组：4 个固定档位 + 末尾一个「自定义」数字输入（见 views/settings/appearance.js）。
+   - `.scale-presets` 允许换行：档位 4 个 + 自定义共 5 项，极窄屏宁可换行也不横向溢出。
+   - 自定义框宽度写死 —— 输入时宽度不随内容变化，整组不抽动。
+   - 命中档位时输入框留空（只显示 placeholder「自定义」），非档位值才填数字并高亮（.on）。 */
+.scale-presets { flex-wrap: wrap; }
+.pref-choice-custom { display: inline-flex; align-items: center; gap: 3px; }
+/* 宽度 58px：placeholder「自定义」三个汉字（11.5px × 3 ≈ 34.5px）在 52px 里只剩 3px 余量，
+   窄屏实测偏挤；58px 给到约 9px 余量，数字（最多「150」）也放得下。 */
+.pref-choice-input { width: 58px; min-height: 28px; padding: 0 6px; color: var(--ink-2); font-size: 11.5px; text-align: right; }
+.pref-choice-input.on { color: var(--deep); font-weight: 650; }
+.pref-choice-input::placeholder { color: var(--ink-3); font-weight: 400; text-align: center; }
+/* 聚焦描边：本文件第 1190 行那条 `input:not([type=checkbox])…` 底样式带 !important 的
+   box-shadow，全局 `input:focus-visible` 的焦点环被它压住 ⇒ 这里用边框变色补一个可见反馈。
+   选择器要写到 (0,4,1) 才压得过那条 !important。 */
+.pref-choice .pref-choice-custom input.pref-choice-input:focus { border-color: var(--deep) !important; }
+/* 数字框的上下微调箭头会挤掉 52px 里的内容，隐藏（要微调用滑杆，或直接敲数字） */
+.pref-choice-input::-webkit-outer-spin-button,
+.pref-choice-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pref-choice-unit { color: var(--ink-3); font-size: 11px; }
 /* 启动窗口大小（桌面端每次打开时的默认尺寸，见 src/windowSize.js） */
 .win-size-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
 .win-size-row select { width: auto; min-width: 172px; flex: none; }
@@ -2956,9 +2975,22 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 /* v0.12.1 · 右上角快捷入口、全屏设置弹窗与浅深色模式 */
+/* v0.54.0：快捷入口触发钮改为圆方形图标瓷砖（无文字），对齐快捷菜单图标网格的观感 */
 .quick-menu-trigger {
-  gap: 8px;
-  padding: 0 10px 0 8px;
+  flex: none;
+  width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px; /* 圆方形：34px 边长配 11px 圆角 ≈ 参考瓷砖比例 */
+}
+.quick-menu-trigger-glyph { display: inline-flex; }
+.quick-menu-trigger-glyph .fa-ic {
+  width: 15px;
+  height: 15px;
+  display: block;
+  fill: currentColor;
 }
 .quick-menu-avatar {
   width: 22px;
@@ -3164,7 +3196,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 @media (max-width: 760px) {
-  .quick-menu-trigger-label { display: none; }
+  /* v0.54.0：触发钮已是纯图标瓷砖，原 .quick-menu-trigger-label 隐藏规则随结构一并移除 */
   .quick-dock {
     top: calc(62px + var(--sat, env(safe-area-inset-top, 0px)));
     right: 12px;

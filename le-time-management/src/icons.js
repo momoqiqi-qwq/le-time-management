@@ -24,6 +24,7 @@ const PLUGIN_ICONS8 = {
   pomodoro: ["tomato", "hourglass"],
   "weekly-report": ["statistics", "combo-chart--v1"],
   "gx-news": ["trophy"],
+  "rss-reader": ["rss", "rss-square"],
   "chaoxing-notify": ["books", "graduation-cap"],
   "cppu-notify": ["university", "school-building"],
   // Color 风格没有微信标志，回落绿色对话气泡（随包 PNG 用的是 3d-fluency 的微信标志）。

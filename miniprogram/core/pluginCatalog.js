@@ -119,6 +119,32 @@ const plugins = [
     }
   },
   {
+    "id": "rss-reader",
+    "name": "RSS 信息流",
+    "version": "1.1.0",
+    "author": "Le时间管理内置",
+    "icon": "rss",
+    "faIcon": "rss",
+    "description": "订阅 RSS / Atom 源并聚合成一条信息流：多源并发抓取、RSS 2.0 / Atom / RDF 解析、按源与关键词过滤、未读与星标标记、摘要展开、一键把带时间的条目转成Le时间管理提醒；粘贴网站首页还能自动发现订阅地址。",
+    "permissions": [
+      "ui",
+      "storage",
+      "notify",
+      "http",
+      "openUrl",
+      "tasks",
+      "blocks",
+      "timeParse"
+    ],
+    "entry": "main.js",
+    "order": 6,
+    "platforms": {
+      "windows": "full",
+      "android": "full",
+      "miniprogram": "unavailable"
+    }
+  },
+  {
     "id": "gx-news",
     "name": "竞赛消息雷达",
     "version": "0.2.0",
@@ -320,31 +346,6 @@ const plugins = [
       "windows": "full",
       "android": "full",
       "miniprogram": "native"
-    }
-  },
-  {
-    "id": "example-plugin",
-    "name": "示例插件",
-    "version": "1.0.0",
-    "author": "Le时间管理内置",
-    "icon": "seal",
-    "faIcon": "",
-    "description": "插件开发的可跑参考：一个视图里演示宿主注入的核心能力 —— 私有存储读写、创建任务（自动记住来源插件）、把一句话解析成时间块、应用内通知与动作按钮、插件事件总线。每个按钮都是真实调用，源码即文档；配合「插件使用说明 → 下载插件开发文档」一起看。",
-    "permissions": [
-      "ui",
-      "storage",
-      "tasks",
-      "blocks",
-      "notify",
-      "events",
-      "timeParse"
-    ],
-    "entry": "main.js",
-    "order": 98,
-    "platforms": {
-      "windows": "full",
-      "android": "full",
-      "miniprogram": "unavailable"
     }
   },
   {

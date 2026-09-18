@@ -97,7 +97,7 @@ export function getUiPreferences() {
   return st.ui;
 }
 
-export function applyUiPreferences(raw = null) {
+export function applyUiPreferences(raw = null, { animate = false } = {}) {
   const cfg = normalizeUiPreferences(raw || getUiPreferences());
   if (typeof document === "undefined") return cfg;
   const root = document.documentElement;
@@ -113,17 +113,19 @@ export function applyUiPreferences(raw = null) {
   // 界面整体缩放走独立模块（挂 zoom + 注入 --ui-vw/--ui-vh，见 src/uiScale.js）。
   // 放在这里而不是 applyUiScale 的调用点，是为了「任何写入偏好的路径都会重算缩放」——
   // 否则恢复默认、预设切换这些入口会漏掉。
-  applyUiScale(cfg.uiScale);
+  // animate 只在显式传入时为 true：启动 / 初始化路径（initUiPreferences 等）必须直设，
+  // 否则应用打开时能看到界面从 100% 「长大」到存储值 —— 那是 bug 不是动画。
+  applyUiScale(cfg.uiScale, { animate });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("tide:ui-preferences-changed", { detail: { ...cfg } }));
   }
   return cfg;
 }
 
-export function setUiPreferences(patch, { persist = true } = {}) {
+export function setUiPreferences(patch, { persist = true, animate = false } = {}) {
   const st = S.getState().settings;
   st.ui = normalizeUiPreferences({ ...(st.ui || {}), ...(patch || {}) });
-  applyUiPreferences(st.ui);
+  applyUiPreferences(st.ui, { animate });
   if (persist) S.persistSoon();
   return st.ui;
 }
@@ -131,7 +133,9 @@ export function setUiPreferences(patch, { persist = true } = {}) {
 export function resetUiPreferences() {
   const st = S.getState().settings;
   st.ui = { ...DEFAULT_UI_PREFERENCES };
-  applyUiPreferences(st.ui);
+  // 恢复默认（常含 uiScale: 100 ←→ 当前可能停在 150%）是用户触发的可见跳变，走动画。
+  // 若当前值本来就是默认值，applyUiScale 内部「值没变」短路，不会白动。
+  applyUiPreferences(st.ui, { animate: true });
   S.persistSoon();
   return st.ui;
 }

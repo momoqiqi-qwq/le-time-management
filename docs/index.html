@@ -156,7 +156,7 @@
       <div>
         <p class="eyebrow">Plugin development manual / implementation-aligned</p>
         <h1>让时间<br>长出<em>新能力</em></h1>
-        <p class="lede">Le时间管理插件开发完整手册：一个可跑的示例插件、运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
+        <p class="lede">Le时间管理插件开发完整手册：运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
       </div>
       <aside class="hero-meta" aria-label="文档摘要">
         <div><b>RUNTIME</b><p>Tauri 2 · 原生 JavaScript · Rust 网络桥</p></div>
@@ -218,7 +218,7 @@
       <section id="quickstart">
         <p class="section-kicker">最短路径 / Two-file start</p>
         <h2>十分钟做出第一页</h2>
-        <p class="intro">文件夹名建议与插件 ID 一致。插件不需要 npm，也不需要打包；把两个文件放进数据目录下的 <code>plugins/hello-tide/</code>，然后在设置页点「重新扫描」。想看每个 API 真调用起来是什么样，直接读内置的<strong>示例插件</strong> <code>le-time-management/public/plugins/example-plugin/</code>——两个文件、六张演示卡片，见<a href="#recipes">实战范例</a>第 0 节。</p>
+        <p class="intro">文件夹名建议与插件 ID 一致。插件不需要 npm，也不需要打包；把两个文件放进数据目录下的 <code>plugins/hello-tide/</code>，然后在设置页点「重新扫描」。</p>
         <pre><code class="tree">plugins/
 └─ hello-tide/
    ├─ manifest.json
@@ -288,7 +288,7 @@ tide.notify("插件已加载");</code></pre>
       <section id="icons">
         <p class="section-kicker">视觉 / Icons</p>
         <h2>图标：随包 Color PNG 管线</h2>
-        <p class="intro">v0.42.0 起图标全部<strong>随包</strong>：81×81 透明 PNG 由 <code>tools/gen-plugin-icons.py</code>（Pillow）一次生成到桌面与小程序两端，风格统一为 <strong>Icons8 / iGoutu Color 彩色</strong>（品牌类走 3D）；没有合适图形素材的插件用<strong>印章式文字图标</strong>（代码绘制，如示例插件的「示例」）。离线可用——CDN 直链只是加载失败时的回落，不再是唯一来源。来源与 sha256 台账在 <code>public/icons/{plugins,nav}/ATTRIBUTION.md</code>。</p>
+        <p class="intro">v0.42.0 起图标全部<strong>随包</strong>：81×81 透明 PNG 由 <code>tools/gen-plugin-icons.py</code>（Pillow）一次生成到桌面与小程序两端，风格统一为 <strong>Icons8 / iGoutu Color 彩色</strong>（品牌类走 3D）；没有合适图形素材的插件用<strong>印章式文字图标</strong>（代码绘制）。离线可用——CDN 直链只是加载失败时的回落，不再是唯一来源。来源与 sha256 台账在 <code>public/icons/{plugins,nav}/ATTRIBUTION.md</code>。</p>
 
         <div class="table-wrap"><table>
           <thead><tr><th>用途</th><th>来源</th><th>位置</th><th>说明</th></tr></thead>
@@ -515,23 +515,8 @@ if (date) {
 
       <section id="recipes">
         <p class="section-kicker">实战 / Recipes from builtin plugins</p>
-        <h2>从可跑示例到四个进阶范例</h2>
-        <p class="intro">先看第 0 个：<strong>示例插件</strong>是随包分发的完整参考实现，每张卡片对应一类宿主能力且全部真调用；后面四个模式取自当前内置插件，按「要做什么」对号入座。完整源码在仓库 <code>le-time-management/public/plugins/</code> 里。</p>
-
-        <h3>0 · 可跑的完整示例 —— example-plugin</h3>
-        <p>位置 <code>le-time-management/public/plugins/example-plugin/</code>，两个文件（manifest.json + main.js），没有框架、没有构建步骤。六张演示卡片覆盖最高频的宿主能力，源码里每个 API 都带注释说明宿主侧行为：</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>卡片</th><th>演示的 API</th><th>看点</th></tr></thead>
-          <tbody>
-            <tr><td>① 私有存储</td><td><code>tide.storage.get / set</code></td><td>await 异步；按插件 ID 隔离，改 ID 等于丢数据</td></tr>
-            <tr><td>② 创建任务</td><td><code>tide.tasks.create</code></td><td>宿主强制盖上 <code>sourcePlugin</code> 印章，四象限可见来源图标</td></tr>
-            <tr><td>③ 一句话变日程</td><td><code>tide.util.parseWhen</code> + <code>tide.blocks.createSmart</code></td><td>自然语言解析 + 冲突感知排程，有碰撞自动挪空档</td></tr>
-            <tr><td>④ 应用内通知</td><td><code>tide.notify(msg, { actionLabel, action })</code></td><td>自动加「插件名：」前缀；动作按钮回调执行于宿主侧</td></tr>
-            <tr><td>⑤ 事件总线</td><td><code>tide.events.on / emit</code></td><td>订阅真实事件 <code>pomodoro:finished</code>；事件名带插件 ID 前缀是惯例</td></tr>
-            <tr><td>⑥ 子页面栈</td><td><code>ui.registerView</code> + 自维护页面栈</td><td>「← 返回」按钮契约（上架检查项）的参考实现</td></tr>
-          </tbody>
-        </table></div>
-        <p>把它复制改名、改掉 manifest 里的 <code>id</code>，就是一个新插件的起点。图标是印章式文字图标「示例」（<a href="#icons">见图标章节</a>的 <code>TEXT_ICONS</code>）。</p>
+        <h2>四个取自真实插件的范例</h2>
+        <p class="intro">下面的模式都来自当前随包分发的内置插件，按「要做什么」对号入座。完整源码在仓库 <code>le-time-management/public/plugins/</code> 里。</p>
 
         <h3>1 · 计时器视图 —— 学 pomodoro</h3>
         <p>适合番茄钟、专注计时这类交互视图。三个关键动作：<strong>IIFE 封闭状态</strong>、<strong>render 先清空再重建</strong>、<strong>interval 存进闭包变量</strong>以便随时停。</p>

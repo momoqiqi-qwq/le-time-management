@@ -52,6 +52,26 @@
 // 在 600dpi 下只有 288 CSS px（480dpi 是 360），外壳与字号会被「相对放大」到占掉 26% 屏高。
 // 所以 `applyUiScale()` 现在还要乘一个 `narrowAutoFactor(innerWidth)`（低于 360px 才生效，
 // 最低 0.7）。契约、边界与实测数据见下方「窄屏自适应」一节。
+//
+// ## v0.54.0 追加：切换动画（rAF 插值）
+//
+// **为什么不用 CSS transition**：`zoom` 是布局级属性，浏览器不对它做补间 —— zoom 突变
+// 等价于整棵布局树一次重排，预设按钮点击时就是用户说的「一闪一闪」。
+// **为什么不用 transform 补间**：transform 只改绘制不改布局，动画结束那一刻仍要发生
+// 一次真实重排 —— 那正是要消除的跳变。所以平滑缩放只能由 JS 逐帧推进中间系数：
+// 把「一步重排」拆成 N 次小重排，视觉上就是连续的等比缩放。
+//
+// 实现契约（改这块前先读完）：
+// - 动画只动**生效系数**（`currentFactor`）；用户设定（`currentScale`）与
+//   `currentAutoFactor` 立即到位，动画期间 `getUiScale()` 已经是新值（设置页显示不撒谎）；
+// - 每一帧都走与直设**同一个出口** `paintFactor()` 写 zoom / --ui-scale / --ui-auto-scale /
+//   --ui-vw / --ui-vh —— 五个值严格同步，不会出现「zoom 已变、补偿变量还是旧值」的错帧闪烁；
+// - 终帧**精确落在目标系数**上（不是缓动渐近值），动画结束后的 DOM 状态与直设逐位一致；
+// - 中途再触发缩放（连点档位、拖动滑杆）：令牌 `animId` 递增让旧循环失效，
+//   新动画从**当前插值位置**续走，不回跳、不叠帧；
+// - 门槛：调用方传 `{ animate: true }` 才动（默认直设 —— 启动恢复偏好绝不能看到界面「长大」）；
+//   `reduced` 动效偏好（含系统 prefers-reduced-motion）与拿不到 requestAnimationFrame
+//   的环境直接落定；resize / orientationchange 路径一律直设（视口在变，插值前提失效）。
 
 /** 缩放档位的合法区间与步进（百分比）。下限 80% 保证仍在可点范围，上限 150% 保证不把布局撑爆。 */
 export const UI_SCALE_LIMITS = Object.freeze({ min: 80, max: 150, step: 5 });
@@ -144,6 +164,43 @@ export function normalizeUiScale(raw) {
   return clamp(Math.round(clamped / step) * step, min, max);
 }
 
+/**
+ * 解析设置页「自定义缩放」输入框里的原始文本（v0.54.0）。
+ *
+ * 与 `normalizeUiScale()` 的分工：后者是**落定**用的（任何脏输入都要得出一个能用的值）；
+ * 本函数回答的是另一个问题 —— **这一串输入现在该不该应用到界面上**。
+ * 因为输入框是逐字符变化的：用户敲「1」（打算输 120）时若照单应用，
+ * `normalizeUiScale` 会把它夹成 80%，界面在打字途中乱跳。
+ *
+ * 规则（每条都对应一个真实会出现的输入）—— 三态，不是一个布尔：
+ * - `skip`：空串 / 只有空白 / 只有符号（`"-"`、`"+"`、`"."`）/ 非法类型。
+ *   这不是「要设成 0」，是还没输完 —— **预览与落定都不动界面**；
+ * - `preview`：落在区间内 ⇒ 输入途中就能应用（夹取对齐后的值）；
+ * - `clamp`：有数字但越界（`< min` 或 `> max`）⇒ **只在落定时**应用（夹到边界）。
+ *   输入途中不应用（敲「999」的前两下分别是 9、99，照单应用就是乱跳），
+ *   但落定必须接住 —— 用户输完了，就该像滑杆松手那样夹到边界，
+ *   而不是把他的输入丢掉、把输入框悄悄还原。
+ *
+ * 🔴 这三态**必须由本函数一处给出**：input 与 change 各写一套判据的话，
+ * 「预览是 110、落定变 115」这类口径分裂必然出现（实测变异能漏过）。
+ *
+ * 两种 apply 的值都走同一个 `normalizeUiScale`，所以预览值与落定值逐位一致。
+ * @param {unknown} raw 输入框的原始字符串（也接受数字，便于单测与复用）
+ * @returns {{mode: "skip"|"preview"|"clamp", value: number}} `value` 在 `skip` 时无意义
+ */
+export function parseCustomScaleInput(raw) {
+  if (typeof raw !== "string" && typeof raw !== "number") return { mode: "skip", value: DEFAULT_UI_SCALE };
+  const text = String(raw).trim();
+  // 空串走 `text === ""`；「只敲了负号 / 小数点」走 `Number.isNaN(Number(text))`。
+  // 空串要单独接住：`Number("")` 是 0，一旦将来区间放宽到 0，「没输入」会被当成「设成 0」。
+  if (text === "" || Number.isNaN(Number(text))) return { mode: "skip", value: DEFAULT_UI_SCALE };
+  const n = Number(text);
+  if (!Number.isFinite(n)) return { mode: "skip", value: DEFAULT_UI_SCALE };
+  const { min, max } = UI_SCALE_LIMITS;
+  if (n < min || n > max) return { mode: "clamp", value: normalizeUiScale(n) };
+  return { mode: "preview", value: normalizeUiScale(n) };
+}
+
 /** 当前缩放百分比（100 = 不缩放）。 */
 export function getUiScale() {
   return currentScale;
@@ -189,9 +246,55 @@ let currentAutoFactor = 1;
 let resizeBound = false;
 
 /**
+ * 切换动画时长（ms）。短到不拖泥带水、长到能看清「界面在缩放」——260ms 与
+ * theme.js 的主题过渡时长同一档观感。export 供测试与设置页对齐口径。
+ */
+export const UI_SCALE_ANIM_MS = 260;
+
+/** 动画令牌：每次 applyUiScale 递增。在飞的循环发现自己的令牌过期就自行退出。 */
+let animId = 0;
+
+/**
+ * 缩放动画的动效门槛 —— 与 theme.js 的 `themeMotionAllowed()` 同一规则、读同一偏好
+ * （`data-ui-motion` 或系统 prefers-reduced-motion）。就地实现而不是 import uiPreferences：
+ * 后者 import 本模块，反向引用会成环。
+ * @returns {boolean} false = 用户要求减少动效，直接落定不出动画
+ */
+function scaleMotionAllowed() {
+  const root = document.documentElement;
+  const pref = root.dataset.uiMotion || "system";
+  if (pref === "reduced") return false;
+  if (pref === "full") return true;
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches !== true;
+}
+
+/**
+ * 单一 DOM 出口：zoom 与配套变量的写入**只**发生在这里（动画的每一帧也走它）。
+ * 保证任何一帧里 zoom 与 --ui-vw/--ui-vh 都指向同一个系数 ——
+ * zoom 与补偿变量错帧，就是「一闪一闪」的直接来源。
+ *
+ * 视口补偿的推导（照抄原实现，语义没变）：这两个值必须是「缩放前」的长度，所以除以 factor；
+ * zoom 是布局级的，fixed 定位的包含块变成了 root。
+ * ⚠️ 但 root 的尺寸**仍然是视口尺寸**（实测，见 styles.css 顶部契约第 1 条）——
+ *   所以这两个变量只能用来**乘比例**（`calc(var(--ui-vh) * .11)` = 视口的 11%）。
+ *   想表达「恒定的物理边距」要写 `calc(Npx / var(--ui-scale))`；
+ *   v0.48.0 曾写成 `calc(var(--ui-vh) - N)`，那等价于「距屏幕顶 N」，是错的。
+ */
+function paintFactor(factor, auto) {
+  const root = document.documentElement;
+  root.style.zoom = String(factor);
+  root.style.setProperty("--ui-scale", String(factor));
+  root.style.setProperty("--ui-auto-scale", String(auto));
+  if (typeof window !== "undefined") {
+    root.style.setProperty("--ui-vw", `${window.innerWidth / factor}px`);
+    root.style.setProperty("--ui-vh", `${window.innerHeight / factor}px`);
+  }
+}
+
+/**
  * 把缩放应用到界面。幂等，可重复调用。
  *
- * 写四个东西：
+ * 写五个东西（全部经 `paintFactor()` 单一出口）：
  * - `documentElement.style.zoom` —— 布局级缩放本体（= 用户设定 × 窄屏自适应）；
  * - `--ui-scale` —— 生效系数，供 CSS 侧需要「反算原始尺寸」的场合使用；
  * - `--ui-auto-scale` —— 其中的窄屏自适应部分（1 = 未触发），供诊断与提示；
@@ -200,31 +303,55 @@ let resizeBound = false;
  * 🔴 `--ui-vw/--ui-vh` 必须除以**生效系数**（含窄屏自适应那部分），否则窄屏上
  * 内容布局宽 360 而 `--ui-vw` 只写 288，`width: var(--ui-vw)` 的浮层会缺一块。
  *
+ * 动画（v0.54.0）：`{ animate: true }` 时从当前生效系数 rAF 插值到目标系数
+ * （easeOutCubic，`UI_SCALE_ANIM_MS`），契约见本文件头部「切换动画」一节。
+ * 默认 `animate: false` 直设 —— 启动恢复偏好、resize 路径绝不能出现动画。
+ *
  * @param {number} scale 用户设定的百分比（80~150），不含窄屏自适应
+ * @param {{animate?: boolean}} [options]
  * @returns {number} 夹取后的用户设定百分比（不是生效系数 —— 设置页要显示这个）
  */
-export function applyUiScale(scale = currentScale) {
+export function applyUiScale(scale = currentScale, { animate = false } = {}) {
   const value = normalizeUiScale(scale);
   currentScale = value;
   const auto = narrowAutoFactor(typeof window !== "undefined" ? window.innerWidth : 0);
   const factor = (value / 100) * auto;
-  currentFactor = factor;
   currentAutoFactor = auto;
-  if (typeof document === "undefined") return value;
-  const root = document.documentElement;
-  root.style.zoom = String(factor);
-  root.style.setProperty("--ui-scale", String(factor));
-  root.style.setProperty("--ui-auto-scale", String(auto));
-  // 视口补偿：这两个值必须是「缩放前」的长度，所以除以 factor。
-  // zoom 是布局级的，fixed 定位的包含块变成了 root。
-  // ⚠️ 但 root 的尺寸**仍然是视口尺寸**（实测，见 styles.css 顶部契约第 1 条）——
-  //   所以这两个变量只能用来**乘比例**（`calc(var(--ui-vh) * .11)` = 视口的 11%）。
-  //   想表达「恒定的物理边距」要写 `calc(Npx / var(--ui-scale))`；
-  //   v0.48.0 曾写成 `calc(var(--ui-vh) - N)`，那等价于「距屏幕顶 N」，是错的。
-  if (typeof window !== "undefined") {
-    root.style.setProperty("--ui-vw", `${window.innerWidth / factor}px`);
-    root.style.setProperty("--ui-vh", `${window.innerHeight / factor}px`);
+  if (typeof document === "undefined") {
+    currentFactor = factor;
+    return value;
   }
+  // 令牌递增 = 立即收回之前在飞动画的 DOM 写权（连点档位 / 拖动 / resize 都会走到这）。
+  animId += 1;
+  // 不动画的情形：调用方没要求；值没变；没有 rAF（老 WebView / 测试假环境）；
+  // 用户要求减少动效。一律直设，与旧版行为逐位一致。
+  const noAnim = !animate
+    || factor === currentFactor
+    || typeof window === "undefined"
+    || typeof window.requestAnimationFrame !== "function"
+    || !scaleMotionAllowed();
+  if (noAnim) {
+    currentFactor = factor;
+    paintFactor(factor, auto);
+    return value;
+  }
+  // 起点 = **当前插值位置**：若上一次动画还在飞，这里拿到的是它的中间值 ——
+  // 新动画从屏幕上正在显示的大小续走，不回跳到旧起点。
+  const from = currentFactor;
+  const token = animId;
+  let then = 0;
+  const step = (ts) => {
+    if (token !== animId) return; // 令牌过期：已被更新的调用接管，本循环不写任何东西
+    if (!then) then = ts; // 用 rAF 自己的时间戳做基准，不依赖 performance.now
+    const t = Math.min(1, (ts - then) / UI_SCALE_ANIM_MS);
+    const eased = 1 - (1 - t) ** 3; // easeOutCubic：起步快、收尾缓，跟手不拖沓
+    // 终帧精确落在目标系数上（from + (factor-from)*1 在浮点上不保证精确回原值，
+    // 必须显式取 factor），动画结束后的 DOM 状态才与直设逐位一致。
+    currentFactor = t < 1 ? from + (factor - from) * eased : factor;
+    paintFactor(currentFactor, auto);
+    if (t < 1) window.requestAnimationFrame(step);
+  };
+  window.requestAnimationFrame(step);
   return value;
 }
 
@@ -251,4 +378,5 @@ export function __resetUiScaleForTest() {
   currentFactor = DEFAULT_UI_SCALE / 100;
   currentAutoFactor = 1;
   resizeBound = false;
+  animId += 1; // 让仍在飞的测试动画立即失效，不污染下一个用例
 }

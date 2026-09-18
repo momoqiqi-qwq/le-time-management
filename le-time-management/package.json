@@ -1,7 +1,7 @@
 {
   "name": "le-time-management",
   "private": true,
-  "version": "0.53.0",
+  "version": "0.54.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "check": "npm run test && npm run build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "check:feeds": "node scripts/check-feed-urls.mjs",
     "version:check": "node ../tools/sync-version.js --check"
   },
   "dependencies": {

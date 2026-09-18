@@ -1,6 +1,6 @@
 # public/icons/plugins 素材台账（内置插件图标）
 
-共 15 个图标：14 个来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）；1 个为印章式文字图标（`风格` 列为 `text`，由本脚本代码绘制，非 Icons8 素材、无需署名）。
+共 15 个图标：15 个来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）；0 个为印章式文字图标（`风格` 列为 `text`，由本脚本代码绘制，非 Icons8 素材、无需署名）。
 
 图标集入口：<https://igoutu.cn/icons/set/标志--style-color> ｜ CDN 直链格式：`https://img.icons8.com/<style>/96/<slug>.png`
 
@@ -8,11 +8,11 @@
 
 | 插件 ID | 风格 | slug | 说明 | sha256 |
 |---|---|---|---|---|
-| `example-plugin` | text | `示例` | 内置示例插件 / 印章式文字图标（代码绘制，非 Icons8 素材） | `4b8eae63b8490524…` |
 | `plugin-guide` | color | `help` | 插件使用说明 / 帮助 | `4373b076e9d7c4c3…` |
 | `pomodoro` | color | `tomato` | 番茄专注 / 番茄 | `78c87fc7be087e32…` |
 | `cppu-notify` | color | `university` | 警大门户通知 / 大学建筑 | `4ece1f4d547e61ef…` |
 | `gx-news` | color | `trophy` | 竞赛消息雷达 / 奖杯 | `fb567054f63980b7…` |
+| `rss-reader` | color | `rss` | RSS 信息流 / RSS 信号波 | `c53cc754702a43f9…` |
 | `exam-calendar` | color | `test-passed` | 考试日历 / 考核清单 | `0b6469d179a28f1f…` |
 | `shiguang-schedule` | color | `timetable` | 课程表 / 日历+时钟 | `8385f70b66b57eb5…` |
 | `web-collector` | color | `bookmark-ribbon` | 网页收集 / 书签 | `1622bbd5e2c8c069…` |
