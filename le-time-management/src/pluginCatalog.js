@@ -51,11 +51,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "school-notice",
     "name": "学校通知网站",
-    "version": "1.3.1",
+    "version": "1.4.0",
     "author": "Le时间管理内置",
     "icon": "school",
     "faIcon": "school",
-    "description": "输入学校公告/通知网址后自动识别常见高校 CMS 列表；对「服务端只吐空壳、列表靠 JS 渲染」的门户站点，命中已登记适配器时直接读取其数据接口。支持会话登录、用户名密码和手动验证码，并可把公告转成 Le时间管理提醒。站点标签页可右键弹出操作菜单（刷新 / 登录配置 / 编辑 / 打开 / 删除）。",
+    "description": "输入学校公告/通知网址后自动识别常见高校 CMS 列表；对「服务端只吐空壳、列表靠 JS 渲染」的门户站点，命中已登记适配器时直接读取其数据接口。支持会话登录、用户名密码和手动验证码，并可把公告转成 Le时间管理提醒。站点标签页可右键弹出操作菜单（刷新 / 登录配置 / 编辑 / 打开 / 删除）。抓到新公告时广播给微信推送插件，可在推送设置里单独勾选这个插件是否推送到微信。",
     "permissions": [
       "ui",
       "storage",
@@ -64,7 +64,8 @@ export const BUILTIN_PLUGINS = [
       "notify",
       "http",
       "openUrl",
-      "timeParse"
+      "timeParse",
+      "events"
     ],
     "entry": "main.js",
     "order": 3,
@@ -122,11 +123,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "rss-reader",
     "name": "RSS 信息流",
-    "version": "1.1.0",
+    "version": "1.4.0",
     "author": "Le时间管理内置",
     "icon": "rss",
     "faIcon": "rss",
-    "description": "订阅 RSS / Atom 源并聚合成一条信息流：多源并发抓取、RSS 2.0 / Atom / RDF 解析、按源与关键词过滤、未读与星标标记、摘要展开、一键把带时间的条目转成Le时间管理提醒；粘贴网站首页还能自动发现订阅地址。",
+    "description": "订阅 RSS / Atom 源并聚合成一条信息流：多源并发抓取、RSS 2.0 / Atom / RDF 解析、按源与关键词过滤、未读与星标标记、顶栏一键添加源、摘要与原文正文展开、一键把带时间的条目转成Le时间管理提醒；粘贴网站首页还能自动发现订阅地址。抓到新内容时广播给微信推送插件，可在推送设置里单独勾选这个插件是否推送到微信。",
     "permissions": [
       "ui",
       "storage",
@@ -135,7 +136,8 @@ export const BUILTIN_PLUGINS = [
       "openUrl",
       "tasks",
       "blocks",
-      "timeParse"
+      "timeParse",
+      "events"
     ],
     "entry": "main.js",
     "order": 6,
@@ -148,11 +150,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "gx-news",
     "name": "竞赛消息雷达",
-    "version": "0.2.0",
+    "version": "0.4.0",
     "author": "Le时间管理内置",
     "icon": "trophy",
     "faIcon": "trophy",
-    "description": "抓取摩课云竞赛平台（gxxsjs.com）的竞赛通知与资讯：关键词过滤、类型筛选、已读标记、自动刷新，并可一键把带时间的消息转成Le时间管理提醒。",
+    "description": "多源竞赛消息雷达：内置摩课云竞赛平台、赛氪竞赛广场、我要参赛网三家，在「源」那一排一键切换；也能粘一个网址自己添加，RSS 订阅 / JSON 数据接口 / 网页列表自动识别，添加时真抓一次并报出条目数、认不出来说明原因。关键词过滤、类型与月份筛选、已读标记、每 10 分钟自动刷新，一键把消息转成Le时间管理提醒（正文没写时间时按接口给的报名截止日落期）。抓到新消息时广播给微信推送插件，可在推送设置里单独勾选这个插件是否推送到微信。注：微信小程序端受 request 合法域名白名单限制，只有摩课云一个源。",
     "permissions": [
       "ui",
       "tasks",
@@ -202,11 +204,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "cppu-notify",
     "name": "警大门户通知",
-    "version": "1.10.0",
+    "version": "1.11.0",
     "author": "基于 dsh-user/cppu-notify-skill v1.2.1 · Le时间管理适配（1.10.0 校园服务栏头部去重）",
     "icon": "building-columns",
     "faIcon": "building-columns",
-    "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。左侧「校园服务」栏内置 WebVPN、教育邮箱、教务、学工、一网通办五个入口（默认收起，点左上角把手展开，标题与图标自动识别）；「教务」用统一身份认证会话现场换一次性票据免密直达，无需手填 token。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。",
+    "description": "智慧警大门户通知：登录一次后全程自动登录——优先恢复门户票据，主 SSO 有效时自动补全 bridge 链路，票据过期则自动识别验证码完成登录。左侧「校园服务」栏内置 WebVPN、教育邮箱、教务、学工、一网通办五个入口（默认收起，点左上角把手展开，标题与图标自动识别）；「教务」用统一身份认证会话现场换一次性票据免密直达，无需手填 token。支持每 10 分钟自动刷新、按月筛选、正文阅读与转为提醒。抓到新通知时广播给微信推送插件，可在推送设置里单独勾选这个插件是否推送到微信。",
     "permissions": [
       "ui",
       "tasks",
@@ -230,11 +232,11 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "wechat-push",
     "name": "微信提醒推送",
-    "version": "1.8.1",
+    "version": "1.9.0",
     "author": "Le时间管理内置",
     "icon": "comment-dots",
     "faIcon": "comment-dots",
-    "description": "通过 PushPlus（推荐）把时间块、任务截止与插件收集的新消息推送到微信；插件消息先攒 2 分钟再合并成一条推送，兼容 PushPlus 频次限制。支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
+    "description": "通过 PushPlus（推荐）把时间块、任务截止与插件收集的新消息推送到微信；推送内容用带图标的多列下拉勾选，插件消息还能细到单个插件（学习通 / 警大门户 / 竞赛消息 / RSS / 学校通知 各勾各的）。插件消息先攒 2 分钟再合并成一条推送，兼容 PushPlus 频次限制。支持 Token、可选 Topic 群组和测试消息，内置 pushplus 官方文档入口与一键获取 Token；兼容旧版 Server酱配置。",
     "permissions": [
       "ui",
       "tasks",
