@@ -1499,9 +1499,9 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .conflict-preview{border:1px solid color-mix(in srgb,var(--sun) 50%,var(--line));background:color-mix(in srgb,var(--sun) 9%,var(--panel));border-radius:10px;padding:9px 10px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2);line-height:1.55}.conflict-preview.ok{border-color:color-mix(in srgb,var(--mint) 40%,var(--line));background:color-mix(in srgb,var(--mint) 8%,var(--panel))}.conflict-alts{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
 
 /* ── v0.10 · 同步与快捷键 ── */
-.sync-fields{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.sync-fields input{min-width:0}.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin-top:8px}.plugin-shortcut-block{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}.shortcut-sub-title{display:block;font-size:calc(13.5px * var(--ui-text-scale));color:var(--ink);margin-bottom:2px}.shortcut-hint{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin:2px 0 0}.shortcut-name{display:flex;align-items:center;gap:8px;min-width:0}.shortcut-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shortcut-kbd{flex:none;font-size:calc(10.5px * var(--ui-text-scale));font-weight:600;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:1px 6px;white-space:nowrap}.shortcut-none{flex:none;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3)}
+.shortcut-grid{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 10px;align-items:center;margin-top:10px}.shortcut-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin-top:8px}.plugin-shortcut-block{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}.shortcut-sub-title{display:block;font-size:calc(13.5px * var(--ui-text-scale));color:var(--ink);margin-bottom:2px}.shortcut-hint{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.65;margin:2px 0 0}.shortcut-name{display:flex;align-items:center;gap:8px;min-width:0}.shortcut-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.shortcut-kbd{flex:none;font-size:calc(10.5px * var(--ui-text-scale));font-weight:600;color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:1px 6px;white-space:nowrap}.shortcut-none{flex:none;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3)}
 
-@media(max-width:700px){.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.sync-fields,.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
+@media(max-width:700px){.cmd-palette{top:calc(var(--ui-vh, 100dvh) * 0.07);max-height:calc(var(--ui-vh, 100dvh) * 0.84)}.cmd-search kbd{display:none}.cmd-kind{min-width:0;padding:5px}.cmd-kind .cmd-kind-text{display:none}.cmd-kind-ico svg{width:14px;height:14px}.cmd-enter{display:none}.cmd-foot .foot-desktop{display:none}.cmd-foot .foot-mobile{display:inline}.market-search-toggle{display:inline-flex}.market:not(.open-search) .market-search-row{display:none}.market:not(.open-search) .market-head{margin-bottom:12px}.plugin-search-row{align-items:stretch;flex-direction:column}.shortcut-grid{grid-template-columns:1fr}.quick-cap{top:calc(var(--ui-vh, 100dvh) * 0.1)}}
 
 /* ═══════════ 时间视图切换器 v0.10.2 ═══════════ */
 .tb-shell { height: 100%; min-height: 0; display: flex; flex-direction: column; }
@@ -3909,6 +3909,80 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .rail-dock-ghost .ic .app-icon { width: 18px; height: 18px; }
 .rail-dock-ghost .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
 
+/* ═══════════ v0.62.0 · 网盘同步引导卡（设置 → 可选同步）═══════════
+   三步引导 + 一键配置。老卡只有一排输入框和两个按钮，默认读者已经懂 WebDAV；
+   现在这套样式服务的是"没配过、只想把数据带到手机上"的人，
+   所以步骤编号、完成态、失败原因回显都要看得见，而不是靠 toast 一闪而过。 */
+.sync-card { overflow: hidden; }
+.sync-step { margin-top: 14px; padding-top: 13px; border-top: 1px dashed var(--line); }
+.sync-step-head { display: flex; align-items: center; gap: 9px; font-size: calc(13.5px * var(--ui-text-scale)); }
+.sync-step-badge {
+  flex: none;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink-3);
+  font-style: normal;
+  font-size: calc(11.5px * var(--ui-text-scale));
+  font-weight: 800;
+}
+.sync-step.is-done .sync-step-badge { border-color: var(--deep); background: var(--deep); color: var(--panel); font-size: 0; }
+.sync-step.is-done .sync-step-badge::after { content: "✓"; font-size: calc(12px * var(--ui-text-scale)); }
+.sync-step.is-done .sync-step-head::after {
+  content: "已完成";
+  margin-left: auto;
+  color: var(--deep);
+  font-size: calc(11px * var(--ui-text-scale));
+  font-weight: 650;
+}
+.sync-step-note { margin: 6px 0 0 31px; color: var(--ink-3); font-size: calc(11.5px * var(--ui-text-scale)); line-height: 1.6; }
+.sync-step-body { margin-top: 10px; }
+
+.sync-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 8px; }
+.sync-preset {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper);
+  text-align: left;
+  cursor: pointer;
+}
+.sync-preset b { font-size: calc(13px * var(--ui-text-scale)); }
+.sync-preset small { color: var(--ink-3); font-size: calc(11px * var(--ui-text-scale)); line-height: 1.5; }
+.sync-preset.on { border-color: color-mix(in srgb, var(--deep) 45%, var(--line)); background: color-mix(in srgb, var(--deep) 8%, var(--panel)); }
+.sync-preset.on b { color: var(--deep); }
+
+.sync-form { display: grid; gap: 9px; }
+.sync-field {
+  display: grid;
+  grid-template-columns: 138px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--ink-2);
+  font-size: calc(12.5px * var(--ui-text-scale));
+}
+.sync-field > span { min-width: 0; }
+.sync-field input { width: 100%; min-width: 0; }
+.sync-field input[readonly] { color: var(--ink-3); background: color-mix(in srgb, var(--line) 22%, var(--paper)); }
+.sync-pass-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.sync-pass-row input { flex: 1 1 190px; }
+.sync-remember-row { display: flex; align-items: center; gap: 8px; padding-left: 148px; font-size: calc(12px * var(--ui-text-scale)); }
+.sync-remember-row > span:first-child { font-weight: 650; color: var(--ink-2); }
+.sync-remember-hint { color: var(--ink-3); font-size: calc(11px * var(--ui-text-scale)); line-height: 1.5; }
+.sync-remember-row .switch { margin-left: auto; flex: none; }
+.sync-howto { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 5px; color: var(--ink-2); font-size: calc(12px * var(--ui-text-scale)); line-height: 1.6; }
+.sync-howto-note { margin: 4px 0 0; color: var(--danger); font-size: calc(11.5px * var(--ui-text-scale)); line-height: 1.6; }
+.sync-run { margin-bottom: 2px; }
+.sync-run-note { margin-top: 8px; }
+.sync-result { white-space: pre-wrap; }
+.sync-result.is-ok { color: var(--deep); }
+.sync-result.is-error { color: var(--danger); }
+.sync-daily { margin-top: 16px; }
+
+
 /* 窄屏：操作条是底栏的一部分（.rail-bottom 那组规则给了 order:-1 / width:20%），
    按钮必须回到 flex:1 平分 —— 上面的 `.rail-dock > .rail-dock-btn`（0,2,0）压得过
    `.rail-bottom > button`（0,1,1），不在这里还回去，底栏就只剩两颗 40px 的钮挤在左侧。 */
@@ -3918,4 +3992,10 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .rail-dock-ghost .ic { width: var(--nav-ic, 22px); height: var(--nav-ic, 22px); border-radius: 8px; }
   .rail-dock-ghost .ic .app-icon { width: 15px; height: 15px; }
   .rail-dock-ghost .ic .fa-ic { width: 15px; height: 15px; }
+  /* 网盘同步引导卡：账号表单在窄屏（APK）改单列，标签压在输入框上方 */
+  .sync-field { grid-template-columns: 1fr; gap: 5px; }
+  .sync-remember-row { padding-left: 0; flex-wrap: wrap; }
+  .sync-step-note { margin-left: 0; }
+  .sync-pass-row .btn { min-height: 34px; }
 }
+

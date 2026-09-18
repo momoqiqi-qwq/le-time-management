@@ -185,7 +185,13 @@ assert.match(pluginSettings, /switch[\s\S]{0,80}plugin-enable-switch/, "插件�
 const PLUGIN_TOGGLE_SOURCES = {
   "../public/plugins/pomodoro/main.js": { what: "番茄专注的提醒开关（提醒前弹窗 / 完成弹窗等）", multiSelect: [] },
   "../public/plugins/chaoxing-notify/main.js": { what: "学习通的「只看未读」与「保存登录信息」开关", multiSelect: [] },
-  "../public/plugins/wechat-push/main.js": { what: "微信推送的启用开关（推送内容是多选勾选框，必须保持 checkbox）", multiSelect: ["data-ms="] },
+  "../public/plugins/wechat-push/main.js": {
+    what: "微信推送的启用开关（推送内容是多选勾选框，必须保持 checkbox）",
+    multiSelect: ["data-ms="],
+    /* v1.9.0 的插件级勾格是 DOM 建的（模板字符串里没有它的影子），按标记剥不掉。
+       只放行「带 data-src 的那一颗」：它是多选型勾格的一格，不是开/关滑块。 */
+    multiSelectDom: [/const cb = document\.createElement\("input"\);\s*cb\.type = "checkbox";\s*cb\.dataset\.src = s\.id;/g],
+  },
 };
 for (const [file, cfg] of Object.entries(PLUGIN_TOGGLE_SOURCES)) {
   const what = cfg.what;
@@ -203,16 +209,19 @@ for (const [file, cfg] of Object.entries(PLUGIN_TOGGLE_SOURCES)) {
   for (const marker of cfg.multiSelect) {
     rest = rest.replace(new RegExp(`<input[^>]*${marker}[^>]*>`, "g"), "");
   }
+  for (const rx of cfg.multiSelectDom || []) rest = rest.replace(rx, "");
   const bare = [...rest.matchAll(/type\s*=\s*[\'"]checkbox[\'"]/g)].length;
   assert.equal(bare, 0, `${file} 里还有 ${bare} 个裸勾选框开关，应换成 .switch 滑块（${what}）`);
 }
 
 /* ── 5. 详细描述：删掉的必须真的删掉，保留的必须真的保留 ── */
+/* 设置页的全部卡片源码。目录整体扫，不要手写文件清单 ——
+ * v0.60.0 把「可选同步」拆成 settings/sync.js 时，写死的清单就让下面的标题守卫假失败了。 */
 const SETTINGS_SOURCES = [
   read("../src/views/settings.js"),
-  read("../src/views/settings/appearance.js"),
-  read("../src/views/settings/ai.js"),
-  read("../src/views/settings/plugins.js"),
+  ...fs.readdirSync(new URL("../src/views/settings/", import.meta.url)).sort()
+    .filter((f) => f.endsWith(".js"))
+    .map((f) => read(`../src/views/settings/${f}`)),
   read("../src/views/aboutCard.js"),
   read("../src/views/aiAutomationPanel.js"),
   read("../src/shell.js"),

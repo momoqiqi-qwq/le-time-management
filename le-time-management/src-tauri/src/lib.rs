@@ -1420,6 +1420,12 @@ fn http_session_restore(
     Ok(id)
 }
 
+/// WebDAV 的方法名不在 `http::Method` 的常量里（它只到 PATCH），只能从字节现造。
+/// 字节集是固定的内部字面量，不走用户输入，所以这里不存在被注入任意方法的可能。
+fn dav_method(raw: &[u8]) -> Result<reqwest::Method, String> {
+    reqwest::Method::from_bytes(raw).map_err(|e| format!("HTTP 方法不合法: {e}"))
+}
+
 #[tauri::command]
 async fn http_fetch(
     state: State<'_, HttpSessions>,
@@ -1451,6 +1457,11 @@ async fn http_fetch(
         "POST" => client.post(&url),
         "PUT" => client.put(&url),
         "DELETE" => client.delete(&url),
+        // WebDAV 的两个方法。reqwest 没有对应常量（它只到 PATCH），只能现造。
+        // 少了它们，同步引导就必须让用户先自己去网盘网页版建好文件夹 ——
+        // 向不存在的目录 PUT 会拿 409，对小白来说是一条看不出原因的失败。
+        "MKCOL" => client.request(dav_method(b"MKCOL")?, &url),
+        "PROPFIND" => client.request(dav_method(b"PROPFIND")?, &url),
         _ => client.get(&url),
     };
     if let Some(hs) = &headers {
