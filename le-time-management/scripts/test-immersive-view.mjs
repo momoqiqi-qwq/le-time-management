@@ -99,4 +99,36 @@ assert.match(
   "沉浸式 .view 的 padding-bottom 必须塌到 4px + 安全区（不许保留 --nav-pad）",
 );
 
-console.log("PASS: 沉浸式插件视图（声明 / 透传 / 切换 / 成对样式且仅在窄屏媒体块内）");
+/* ── ⑤ v0.59.0：沉浸式视图无边距（需求「课表拉伸填满除安全区之外的界面」，APK 端）──
+   上面 ④ 只塌了底部；顶部那 46px 是给已删除的全局顶栏留的让位间距，
+   而课程表自己带顶栏 ⇒ 也要收掉，连同 .plugview 的 14px 左右内边距。
+   ⚠️ 46px 那条必须写成 :not(.rail-hidden)：两条同为 (0,3,0) 时靠后者胜，
+   漏了排除就会把这里的 padding-top 覆盖回 46px（本回归的第一版实现就踩了）。 */
+const immersiveViewRule = styles.slice(viewIdx).match(/\.app\.rail-hidden \.view\s*\{[^}]*\}/)[0];
+assert.match(
+  immersiveViewRule,
+  /padding-top:\s*calc\(2px\s*\+\s*var\(--sat,\s*env\(safe-area-inset-top,\s*0px\)\)\)/,
+  "沉浸式 .view 的 padding-top 必须只剩安全区 + 2px（46px 顶栏让位要收掉）",
+);
+assert.match(
+  styles,
+  /\.app\.rail-hidden \.plugview\s*\{[^}]*padding:\s*0\s*;/,
+  "沉浸式 .plugview 的左右内边距必须清零（否则课表两侧各留 14px 白边）",
+);
+// 全局 ::-webkit-scrollbar 是 8~9px 占位型（Android WebView 同样认），不清掉会在
+// 课表右侧留一条白边 —— 与「填满除安全区之外」直接冲突。
+assert.match(
+  styles,
+  /\.app\.rail-hidden \.plugview\s*\{[^}]*scrollbar-width:\s*none/,
+  "沉浸式 .plugview 必须收掉滚动条占位（scrollbar-width:none）",
+);
+assert.match(
+  styles,
+  /\.app\.rail-hidden \.plugview::-(?:webkit|moz)-scrollbar\s*\{\s*display:\s*none/,
+  "沉浸式 .plugview 必须收掉 webkit 滚动条（Chromium / WebView 只认这条）",
+);
+for (const selector of [".app:not(.chrome-shown):not(.rail-hidden) .view", ".app.chrome-shown:not(.rail-hidden) .view"]) {
+  assert.ok(styles.includes(selector), `${selector} 缺少 :not(.rail-hidden)，会覆盖掉沉浸式视图的 padding-top`);
+}
+
+console.log("PASS: 沉浸式插件视图（声明 / 透传 / 切换 / 成对样式且仅在窄屏媒体块内 + 无边距）");

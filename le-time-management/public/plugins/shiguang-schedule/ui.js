@@ -15,7 +15,10 @@
  let schoolIndex=null,schoolCategory='BACHELOR_AND_ASSOCIATE',schoolQuery='',selectedSchool=null,schoolBusy=false,schoolListenerBound=false,schoolMessageQueue=Promise.resolve();
  const days=['周一','周二','周三','周四','周五','周六','周日'];
  const scheduleCache=new WeakMap();
- const defaultStyle={slotHeight:76,cornerRadius:8,gap:2,opacity:100,hideTimes:false,hideDates:false,colorful:false};
+ /* 默认观感（v0.59.0 起）：彩色实色课程块 + 75% 透明度。
+    ⚠️ 这只改「没有存过样式」的新用户与「恢复默认」的结果 ——
+    已存过 style 的老用户仍读自己的 storage（normalizeStyle 只在缺值时回填默认）。 */
+ const defaultStyle={slotHeight:76,cornerRadius:8,gap:2,opacity:75,hideTimes:false,hideDates:false,colorful:true};
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const button=(label,action,extra='')=>`<button data-action="${action}" ${extra}>${label}</button>`;
  const field=(label,name,value,type='text',extra='')=>`<label><span>${label}</span><input name="${name}" aria-label="${label}" type="${type}" value="${esc(value)}" ${extra}></label>`;
@@ -192,11 +195,11 @@
  /* 冲突角标本身是实色红底；彩色模式下压在红/橙色卡上会糊在一起，加一圈浅色描边拉开 */
  :is(.sg.colorful) :is(.course-block,.today-card).conflict::after{box-shadow:0 0 0 2px var(--course-on)}
  .sg .style-preview-note{margin:9px 0 0}
- @media(max-width:900px){.sg{--sg-label-w:52px;--sg-head-h:46px;padding:8px}.sg .schedule-frame{border-radius:13px}.sg .schedule-top{position:static}/* 手机上不再把 main-stage 压成 0：那样课表只能吃到「剩余空间」，行高被挤到
+ @media(max-width:900px){.sg{--sg-label-w:52px;--sg-head-h:46px;padding:8px 14px}.sg .schedule-frame{border-radius:13px}.sg .schedule-top{position:static}/* 手机上不再把 main-stage 压成 0：那样课表只能吃到「剩余空间」，行高被挤到
     55px 上下，远低于用户设定的 --sg-slot-height。改成按「表头 + 全部节次 × 格子高度」
     算出一个下限，课表就按用户设定真正拉长，放不下时由外层 .plugview 正常滚动。 */
  .sg .main-stage{min-height:calc(var(--sg-head-h,52px) + var(--slot-count,10) * var(--sg-slot-height,76px) + 2px)}.sg .transfer-grid{grid-template-columns:1fr}.sg .hero{align-items:flex-start}.sg .brand-badge{display:none}}
- @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:44px;padding:6px}.sg .hero-copy h2{font-size:calc(19px * var(--ui-text-scale))}.sg .hero-copy .muted{font-size:calc(11px * var(--ui-text-scale))}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:calc(13px * var(--ui-text-scale))}.sg .slot-label span{font-size:calc(8px * var(--ui-text-scale))}.sg .day-head{font-size:calc(11px * var(--ui-text-scale));gap:1px}.sg .day-head .date{font-size:calc(9px * var(--ui-text-scale))}.sg .course-block{margin:1px;padding:4px 3px}.sg .course-block b{font-size:calc(10px * var(--ui-text-scale));-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:calc(8.5px * var(--ui-text-scale));margin-bottom:1px}.sg .course-block span{font-size:calc(8.5px * var(--ui-text-scale))}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:calc(17px * var(--ui-text-scale))}.sg .week-title small{font-size:calc(9.5px * var(--ui-text-scale))}/* 窄屏把「本周」标签收成一个圆点：整词排不下，而它必须始终可见 —— 用户扫一眼就知道这是不是当前周。 */
+ @media(max-width:620px){.sg{--sg-label-w:42px;--sg-head-h:40px;--sg-row-min:44px;padding:6px 12px}.sg .hero-copy h2{font-size:calc(19px * var(--ui-text-scale))}.sg .hero-copy .muted{font-size:calc(11px * var(--ui-text-scale))}.sg .schedule-top{gap:4px;padding:5px 7px;margin:4px 0 6px;border-radius:13px}.sg .slot-label{gap:1px;padding:2px}.sg .slot-label b{font-size:calc(13px * var(--ui-text-scale))}.sg .slot-label span{font-size:calc(8px * var(--ui-text-scale))}.sg .day-head{font-size:calc(11px * var(--ui-text-scale));gap:1px}.sg .day-head .date{font-size:calc(9px * var(--ui-text-scale))}.sg .course-block{margin:1px;padding:4px 3px}.sg .course-block b{font-size:calc(10px * var(--ui-text-scale));-webkit-line-clamp:3;margin-bottom:2px}.sg .course-block .course-time{font-size:calc(8.5px * var(--ui-text-scale));margin-bottom:1px}.sg .course-block span{font-size:calc(8.5px * var(--ui-text-scale))}.sg .week-title{min-height:36px;padding:2px 4px}.sg .week-title b{font-size:calc(17px * var(--ui-text-scale))}.sg .week-title small{font-size:calc(9.5px * var(--ui-text-scale))}/* 窄屏把「本周」标签收成一个圆点：整词排不下，而它必须始终可见 —— 用户扫一眼就知道这是不是当前周。 */
 .sg .now-tag{padding:0;width:16px;height:16px;justify-content:center;font-size:0}.sg .now-tag::before{width:6px;height:6px}/* 窄屏顶栏：①「回到本周」从顶栏挪进「⋯」菜单（顶栏只剩 ‹ 第N周 › ⋯ 四件）；
    ② 副标题只留周次区间；③ 「第 N 周」降到 16px、按钮缩到 34px —— 顶栏整体压到 ~46px，
    比原来省下近 30px，正好是一节课的高度。 */
@@ -208,6 +211,23 @@
 .sg .week-title b{font-size:calc(16px * var(--ui-text-scale))}
 .sg .week-title small{font-size:calc(9.5px * var(--ui-text-scale))}
 .sg footer{margin-top:6px;padding-top:7px;font-size:calc(9.5px * var(--ui-text-scale))}.sg .actionbar{justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}.sg .actionbar button{white-space:nowrap}.sg .fields{grid-template-columns:1fr}.sg .form,.sg .panel{padding:13px}}
+ /* ── 周视图无边距（v0.59.0）──────────────────────────────────────────────
+    需求：课表像原版那样拉伸填满「除系统安全区之外」的整屏，左右与上方都不留白。
+    .sg.bleed 只在 mode==='week' 时由 paint() 挂上 —— 设置页 / 表单页继续吃 .sg 的
+    左右内边距，正文贴着屏幕边会难看。
+    宿主侧的配套改动在 src/styles.css 的 .app.rail-hidden .view 与 .plugview 两条：
+    那两处收掉了 46px 顶部让位与 14px 左右内边距，所以这里只剩安全区要补 ——
+    横向安全区（横屏挖孔在侧边）宿主不管，必须在这一层补回。
+    ⚠️ 一律 var(--sal/--sar, env(…)) 双路，不裸用 env()（铁律四：Android WebView 里 env() 恒为 0）。 */
+ @media(max-width:900px){
+   .sg.bleed{padding:0 var(--sar,env(safe-area-inset-right,0px)) 0 var(--sal,env(safe-area-inset-left,0px))}
+   .sg.bleed .schedule-top{margin:0;padding:6px 8px;border-width:0 0 1px;border-radius:0}
+   .sg.bleed .schedule-frame{border-width:0;border-radius:0;scrollbar-gutter:auto}/* both-edges 会在左右各留一条滚动条槽（实测 7px），无边距模式下这就是两条新白边；
+    窄屏 frame 本身不纵向滚动（.main-stage 已按节次数给足下限，滚动交给外层 .plugview），
+    所以这里退回 auto 不会引起内容横跳。 */
+   .sg.bleed .main-stage>.warning{margin-inline:8px}
+   .sg.bleed footer{padding-inline:8px}
+ }
  @media(pointer:coarse){.sg button,.sg input,.sg select{min-height:42px}.sg .course-block{min-height:0}}
  @media(prefers-reduced-motion:reduce){.sg *{scroll-behavior:auto!important;transition-duration:.01ms!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
  `;document.head.append(s);
@@ -433,7 +453,7 @@ function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<f
  function schoolListContent(){return `${subHead('选择学校','back',schoolIndex?`官方适配索引 · ${schoolIndex.schools.length} 所学校/工具`:'官方时光课程表适配仓库')}<div class="school-tabs">${Object.entries(categoryLabels).map(([id,label])=>button(label,'school-category',`data-category="${id}" class="${schoolCategory===id?'on':''}"`)).join('')}</div><input class="school-search" data-school-search aria-label="搜索学校" value="${esc(schoolQuery)}" placeholder="搜索学校名称或拼音首字母"><div class="school-list" data-school-results>${schoolRowsContent()}</div>`;}
  function adapterListContent(){const adapters=(selectedSchool?.adapters||[]).filter(a=>a.category===schoolCategory);return `${subHead(selectedSchool?.name||'选择导入方式','back',categoryLabels[schoolCategory],'‹ 返回学校列表')}<div class="school-list">${adapters.map(a=>`<button class="adapter-card" data-action="school-open-adapter" data-adapter-id="${esc(a.adapterId)}"><b>${esc(a.adapterName)}</b><span>${esc(a.description||'进入教务系统后执行适配脚本')}</span><span>维护者：${esc(a.maintainer||'未注明')}</span></button>`).join('')||'<div class="school-empty">该分类暂时没有可用适配器。</div>'}</div><p class="hint">教务系统会在独立窗口打开。完成登录并进入个人课表页面后，点击窗口右下角“导入当前课表”。</p>`;}
  function transferContent(){return `${subHead('备份与恢复')}<div class="transfer-grid"><section class="transfer-card"><h4>导出课表</h4><p class="muted">JSON 备份包含全部课表；ICS 导出当前课表。</p><div class="tools">${button('导出 JSON','json','class="primary"')}${button('导出 ICS','ics')}</div></section><section class="transfer-card"><h4>导入 JSON 备份</h4><p class="muted">兼容拾光课程表单课表和多课表备份。先预览，再确认导入。</p><label><span>选择 JSON 文件</span><input class="file" type="file" accept=".json,application/json" data-file></label>${textArea('或粘贴 JSON','jsonText','')}<div class="tools">${button('预览 JSON','preview')}</div><div data-preview></div></section></div>`;}
- function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;animateWeek();}
+ function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${mode==='week'?'bleed':''} ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;animateWeek();}
  /* 切周滑入动画。
     做法是整棵重绘后，在 .week-anim 上补一个一次性动画类 —— 而不是用 Transition/FLIP
     去挪动旧节点：课表是 7×N 的 CSS Grid，逐块做 FLIP 要量几十个 rect，

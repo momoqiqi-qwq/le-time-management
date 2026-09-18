@@ -1,5 +1,5 @@
 import * as S from "../store.js";
-import { el, toast } from "../ui.js";
+import { bottomInsetPx, el, toast } from "../ui.js";
 
 const VIEW_META = [
   ["day", "日时间轴", "当前可拖拽编辑的日程"],
@@ -86,9 +86,9 @@ export function createTimeViewSwitcher({ current = "day", onChange }) {
     const r = toggle.getBoundingClientRect();
     menu.hidden = false; menu.style.visibility = "hidden"; document.body.append(menu);
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
-    // 右对齐展开按钮，但不许越出视口（窄屏时贴左右安全边）。
+    // 右对齐展开按钮，但不许越出视口（窄屏时贴左右安全边）；底部再让开三键导航栏（v0.58.2）。
     menu.style.left = `${Math.max(8, Math.min(r.right - mw, innerWidth - mw - 8))}px`;
-    menu.style.top = `${Math.min(r.bottom + 6, innerHeight - mh - 8)}px`;
+    menu.style.top = `${Math.min(r.bottom + 6, innerHeight - mh - 8 - bottomInsetPx())}px`;
     menu.style.visibility = "";
     toggle.setAttribute("aria-expanded", "true");
     setTimeout(() => {

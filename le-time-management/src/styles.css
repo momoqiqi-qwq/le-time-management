@@ -688,7 +688,12 @@ body.rail-resizing iframe { pointer-events: none !important; }
 
 .cap-mask { position: fixed; inset: 0; background: rgba(20, 30, 36, .35); z-index: 110; }
 .cap-modal { position: fixed; z-index: 111; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 480px; max-width: calc(var(--ui-vw, 100vw) * 0.92); max-height: calc(var(--ui-vh, 100dvh) * 0.88); overflow-y: auto;
+  width: 480px; max-width: calc(var(--ui-vw, 100vw) * 0.92);
+  /* v0.58.2：高度上限扣掉安全区 —— 0.88 居中后上下各剩 6%，三键导航栏（~48dp）正好把
+     底部「保存」按钮行压住。模式与 .ai-rule-editor（v0.58.1）一致：Android 走注入值，
+     桌面 / iOS 的 env() 为 0，两边都成立（铁律四）。 */
+  max-height: calc(var(--ui-vh, 100dvh) * 0.88 - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)));
+  overflow-y: auto;
   background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 18px 22px 20px; }
 .cap-h { display: flex; align-items: center; justify-content: space-between; font-size: calc(15px * var(--ui-text-scale)); font-weight: 700; margin-bottom: 12px; }
 .cap-img { display: block; width: 100%; max-height: 250px; object-fit: contain; border-radius: 12px;
@@ -707,7 +712,10 @@ body.rail-resizing iframe { pointer-events: none !important; }
    字号一律 calc(Npx * var(--ui-text-scale))，跟随全局文字大小（v0.55.0 铁律）。 */
 .ingest-mask { position: fixed; inset: 0; background: rgba(20, 30, 36, .35); z-index: 1110; }
 .ingest-panel { position: fixed; z-index: 1111; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  width: 560px; max-width: calc(var(--ui-vw, 100vw) * 0.94); max-height: calc(var(--ui-vh, 100dvh) * 0.86);
+  width: 560px; max-width: calc(var(--ui-vw, 100vw) * 0.94);
+  /* v0.58.2：同 .cap-modal —— 0.86 居中后底部只剩 7%，三键导航栏会压到吸底操作条的
+     「确认写入」按钮。扣掉 --sat + --sab（铁律四双路写法）。 */
+  max-height: calc(var(--ui-vh, 100dvh) * 0.86 - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px)));
   display: flex; flex-direction: column;
   background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 18px 20px 16px; }
 .ingest-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -786,11 +794,25 @@ button, .nav { touch-action: manipulation; }
   .app { flex-direction: column; }
   .main { order: 1; flex: 1 1 0; height: var(--ui-vh, 100dvh); }
   .view { padding-bottom: calc(var(--nav-pad, 62px) + var(--sab, env(safe-area-inset-bottom, 0px))); }
-  /* 沉浸式视图（插件声明 immersive:true，如课程表）：窄屏下让出全局底栏。
-     只做窄屏 —— 桌面端 `.rail` 是左侧竖栏，本来就不占底部高度，不需要也不该隐藏。
-     两条必须成对：光藏 .rail 的话，.view 那条为底栏预留的 padding-bottom 会留成一条空白。 */
+  /* 沉浸式视图（插件声明 immersive:true，如课程表）：让出全局底栏。
+     三条必须成对：光藏 .rail 的话，.view 那条为底栏预留的 padding-bottom 会留成一条空白。
+     v0.59.0 追加：padding-top 一并收掉 46px 顶栏让位、.plugview 左右内边距清零 ——
+     这类视图自己带顶栏，需求是「内容铺满除安全区之外的整屏」。安全区原样保留，
+     只去掉额外留白；横向安全区（横屏挖孔）由插件自己的 .sg.bleed 补回。
+     ⚠️ 下面 46px 那条必须写成 :not(.rail-hidden)，否则同为 (0,3,0) 会靠后覆盖掉这里的 top。 */
   .app.rail-hidden .rail { display: none; }
-  .app.rail-hidden .view { padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  .app.rail-hidden .view {
+    padding-top: calc(2px + var(--sat, env(safe-area-inset-top, 0px)));
+    padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px)));
+  }
+  /* :root 前缀不是冗余 —— 紧凑密度那条（:root[data-ui-density="compact"] .plugview
+     { padding-top:14px; padding-bottom:18px }，默认密度就是 compact）与沉浸式规则同为
+     (0,3,0) 且写在更后，会把上下内边距盖回来。多一个 :root 升到 (0,4,0)，四边一起归零。
+     scrollbar-width:none / ::-webkit-scrollbar 同理：全局把滚动条做成了 8~9px 的
+     「占位型」（Chromium 与 Android WebView 都认 ::-webkit-scrollbar），课表纵向必然滚动，
+     右侧就会留出一条白边 —— 与「填满除安全区之外」直接冲突，收掉。 */
+  :root .app.rail-hidden .plugview { padding: 0; scrollbar-width: none; }
+  .app.rail-hidden .plugview::-webkit-scrollbar { display: none; }
   .rail { order: 2; }
   /* v0.58.0：窄屏侧栏变底栏，「侧栏宽度」没有意义，分隔条整条隐藏（flex 子元素
      默认 order:0 会排到最前，不能只靠视觉隐藏，必须 display:none） */
@@ -876,7 +898,8 @@ button, .nav { touch-action: manipulation; }
      边距 ÷ --ui-scale；--sab 按项目约定不补偿（安全区被 zoom 缩小属已知项）。 */
   #toasts { right: 12px; bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px))); }
   /* ── v0.52.0：沉浸式外壳（需求：APK 默认上下栏都藏，点 ⋮ 菜单键才呼出）──
-     结构：.app 挂 .chrome-shown ⇔ 顶栏 + 底栏显示（shell.js 的 setChromeShown）。
+     结构：.app 挂 .chrome-shown ⇔ 底栏显示（shell.js 的 setChromeShown）。
+     v0.59.0：顶栏已整条移除，这个状态类只剩控制底栏一个职责。
      默认不挂 ⇒ 两栏都 display:none，内容独占整屏；呼出状态下切完视图自动收回。
      两颗悬浮键都必须吃 --sat（状态栏是透明浮层，edge-to-edge）与 --sal/--sar
      （横屏挖孔在侧边）—— 铁律四：一律 var(--s…, env(…)) 双路，不裸用 env()。 */
@@ -910,8 +933,9 @@ button, .nav { touch-action: manipulation; }
   .app.chrome-shown .chrome-toggle .ct-close { display: block; }
   /* 左上角小返回键：与右上角 ⋮ 对称。⚠️ 这里绝不写无条件 display —— 显示与否完全由
      媒体块外的 `.chrome-toggle, .mobile-back { display:none }` 兜底 + 下方 .show 门控：
-     只有 canGoBack() 为真（syncBackButton 挂上 .show）才 inline-flex；
-     两栏呼出时顶栏里已有返回键，悬浮键让位 —— 免得同屏摆两颗「返回」。 */
+     只有 canGoBack() 为真（syncBackButton 挂上 .show）才 inline-flex。
+     v0.59.0：顶栏整条移除后，顶栏里的返回键随之消失 —— 悬浮键不再有「呼出态让位」
+     一说，它是手机端唯一的返回入口（呼出底栏时也保持可见）。 */
   .mobile-back {
     align-items: center; justify-content: center;
     position: fixed;
@@ -931,25 +955,52 @@ button, .nav { touch-action: manipulation; }
   .mobile-back:hover { color: var(--ink); }
   .mobile-back:active { transform: scale(.94); }
   .mobile-back.show { display: inline-flex; }
-  .app.chrome-shown .mobile-back { display: none; }
   .mobile-back-glyph { display: block; font-size: calc(19px * var(--ui-text-scale)); line-height: 1; transform: translateY(-1px); }
   /* 上下栏默认收起。:not(…) 里的类名参与特异性（0,3,0），稳压 .rail-hidden 那组 (0,2,1)。
      收起时 .view 自己给状态栏让位（需求：「距离手机状态栏合适的距离」）：悬浮键
-     底缘在 41px + --sat 处，内容从 46px + --sat 起步；底部同理只留 --sab + 4px。 */
-  .app:not(.chrome-shown) .topbar { display: none; }
+     底缘在 41px + --sat 处，内容从 46px + --sat 起步；底部同理只留 --sab + 4px。
+     v0.59.0：顶栏整条移除（用户需求「APK 上面那栏删除」）—— 无论 ⋮ 呼出与否都不显示。
+     ⋮ 现在只呼出底栏；顶栏返回键随之消失，返回能力全在悬浮键 .mobile-back 上。 */
+  .app .topbar { display: none; }
   .app:not(.chrome-shown) .rail { display: none; }
-  .app:not(.chrome-shown) .view {
+  /* 顶栏不再占位 ⇒ 两种呼出状态 .view 都要自己补安全距离（顶栏占位时代只有收起态需要）。
+     保留 :not(…) 写法参与特异性（0,3,0）稳压 .rail-hidden 那组，呼出态补一条同值规则。
+     v0.59.0：两条都再排除 .rail-hidden —— 沉浸式视图自己带顶栏，上面已经给了它
+     只含安全区的 padding-top，这里再叠 46px 就把课表顶下去了（选择器多一个 :not，
+     特异性升到 (0,4,0)，非沉浸视图的两种呼出状态照旧）。 */
+  .app:not(.chrome-shown):not(.rail-hidden) .view,
+  .app.chrome-shown:not(.rail-hidden) .view {
     padding-top: calc(46px + var(--sat, env(safe-area-inset-top, 0px)));
     padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px)));
   }
-  /* ⋮ 呼出两栏。必须写在上面 .rail-hidden 两条规则之后：同为 (0,2,1) 靠后者胜 ——
-     沉浸式插件页（rail-hidden，如课程表）里点 ⋮ 也要能把底栏呼出来。 */
-  .app.chrome-shown .rail { display: flex; }
-  /* 呼出态顶栏右边距：v0.52.1 起 ⋮ 不再压顶栏，这里只是常规右边距 */
-  /* v0.52.1：⋮ 菜单键已从「贴顶」挪到右侧 45% 高度，不再压在顶栏上 ⇒
-     顶栏右侧不必再为它让出 46px（窄屏 288 档那 46px 会让「快捷入口」被挤得贴住标题）。
-     留 12px 常规右边距即可。 */
-  .app.chrome-shown .topbar { padding-right: calc(12px + var(--sar, env(safe-area-inset-right, 0px))); }
+  /* ⋮ 呼出底栏。必须写在上面 .rail-hidden 两条规则之后：同为 (0,2,1) 靠后者胜 ——
+     沉浸式插件页（rail-hidden，如课程表）里点 ⋮ 也要能把底栏呼出来。
+     v0.58.2 追加：呼出/收起动画（用户需求「点击后弹出的下栏添加弹出和收起动画」）。
+     收起态是 display:none 瞬间消失，过渡跟不上 ⇒ JS 侧摘 .chrome-shown 前先挂
+     .rail-hiding 顶住显示并播滑出动画（forwards 停在屏下），超时兜底再摘类。
+     rail-hiding 写在 chrome-shown 之前：两者同为 (0,3,0)，快速连点 ⋮ 时
+     后者的 display:flex 胜（JS 呼出路径也会先摘掉 rail-hiding，双保险）。
+     transform 一律 translate3d(…,0)：别把底栏既有的 translateZ(0) 合成层提升
+     （上方 .rail 规则注释：真机插件页挂载时底栏闪一帧，靠它常驻独立层）冲掉。
+     reduced-motion 双门槛：JS 侧 reducedMotion() 为真直接摘类不播动画；
+     CSS 侧文件尾 prefers-reduced-motion 全局规则把时长压到 .01ms。 */
+  .app.rail-hiding .rail {
+    display: flex;
+    animation: rail-dock-out .18s ease-in forwards;
+  }
+  .app.chrome-shown .rail {
+    display: flex;
+    animation: rail-dock-in .26s cubic-bezier(.22, .8, .26, 1);
+  }
+}
+
+/* 底栏呼出/收起关键帧：滑入从屏下 105% 起步（105% 盖过 box-shadow 的上抛阴影），
+   滑出 forwards 停在屏下直到 JS 摘类。opacity 同步淡入淡出，进出场更有整体感。 */
+@keyframes rail-dock-in {
+  from { transform: translate3d(0, 105%, 0); opacity: 0; }
+}
+@keyframes rail-dock-out {
+  to { transform: translate3d(0, 105%, 0); opacity: 0; }
 }
 
 @media (max-width: 520px) {
@@ -3483,7 +3534,11 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .rail-bottom > .theme-toggle-btn .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
 
 /* ── 应用内对话框（appPrompt / appConfirm，替代原生 window.prompt/confirm）── */
-.app-dialog-mask { z-index: 2400; display: grid; place-items: center; padding: 20px; }
+.app-dialog-mask { z-index: 2400; display: grid; place-items: center;
+  /* v0.58.2：四边 padding 各自叠加安全区 —— 原来 20px 均一内边距小于三键导航栏
+     （~48dp），确认/取消按钮行会被导航栏盖住。横向也取（横屏挖孔在侧边，铁律四）。
+     桌面 / iOS 的 env() 为 0，行为不变。 */
+  padding: calc(20px + var(--sat, env(safe-area-inset-top, 0px))) calc(20px + var(--sar, env(safe-area-inset-right, 0px))) calc(20px + var(--sab, env(safe-area-inset-bottom, 0px))) calc(20px + var(--sal, env(safe-area-inset-left, 0px))); }
 .app-dialog {
   width: 340px; max-width: 92vw;
   background: var(--panel); color: var(--ink);

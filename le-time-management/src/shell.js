@@ -2,7 +2,7 @@
 import * as S from "./store.js";
 import { appIcon } from "./icons.js";
 import { api } from "./api.js";
-import { appConfirm, appPrompt, el, toast } from "./ui.js";
+import { appConfirm, appPrompt, bottomInsetPx, el, toast } from "./ui.js";
 import { renderQuadrant } from "./views/quadrant.js";
 import { renderTimeblock } from "./views/timeblock.js";
 import { renderTimeline } from "./views/timeline.js";
@@ -183,8 +183,11 @@ export function renderShell(root) {
   // v0.52.0：APK 沉浸式外壳的两颗悬浮键（CSS 只在 ≤900px 显示，桌面端恒 display:none）。
   // 需求（用户）：「apk 默认上下栏都隐藏起来，只有点 3 个点图标的菜单键才会显示出来」+
   // 「每一页都添加返回按钮，在适合的位置，要小」。
-  // ① 右上角 ⋮ 菜单键（.chrome-toggle）：点它给 .app 挂 .chrome-shown 呼出顶栏 + 底栏，
-  //    再点收回（图标随之变 ✕）；呼出状态下切完视图由下方 commit 自动收回。
+  // ① 右上角 ⋮ 菜单键（.chrome-toggle）：点它给 .app 挂 .chrome-shown 呼出底栏，
+  //    再点收回（图标随之变 ✕）。
+  //    v0.59.0：顶栏整条移除（用户需求「APK 上面那栏删除」），⋮ 只剩呼出底栏一个职责。
+  //    v0.59.0：呼出后底栏常驻，切视图不再自动收回（用户需求「点击显示菜单按钮后，
+  //    除非打开设置否则不[收起]菜单」）—— 只有 openSettingsModal 会收掉它。
   // ② 左上角小返回键（.mobile-back）：与顶栏返回键共用一份 canGoBack() 状态 ——
   //    上下栏收起时它是唯一的返回入口，行为与 Android 返回键完全一致（复用 goBack()）。
   //    两颗都要 data-motion="off"：interactions.css 的
@@ -203,7 +206,7 @@ export function renderShell(root) {
     class: "chrome-toggle",
     type: "button",
     title: "显示菜单",
-    "aria-label": "显示或隐藏顶栏与底栏",
+    "aria-label": "显示或隐藏底栏",
     "aria-expanded": "false",
     "data-motion": "off",
     onclick: () => setChromeShown(!chromeShown),
@@ -225,7 +228,6 @@ export function renderShell(root) {
   // v0.52.0：沉浸式外壳状态。默认 false ⇒ APK 上下栏默认都收起（需求原文「默认上下栏
   // 都隐藏起来」）。每次启动都从收起态开始，不做持久化 —— 「默认」就是每次进来的样子。
   let chromeShown = false;
-  let chromeHideTimer = 0;
   const mobileQuery = typeof window !== "undefined" && window.matchMedia
     ? window.matchMedia("(max-width: 900px)")
     : { matches: false };
@@ -494,8 +496,8 @@ export function renderShell(root) {
   const pluginZipInput = el("input", { type: "file", accept: ".zip,application/zip", multiple: true, hidden: true });
   const pluginIconInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", hidden: true });
   root.append(pluginZipInput, pluginIconInput);
-  // v0.52.0：两颗悬浮键必须挂在 .app（appFrame）**里面** —— 呼出态的字形切换与
-  // 返回键让位都靠 `.app.chrome-shown .chrome-toggle …` 后代选择器驱动，挂在 root
+  // v0.52.0：两颗悬浮键必须挂在 .app（appFrame）**里面** —— 呼出态的 ⋮/✕ 字形切换
+  // 靠 `.app.chrome-shown .chrome-toggle …` 后代选择器驱动，挂在 root
   // 上时是 .app 的兄弟节点，选择器永不命中（实测 ⋮ 永远不变 ✕）。
   // fixed 定位不受影响：.app 无 transform/filter，不构成 fixed 的包含块。
   appFrame.append(chromeToggle, mobileBack);
@@ -631,7 +633,7 @@ export function renderShell(root) {
     pluginContextMenu = menu;
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8 - bottomInsetPx()))}px`;
     requestAnimationFrame(() => menu.querySelector("button:not(:disabled)")?.focus());
   }
 
@@ -844,6 +846,9 @@ export function renderShell(root) {
   }
 
   function openSettingsModal(section = "") {
+    // v0.59.0：设置是底栏呼出态唯一的「让位」出口 —— 弹窗要占满屏，菜单先收回去。
+    // 桌面宽屏下 .chrome-shown 无视觉效果，仍然门槛一下，免得 ⋮ 的 title 被无关路径改掉。
+    if (chromeShown && mobileQuery.matches) setChromeShown(false);
     document.querySelector(".settings-modal")?._close?.();
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
     const panel = el("section", { class: "settings-modal", role: "dialog", "aria-modal": "true", "aria-label": "设置" },
@@ -877,7 +882,8 @@ export function renderShell(root) {
     let x = Number.isFinite(left) ? left : (window.innerWidth - width - 22);
     let y = Number.isFinite(top) ? top : 92;
     x = Math.min(window.innerWidth - width - margin, Math.max(margin, x));
-    y = Math.min(window.innerHeight - height - margin, Math.max(safeTop, y));
+    // v0.58.2：底部钳制叠加三键导航栏高度（--sab），否则拖到最底时面板被导航栏压住
+    y = Math.min(window.innerHeight - height - margin - bottomInsetPx(), Math.max(safeTop, y));
     node.style.left = `${x}px`;
     node.style.top = `${y}px`;
     quickDockState.left = x;
@@ -945,7 +951,7 @@ export function renderShell(root) {
     let x = rect.left;
     let y = rect.bottom + 8;
     x = Math.min(window.innerWidth - width - margin, Math.max(margin, x));
-    y = Math.min(window.innerHeight - height - margin, Math.max(margin, y));
+    y = Math.min(window.innerHeight - height - margin - bottomInsetPx(), Math.max(margin, y));
     quickDock.style.left = `${x}px`;
     quickDock.style.top = `${y}px`;
     quickDock.style.right = "auto";
@@ -1051,10 +1057,26 @@ export function renderShell(root) {
   }
 
   // v0.52.0：沉浸式外壳开关。只切 .app 上的 .chrome-shown 类，CSS 在 ≤900px 媒体块里
-  // 消费它（桌面宽屏下类挂着也没任何视觉效果）。呼出时清掉还没到点的自动收回定时器。
+  // 消费它（桌面宽屏下类挂着也没任何视觉效果）。v0.59.0 起它只控制底栏显隐（顶栏已移除），
+  // 且只有两处调用者：⋮ 自己切换、openSettingsModal 收回。
+  // v0.58.2 追加：底栏呼出/收起动画。收起态是 display:none，过渡跟不上 ⇒ 真正摘
+  // .chrome-shown 之前先挂 .rail-hiding 顶住显示、播 CSS 的 rail-dock-out 滑出动画
+  //（forwards 停在屏下），超时兜底摘类；呼出/快速连点都先摘 rail-hiding 再挂呼出态。
+  // reducedMotion()（用户「减少动效」设置或系统偏好）为真时直接摘类，跳过动画。
+  let railHideTimer = 0;
+  const RAIL_HIDE_ANIM_MS = 220; // CSS rail-dock-out .18s + 事件/帧余量
   function setChromeShown(show) {
-    if (chromeHideTimer) { clearTimeout(chromeHideTimer); chromeHideTimer = 0; }
+    if (railHideTimer) { clearTimeout(railHideTimer); railHideTimer = 0; }
+    appFrame.classList.remove("rail-hiding");
+    const wasShown = chromeShown;
     chromeShown = show;
+    if (!show && wasShown && mobileQuery.matches && !reducedMotion()) {
+      appFrame.classList.add("rail-hiding");
+      railHideTimer = setTimeout(() => {
+        appFrame.classList.remove("rail-hiding");
+        railHideTimer = 0;
+      }, RAIL_HIDE_ANIM_MS);
+    }
     appFrame.classList.toggle("chrome-shown", show);
     chromeToggle.setAttribute("aria-expanded", String(show));
     chromeToggle.title = show ? "收起菜单" : "显示菜单";
@@ -1140,13 +1162,9 @@ export function renderShell(root) {
       // 必须排在 noteViewChange 之后：它刚压了一格，返回按钮要立刻反映出来
       // （commit 早于 noteViewChange 跑，放在上面会慢一拍 —— 进插件时按钮不出现）。
       syncBackButton();
-      // v0.52.0：手机端切完视图自动收起菜单（沉浸式外壳的核心体验 —— 呼出菜单是为了
-      // 去某个页面，到了就该把屏幕还给内容；返回靠悬浮键，不必再点 ✕）。
-      // 只在「真的换了界面」且菜单当前是呼出态时排定时器；程序性重渲染不触发。
-      if (prevId !== targetId && chromeShown && mobileQuery.matches) {
-        clearTimeout(chromeHideTimer);
-        chromeHideTimer = setTimeout(() => { chromeHideTimer = 0; setChromeShown(false); }, 380);
-      }
+      // v0.59.0：这里不再有「切完视图自动收回底栏」。需求（用户）「点击显示菜单按钮后，
+      // 除非打开设置否则不[收起]菜单」—— 呼出态常驻，连续换页不必反复点 ⋮。
+      // 收回入口只有两处：再点一次 ⋮（✕）与 openSettingsModal。
     };
 
     // 「弹 2 下」修复：切视图只保留入场动画，不再先播放旧页滑出——

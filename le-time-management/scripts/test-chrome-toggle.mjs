@@ -5,19 +5,27 @@ const read = (path) => fs.readFileSync(new URL(path, import.meta.url), "utf8");
 const css = read("../src/styles.css");
 const shell = read("../src/shell.js");
 
-/* ───────────── v0.52.0 回归：APK 沉浸式外壳 ─────────────
+/* ───────────── v0.52.0 回归：APK 沉浸式外壳（v0.59.0 修订）─────────────
    需求（用户原话）：
    ① 「apk 默认上下栏都隐藏起来，只有点 3 个点图标的菜单键才会显示出来」
    ② 「距离手机状态栏合适的距离」
    ③ 「apk 每一页都添加返回按钮，在适合的位置，要小」
+   ④ v0.59.0：「把apk上面那栏删除」—— 顶栏整条移除，⋮ 只呼出底栏。
+   ⑤ v0.59.0：「点击显示菜单按钮后除非打开设置否则不[收起]菜单」—— 底栏呼出后常驻，
+      切视图不再自动收回，只有打开设置才收起。
 
-   实现：.app 挂 .chrome-shown ⇔ 顶栏 + 底栏显示；默认不挂 ⇒ 两栏 display:none。
-   右上角 .chrome-toggle（⋮/✕）呼出与收回；左上角 .mobile-back 与顶栏返回键共用
-   canGoBack() 状态。收起态 .view 自己补 --sat 顶部安全距离（悬浮键不吃进内容）。 */
+   实现：.app 挂 .chrome-shown ⇔ 底栏显示；默认不挂 ⇒ 底栏 display:none。
+   ≤900px 里 .topbar 无条件 display:none（顶栏在手机端不存在）。
+   右上角 .chrome-toggle（⋮/✕）呼出与收回；左上角 .mobile-back 独自承担返回
+   （顶栏返回键随顶栏消失，悬浮键不再有呼出态让位）。.view 两种状态都自己补
+   --sat 顶部安全距离（顶栏不再占位）。 */
 
-// ── ① 默认收起：≤900px 里两栏都藏 ──
-assert.match(css, /\.app:not\(\.chrome-shown\)\s+\.topbar\s*\{[^}]*display:\s*none/,
-  "收起态必须藏顶栏（.app:not(.chrome-shown) .topbar → display:none）");
+// ── ① ≤900px 顶栏整条移除 + 收起态藏底栏 ──
+assert.match(css, /\.app\s+\.topbar\s*\{[^}]*display:\s*none/,
+  "≤900px 顶栏必须无条件隐藏（.app .topbar → display:none，v0.59.0 起手机端没有顶栏）");
+// 反向守卫：不许再出现「呼出态把顶栏显示/改样式」的规则 —— 顶栏在手机端不存在
+assert.ok(!/\.app\.chrome-shown\s+\.topbar\s*\{/.test(css),
+  "不允许出现 .app.chrome-shown .topbar 规则（顶栏已整条移除，别让它回潮）");
 assert.match(css, /\.app:not\(\.chrome-shown\)\s+\.rail\s*\{[^}]*display:\s*none/,
   "收起态必须藏底栏（.app:not(.chrome-shown) .rail → display:none）");
 
@@ -30,14 +38,19 @@ const chromeRailIdx = css.indexOf(".app.chrome-shown .rail");
 assert.ok(railHiddenIdx >= 0 && chromeRailIdx > railHiddenIdx,
   ".app.chrome-shown .rail 必须出现在 .app.rail-hidden .rail 之后（同特异性靠后者胜）");
 
-// :not(…) 带类名参与特异性，必须整体强于 .rail-hidden 那组 —— 否则收起态在沉浸式
-// 插件页上会被 (0,2,1) 的旧规则盖回。直接比两段的位置与形态，防有人改回弱写法。
-assert.match(css, /\.app:not\(\.chrome-shown\)\s+\.view\s*\{[^}]*padding-bottom:\s*calc\(4px\s*\+\s*var\(--sab/,
-  "收起态 .view 要收回为底栏预留的 padding-bottom（否则底部留一条空白）");
+// :not(…) 带类名参与特异性。v0.59.0 起这组规则再排除 .rail-hidden：沉浸式插件视图
+// （课程表）自己带顶栏，46px 让位要收掉，由 `.app.rail-hidden .view` 单独给「只剩安全区」
+// 的取值 —— 若这里漏了 :not(.rail-hidden)，靠后书写会把沉浸态的 padding-top 盖回 46px。
+// 正则里的 (?:…)? 兼容两种写法；「必须带 :not(.rail-hidden)」由
+// scripts/test-immersive-view.mjs 的 ⑤ 单独钉住。
+assert.match(css, /\.app:not\(\.chrome-shown\)(?::not\(\.rail-hidden\))?\s+\.view[^{]*\{[^}]*padding-bottom:\s*calc\(4px\s*\+\s*var\(--sab/,
+  ".view 要收回为底栏预留的 padding-bottom（否则底部留一条空白）");
 
-// ── ② 状态栏距离：收起态内容从 --sat 下起步，悬浮键本体也吃安全区 ──
-assert.match(css, /\.app:not\(\.chrome-shown\)\s+\.view\s*\{[^}]*padding-top:\s*calc\(\d+px\s*\+\s*var\(--sat,\s*env\(safe-area-inset-top,\s*0px\)\)/,
-  "收起态 .view 必须补 padding-top = Npx + var(--sat, env(…))：内容不能压进透明状态栏");
+// ── ② 状态栏距离：内容从 --sat 下起步（顶栏移除后两种状态都需要），悬浮键本体也吃安全区 ──
+assert.match(css, /\.app:not\(\.chrome-shown\)(?::not\(\.rail-hidden\))?\s+\.view[^{]*\{[^}]*padding-top:\s*calc\(\d+px\s*\+\s*var\(--sat,\s*env\(safe-area-inset-top,\s*0px\)\)/,
+  ".view 必须补 padding-top = Npx + var(--sat, env(…))：内容不能压进透明状态栏");
+assert.match(css, /\.app\.chrome-shown(?::not\(\.rail-hidden\))?\s+\.view[^{]*\{[^}]*padding-top:\s*calc\(\d+px\s*\+\s*var\(--sat,/,
+  "呼出态 .view 也要补 --sat 顶部安全距离（顶栏移除后它不再替内容占位）");
 const toggleRule = css.match(/\.chrome-toggle\s*\{([^}]*)\}/)?.[1] ?? "";
 assert.ok(toggleRule, "必须存在 .chrome-toggle 规则");
 // v0.52.1：⋮ 从「贴顶」挪到右侧 45% 高度 —— 贴顶时它压在顶栏里，窄屏（288 CSS px 档）
@@ -66,11 +79,9 @@ assert.ok(toggleZ > 55, `⋮ 菜单键 z-index 必须 > 55（底栏层级），�
 assert.match(css, /\.chrome-toggle,\s*\.mobile-back\s*\{\s*display:\s*none/,
   "媒体块外必须有 .chrome-toggle, .mobile-back { display:none } 兜底，宽屏不许露出");
 
-// 呼出态：顶栏右侧要让出一颗钮的宽度，且悬浮返回键让位（顶栏里已有返回键）
-assert.match(css, /\.app\.chrome-shown\s+\.topbar\s*\{[^}]*padding-right:\s*calc\(\d+px\s*\+\s*var\(--sar/,
-  "呼出态顶栏的 padding-right 仍要走 var(--sar, env(…)) 双路（横屏挖孔在侧边）");
-assert.match(css, /\.app\.chrome-shown\s+\.mobile-back\s*\{[^}]*display:\s*none/,
-  "呼出态悬浮返回键要让位给顶栏返回键，同屏不摆两颗「返回」");
+// 呼出态：顶栏已移除 ⇒ 悬浮返回键不再让位（它是手机端唯一返回入口，呼出底栏时也可见）
+assert.ok(!/\.app\.chrome-shown\s+\.mobile-back\s*\{[^}]*display:\s*none/.test(css),
+  "呼出态不许再藏悬浮返回键（v0.59.0 起顶栏返回键已随顶栏消失，没有让位对象）");
 
 // ⋮ ↔ ✕ 图标随态切换：默认只显 ⋮，呼出后只显 ✕
 assert.match(css, /\.chrome-toggle\s+\.ct-close\s*\{\s*display:\s*none/,
@@ -80,7 +91,7 @@ assert.match(css, /\.app\.chrome-shown\s+\.chrome-toggle\s+\.ct-open\s*\{\s*disp
 assert.match(css, /\.app\.chrome-shown\s+\.chrome-toggle\s+\.ct-close\s*\{\s*display:\s*block/,
   "呼出态要显示 ✕（可点它收回）");
 
-// ── ④ shell.js 侧：状态、开关、自动收回、返回键同步 ──
+// ── ④ shell.js 侧：状态、开关、收回入口、返回键同步 ──
 assert.match(shell, /let chromeShown = false;/,
   "沉浸式外壳必须默认收起（每次启动都从收起态开始，需求原文「默认上下栏都隐藏」）");
 assert.match(shell, /class: "chrome-toggle"/, "必须创建 ⋮ 菜单键按钮");
@@ -90,10 +101,14 @@ assert.match(shell, /onclick: \(\) => setChromeShown\(!chromeShown\)/,
   "⋮ 菜单键的点击行为必须是切换 .chrome-shown");
 assert.match(shell, /appFrame\.classList\.toggle\("chrome-shown", show\)/,
   "setChromeShown 必须把状态写到 .app 的类上（CSS 只认这个类）");
-// 自动收回：只在「真的换了界面」且菜单呼出且窄屏时排定时器
+// 收回入口：v0.59.0 起底栏呼出后常驻。需求（用户原话）「点击显示菜单按钮后，除非打开
+// 设置否则不[收起]菜单」⇒ 切视图不再自动收回（换页要连着点，不该每次重新呼 ⋮），
+// 只有 openSettingsModal 会收掉它。反向守卫：自动收回定时器一旦回潮，这里就会失配。
+assert.ok(!/chromeHide/.test(shell),
+  "不允许出现「切视图自动收回底栏」的定时器（v0.59.0 起呼出态常驻，只有打开设置才收起）");
 assert.match(shell,
-  /prevId !== targetId && chromeShown && mobileQuery\.matches[\s\S]{0,220}setChromeShown\(false\)/,
-  "切视图后必须自动收回菜单（条件：真的换页 + 当前呼出 + 窄屏）");
+  /function openSettingsModal\(section = ""\) \{[\s\S]{0,200}setChromeShown\(false\)/,
+  "打开设置必须收回呼出的底栏（窄屏门槛照旧，桌面 .chrome-shown 无视觉效果）");
 // 悬浮返回键与顶栏返回键同一份状态
 assert.match(shell,
   /syncBackButton[\s\S]{0,220}backBtn\.classList\.toggle\("show", show\);[\s\S]{0,120}mobileBack\.classList\.toggle\("show", show\)/,
@@ -112,10 +127,7 @@ assert.match(shell, /class: "mobile-back",[\s\S]{0,200}?"data-motion": "off"/,
   "悬浮返回键必须带 data-motion=\"off\"，否则 interactions.css 会把 fixed 压成 relative");
 assert.match(shell, /class: "chrome-toggle",[\s\S]{0,260}?"data-motion": "off"/,
   "⋮ 菜单键必须带 data-motion=\"off\"，否则 interactions.css 会把 fixed 压成 relative");
-// 呼出切换要清掉未到点的自动收回定时器（用户刚点开就别又被收走）
-assert.match(shell,
-  /function setChromeShown\(show\) \{[\s\S]{0,120}clearTimeout\(chromeHideTimer\)/,
-  "setChromeShown 必须先清自动收回定时器");
+// setChromeShown 开头的定时器清理（收起动画超时兜底）由下方 ⑥ 钉住。
 
 // ── ⑤ 新增规则不许裸用 env()（铁律四；全文件守卫在 test-android-layout.mjs，
 //      这里专钉本功能的四条悬浮键 / 收起态规则）──
@@ -127,4 +139,38 @@ const chromeSatUses = (chromeCssChunk.match(/var\(--s(?:at|ab|al|ar),\s*env\(saf
 assert.ok(chromeSatUses >= 8,
   `沉浸式外壳相关规则必须至少有 8 处 var(--s…, env(…)) 双路取值，实际 ${chromeSatUses} 处 —— 少了就是有人改回裸 env()`);
 
-console.log("PASS: immersive chrome shell (default-hidden bars, ⋮ toggle with ✕ swap, auto-collapse after navigation, floating back button synced with canGoBack, status-bar safe distances on collapsed state, desktop always hides the floating keys)");
+// ── ⑥ v0.58.2 追加：底栏呼出/收起动画 ──
+// 呼出：chrome-shown 规则必须带 rail-dock-in 动画（display:none→flex 时 keyframes 会重放）
+const chromeRailBody = css.match(/\.app\.chrome-shown\s+\.rail\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(chromeRailBody, /animation:\s*rail-dock-in/,
+  "呼出态底栏必须播 rail-dock-in 弹入动画");
+// 收起：rail-hiding 顶住显示 + rail-dock-out forwards 停在屏下；挂在 chrome-shown 规则之前
+const railHidingIdx2 = css.indexOf(".app.rail-hiding .rail");
+const chromeRailIdx2 = css.indexOf(".app.chrome-shown .rail");
+assert.ok(railHidingIdx2 >= 0 && chromeRailIdx2 > railHidingIdx2,
+  ".app.rail-hiding .rail 必须写在 .app.chrome-shown .rail 之前（同特异性，连点 ⋮ 时呼出态胜）");
+const railHidingBody = css.match(/\.app\.rail-hiding\s+\.rail\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.match(railHidingBody, /display:\s*flex/, "收起动画期间必须顶住 display:flex");
+assert.match(railHidingBody, /animation:\s*rail-dock-out[^;]*forwards/,
+  "收起动画必须 forwards 停在滑出终态（摘类前不许弹回）");
+// 关键帧存在，且 transform 走 translate3d（保住底栏 translateZ(0) 合成层提升，真机防闪帧）
+assert.ok(/@keyframes rail-dock-in\s*\{/.test(css) && /@keyframes rail-dock-out\s*\{/.test(css),
+  "必须存在 rail-dock-in / rail-dock-out 关键帧");
+for (const kf of ["rail-dock-in", "rail-dock-out"]) {
+  const body = css.match(new RegExp(`@keyframes ${kf}\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? "";
+  assert.match(body, /translate3d\(0,\s*105%,\s*0\)/,
+    `${kf} 关键帧的 transform 必须是 translate3d(0,105%,0)（滑到屏下且保留 z=0 合成层）`);
+}
+// JS 侧：收起编排 —— 摘 chrome-shown 前挂 rail-hiding、超时兜底摘类、呼出先摘 rail-hiding
+assert.match(shell,
+  /if \(!show && wasShown && mobileQuery\.matches && !reducedMotion\(\)\)[\s\S]{0,160}classList\.add\("rail-hiding"\)/,
+  "收起动画必须四重门槛：真收起 + 之前在呼出 + 窄屏 + 非减少动效");
+assert.match(shell,
+  /railHideTimer = setTimeout\(\(\) => \{[\s\S]{0,120}classList\.remove\("rail-hiding"\)/,
+  "rail-hiding 必须由超时兜底摘类（animationend 在无头/挂起环境不可靠）");
+assert.match(shell,
+  /if \(railHideTimer\) \{ clearTimeout\(railHideTimer\); railHideTimer = 0; \}[\s\S]{0,80}classList\.remove\("rail-hiding"\)/,
+  "setChromeShown 开头必须清收起定时器并摘 rail-hiding（呼出/快速连点不许残留收起态）");
+assert.match(shell, /const RAIL_HIDE_ANIM_MS = \d+;/, "收起动画超时兜底时长必须显式声明");
+
+console.log("PASS: immersive chrome shell (default-hidden bars, ⋮ toggle with ✕ swap, persistent bottom dock after navigation that only collapses when settings open, floating back button synced with canGoBack, status-bar safe distances on collapsed state, desktop always hides the floating keys, dock slide in/out animation with rail-hiding orchestration)");

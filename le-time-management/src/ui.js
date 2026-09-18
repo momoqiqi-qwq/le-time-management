@@ -78,6 +78,18 @@ export function appConfirm(title, message, opts = {}) {
   return appDialog({ title, message, ...opts });
 }
 
+/**
+ * 底部系统栏（三键导航栏 / 手势条）的真实高度，单位 px。
+ * Android 由 MainActivity 注入 `--sab`（WebView 不实现 env(safe-area-inset-*)），
+ * 桌面 / iOS 取不到该变量，返回 0 —— 行为与以前一致。
+ * JS 定位的浮层（popmenu / 右键菜单 / quick-dock）贴底钳制必须减掉它，
+ * 否则 8~20px 的 margin 挡不住 ~48dp 的三键导航栏（v0.58.2）。
+ */
+export function bottomInsetPx() {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sab"));
+  return Number.isFinite(v) ? v : 0;
+}
+
 export function popmenu(x, y, items) {
   document.querySelectorAll(".popmenu").forEach((m) => m.remove());
   const menu = el("div", { class: "popmenu" });
@@ -89,7 +101,7 @@ export function popmenu(x, y, items) {
   document.body.append(menu);
   const r = menu.getBoundingClientRect();
   menu.style.left = `${Math.min(x, innerWidth - r.width - 10)}px`;
-  menu.style.top = `${Math.min(y, innerHeight - r.height - 10)}px`;
+  menu.style.top = `${Math.min(y, innerHeight - r.height - 10 - bottomInsetPx())}px`;
   const close = () => { removeWithMotion(menu); document.removeEventListener("pointerdown", onDoc, true); };
   const onDoc = (e) => { if (!menu.contains(e.target)) close(); };
   setTimeout(() => document.addEventListener("pointerdown", onDoc, true));

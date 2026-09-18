@@ -45,3 +45,35 @@ padding-top: var(--sat, env(safe-area-inset-top, 0px));
   没有扣安全区。移动端几乎不触发右键，且改它们要在 JS 侧读 CSS 变量，成本不划算 —— 先记着。
 - `.cap-modal`（88%）与 `.ingest-panel`（86%）居中弹窗：上下各留 6~7%，在 390×844 下
   约 50~59px，大于系统栏 inset，够用，本次不动。
+
+---
+
+## 构建优化：release profile 从「全优单线程」改「thin LTO 多线程」
+
+**类型**：patch（构建配置，零源码 / 零行为变化）
+**影响端**：桌面 + Android（Rust 编译链）；小程序不涉及
+**数据迁移**：无
+
+### 背景
+
+用户反馈「每次构建都这么慢」。大头不在前端（vite build 秒级），而在 Rust release
+的最后一环 —— 原 profile 为 `lto = true` + `codegen-units = 1`：**全程序链接时优化 +
+完全单线程**，整棵依赖树（tauri + reqwest/rustls + zip + qrcode 等 500+ crate）在链接期
+被重新跨 crate 优化一遍且并行度为 1，这一步通常占总构建时长的 1/3 ~ 1/2。
+
+### 改动
+
+| 改动 | 文件 | 说明 |
+|---|---|---|
+| `lto = true` → `lto = "thin"` | `src-tauri/Cargo.toml` | ThinLTO 保留跨 crate 优化绝大部分收益，但按分区并行，链接期预期快 2~5 倍 |
+| 移除 `codegen-units = 1` | `src-tauri/Cargo.toml` | 恢复默认 16 并行 codegen units，优化阶段重新吃到多核 |
+| `strip = true` 保留 | `src-tauri/Cargo.toml` | 不变 |
+
+代价：二进制体积略增（几百 KB 量级）、运行时性能理论上略降 —— 对此类 IO/交互型
+桌面工具无感；前端动画路径本来就不走 Rust。
+
+### 后续可选（未做）
+
+- Windows Defender 排除 `target/`、`.cargo`（再提 20~40%，需用户确认安全面）。
+- 配置 `sccache`（切 target / 重编时收益显著）。
+- 只打需要的 bundle（`--bundles nsis` 省掉 WiX 的 1~2 分钟）。

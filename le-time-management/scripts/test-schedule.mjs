@@ -52,7 +52,18 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,styles,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
+/* styles() 真跑一遍（v0.59.0 加的守卫）。整份课表 CSS 是**模板字符串**，注释里出现反引号
+   或 ${ 会把字符串截断 —— 反引号成对时语法照样合法、vm 加载与 --check 全过，
+   只有真正执行 styles() 才炸（实测 main.js 里 .app.rail-hidden 被当成属性访问，
+   报 "Cannot read properties of undefined (reading 'rail')"，课表整个渲染不出来）。
+   这里用 document 桩子把模板求值一次，并核对新规则真的进了 CSS。 */
+const injectedCss=[];
+uiContext.document={getElementById:()=>null,head:{append(){}},createElement:()=>({id:'',set textContent(v){injectedCss.push(v);},get textContent(){return injectedCss[0]||'';}})};
+uiContext.fixture.styles();
+assert.equal(injectedCss.length,1,'styles() 必须真的注入一段 CSS（长度 0 说明模板被截断或提前 return）');
+assert.match(injectedCss[0],/\.sg\.bleed\{padding:0 var\(--sar/, '注入的 CSS 里必须有 .sg.bleed 无边距规则');
+assert.doesNotMatch(injectedCss[0],/```|\$\{/, 'CSS 模板里不许出现反引号或 ${（会截断模板字符串）');
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
@@ -162,7 +173,8 @@ console.log('PASS: CPPU is built in and its real JE course rows convert dates, b
 
 /* ── v0.33.0 一、彩色课程块开关（「我的 → 个性化配置」里的滑块） ── */
 const styleDefaults = ui.match(/const defaultStyle=\{([^}]*)\}/)?.[1] || '';
-assert.match(styleDefaults, /colorful:false/, '彩色开关默认必须关：不能悄悄改掉所有老用户的观感');
+assert.match(styleDefaults, /colorful:true/, '彩色开关默认必须开（v0.59.0 需求：默认彩色课程表）');
+assert.match(styleDefaults, /opacity:75/, '默认透明度必须是 75（v0.59.0 需求，滑杆下限仍是 35）');
 assert.match(ui, /switchRow\('彩色课程块'/, '个性化配置里缺少彩色滑块');
 assert.match(ui, /name="\$\{name\}"/, '滑块必须真的渲染出带 name 的 checkbox，否则保存时读不到值');
 assert.match(ui, /style\.colorful\?'colorful':''/, '彩色开关必须落到 .sg 的类名上，否则 CSS 不生效');
@@ -299,6 +311,23 @@ assert.ok(!/@media\(max-width:900px\)\{[\s\S]*?\.sg \.main-stage\{min-height:0\}
 // 提示行已删：连同它的两条样式规则一起清掉，别留死代码
 assert.ok(!ui.includes('schedule-note'), '「左右滑动切换周次…」提示行已按用户要求删除，不应残留标记或样式');
 console.log('PASS: 手机课表按用户设定的格子高度拉长，操作提示行已移除');
+
+/* ── v0.59.0 周视图无边距（APK 端需求：填满除安全区之外的整屏）──
+   .sg.bleed 由 paint() 只在 mode==='week' 时挂上。两件事必须同时守住：
+   ① 无边距只能作用于周视图 —— 设置页 / 表单页若也贴屏幕边会难看；
+   ② 横向安全区（横屏挖孔在侧边）必须走 var(--sal/--sar, env(…)) 双路，
+      裸 env() 在 Android WebView 里恒为 0（AGENTS.md 铁律四）。 */
+assert.match(ui, /class="sg \$\{mode==='week'\?'bleed':''\}/,
+  'paint() 必须只在周视图给 .sg 挂 bleed 类（无边距不能泄漏到设置页与表单页）');
+assert.match(ui, /\.sg\.bleed\{padding:0 var\(--sar,env\(safe-area-inset-right,0px\)\) 0 var\(--sal,env\(safe-area-inset-left,0px\)\)\}/,
+  '.sg.bleed 必须清掉自身内边距、同时补回左右安全区（横屏挖孔）');
+assert.match(ui, /\.sg\.bleed \.schedule-top\{margin:0;padding:[^}]*border-width:0 0 1px;border-radius:0\}/,
+  '无边距下顶栏要收成通栏条（去外边距、去圆角、只留底边）');
+assert.match(ui, /\.sg\.bleed \.schedule-frame\{border-width:0;border-radius:0;scrollbar-gutter:auto\}/,
+  '无边距下课表外框要去掉圆角与描边、并把 both-edges 的滚动条槽退回 auto（否则左右各多 7px 白边）');
+assert.match(ui, /@media\(max-width:900px\)\{[\s\S]*?\.sg\.bleed\{padding:0/,
+  '无边距规则必须落在 ≤900px 媒体块内（桌面端课表仍要留白，不能贴窗口边）');
+console.log('PASS: 周视图无边距（仅 ≤900px、仅 week 模式、横向安全区双路取值）');
 
 /* ── v0.39.0 三、课程块不再有左侧强调色竖边 ── */
 // 用户截图（16×85 的暗色窄条）指着课程块左边那条 3px 实色强调边：
