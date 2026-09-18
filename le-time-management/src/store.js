@@ -51,6 +51,10 @@ export function normalizeState(raw = {}) {
   next.tasks = Array.isArray(next.tasks) ? next.tasks : [];
   next.blocks = Array.isArray(next.blocks) ? next.blocks : [];
   next.settings = next.settings && typeof next.settings === "object" && !Array.isArray(next.settings) ? next.settings : {};
+  // 自定义背景已移除（v0.55.0）：这个键里可能压着几百 KB 的 base64 图片，留着只会白占备份体积。
+  // 删在归一化处而不是写一次性迁移，是因为它同时覆盖「打开本地数据」与「导入旧备份」两条路径，
+  // 而且幂等 —— 归一化每次加载都跑，删一个本来就不存在的键没有任何副作用。
+  delete next.settings.background;
   next.plugins = next.plugins && typeof next.plugins === "object" && !Array.isArray(next.plugins) ? next.plugins : {};
   next.inbox = Array.isArray(next.inbox) ? next.inbox : [];
   next.automation = next.automation && typeof next.automation === "object" && !Array.isArray(next.automation) ? next.automation : {};
@@ -70,6 +74,12 @@ export async function initStore(seed) {
   // 迁移放在 try 之外：数据来自更新版本时要显式报错，而不是静默换成种子数据
   state = normalizeState(migrateState(loaded));
   invalidateBlockIndex();
+  // 归一化剥掉 settings.background 只改了内存里的对象；不主动写一次的话，那份 base64 图片
+  // 会一直躺在数据文件里，直到用户下次改点什么才顺手落盘。导入路径（replaceAll）自带 changed()，
+  // 只有启动这条路径需要补这一下。
+  if (loaded && typeof loaded === "object" && loaded.settings && "background" in loaded.settings) {
+    queueSave().catch(() => {});
+  }
   return state;
 }
 export function getState() { return state; }

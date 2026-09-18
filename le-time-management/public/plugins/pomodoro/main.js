@@ -374,9 +374,10 @@
     el2.innerHTML = "";
 
     const card = document.createElement("div");
-    // 卡片底色走宿主的 --custom-panel-mix：自定义背景开启时跟随「卡片不透明度 / 毛玻璃」
-    // 两个滑块变半透明；未开启时该变量就是 var(--panel)，外观与从前一致。
-    card.style.cssText = "max-width:520px;margin:30px auto;text-align:center;background:var(--custom-panel-mix,var(--panel,#fff));color:var(--ink,#22303A);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:34px 30px;box-shadow:var(--shadow,0 2px 10px rgba(34,48,58,.07));backdrop-filter:var(--custom-panel-glass,none);-webkit-backdrop-filter:var(--custom-panel-glass,none)";
+    // 卡片底色直接取宿主面板色，与应用自己的 .card 一致。v0.55.0 之前这里读的是宿主注入的两个
+    // 复合变量（「自定义背景」的「卡片不透明度 / 卡片毛玻璃」靠它们生效），那套功能已经删除、
+    // 变量不再注入 —— 留着 var() 只会变成指向不存在功能的死引用。变量名见 git 历史。
+    card.style.cssText = "max-width:520px;margin:30px auto;text-align:center;background:var(--panel,#fff);color:var(--ink,#22303A);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:34px 30px;box-shadow:var(--shadow,0 2px 10px rgba(34,48,58,.07))";
 
     const title = document.createElement("div");
     title.style.cssText = "font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:var(--ink-2,#7E8B94);margin-bottom:14px";

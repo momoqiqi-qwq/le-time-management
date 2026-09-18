@@ -258,9 +258,16 @@ assert.deepEqual(overDeleted, [], `这些是状态回显 / 空状态，不能一
 /* 卡片的 <h2> 标题必须留着 —— 描述删掉后标题就是唯一的识别信息。
  * 注意要钉住 el("h2", {}, "X") 这个整体，不能只找字符串：分区导航的 label 里也有同样的字，
  * 只找字符串的话把标题改成空串也照样通过（变异测试抓出来过）。 */
-for (const title of ["界面与交互", "任务提醒", "数据中心", "可选同步", "全局快捷键", "局域网联动", "自定义背景", "主题", "插件", "关于 Le时间管理"]) {
+for (const title of ["界面与交互", "任务提醒", "数据中心", "可选同步", "全局快捷键", "局域网联动", "主题", "插件", "关于 Le时间管理"]) {
   assert.ok(SETTINGS_SOURCES.includes(`el("h2", {}, "${title}")`),
     `设置卡片标题「${title}」丢了`);
 }
+
+/* 自定义背景已在 v0.55.0 移除：导航项、卡片标题、分区 id 都不许回来。
+   只删卡片不删导航项的话，搜索「背景」仍会命中一个落到空白区的分类。 */
+assert.ok(!SETTINGS_SOURCES.includes("自定义背景"),
+  "「自定义背景」已移除，设置源码里不许再出现（导航项与卡片标题都要删干净）");
+assert.ok(!/id:\s*"background"/.test(SETTINGS_SOURCES),
+  "设置分区 id \"background\" 已移除，不许再出现在 settingEntries 里");
 
 console.log(`PASS: 滑块开关（${seen.length} 组配色 ≥${KNOB_MIN}:1、设置页与任务抽屉全部改滑块、多选型勾选框未被误改、${REMOVED.length} 条详细描述已清除且状态文案保留）`);

@@ -1,7 +1,6 @@
 import * as S from "../../store.js";
 import { el, toast } from "../../ui.js";
 import { THEMES, getThemeMode, resolveThemeMode, setTheme, setThemeMode } from "../../theme.js";
-import { DEFAULT_BACKGROUND, normalizeBackground, setBackground } from "../../background.js";
 import {
   DEFAULT_UI_PREFERENCES,
   NAVBAR_SIZE_OPTIONS,
@@ -83,8 +82,7 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     "aria-label": "界面缩放",
   });
   const uiScaleOut = el("output", {}, `${prefs.uiScale}%`);
-  // 拖动时实时预览（persist:false），松手才落盘 —— 与「自定义背景」的滑块同一套路，
-  // 避免拖动过程中每 5% 写一次盘。
+  // 拖动时实时预览（persist:false），松手才落盘，避免拖动过程中每 5% 写一次盘。
   // 动画分工（v0.54.0）：input 拖动**直设不动画** —— 拖动本身就是连续输入，
   // 每一档立即生效才是「跟手」；动画留给离散入口（松手落定、点档位、界面预设），
   // 那些才会一步跨 20%+，不动画就是「一闪一闪」。
@@ -484,85 +482,4 @@ export function createThemeCard() {
 
   themeCard.append(modeBox, themeGrid);
   return themeCard;
-}
-
-export function createBackgroundCard({ rerender = () => {} } = {}) {
-  const settings = S.getState().settings;
-  settings.background = normalizeBackground(settings.background || {});
-  const bg = settings.background;
-  const bgCard = el("div", { class: "card set-card" },
-    el("h2", {}, "自定义背景"),
-  );
-  const bgEnabled = toggleSwitch({ checked: bg.enabled });
-  const bgImage = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/bmp,image/svg+xml,image/avif,image/x-icon,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif,.ico", style: "display:none" });
-  const bgColor = el("input", { type: "color", value: bg.baseColor || DEFAULT_BACKGROUND.baseColor });
-  const fit = el("select", {},
-    el("option", { value: "cover" }, "覆盖（推荐）"), el("option", { value: "contain" }, "完整显示"),
-    el("option", { value: "100% 100%" }, "拉伸铺满"), el("option", { value: "auto" }, "原始尺寸")); fit.value = bg.fit;
-  const position = el("select", {});
-  for (const [v, n] of [["left top","左上"],["center top","上中"],["right top","右上"],["left center","左中"],["center center","居中"],["right center","右中"],["left bottom","左下"],["center bottom","下中"],["right bottom","右下"]]) position.append(el("option", { value:v }, n)); position.value = bg.position;
-  const repeat = el("select", {}, el("option", { value:"no-repeat" }, "不平铺"), el("option", { value:"repeat" }, "双向平铺"), el("option", { value:"repeat-x" }, "横向平铺"), el("option", { value:"repeat-y" }, "纵向平铺")); repeat.value = bg.repeat;
-  const attachment = el("select", {}, el("option", { value:"fixed" }, "固定背景"), el("option", { value:"scroll" }, "随页面滚动")); attachment.value = bg.attachment;
-  const overlayColor = el("input", { type:"color", value:bg.overlayColor || "#000000" });
-  const textShadow = toggleSwitch({ checked: bg.textShadow });
-  const preview = el("div", { class:"bg-preview" }, el("div", { class:"bg-preview-card" }, el("b", {}, "背景适配预览")));
-  const mkRange = (label, key, min, max, suffix="%") => {
-    const input = el("input", { type:"range", min:String(min), max:String(max), value:String(bg[key]) });
-    const out = el("output", {}, `${bg[key]}${suffix}`);
-    input.oninput = () => { out.textContent = `${input.value}${suffix}`; live(); };
-    return { key, input, row: el("label", { class:"bg-field" }, el("span", {}, label), el("div", { class:"bg-range-row" }, input, out)) };
-  };
-  const ranges = [
-    mkRange("背景透明度", "opacity", 0, 100), mkRange("背景模糊", "blur", 0, 30, "px"),
-    mkRange("背景亮度", "brightness", 40, 180), mkRange("背景饱和度", "saturation", 0, 220),
-    mkRange("遮罩强度", "overlayOpacity", 0, 90), mkRange("卡片不透明度", "panelOpacity", 45, 100),
-    mkRange("卡片毛玻璃", "panelBlur", 0, 30, "px"),
-    mkRange("组件透明度", "componentOpacity", 30, 100),
-  ];
-  const patchFromControls = () => ({
-    enabled:bgEnabled.checked, baseColor:bgColor.value, fit:fit.value, position:position.value, repeat:repeat.value,
-    attachment:attachment.value, overlayColor:overlayColor.value, textShadow:textShadow.checked,
-    ...Object.fromEntries(ranges.map(r => [r.key, Number(r.input.value)])),
-  });
-  const paintPreview = () => {
-    const x = { ...bg, ...patchFromControls() };
-    preview.style.setProperty("--bg-preview-color", x.baseColor);
-    preview.style.setProperty("--bg-preview-image", x.image ? `url(${JSON.stringify(x.image)})` : "none");
-    preview.style.setProperty("--bg-preview-size", x.fit); preview.style.setProperty("--bg-preview-position", x.position);
-    preview.style.setProperty("--bg-preview-repeat", x.repeat); preview.style.setProperty("--bg-preview-opacity", x.opacity / 100);
-    preview.style.setProperty("--bg-preview-blur", `${x.blur}px`); preview.style.setProperty("--bg-preview-brightness", `${x.brightness}%`);
-    preview.style.setProperty("--bg-preview-saturation", `${x.saturation}%`);
-    const h=x.overlayColor.replace('#',''); const n=parseInt(h.length===3?h.split('').map(c=>c+c).join(''):h,16)||0;
-    preview.style.setProperty("--bg-preview-overlay", `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${x.overlayOpacity/100})`);
-  };
-  const live = () => { Object.assign(bg, patchFromControls()); setBackground(bg, { persist:false }); paintPreview(); };
-  for (const c of [bgEnabled,bgColor,fit,position,repeat,attachment,overlayColor,textShadow]) c.oninput = live;
-  const persistBg = async () => { Object.assign(bg, patchFromControls()); setBackground(bg); };
-  for (const c of [bgEnabled,bgColor,fit,position,repeat,attachment,overlayColor,textShadow,...ranges.map(r=>r.input)]) c.onchange = persistBg;
-  bgImage.onchange = () => {
-    const file = bgImage.files?.[0]; if (!file) return;
-    if (file.size > 6 * 1024 * 1024) { toast("背景图片请控制在 6MB 以内，避免备份文件过大"); bgImage.value=""; return; }
-    const rd = new FileReader();
-    rd.onload = async () => { bg.image = String(rd.result || ""); bg.enabled = true; bgEnabled.checked = true; setBackground(bg); paintPreview(); toast("背景图片已应用"); };
-    rd.readAsDataURL(file);
-  };
-  const bgGrid = el("div", { class:"bg-grid" },
-    el("label", { class:"bg-field" }, el("span", {}, "启用自定义背景"), bgEnabled),
-    el("label", { class:"bg-field" }, el("span", {}, "背景底色"), bgColor),
-    el("label", { class:"bg-field" }, el("span", {}, "图片填充"), fit),
-    el("label", { class:"bg-field" }, el("span", {}, "图片位置"), position),
-    el("label", { class:"bg-field" }, el("span", {}, "平铺方式"), repeat),
-    el("label", { class:"bg-field" }, el("span", {}, "滚动方式"), attachment),
-    el("label", { class:"bg-field" }, el("span", {}, "遮罩颜色"), overlayColor),
-    el("label", { class:"bg-field" }, el("span", {}, "增强文字阴影"), textShadow),
-    ...ranges.map(r=>r.row),
-  );
-  bgCard.append(preview,
-    el("div", { class:"data-actions" },
-      el("button", { class:"btn pri sm", onclick:()=>bgImage.click() }, bg.image ? "更换背景图片" : "选择背景图片"),
-      el("button", { class:"btn ghost sm", onclick:async()=>{ bg.image=""; setBackground(bg); paintPreview(); toast("已移除背景图片，保留纯色设置"); } }, "移除图片"),
-      el("button", { class:"btn ghost sm", onclick:async()=>{ Object.assign(bg, DEFAULT_BACKGROUND); setBackground(bg); rerender(); toast("背景设置已恢复默认"); } }, "恢复默认"),
-    ), bgImage, bgGrid);
-  paintPreview();
-  return bgCard;
 }

@@ -1813,57 +1813,6 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .inbox-item-main small .inbox-src .plugin-present-icon{width:13px;height:13px}
 .inbox-att{color:var(--mint)}
 
-/* v0.11.2 自定义背景：背景层与内容层分离，保证 cover/contain/模糊在宽屏和手机上都不会撑坏布局 */
-:root[data-custom-background="on"] body { background: var(--custom-bg-color, var(--bg)); position:relative; }
-:root[data-custom-background="on"] body::before {
-  content:""; position:fixed; z-index:0; inset:calc(-1 * var(--custom-bg-blur, 0px)); pointer-events:none;
-  background-color:var(--custom-bg-color, var(--bg));
-  background-image:var(--custom-bg-image, none); background-size:var(--custom-bg-size, cover);
-  background-position:var(--custom-bg-position, center center); background-repeat:var(--custom-bg-repeat, no-repeat);
-  background-attachment:var(--custom-bg-attachment, fixed); opacity:var(--custom-bg-opacity, 1);
-  filter:blur(var(--custom-bg-blur,0px)) brightness(var(--custom-bg-brightness,100%)) saturate(var(--custom-bg-saturation,100%));
-  transform:translateZ(0);
-}
-:root[data-custom-background="on"] body::after { content:""; position:fixed; z-index:0; inset:0; pointer-events:none; background:var(--custom-bg-overlay,transparent); }
-:root[data-custom-background="on"] #app { background:transparent; position:relative; z-index:1; }
-:root[data-custom-background="on"] .card,
-:root[data-custom-background="on"] .timeline,
-:root[data-custom-background="on"] .pool,
-:root[data-custom-background="on"] .acard,
-:root[data-custom-background="on"] .set-card,
-:root[data-custom-background="on"] .tv-panel,
-:root[data-custom-background="on"] .drawer,
-:root[data-custom-background="on"] .quick-cap,
-:root[data-custom-background="on"] .cmd-box {
-  background:color-mix(in srgb, var(--panel) var(--custom-panel-alpha,94%), transparent);
-  backdrop-filter:blur(var(--custom-panel-blur,8px)); -webkit-backdrop-filter:blur(var(--custom-panel-blur,8px));
-}
-/* 组件透明度：让侧栏 / 顶栏 / 任务卡 / 迷你卡 / 设置面板透出自定义背景 */
-:root[data-custom-background="on"] .rail,
-:root[data-custom-background="on"] .topbar,
-:root[data-custom-background="on"] .tkc,
-:root[data-custom-background="on"] .mcard,
-:root[data-custom-background="on"] .settings-modal {
-  background:color-mix(in srgb, var(--panel) var(--custom-comp-alpha,100%), transparent);
-}
-:root[data-custom-background="on"] .topbar {
-  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
-}
-:root[data-custom-background="on"][data-bg-text-shadow="on"] #app { text-shadow:0 1px 2px rgba(0,0,0,.2); }
-:root[data-custom-background="on"][data-bg-text-shadow="on"] button,
-:root[data-custom-background="on"][data-bg-text-shadow="on"] input,
-:root[data-custom-background="on"][data-bg-text-shadow="on"] textarea { text-shadow:none; }
-.bg-preview { height:150px; border:1px solid var(--line); border-radius:14px; overflow:hidden; position:relative; margin:12px 0; background:var(--bg); }
-.bg-preview::before { content:""; position:absolute; inset:-18px; background-color:var(--bg-preview-color,var(--bg)); background-image:var(--bg-preview-image,none); background-size:var(--bg-preview-size,cover); background-position:var(--bg-preview-position,center center); background-repeat:var(--bg-preview-repeat,no-repeat); opacity:var(--bg-preview-opacity,1); filter:blur(var(--bg-preview-blur,0px)) brightness(var(--bg-preview-brightness,100%)) saturate(var(--bg-preview-saturation,100%)); }
-.bg-preview::after { content:""; position:absolute; inset:0; background:var(--bg-preview-overlay,transparent); }
-.bg-preview-card { position:absolute; z-index:2; left:18px; bottom:18px; width:min(280px,calc(100% - 36px)); padding:12px 14px; border-radius:12px; color:var(--ink); background:color-mix(in srgb,var(--panel) var(--custom-panel-alpha,94%),transparent); backdrop-filter:blur(var(--custom-panel-blur,8px)); box-shadow:var(--shadow); }
-.bg-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px 16px; margin-top:12px; }
-.bg-field { display:grid; gap:6px; font-size:calc(12px * var(--ui-text-scale)); color:var(--ink-2); }
-.bg-field input,.bg-field select { width:100%; min-height:36px; border:1px solid var(--line); border-radius:9px; background:var(--panel); color:var(--ink); padding:6px 9px; }
-.bg-range-row { display:grid; grid-template-columns:1fr 52px; gap:8px; align-items:center; }
-.bg-range-row output { text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
-@media(max-width:720px){ .bg-grid{grid-template-columns:1fr}.bg-preview{height:130px} :root[data-custom-background="on"] body::before{background-attachment:scroll} }
-
 /* v0.11.2 WakeUp 风格周课表：真实 7 列 + 节次行；桌面自适应，手机按天分组 */
 /* v0.43.0：原来行高写死 72px ⇒ 10 节 = 64 + 720 = 784px，第 10 节必须纵向滚动才看得见。
    现在改成「帧高上限 = 表头 + 节次数 × 自然行高」，行用 minmax(下限, 1fr) 自动铺满：

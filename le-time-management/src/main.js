@@ -4,7 +4,6 @@ import { initPluginHost } from "./pluginHost.js";
 import { initCapture } from "./capture.js";
 import { api } from "./api.js";
 import { initTheme } from "./theme.js";
-import { initBackground } from "./background.js";
 import { initUiPreferences, getUiPreferences } from "./uiPreferences.js";
 import { initUiScale } from "./uiScale.js";
 import { applyWindowSize } from "./windowSize.js";
@@ -34,7 +33,6 @@ async function boot() {
   applyTouchZoomViewport();
   await initStore(seed());
   initTheme();
-  initBackground();
   initUiPreferences();
   // 界面缩放的 resize 监听必须无条件挂上（即使当前是 100%）：用户随后在设置里调大缩放时，
   // --ui-vw/--ui-vh 需要跟着窗口尺寸重算，不能等到下次启动才生效。

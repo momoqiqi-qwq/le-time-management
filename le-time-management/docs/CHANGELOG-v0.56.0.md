@@ -112,3 +112,76 @@
 - 费用：只有拖入图片 / 文件时才调用 AI；粘贴文本与「快速捕获」仍走本地解析。
 - 识别课表类图片需要模型**支持视觉输入**（如 `qwen-vl-*` / `gpt-4o` / `glm-4v` 等）；
   纯文本模型在图片场景会直接失败并回退到手选时间。
+
+---
+
+## 移除「自定义背景」（本批次）
+
+### 改了什么
+
+应用户要求删除「设置 › 自定义背景」。它是一套完整子系统，不是单个开关：
+
+- **删模块**：`src/background.js`（84 行：`DEFAULT_BACKGROUND` / `normalizeBackground` /
+  `applyBackground` / `setBackground` / `initBackground`）整文件移除。
+- **删接线**：`src/main.js` 去掉 import 与 `initBackground()` 调用；`src/views/settings.js`
+  去掉 `createBackgroundCard` 的 import、`bgCard` 构造与 `settingEntries` 里的
+  `{ id: "background", … }` 导航项；`src/views/settings/appearance.js` 去掉
+  `createBackgroundCard()` 整函数（约 80 行）与 import。
+- **删样式**：`src/styles.css` 去掉 `:root[data-custom-background="on"]` 的 7 组选择器
+  （背景层 `body::before` / 遮罩 `body::after`、卡片与组件半透明、文字阴影）、
+  `.bg-preview*` / `.bg-grid` / `.bg-field` / `.bg-range-row` 预览与表单样式，
+  以及 720px 媒体查询里对应的那一段。
+- **改插件**：番茄专注卡片的内联底色从宿主注入的复合变量改回 `var(--panel,#fff)`，
+  并去掉 `backdrop-filter`。**视觉结果完全相同** —— 那两个变量在功能删除后不再注入，
+  原写法只会靠 fallback 退化，留着就是指向不存在功能的死引用。插件 0.5.0 → 0.5.1。
+
+### 影响端
+
+- 桌面（Windows / macOS / Linux）
+- Android（与桌面共源 WebView）
+- 微信小程序：本来就没有这个功能，不受影响
+
+### 数据迁移
+
+**存量数据会被剥掉**（用户明确选择）。`normalizeState()` 里 `delete next.settings.background`：
+
+- 放在**归一化**处而不是写一次性 schema 迁移，是因为它同时覆盖「打开本地数据」与
+  「导入旧备份」两条路径，而且幂等 —— 归一化每次加载都跑，删一个不存在的键无副作用。
+- `initStore()` 里补了一次显式 `queueSave()`：只剥内存不落盘的话，那份 base64 图片
+  （上限 6 MB）会一直躺在数据文件里。实测去掉这一次显式落盘，键要等到约 800 ms 后
+  `shell.js` / `pluginHost.js` 的归一化顺手存盘才会消失 —— 终态相同，但那属于
+  **依赖别人的副作用**，不是契约，所以保留显式落盘。
+- `settings` 里的其他字段不受影响（`replaceAll` 路径有断言钉住）。
+
+### 校验
+
+- `scripts/test-store-cache.mjs`：`replaceAll` 导入带 `settings.background` 的旧数据后
+  该键必须不存在，且 `settings.theme` / `tasks` 不被连带清掉。
+- `scripts/test-switch-control.mjs`：设置源码里不许再出现「自定义背景」，不许再有
+  `id: "background"` 分区；同时把该标题从「必须保留的卡片标题」清单里移除。
+- `scripts/test-pomodoro.mjs`：卡片底色必须是 `var(--panel,#fff)`；**全文件**不许出现
+  被删功能注入的两个复合变量名（注释也算 —— 实测第一版把变量名留在注释里，只扫
+  cssText 的话会放过）。另外 `src/background.js` 必须不存在。顺带把写死的
+  `manifest.version === '0.5.0'` 改成「不低于 0.5.1」的下限断言：写死字面量会在每次
+  **有意**升版时假红一次（实测 0.5.0 → 0.5.1 就红了）。
+- `scripts/test-ui-scale.mjs`：断点对照表去掉 `[720, 1]`（该处随 `.bg-grid` 一起删）；
+  反面断言「出现了预期外的断点」仍然兜底。
+- **变异验证 7/7 全部捕获**（`.workbuddy-ai/tmp/mutate-bg-removed.mjs`）：去掉 `delete` /
+  去掉显式落盘 / 加回导航项 / 加回卡片标题 / 插件改回旧变量 / 加回 720px 断点 /
+  加回背景层 CSS 规则。
+- **真浏览器探针 24 条判据全过**（`.workbuddy-ai/tmp/probe-bg-removed.cjs`，预置旧数据）：
+  根元素不带 `data-custom-background` / `data-bg-text-shadow`、样式表里背景层规则数 0、
+  `body::before` 不是 fixed 背景层、没有任何规则给 `#app` 设背景、设置页 10 张卡片全部
+  不透明且无毛玻璃、导航项 10 个且不含「背景」、搜「背景」命中 0 且显示空状态、
+  旧数据 100 ms 内就被剥掉。
+- 全量测试 **50 个脚本全部通过** + 四项 `--check` ✓。
+
+### 踩到的两个坑（记档）
+
+1. **模板字符串里的注释不能含反引号** —— 探针里用注释引用了被删的选择器，直接把模板
+   字面量截断，报 `SyntaxError: Invalid left-hand side in assignment`；改成中文描述后
+   又踩了「美元符号加大括号」那次。这条纪律仓库里早就写着，还是连踩两次。
+2. **探针必须禁浏览器缓存** —— `styles.css` 是 `<link>` 引入的静态资源，变异测试改完
+   CSS 再跑，浏览器读到的仍是旧样式 ⇒ 变异必然「漏过」（实测漏过一次）。修法是
+   `Network.setCacheDisabled({ cacheDisabled: true })`。
+

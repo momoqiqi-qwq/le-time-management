@@ -77,7 +77,7 @@ const plugins = [
   {
     "id": "pomodoro",
     "name": "番茄专注",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "author": "Le时间管理内置",
     "icon": "hourglass-half",
     "faIcon": "hourglass-half",
