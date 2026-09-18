@@ -104,6 +104,8 @@
 .dd-alert-t { font-size: 28rpx; font-weight: 700; color: var(--deep); line-height: 1.5; }
 .dd-who { display: flex; align-items: center; gap: 16rpx; flex-wrap: wrap; margin: 8rpx 0 4rpx; }
 .dd-big { font-size: 56rpx; font-weight: 800; letter-spacing: .01em; }
+/* 多人当班时名字串很长，56rpx 会把卡片撑成三行 —— 略缩一号 */
+.dd-big-multi { font-size: 38rpx; line-height: 1.4; }
 .dd-badge { font-size: 20rpx; font-weight: 700; border-radius: 999rpx; padding: 4rpx 16rpx; background: rgba(214, 158, 46, .18); color: var(--sun); }
 .dd-next { display: flex; align-items: baseline; gap: 8rpx; margin: 8rpx 0 4rpx; }
 .dd-next-u { font-size: 26rpx; font-weight: 650; color: var(--deep); }

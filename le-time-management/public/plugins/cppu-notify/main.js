@@ -149,36 +149,36 @@
     st.textContent = `
       .pp-wrap{max-width:880px;margin:0 auto}
       .pp-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
-      .pp-lab{font-size:11px;color:#A9B2BA;letter-spacing:.14em;flex:none;width:34px}
+      .pp-lab{font-size:calc(11px * var(--ui-text-scale));color:#A9B2BA;letter-spacing:.14em;flex:none;width:34px}
       .pp-chips{display:flex;gap:8px;flex-wrap:wrap;flex:1}
       .pp-kw{flex:1;min-width:170px;height:34px;border:1px solid #E4DFD6;border-radius:9px;padding:0 11px;background:#fff}
-      .pp-chip{font-size:12px;border:1px solid #E4DFD6;background:#fff;border-radius:16px;padding:6px 13px;cursor:pointer;color:#7E8B94}
+      .pp-chip{font-size:calc(12px * var(--ui-text-scale));border:1px solid #E4DFD6;background:#fff;border-radius:16px;padding:6px 13px;cursor:pointer;color:#7E8B94}
       .pp-chip.on{background:#0F4C5C;color:#fff;border-color:#0F4C5C}
       .gx-btn:hover,.pp-btn:hover{border-color:#0F4C5C;color:#0F4C5C}
-      .pp-btn{font-size:12px;border:1px solid #E4DFD6;border-radius:8px;padding:7px 13px;background:#fff;cursor:pointer;color:#22303A;white-space:nowrap}
+      .pp-btn{font-size:calc(12px * var(--ui-text-scale));border:1px solid #E4DFD6;border-radius:8px;padding:7px 13px;background:#fff;cursor:pointer;color:#22303A;white-space:nowrap}
       .pp-btn.pri{background:#0F4C5C;color:#fff;border-color:#0F4C5C;font-weight:600}
       .pp-btn.pri:hover{background:#0B3D4A;color:#fff}
-      .pp-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#7E8B94;cursor:pointer;user-select:none}
+      .pp-toggle{display:flex;align-items:center;gap:6px;font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;cursor:pointer;user-select:none}
       .pp-toggle i{width:34px;height:19px;border-radius:10px;background:#D8D2C6;display:inline-block;position:relative;transition:.15s}
       .pp-toggle i::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s}
       .pp-toggle.on i{background:#2EC4B6}
       .pp-toggle.on i::after{left:17px}
-      .pp-status{font-size:12px;color:#7E8B94;margin:2px 0 8px}
+      .pp-status{font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;margin:2px 0 8px}
       .pp-status .err{color:#B03535}
-      .pp-month{font-size:12.5px;font-weight:700;color:#0F4C5C;padding:9px 2px 7px;letter-spacing:.05em}
+      .pp-month{font-size:calc(12.5px * var(--ui-text-scale));font-weight:700;color:#0F4C5C;padding:9px 2px 7px;letter-spacing:.05em}
       .pp-card{background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:12px 14px;margin-bottom:9px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 74px;transition:border-color .28s ease,box-shadow .28s ease,background .28s ease}
       .pp-card.open{border-color:#D5DED9;box-shadow:0 7px 24px rgba(34,48,58,.055)}
       .pp-heading{display:block;width:100%;text-align:left;background:transparent;border:0;color:inherit;padding:4px 0;cursor:pointer;font-family:inherit;min-height:44px}
       .pp-expand{margin-top:10px;min-height:44px;display:inline-flex;align-items:center;gap:7px;transition:background .2s ease,border-color .2s ease,color .2s ease}
-      .pp-expand::after{content:"⌄";display:inline-block;font-size:14px;line-height:1;transform:translateY(-1px) rotate(0deg);transition:transform .36s cubic-bezier(.22,.8,.22,1)}
+      .pp-expand::after{content:"⌄";display:inline-block;font-size:calc(14px * var(--ui-text-scale));line-height:1;transform:translateY(-1px) rotate(0deg);transition:transform .36s cubic-bezier(.22,.8,.22,1)}
       .pp-card.open .pp-expand::after{transform:translateY(1px) rotate(180deg)}
       .pp-heading:focus-visible,.pp-btn:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
-      @media(max-width:600px){.pp-wrap{width:100%;min-width:0}.pp-login{margin:12px auto;padding:20px 16px;max-width:100%;box-sizing:border-box}.pp-title{font-size:17px!important}.pp-meta{font-size:13px!important}.pp-detail .c{font-size:16px!important;max-height:none!important;overflow-wrap:anywhere}.pp-btn,.pp-chip{min-height:44px;font-size:14px!important}.pp-kw{width:100%;flex-basis:100%;box-sizing:border-box;min-height:44px}.pp-card{padding:14px;cursor:default}.pp-caprow input{min-width:0}.pp-detail .pp-act{flex-wrap:wrap}}
+      @media(max-width:600px){.pp-wrap{width:100%;min-width:0}.pp-login{margin:12px auto;padding:20px 16px;max-width:100%;box-sizing:border-box}.pp-title{font-size:calc(17px * var(--ui-text-scale))!important}.pp-meta{font-size:calc(13px * var(--ui-text-scale))!important}.pp-detail .c{font-size:calc(16px * var(--ui-text-scale))!important;max-height:none!important;overflow-wrap:anywhere}.pp-btn,.pp-chip{min-height:44px;font-size:calc(14px * var(--ui-text-scale))!important}.pp-kw{width:100%;flex-basis:100%;box-sizing:border-box;min-height:44px}.pp-card{padding:14px;cursor:default}.pp-caprow input{min-width:0}.pp-detail .pp-act{flex-wrap:wrap}}
       .pp-card:hover{background:#FBFAF5;border-color:#D8D2C4}
       .pp-card.seen{opacity:.6}
-      .pp-title{font-size:13.5px;font-weight:600;line-height:1.5}
-      .pp-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:#7E8B94;margin-top:5px;flex-wrap:wrap}
-      .pp-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:10px}
+      .pp-title{font-size:calc(13.5px * var(--ui-text-scale));font-weight:600;line-height:1.5}
+      .pp-meta{display:flex;gap:8px;align-items:center;font-size:calc(11px * var(--ui-text-scale));color:#7E8B94;margin-top:5px;flex-wrap:wrap}
+      .pp-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:calc(10px * var(--ui-text-scale))}
       .pp-tag.top{background:#FFF0E1;color:#B26A00}
       .pp-tag.unread{background:#FDE8E8;color:#C64545}
       .pp-detail-shell{display:grid;grid-template-rows:0fr;opacity:0;margin-top:0;transition:grid-template-rows .42s cubic-bezier(.2,.78,.2,1),opacity .24s ease,margin-top .42s cubic-bezier(.2,.78,.2,1)}
@@ -186,24 +186,24 @@
       .pp-detail-clip{min-height:0;overflow:hidden}
       .pp-detail{border-top:1px dashed #EFEAE1;padding-top:10px;transform:translateY(-7px);transition:transform .36s cubic-bezier(.2,.78,.2,1)}
       .pp-card.open .pp-detail{transform:translateY(0)}
-      .pp-detail .c{font-size:12px;color:#4B565E;line-height:1.9;white-space:pre-wrap;max-height:320px;overflow-y:auto;overscroll-behavior:contain}
+      .pp-detail .c{font-size:calc(12px * var(--ui-text-scale));color:#4B565E;line-height:1.9;white-space:pre-wrap;max-height:320px;overflow-y:auto;overscroll-behavior:contain}
       .pp-detail .pp-act{display:flex;gap:8px;margin-top:10px}
       .pp-login{max-width:440px;margin:26px auto;background:#fff;border:1px solid #E4DFD6;border-radius:18px;padding:28px 30px;box-shadow:0 2px 10px rgba(34,48,58,.07)}
-      .pp-login h3{font-size:16px;margin-bottom:4px}
-      .pp-login .d{font-size:12px;color:#7E8B94;line-height:1.7;margin-bottom:12px}
-      .pp-login label{display:block;font-size:12px;color:#7E8B94;margin:12px 0 5px}
+      .pp-login h3{font-size:calc(16px * var(--ui-text-scale));margin-bottom:4px}
+      .pp-login .d{font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;line-height:1.7;margin-bottom:12px}
+      .pp-login label{display:block;font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;margin:12px 0 5px}
       .pp-login input{width:100%;height:38px;border:1px solid #E4DFD6;border-radius:9px;padding:0 12px;background:#fff;box-sizing:border-box}
       .pp-caprow{display:flex;gap:10px;align-items:flex-end}
       .pp-caprow .capbox{flex:none;width:120px;text-align:center;cursor:pointer}
       .pp-caprow img{width:120px;height:40px;border:1px solid #E4DFD6;border-radius:8px;background:#fff;display:block}
-      .pp-caprow small{font-size:10px;color:#A9B2BA;display:block;margin-top:3px}
-      .pp-login .err{color:#B03535;font-size:12px;margin-top:10px;min-height:16px}
-      .pp-login .sec{font-size:10.5px;color:#A9B2BA;margin-top:12px;line-height:1.7}
-      .pp-login .saved{background:#F6FBFA;border:1px solid #D6EBE8;color:#42656A;border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.65;margin:10px 0 12px}
-      .pp-empty{border:1.5px dashed #CFC8BA;border-radius:12px;padding:20px;text-align:center;color:#A9B2BA;font-size:12.5px;line-height:1.8}
-      .pp-banner{background:#FFF7E8;border:1px solid #F2D9A6;color:#8A6420;border-radius:12px;padding:12px 15px;font-size:12px;line-height:1.8;margin-bottom:10px}
+      .pp-caprow small{font-size:calc(10px * var(--ui-text-scale));color:#A9B2BA;display:block;margin-top:3px}
+      .pp-login .err{color:#B03535;font-size:calc(12px * var(--ui-text-scale));margin-top:10px;min-height:16px}
+      .pp-login .sec{font-size:calc(10.5px * var(--ui-text-scale));color:#A9B2BA;margin-top:12px;line-height:1.7}
+      .pp-login .saved{background:#F6FBFA;border:1px solid #D6EBE8;color:#42656A;border-radius:10px;padding:9px 11px;font-size:calc(12px * var(--ui-text-scale));line-height:1.65;margin:10px 0 12px}
+      .pp-empty{border:1.5px dashed #CFC8BA;border-radius:12px;padding:20px;text-align:center;color:#A9B2BA;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.8}
+      .pp-banner{background:#FFF7E8;border:1px solid #F2D9A6;color:#8A6420;border-radius:12px;padding:12px 15px;font-size:calc(12px * var(--ui-text-scale));line-height:1.8;margin-bottom:10px}
       .pp-more{display:flex;justify-content:center;padding:8px 0 4px}
-      .pp-more .pp-btn{padding:8px 20px;font-size:12px}
+      .pp-more .pp-btn{padding:8px 20px;font-size:calc(12px * var(--ui-text-scale))}
       /* ── 左侧校园服务栏：只用主题变量配色，夜里自动跟随深色 ── */
       .pp-shell{display:flex;align-items:flex-start;max-width:1180px;margin:0 auto;padding:0 20px;box-sizing:border-box;width:100%}
       .pp-main{flex:1;min-width:0}
@@ -222,7 +222,7 @@
       /* 收起后留在原地的把手。它是 .pp-shell 的正经 flex 子项（不是浮层），所以永远压不住正文；
          展开时 max-width 收到 0，与侧栏的 width 过渡同时进行 → 没有跳变。
          sticky 保证列表滚很长时也够得着。 */
-      .pp-side-toggle{flex:none;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);position:sticky;top:8px;align-self:flex-start;z-index:4;white-space:nowrap;overflow:hidden;max-width:160px;max-height:52px;margin-right:12px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:max-width .34s cubic-bezier(.22,.8,.22,1),max-height .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease,background .16s ease}
+      .pp-side-toggle{flex:none;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:calc(12px * var(--ui-text-scale));font-weight:600;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);position:sticky;top:8px;align-self:flex-start;z-index:4;white-space:nowrap;overflow:hidden;max-width:160px;max-height:52px;margin-right:12px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:max-width .34s cubic-bezier(.22,.8,.22,1),max-height .34s cubic-bezier(.22,.8,.22,1),padding .34s cubic-bezier(.22,.8,.22,1),margin-right .34s cubic-bezier(.22,.8,.22,1),border-width .3s ease,opacity .24s ease,background .16s ease}
       .pp-side-toggle:hover,.pp-side-toggle:active{background:var(--paper)}
       .pp-side-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       .pp-shell:not(.side-collapsed) .pp-side-toggle{max-width:0;max-height:0;padding-top:0;padding-bottom:0;padding-left:0;padding-right:0;margin-right:0;border-width:0;opacity:0;pointer-events:none}
@@ -232,7 +232,7 @@
          右边那个「重新识别」的 ↻ 又因为内层比卡片内容盒宽 24px 被 overflow:hidden 裁掉半个
          —— 两个都删掉（v1.6.0）。 */
       .pp-side-head{display:flex;align-items:center;padding:0 0 9px;margin-bottom:7px}
-      .pp-side-head-toggle{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:12px;font-weight:600;letter-spacing:normal;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .16s ease}
+      .pp-side-head-toggle{flex:1 1 auto;min-width:0;display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:calc(12px * var(--ui-text-scale));font-weight:600;letter-spacing:normal;color:var(--deep);background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 12px;cursor:pointer;box-shadow:0 1px 6px rgba(34,48,58,.06);touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background .16s ease}
       .pp-side-head-toggle:hover,.pp-side-head-toggle:active{background:var(--paper)}
       .pp-side-head-toggle:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
       .pp-side-list{display:flex;flex-direction:column;gap:3px}
@@ -245,9 +245,9 @@
       .pp-side-ico img{width:17px;height:17px;object-fit:contain}
       .pp-side-ico svg{width:14px;height:14px;fill:var(--deep)}
       .pp-side-txt{min-width:0;display:flex;flex-direction:column;gap:1px}
-      .pp-side-txt b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
-      .pp-side-txt small{font-size:10px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
-      .pp-side-note{font-size:10px;color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
+      .pp-side-txt b{font-size:calc(12.5px * var(--ui-text-scale));font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
+      .pp-side-txt small{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
+      .pp-side-note{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
       @media(max-width:820px){
         .pp-shell{flex-direction:column;padding:0 14px}
         /* 窄屏时侧栏是整层叠在正文上面的，收起要收"高度"而不是宽度 */
@@ -255,8 +255,8 @@
         .pp-side-inner{width:100%}
         .pp-shell.side-collapsed .pp-side{width:100%;max-height:0;padding-top:0;padding-bottom:0;margin-bottom:0;border-top-width:0;border-bottom-width:0;opacity:0}
         /* 手机上的两个开关（收起后的把手 / 展开态头部的收起按钮）都要 44px 触控区，手指才点得准 */
-        .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%;min-height:44px;padding:10px 14px;font-size:13px}
-        .pp-side-head-toggle{min-height:44px;padding:10px 14px;font-size:13px}
+        .pp-side-toggle{margin-right:0;margin-bottom:12px;max-width:100%;min-height:44px;padding:10px 14px;font-size:calc(13px * var(--ui-text-scale))}
+        .pp-side-head-toggle{min-height:44px;padding:10px 14px;font-size:calc(13px * var(--ui-text-scale))}
         /* 展开时把手要整体藏掉：min-height 会压过 max-height，所以必须把 min-height 也归零，
            否则窄屏上会在侧栏与正文之间留一条 44px 的隐形空隙 */
         .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0;min-height:0}
@@ -268,7 +268,7 @@
         .pp-kw{flex:1 1 100%;order:2;min-width:0;height:44px}
         .pp-toolbar>span:not(.pp-lab){order:1}
         .pp-toolbar>.pp-btn,.pp-toggle{order:1;min-height:44px}
-        .pp-toolbar>.pp-btn{padding:0 14px;font-size:13px}
+        .pp-toolbar>.pp-btn{padding:0 14px;font-size:calc(13px * var(--ui-text-scale))}
         .pp-side-txt b,.pp-side-txt small{max-width:96px}
         .pp-side-note{display:none}
       }
@@ -904,7 +904,7 @@
   function detailHtml(rid) {
     const det = state.details[rid];
     return !det || det.loading ? "正在加载正文…" :
-      det.error ? `<span style="color:#B03535;font-size:12px">${esc(det.error)}</span><button class="pp-btn" data-retry>重试加载正文</button>` :
+      det.error ? `<span style="color:#B03535;font-size:calc(12px * var(--ui-text-scale))">${esc(det.error)}</span><button class="pp-btn" data-retry>重试加载正文</button>` :
       `<div class="c">${esc(det.content)}</div><div class="pp-act"><button class="pp-btn" data-remind>转为提醒</button></div>`;
   }
 
@@ -993,7 +993,7 @@
       b.addEventListener("click", () => { if (token === paintToken) loadPage(state.page + 1); });
       more.append(b);
     } else if (state.notices.length) {
-      more.innerHTML = `<div style="font-size:11px;color:#A9B2BA">已加载的通知全部展示</div>`;
+      more.innerHTML = `<div style="font-size:calc(11px * var(--ui-text-scale));color:#A9B2BA">已加载的通知全部展示</div>`;
     }
     ui.list.append(more);
 
@@ -1201,10 +1201,10 @@
       <div class="row" style="margin-top:12px;gap:12px;align-items:center;flex-wrap:wrap">
         <label class="pp-toggle ${state.rememberUsername ? "on" : ""}" data-remember><i></i>记住账号</label>
         ${canVault ? `<label class="pp-toggle ${state.autoLogin ? "on" : ""}" data-autologin><i></i>记住密码并自动登录</label>` : ""}
-        <span data-switchuser style="font-size:12px;color:#7E8B94;cursor:pointer">清除上次账号</span>
-        ${state.autoLogin && canVault ? `<span data-clearauth style="font-size:12px;color:#7E8B94;cursor:pointer">清除保存的密码</span>` : ""}
+        <span data-switchuser style="font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;cursor:pointer">清除上次账号</span>
+        ${state.autoLogin && canVault ? `<span data-clearauth style="font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;cursor:pointer">清除保存的密码</span>` : ""}
       </div>
-      <button class="submit" data-go style="width:100%;height:40px;border-radius:10px;background:#0F4C5C;color:#fff;font-size:14px;font-weight:600;margin-top:14px;cursor:pointer">登 录</button>
+      <button class="submit" data-go style="width:100%;height:40px;border-radius:10px;background:#0F4C5C;color:#fff;font-size:calc(14px * var(--ui-text-scale));font-weight:600;margin-top:14px;cursor:pointer">登 录</button>
       <div class="err" data-err>${esc(errMsg || "")}</div>
       <div class="sec">开启「记住密码并自动登录」后，密码与门户会话票据会加密保存在本机密钥库（AES-256-GCM），下次打开自动登录、直达通知列表；不会进入数据备份、同步或其他插件。关闭后只记住账号，密码仅本次内存使用。</div>
       </div></div>
@@ -1292,7 +1292,7 @@
         if (e2 && e2.fatal) { errEl.textContent = e2.fatal; }
         else {
         errEl.innerHTML = esc((e2 && e2.retry) || e2.message || "登录失败") +
-          (e2 && e2.diag ? `<br><span style="font-size:10.5px;color:#A9B2BA;word-break:break-all">${e2.diag}</span>` : "");
+          (e2 && e2.diag ? `<br><span style="font-size:calc(10.5px * var(--ui-text-scale));color:#A9B2BA;word-break:break-all">${e2.diag}</span>` : "");
         // 失败后 submitLogin 已重置登录页并换了新验证码：顺手再自动识别预填一次
         const ocr = await OCR.recognize(state.captcha).catch(() => null);
         if (ocr?.code) {
@@ -1338,7 +1338,7 @@
     el.innerHTML = `<div class="${sideShellClass()}">
       <aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}
       <div class="pp-main"><div class="pp-wrap">
-      <div style="font-size:11px;letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">警 大 门 户 通 知 · 内 置 插 件</div>
+      <div style="font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">警 大 门 户 通 知 · 内 置 插 件</div>
       <div class="pp-toolbar">
         <button class="pp-btn pri" data-refresh>刷新</button>
         <input class="pp-kw" data-kw type="text" placeholder="关键词过滤：标题 / 发布人 / 单位 / 分类…">
@@ -1423,7 +1423,7 @@
     stopAutoRefresh();
     ensureStyle();
     el.innerHTML = `<div class="${sideShellClass()}"><aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}<div class="pp-main">`
-      + `<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在恢复登录状态…</div>`
+      + `<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:calc(12.5px * var(--ui-text-scale))">正在恢复登录状态…</div>`
       + `</div></div>`;
     bindSide(el);
     loadLinkMeta(el);

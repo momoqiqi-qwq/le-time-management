@@ -338,6 +338,7 @@ function ddDefaultGroup(today, name) {
     name: String(name || "").trim().slice(0, DD_NAME_MAX) || DD_NAME_DEFAULT,
     startDate: ddValidDate(today) ? today : store.todayStr(),
     periodDays: 7,
+    perRound: 1,
     remindEnabled: true,
     remindTime: "08:00",
     sound: "beep",
@@ -353,6 +354,8 @@ function ddNormalizeGroup(raw, today) {
   g.name = String(g.name || "").trim().slice(0, DD_NAME_MAX) || DD_NAME_DEFAULT;
   if (!ddValidDate(g.startDate)) g.startDate = base.startDate;
   g.periodDays = Math.min(365, Math.max(1, Math.round(Number(g.periodDays) || 7)));
+  // 每轮人数：1 = 单人（历史默认）。不 clamp 到当前成员数（成员会变），计算时用模运算兜底。
+  g.perRound = Math.min(DD_MEMBER_MAX, Math.max(1, Math.round(Number(g.perRound) || 1)));
   g.remindTime = ddNormalizeTime(g.remindTime) || "08:00";
   g.remindEnabled = g.remindEnabled !== false;
   g.sound = String(g.sound || "beep");
@@ -407,6 +410,8 @@ function ddActiveId(groups, activeId) {
 
 /* ── 轮换数学（纯函数，只吃传入的那一组） ── */
 const ddPeriod = (g) => Math.max(1, Math.round(Number(g && g.periodDays) || 1));
+/** 每轮当班人数（多人值日）：1 = 单人。 */
+const ddPerRound = (g) => Math.max(1, Math.round(Number(g && g.perRound) || 1));
 /** 某天落在哪一轮：返回该轮起始日；起始日之前返回 null（轮换还没开始）。 */
 function ddCycleStartOf(g, date) {
   const start = g && g.startDate;
@@ -417,23 +422,55 @@ function ddCycleStartOf(g, date) {
 }
 const ddCycleIndexAt = (g, cycleStart) => Math.round(dayDiff(g.startDate, cycleStart) / ddPeriod(g));
 const ddIsCycleStartDay = (g, date) => ddCycleStartOf(g, date) === date;
-/** 某一轮「正常轮换」该谁（不看临时换人）。 */
-function ddNormalFor(g, cycleStart) {
-  if (!cycleStart || !g.members.length) return null;
-  return g.members[ddCycleIndexAt(g, cycleStart) % g.members.length];
+/** 某一轮「正常轮换」该当班的一批人（不看临时换人）：成员环上取 perRound 人的滑动窗口。 */
+function ddNormalAssignees(g, cycleStart) {
+  if (!cycleStart || !g.members.length) return [];
+  const per = ddPerRound(g);
+  const len = g.members.length;
+  const idx = ddCycleIndexAt(g, cycleStart);
+  const out = [];
+  for (let i = 0; i < per; i++) out.push(g.members[(idx * per + i) % len]);
+  const seen = {};
+  const uniq = [];
+  out.forEach((m) => { if (!seen[m.id]) { seen[m.id] = 1; uniq.push(m); } });
+  return uniq;
 }
-/** 某一轮的换人是否**真的生效**：override 指向的人必须还在名单里。
+/** 某一轮「正常轮换」该谁（单人行，兼容旧调用）：多人时取第一个。 */
+function ddNormalFor(g, cycleStart) {
+  return ddNormalAssignees(g, cycleStart)[0] || null;
+}
+/** 某一轮的临时换人名单里**真的还在名单里**的人（保序、去重）。
+    override 值是双格式：单人 = 字符串 id（历史格式，桌面端写入），多人 = id 数组。
+    指向已被移除的人要过滤掉 —— 全部失效时返回空数组，由调用方退回正常排班。 */
+function ddOverrideHits(g, cycleStart) {
+  const v = cycleStart ? (g.overrides || {})[cycleStart] : "";
+  const ids = Array.isArray(v) ? v : (v ? [v] : []);
+  const seen = {};
+  const hits = [];
+  ids.forEach((raw) => {
+    const id = String(raw || "");
+    if (!id || seen[id]) return;
+    seen[id] = 1;
+    const m = g.members.filter((x) => x.id === id)[0];
+    if (m) hits.push(m);
+  });
+  return hits;
+}
+/** 某一轮的换人是否**真的生效**（单人行，兼容旧调用）：多人换人时取第一个。
     指向已被移除的人时不算换人 —— 否则界面会显示「已换人 · 原 X」而实际当班的就是 X。 */
 function ddOverrideHit(g, cycleStart) {
-  const id = cycleStart ? (g.overrides || {})[cycleStart] : "";
-  if (!id) return null;
-  return g.members.filter((m) => m.id === id)[0] || null;
+  return ddOverrideHits(g, cycleStart)[0] || null;
 }
-/** 某天的当班人：没成员 / 没开始 → null；有临时换人 → 换的人。 */
-function ddAssigneeFor(g, date) {
+/** 某天的当班人（可能多人）：没成员 / 没开始 → 空数组；有临时换人 → 换上的名单。 */
+function ddAssigneesFor(g, date) {
   const cycle = ddCycleStartOf(g, date);
-  if (!cycle || !g.members.length) return null;
-  return ddOverrideHit(g, cycle) || ddNormalFor(g, cycle);
+  if (!cycle || !g.members.length) return [];
+  const hits = ddOverrideHits(g, cycle);
+  return hits.length ? hits : ddNormalAssignees(g, cycle);
+}
+/** 某天的当班人（单人行，兼容旧调用）：多人时取第一个。 */
+function ddAssigneeFor(g, date) {
+  return ddAssigneesFor(g, date)[0] || null;
 }
 
 /* ── 组的增删改（不可变：一组进、一组出；页面只负责把结果写回 storage） ── */
@@ -463,12 +500,21 @@ function ddGroupMoveMember(g, id, delta) {
   const tmp = next[i]; next[i] = next[j]; next[j] = tmp;
   return Object.assign({}, g, { members: next });
 }
-/** 移除成员：进「已移除」可恢复，并把指向他的临时换人一并清掉（否则会留一条永远命中不了的 override）。 */
+/** 移除成员：进「已移除」可恢复，并把指向他的临时换人一并清掉（否则会留一条永远命中不了的 override）。
+    override 值有双格式：单人字符串直接删；多人数组里滤掉他，滤空了整个键也删掉。 */
 function ddGroupRemoveMember(g, id) {
   const hit = (g.members || []).filter((m) => m.id === id)[0];
   if (!hit) return g;
   const ov = {};
-  Object.keys(g.overrides || {}).forEach((k) => { if (g.overrides[k] !== id) ov[k] = g.overrides[k]; });
+  Object.keys(g.overrides || {}).forEach((k) => {
+    const v = g.overrides[k];
+    if (Array.isArray(v)) {
+      const next = v.filter((x) => x !== id);
+      if (next.length) ov[k] = next;
+    } else if (v !== id) {
+      ov[k] = v;
+    }
+  });
   return Object.assign({}, g, {
     members: g.members.filter((m) => m.id !== id),
     removed: [{ id: hit.id, name: hit.name }].concat(g.removed || []).slice(0, DD_REMOVED_KEEP),
@@ -483,7 +529,9 @@ function ddGroupRestoreMember(g, id) {
     removed: (g.removed || []).filter((m) => m.id !== id),
   });
 }
-/** 记 / 撤临时换人。memberId 传空 = 撤销这一轮的换人。 */
+/** 记 / 撤临时换人。memberId 传空 = 撤销这一轮的换人。
+    小程序端的换人面板是单选（ActionSheet），所以这里写**字符串**（历史格式，
+    桌面端 / 旧版本客户端都能读）；桌面端的多选换人写数组，本端读取时用 ddOverrideHits 兼容。 */
 function ddGroupSetOverride(g, cycle, memberId) {
   const next = Object.assign({}, g.overrides || {});
   if (memberId) next[cycle] = memberId; else delete next[cycle];
@@ -515,15 +563,18 @@ function ddSnapshot(today, group) {
   today = today || store.todayStr();
   const g = ddNormalizeGroup(group, today);
   const period = ddPeriod(g);
+  const per = ddPerRound(g);
   const cycle = ddCycleStartOf(g, today);
   const started = !!cycle;
   const current = ddAssigneeFor(g, today);
+  const currentAll = ddAssigneesFor(g, today);
   const nextStart = cycle ? store.addDays(cycle, period) : (ddValidDate(g.startDate) ? g.startDate : null);
 
   const rows = [];
   for (let i = 0; i < DD_UPCOMING && nextStart; i++) {
     const start = store.addDays(nextStart, i * period);
-    const who = ddAssigneeFor(g, start);
+    const whoAll = ddAssigneesFor(g, start);
+    const names = whoAll.map((m) => m.name).join("、");
     rows.push({
       start,
       end: store.addDays(start, period - 1),
@@ -532,19 +583,19 @@ function ddSnapshot(today, group) {
       range: period > 1
         ? ddRangeText(ddMonthDay(start), ddMonthDay(store.addDays(start, period - 1))) + " · " + weekday(start) + "起"
         : ddMonthDay(start) + "（" + weekday(start) + "）",
-      whoId: who ? who.id : "",
-      whoName: who ? who.name : "—",
+      whoId: whoAll.length ? whoAll[0].id : "",
+      whoName: names || "—",
       index: ddCycleIndexAt(g, start) + 1,
       daysUntil: dayDiff(today, start),
       daysText: ddRelLabel(dayDiff(today, start)),
-      swapped: !!ddOverrideHit(g, start),
+      swapped: ddOverrideHits(g, start).length > 0,
     });
   }
-  const nextWho = nextStart ? ddAssigneeFor(g, nextStart) : null;
+  const nextAll = nextStart ? ddAssigneesFor(g, nextStart) : [];
   const nextDiff = nextStart ? dayDiff(today, nextStart) : 0;
   // 本轮换人是否真的生效（override 指向的人还在名单里才算）
-  const swapHit = cycle ? ddOverrideHit(g, cycle) : null;
-  const normalWho = cycle ? ddNormalFor(g, cycle) : null;
+  const swapHits = cycle ? ddOverrideHits(g, cycle) : [];
+  const normalAll = cycle ? ddNormalAssignees(g, cycle) : [];
 
   return {
     today,
@@ -557,6 +608,8 @@ function ddSnapshot(today, group) {
     },
     periodLabel: ddPeriodLabel(period),
     periods: DD_PERIODS.map((p) => ({ days: p.days, label: p.label, on: p.days === period })),
+    perRound: per,
+    perRounds: [1, 2, 3, 4].map((n) => ({ n, label: n === 1 ? "单人" : n + " 人", on: n === per })),
     hasMembers: g.members.length > 0,
     empty: g.members.length === 0,
     started,
@@ -568,25 +621,31 @@ function ddSnapshot(today, group) {
         : ddMonthDay(cycle) + "（" + weekday(cycle) + "）")
       : "还没开始",
     current: current ? { id: current.id, name: current.name } : null,
-    swapped: !!swapHit,
-    /** 被换掉的那个人（正常轮换本该当班的人），用来在界面上说明「原本是谁」。 */
-    swapName: swapHit && normalWho ? normalWho.name : "",
+    /** 多人当班时的名字串（「、」连接）；单人时与 current.name 一致。 */
+    currentNames: currentAll.map((m) => m.name).join("、"),
+    /** 本轮实际当班的 id 集合（换过 = 换上的名单），供「当班」标记与换人面板用。 */
+    currentIds: currentAll.map((m) => m.id),
+    currentIsMulti: currentAll.length > 1,
+    swapped: swapHits.length > 0,
+    /** 被换掉的那批人（正常轮换本该当班的），用来在界面上说明「原本是谁」。 */
+    swapName: swapHits.length && normalAll.length ? normalAll.map((m) => m.name).join("、") : "",
     nextStart: nextStart || "",
     nextStartText: nextStart ? ddMonthDay(nextStart) + " " + weekday(nextStart) : "",
-    nextWhoName: nextWho ? nextWho.name : "—",
+    nextWhoName: nextAll.map((m) => m.name).join("、") || "—",
     nextBigEm: nextDiff <= 0 ? "今天" : nextDiff === 1 ? "明天" : String(nextDiff),
     nextBigUnit: nextDiff <= 0 ? "" : nextDiff === 1 ? "" : " 天后",
     nextVerb: started ? "换人" : "开始",
     rows,
     members: g.members.map((m, i) => ({
       id: m.id, name: m.name, no: i + 1,
-      isCurrent: !!(current && current.id === m.id),
+      isCurrent: currentIdsOf(currentAll, m.id),
       canUp: i > 0, canDown: i < g.members.length - 1,
     })),
     removed: g.removed,
     lastNotified: g.lastNotified,
   };
 }
+const currentIdsOf = (list, id) => list.some((m) => m.id === id);
 
 /** 整份视图模型：当前组的完整快照（字段与旧版一致，页面直接 dd.xxx 用）+ 顶部的轮换标签条。 */
 function ddSummaryFrom(groups, activeId, today) {
@@ -594,8 +653,8 @@ function ddSummaryFrom(groups, activeId, today) {
   const active = list.filter((g) => g.id === activeId)[0] || list[0] || null;
   const snap = ddSnapshot(today, active);
   snap.groups = list.map((g) => {
-    const who = ddAssigneeFor(g, today);
-    return { id: g.id, name: g.name, who: who ? who.name : "", on: !!active && g.id === active.id };
+    const who = ddAssigneesFor(g, today).map((m) => m.name).join("、");
+    return { id: g.id, name: g.name, who: who, on: !!active && g.id === active.id };
   });
   snap.activeId = active ? active.id : "";
   snap.groupCount = list.length;
@@ -651,9 +710,9 @@ function ddReminderDue(group, today, nowMinutes) {
     return d.getHours() * 60 + d.getMinutes();
   })();
   if (now < parts[0] * 60 + parts[1]) return null;        // 还没到点
-  const who = ddAssigneeFor(g, today);
-  if (!who) return null;
-  return { groupId: g.id, groupName: g.name, whoId: who.id, whoName: who.name, time: g.remindTime };
+  const all = ddAssigneesFor(g, today);
+  if (!all.length) return null;
+  return { groupId: g.id, groupName: g.name, whoName: all.map((m) => m.name).join("、"), time: g.remindTime };
 }
 /** 所有到点的组（多套轮换各有各的时刻与去重，互不影响）。 */
 function ddDueReminders(groups, today, nowMinutes) {

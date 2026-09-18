@@ -277,7 +277,7 @@ function showOverlay() {
   if (overlay) return;
   overlay = el("div", { class: "drag-overlay" },
     el("div", { class: "drag-overlay-box" },
-      el("div", { style: "font-size:40px" }, "⤵"),
+      el("div", { style: "font-size:calc(40px * var(--ui-text-scale))" }, "⤵"),
       el("div", { class: "t1" }, "松手，Le时间管理来自动识别"),
       el("div", { class: "t2" }, "聊天文字 / 网页文本 / 链接 → 自动提取日期时间并创建时间块"),
       el("div", { class: "t2" }, "截图 / 图片 → 附到事件上（时间手选）"),

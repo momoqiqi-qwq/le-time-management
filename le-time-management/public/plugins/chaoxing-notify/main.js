@@ -304,11 +304,11 @@ const CX_PY_DATA = {
       .cx2 *{box-sizing:border-box}
       .cx2 button,.cx2 input,.cx2 select,.cx2 textarea{font:inherit}
       .cx2-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
-      .cx2 h2{margin:0;font-size:clamp(22px,3vw,30px)}
-      .cx2-sub{font-size:12.5px;color:var(--ink-2);margin:4px 0}
+      .cx2 h2{margin:0;font-size:clamp(calc(22px * var(--ui-text-scale)),3vw,calc(30px * var(--ui-text-scale)))}
+      .cx2-sub{font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink-2);margin:4px 0}
       .cx2-actions{display:flex;gap:7px;flex-wrap:wrap}
       .cx2-mode{display:inline-flex}
-      .cx2-mode button{border-radius:0;border-right-width:0;min-height:40px;padding:7px 11px;font-size:12.5px}
+      .cx2-mode button{border-radius:0;border-right-width:0;min-height:40px;padding:7px 11px;font-size:calc(12.5px * var(--ui-text-scale))}
       .cx2-mode button:first-child{border-radius:9px 0 0 9px}
       .cx2-mode button:last-child{border-radius:0 9px 9px 0;border-right-width:1px}
       .cx2-mode button.on{background:var(--deep);border-color:var(--deep);color:#fff;font-weight:650}
@@ -321,14 +321,14 @@ const CX_PY_DATA = {
       .cx2 button:disabled{opacity:.5;cursor:default}
       .cx2-nav{display:flex;gap:7px;flex-wrap:wrap;margin:16px 0 10px;padding-bottom:10px;border-bottom:1px solid var(--line)}
       .cx2-nav button.on{background:var(--deep);color:#fff;border-color:var(--deep)}
-      .cx2-pill{display:inline-block;font-size:10px;border-radius:999px;padding:2px 7px;background:color-mix(in srgb,var(--deep) 16%,var(--panel));color:var(--deep);margin-left:5px}
+      .cx2-pill{display:inline-block;font-size:calc(10px * var(--ui-text-scale));border-radius:999px;padding:2px 7px;background:color-mix(in srgb,var(--deep) 16%,var(--panel));color:var(--deep);margin-left:5px}
       .cx2-new{background:var(--coral);color:#fff}
       .cx2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
       .cx2-search{flex:1;min-width:220px;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 11px;background:var(--panel);color:var(--ink)}
       .cx2-search::placeholder{color:var(--ink-2);opacity:1}
       .cx2-select{border:1px solid var(--line);border-radius:9px;min-height:40px;padding:6px 9px;background:var(--panel);color:var(--ink)}
-      .cx2-check{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-2);white-space:nowrap}.cx2-check .switch{margin-top:0}
-      .cx2-status{font-size:12px;color:var(--ink-2);margin:7px 0 11px}
+      .cx2-check{display:inline-flex;align-items:center;gap:8px;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);white-space:nowrap}.cx2-check .switch{margin-top:0}
+      .cx2-status{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);margin:7px 0 11px}
       .cx2-status.err{background:color-mix(in srgb,var(--coral) 16%,var(--panel));border:1px solid color-mix(in srgb,var(--coral) 34%,var(--line));color:color-mix(in srgb,var(--coral) 50%,var(--ink));padding:10px;border-radius:9px}
       .cx2-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
       .cx2-card{background:color-mix(in srgb,var(--ink) 5%,var(--panel));border:1px solid var(--line);border-left:4px solid var(--line);border-radius:12px;padding:12px;min-width:0}
@@ -341,29 +341,29 @@ const CX_PY_DATA = {
          （左边框保持类型色，所以不能用 border-color 简写——会吞掉类型色的 border-left）。
          已读基础卡则往 --ink 方向灰化 5%，一升一降把两种状态拉开，浅/深主题同样可辨。 */
       .cx2-card.unread{background:color-mix(in srgb,var(--sea) 15%,var(--panel));border-top-color:color-mix(in srgb,var(--sea) 38%,var(--line));border-right-color:color-mix(in srgb,var(--sea) 38%,var(--line));border-bottom-color:color-mix(in srgb,var(--sea) 38%,var(--line))}
-      .cx2-title{font-weight:650;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
-      .cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:11px;color:var(--ink-2)}
+      .cx2-title{font-weight:650;font-size:calc(14px * var(--ui-text-scale));line-height:1.45;overflow-wrap:anywhere}
+      .cx2-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2)}
       .cx2-tag{padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--deep) 14%,var(--panel));color:var(--deep)}
       .cx2-tag.作业{background:color-mix(in srgb,var(--sun) 20%,var(--panel));color:color-mix(in srgb,var(--sun) 50%,var(--ink))}
       .cx2-tag.考试{background:color-mix(in srgb,var(--coral) 20%,var(--panel));color:color-mix(in srgb,var(--coral) 50%,var(--ink))}
       .cx2-tag.签到{background:color-mix(in srgb,var(--mint) 20%,var(--panel));color:color-mix(in srgb,var(--mint) 50%,var(--ink))}
-      .cx2-grading{display:inline-block;vertical-align:1px;margin-left:7px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--sun) 20%,var(--panel));color:color-mix(in srgb,var(--sun) 50%,var(--ink));border:1px solid color-mix(in srgb,var(--sun) 34%,var(--line));font-size:10.5px;font-weight:500;cursor:help}
-      .cx2-body{font-size:12px;color:color-mix(in srgb,var(--ink) 78%,var(--ink-2));line-height:1.65;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
+      .cx2-grading{display:inline-block;vertical-align:1px;margin-left:7px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--sun) 20%,var(--panel));color:color-mix(in srgb,var(--sun) 50%,var(--ink));border:1px solid color-mix(in srgb,var(--sun) 34%,var(--line));font-size:calc(10.5px * var(--ui-text-scale));font-weight:500;cursor:help}
+      .cx2-body{font-size:calc(12px * var(--ui-text-scale));color:color-mix(in srgb,var(--ink) 78%,var(--ink-2));line-height:1.65;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-line}
       .cx2-card.open .cx2-body{display:block;-webkit-line-clamp:unset;max-height:320px;overflow:auto}
       .cx2-card-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
-      .cx2-card-actions button{min-height:34px;padding:5px 9px;font-size:11.5px}
-      .cx2-empty{border:1.5px dashed var(--line);border-radius:12px;padding:24px;text-align:center;color:var(--ink-3);font-size:12.5px}
+      .cx2-card-actions button{min-height:34px;padding:5px 9px;font-size:calc(11.5px * var(--ui-text-scale))}
+      .cx2-empty{border:1.5px dashed var(--line);border-radius:12px;padding:24px;text-align:center;color:var(--ink-3);font-size:calc(12.5px * var(--ui-text-scale))}
       .cx2-courses{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px}
       .cx2-course{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px}
-      .cx2-course b{display:block;font-size:13px}
-      .cx2-course span{display:block;font-size:11px;color:var(--ink-2);margin-top:4px}
+      .cx2-course b{display:block;font-size:calc(13px * var(--ui-text-scale))}
+      .cx2-course span{display:block;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2);margin-top:4px}
       .cx2-grade{margin:14px 0 4px}
-      .cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:14px;color:var(--ink)}
+      .cx2-grade-head{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 8px;font-size:calc(14px * var(--ui-text-scale));color:var(--ink)}
       .cx2-cat-sec{margin:18px 0}
-      .cx2-grade-sub{font-size:11px;font-weight:400;color:var(--ink-2)}
+      .cx2-grade-sub{font-size:calc(11px * var(--ui-text-scale));font-weight:400;color:var(--ink-2)}
       .cx2-course{position:relative}
       .cx2-course b{padding-right:64px}
-      .cx2-course .cx2-mark{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:5px;margin:0;padding:2px 8px;border-radius:999px;font-size:10.5px;line-height:1.65;font-weight:500;letter-spacing:.2px}
+      .cx2-course .cx2-mark{position:absolute;top:9px;right:9px;display:inline-flex;align-items:center;gap:5px;margin:0;padding:2px 8px;border-radius:999px;font-size:calc(10.5px * var(--ui-text-scale));line-height:1.65;font-weight:500;letter-spacing:.2px}
       .cx2-course .cx2-mark::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
       .cx2-course .cx2-mark.st-red{background:#dc2626;color:#fff;border:1px solid #dc2626}
       .cx2-course .cx2-mark.st-blue{background:#2563eb;color:#fff;border:1px solid #2563eb}
@@ -385,27 +385,27 @@ const CX_PY_DATA = {
       .dot-gray{background:#9ca3af}
       .cx2-search-toggle{width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:0 11px}
       .cx2-course .cx2-termline{color:var(--ink-2)}
-      .cx2-hint{margin-top:14px;font-size:11px;color:var(--ink-2);line-height:1.7}
+      .cx2-hint{margin-top:14px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2);line-height:1.7}
       .cx2-login{max-width:650px;margin:18px auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:clamp(18px,3vw,28px)}
       .cx2-login h3{margin:0 0 4px}
       .cx2-tabs{display:flex;gap:6px;margin:14px 0}
       .cx2-tabs button.on{background:var(--deep);color:#fff;border-color:var(--deep)}
       .cx2-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-      .cx2 label{font-size:12px;color:var(--ink-2)}
+      .cx2 label{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2)}
       .cx2 label span{display:block;margin-bottom:4px;font-weight:600}
       .cx2 input:not(.switch),.cx2 textarea{width:100%;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 10px;background:var(--panel);color:var(--ink)}
       .cx2 input::placeholder,.cx2 textarea::placeholder{color:var(--ink-2);opacity:1}
       .cx2 textarea{min-height:100px;resize:vertical}
       .cx2-wide{grid-column:1/-1}
-      .cx2-note{font-size:11px;color:var(--ink-2);line-height:1.65;background:var(--paper);padding:9px 10px;border-radius:8px;margin-top:10px}
+      .cx2-note{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2);line-height:1.65;background:var(--paper);padding:9px 10px;border-radius:8px;margin-top:10px}
       .cx2-lookup{max-width:820px}
       .cx2-detail{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
-      .cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:12.5px;line-height:1.7;color:color-mix(in srgb,var(--ink) 78%,var(--ink-2))}
+      .cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.7;color:color-mix(in srgb,var(--ink) 78%,var(--ink-2))}
       .cx2-todo{display:grid;gap:9px;max-width:900px}
-      .cx2-due{font-weight:700;color:color-mix(in srgb,var(--sun) 50%,var(--ink));font-size:12px}
+      .cx2-due{font-weight:700;color:color-mix(in srgb,var(--sun) 50%,var(--ink));font-size:calc(12px * var(--ui-text-scale))}
       .cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-      .cx2-kpi{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:11.5px;color:var(--ink)}
-      .cx2 footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;font-size:11px;color:var(--ink-2)}
+      .cx2-kpi{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
+      .cx2 footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2)}
       @media(max-width:760px){.cx2{padding:12px}.cx2-grid{grid-template-columns:1fr}.cx2-fields{grid-template-columns:1fr}.cx2-wide{grid-column:auto}.cx2-actions{width:100%}.cx2-actions button{flex:1}.cx2-nav{overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px}.cx2-nav button{white-space:nowrap}.cx2-toolbar .cx2-search{width:100%;flex-basis:100%}}
       @media(pointer:coarse){.cx2 button,.cx2 input,.cx2 select{min-height:46px}.cx2-card-actions button{min-height:40px}}
     `; document.head.append(s);

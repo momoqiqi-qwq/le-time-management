@@ -687,82 +687,82 @@
     st.id = "rss-style";
     st.textContent = `
 .rss-wrap{max-width:900px;margin:0 auto;padding:14px 0 34px;color:var(--ink,#22303A)}
-.rss-eyebrow{font-size:11px;letter-spacing:.3em;color:var(--ink-3,#A9B2BA)}
+.rss-eyebrow{font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:var(--ink-3,#A9B2BA)}
 .rss-hero{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:16px;padding:13px 14px}
 .rss-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .rss-top .rss-grow{flex:1;min-width:0}
-.rss-unread{font-size:11px;font-weight:700;border-radius:999px;padding:3px 9px;background:var(--deep,#0F4C5C);color:var(--on-deep,#fff);flex:none}
+.rss-unread{font-size:calc(11px * var(--ui-text-scale));font-weight:700;border-radius:999px;padding:3px 9px;background:var(--deep,#0F4C5C);color:var(--on-deep,#fff);flex:none}
 .rss-toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-top:10px}
-.rss-lab{font-size:11px;color:var(--ink-3,#A9B2BA);letter-spacing:.14em;flex:none;width:32px}
-.rss-input{flex:1;min-width:150px;height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 11px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);font-size:12.5px}
-.rss-btn{height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);color:var(--ink,#22303A);font-size:12.5px;cursor:pointer;flex:none}
+.rss-lab{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);letter-spacing:.14em;flex:none;width:32px}
+.rss-input{flex:1;min-width:150px;height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 11px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);font-size:calc(12.5px * var(--ui-text-scale))}
+.rss-btn{height:34px;padding:0 14px;border-radius:9px;border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);color:var(--ink,#22303A);font-size:calc(12.5px * var(--ui-text-scale));cursor:pointer;flex:none}
 .rss-btn:hover{border-color:var(--deep,#0F4C5C);color:var(--deep,#0F4C5C)}
 .rss-btn.pri{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff);font-weight:600}
 .rss-btn.pri:hover{color:var(--on-deep,#fff);opacity:.92}
 .rss-btn:disabled{opacity:.5;cursor:default}
-.rss-select{height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);font-size:12.5px;padding:0 8px}
-.rss-toggle{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-2,#7E8B94);cursor:pointer;user-select:none;flex:none}
+.rss-select{height:34px;border:1px solid var(--line,#E4DFD6);border-radius:9px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);font-size:calc(12.5px * var(--ui-text-scale));padding:0 8px}
+.rss-toggle{display:inline-flex;align-items:center;gap:6px;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);cursor:pointer;user-select:none;flex:none}
 .rss-toggle i{width:32px;height:18px;border-radius:10px;background:var(--line,#E4DFD6);display:inline-block;position:relative;transition:.15s;flex:none}
 .rss-toggle i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--panel,#fff);transition:.15s}
 .rss-toggle.on i{background:var(--mint,#2EC4B6)}
 .rss-toggle.on i::after{left:16px}
 .rss-chips{display:flex;gap:7px;flex-wrap:wrap;flex:1;min-width:0}
-.rss-chip{font-size:12px;border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--ink-2,#7E8B94);display:inline-flex;align-items:center;gap:6px}
+.rss-chip{font-size:calc(12px * var(--ui-text-scale));border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);border-radius:999px;padding:5px 12px;cursor:pointer;color:var(--ink-2,#7E8B94);display:inline-flex;align-items:center;gap:6px}
 .rss-chip:hover{border-color:var(--deep,#0F4C5C)}
 .rss-chip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
-.rss-chip .n{font-size:10.5px;opacity:.75}
+.rss-chip .n{font-size:calc(10.5px * var(--ui-text-scale));opacity:.75}
 .rss-chip:disabled{opacity:.45;cursor:default}
 /* 源名长度不可控（InfoQ 的 title 是「InfoQ - 促进软件开发领域知识与创新的传播」），
    必须自己截断：flex 容器上的 text-overflow 对匿名文本节点不生效，得先包一层块级子元素。 */
 .rss-chip-name{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rss-dot{width:6px;height:6px;border-radius:50%;flex:none;display:inline-block}
-.rss-status{font-size:12px;color:var(--ink-2,#7E8B94);margin-top:9px;line-height:1.7}
+.rss-status{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-top:9px;line-height:1.7}
 .rss-status .err{color:var(--danger,#B03535)}
 .rss-status b{color:var(--ink,#22303A)}
 .rss-manage{margin-top:11px;border:1px solid var(--line,#E4DFD6);border-radius:14px;background:var(--panel,#fff)}
-.rss-manage>summary{cursor:pointer;padding:11px 14px;font-size:12.5px;color:var(--ink-2,#7E8B94);list-style:none;display:flex;align-items:center;gap:8px}
+.rss-manage>summary{cursor:pointer;padding:11px 14px;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);list-style:none;display:flex;align-items:center;gap:8px}
 .rss-manage>summary::-webkit-details-marker{display:none}
-.rss-manage>summary::before{content:"▸";font-size:11px;color:var(--ink-3,#A9B2BA);transition:.15s}
+.rss-manage>summary::before{content:"▸";font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);transition:.15s}
 .rss-manage[open]>summary::before{transform:rotate(90deg)}
 .rss-manage-body{padding:0 14px 14px}
 .rss-src{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-top:1px solid var(--line-soft,#EFEAE1)}
 .rss-src:first-child{border-top:0}
 .rss-src-main{flex:1;min-width:0}
-.rss-src-name{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rss-src-url{font-size:11px;color:var(--ink-3,#A9B2BA);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.rss-src-meta{font-size:11px;color:var(--ink-2,#7E8B94);margin-top:3px;line-height:1.6}
+.rss-src-name{font-size:calc(13px * var(--ui-text-scale));font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rss-src-url{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.rss-src-meta{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-top:3px;line-height:1.6}
 .rss-src-meta .err{color:var(--danger,#B03535)}
 .rss-src.off{opacity:.55}
 .rss-src-act{display:flex;gap:6px;flex-wrap:wrap;flex:none;justify-content:flex-end}
-.rss-src-act button{font-size:11px;border:1px solid var(--line,#E4DFD6);border-radius:7px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);padding:4px 9px;cursor:pointer}
+.rss-src-act button{font-size:calc(11px * var(--ui-text-scale));border:1px solid var(--line,#E4DFD6);border-radius:7px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);padding:4px 9px;cursor:pointer}
 .rss-src-act button:hover{border-color:var(--deep,#0F4C5C);color:var(--deep,#0F4C5C)}
-.rss-hint{font-size:11.5px;color:var(--ink-3,#A9B2BA);line-height:1.75;margin-top:7px}
-.rss-group{font-size:12px;font-weight:700;color:var(--deep,#0F4C5C);padding:14px 2px 7px;letter-spacing:.04em}
+.rss-hint{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);line-height:1.75;margin-top:7px}
+.rss-group{font-size:calc(12px * var(--ui-text-scale));font-weight:700;color:var(--deep,#0F4C5C);padding:14px 2px 7px;letter-spacing:.04em}
 .rss-card{display:flex;gap:11px;align-items:flex-start;background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:14px;padding:11px 13px;margin-bottom:8px;content-visibility:auto;contain-intrinsic-size:auto 88px}
 .rss-card:hover{border-color:var(--deep,#0F4C5C)}
 .rss-card.read{opacity:.62}
 .rss-card-main{flex:1;min-width:0}
-.rss-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:var(--ink-2,#7E8B94)}
+.rss-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
 .rss-src-tag{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-soft,#EFEAE1);background:var(--paper,#F7F6F2);border-radius:999px;padding:2px 9px;color:var(--ink-2,#7E8B94);max-width:170px}
 .rss-src-tag .rss-tag-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rss-new{background:var(--coral,#FF6B6B);color:var(--deep-2,#12333D);border-radius:7px;padding:1px 6px;font-size:10px;font-weight:700}
-.rss-card-title{font-size:14px;font-weight:650;line-height:1.5;margin:5px 0 0;color:var(--ink,#22303A);cursor:pointer}
+.rss-new{background:var(--coral,#FF6B6B);color:var(--deep-2,#12333D);border-radius:7px;padding:1px 6px;font-size:calc(10px * var(--ui-text-scale));font-weight:700}
+.rss-card-title{font-size:calc(14px * var(--ui-text-scale));font-weight:650;line-height:1.5;margin:5px 0 0;color:var(--ink,#22303A);cursor:pointer}
 .rss-card.read .rss-card-title{font-weight:600}
-.rss-snip{font-size:12px;color:var(--ink-2,#7E8B94);line-height:1.65;margin:5px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.rss-snip{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.65;margin:5px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .rss-snip.open{-webkit-line-clamp:unset;overflow:visible}
 .rss-cover{width:78px;height:58px;border-radius:9px;object-fit:cover;flex:none;background:var(--line-soft,#EFEAE1)}
 .rss-card-act{display:flex;flex-direction:column;gap:5px;flex:none}
-.rss-card-act button{font-size:11px;border:1px solid var(--line,#E4DFD6);border-radius:7px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);padding:4px 9px;cursor:pointer;white-space:nowrap}
+.rss-card-act button{font-size:calc(11px * var(--ui-text-scale));border:1px solid var(--line,#E4DFD6);border-radius:7px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);padding:4px 9px;cursor:pointer;white-space:nowrap}
 .rss-card-act button:hover{border-color:var(--deep,#0F4C5C);color:var(--deep,#0F4C5C)}
 .rss-card-act button.on{border-color:var(--sun,#E3A008);color:var(--sun,#E3A008)}
-.rss-empty{border:1.5px dashed var(--line,#E4DFD6);border-radius:14px;padding:26px;text-align:center;color:var(--ink-3,#A9B2BA);font-size:12.5px;line-height:1.9}
+.rss-empty{border:1.5px dashed var(--line,#E4DFD6);border-radius:14px;padding:26px;text-align:center;color:var(--ink-3,#A9B2BA);font-size:calc(12.5px * var(--ui-text-scale));line-height:1.9}
 .rss-more{display:flex;justify-content:center;padding:8px 0 4px}
 .rss-suggest{margin-top:11px;padding-top:11px;border-top:1px solid var(--line-soft,#EFEAE1)}
 /* ═══ 显示样式：三档共用同一个 .rss-card 容器，只改密度 ═══
    为什么不动容器类名：ui.list 的点击委托是 closest(".rss-card")，
    换类名会把「打开 / 收藏 / 提醒」全弄哑（而且哑得没有报错）。 */
 .rss-seg{display:inline-flex;border:1px solid var(--line,#E4DFD6);border-radius:9px;overflow:hidden;flex:none;background:var(--panel,#fff)}
-.rss-seg button{border:0;background:none;color:var(--ink-2,#7E8B94);font-size:12px;padding:0 10px;height:32px;cursor:pointer;white-space:nowrap}
+.rss-seg button{border:0;background:none;color:var(--ink-2,#7E8B94);font-size:calc(12px * var(--ui-text-scale));padding:0 10px;height:32px;cursor:pointer;white-space:nowrap}
 .rss-seg button+button{border-left:1px solid var(--line,#E4DFD6)}
 .rss-seg button:hover{color:var(--deep,#0F4C5C)}
 .rss-seg button.on{background:var(--deep,#0F4C5C);color:var(--on-deep,#fff);font-weight:600}
@@ -774,9 +774,9 @@
 .rss-wrap[data-style="compact"] .rss-card-head{flex:none;margin:0}
 .rss-wrap[data-style="compact"] .rss-author{display:none}
 .rss-wrap[data-style="compact"] .rss-src-tag{max-width:120px}
-.rss-wrap[data-style="compact"] .rss-card-title{margin:0;flex:1;min-width:0;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rss-wrap[data-style="compact"] .rss-card-title{margin:0;flex:1;min-width:0;font-size:calc(13px * var(--ui-text-scale));font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rss-wrap[data-style="compact"] .rss-card-act{flex-direction:row;gap:4px}
-.rss-wrap[data-style="compact"] .rss-card-act button{padding:3px 7px;font-size:10.5px}
+.rss-wrap[data-style="compact"] .rss-card-act button{padding:3px 7px;font-size:calc(10.5px * var(--ui-text-scale))}
 /* 标题：只留「色点 · 标题 …… 时间」+ 两个极轻的动作，密度最高。
    来源名收成色点、作者与摘要不显示。动作按钮**不做 hover 才出现** ——
    触屏没有 hover，那样手机上会点不到收藏/提醒（窄屏探针暴露过同类问题）。 */
@@ -789,21 +789,21 @@
 .rss-wrap[data-style="title"] .rss-card-head{flex:none;margin:0}
 .rss-wrap[data-style="title"] .rss-src-tag{border:0;background:none;padding:0;gap:0;max-width:none}
 .rss-wrap[data-style="title"] .rss-tag-name{display:none}
-.rss-wrap[data-style="title"] .rss-card-title{margin:0;flex:1;min-width:0;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rss-wrap[data-style="title"] .rss-card-title{margin:0;flex:1;min-width:0;font-size:calc(13px * var(--ui-text-scale));font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rss-wrap[data-style="title"] .rss-card-act{flex-direction:row;gap:2px;opacity:.6}
 .rss-wrap[data-style="title"] .rss-card:hover .rss-card-act{opacity:1}
-.rss-wrap[data-style="title"] .rss-card-act button{border:0;background:none;padding:2px 6px;font-size:11px}
+.rss-wrap[data-style="title"] .rss-card-act button{border:0;background:none;padding:2px 6px;font-size:calc(11px * var(--ui-text-scale))}
 .rss-wrap[data-style="title"] .rss-group{padding:12px 2px 5px}
 /* 封面图开关只对卡片档有意义；别的档藏掉，免得点一个不生效的控件 */
 .rss-wrap:not([data-style="card"]) [data-cover-toggle]{display:none}
 /* 窄屏的样式覆盖单独成块（紧挨样式区，便于一起改），不塞进下面那个媒体查询里 */
 @media (max-width:520px){
-  .rss-seg button{padding:0 8px;font-size:11.5px}
+  .rss-seg button{padding:0 8px;font-size:calc(11.5px * var(--ui-text-scale))}
   /* 390px 一行塞不下「来源 + 时间 + 标题 + 两按钮」⇒ 标题换行独占一行，
      仍限 2 行。flex-wrap 后 align-items:center 会让首行文字对不齐，改 baseline。 */
   .rss-wrap[data-style="compact"] .rss-card-main{flex-wrap:wrap;align-items:baseline;gap:3px 9px}
   .rss-wrap[data-style="compact"] .rss-card-title{flex:1 1 100%;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-  .rss-wrap[data-style="title"] .rss-card-title{font-size:12.5px}
+  .rss-wrap[data-style="title"] .rss-card-title{font-size:calc(12.5px * var(--ui-text-scale))}
 }
 @media (max-width:520px){
   .rss-wrap{padding:10px 0 26px}
@@ -1298,7 +1298,7 @@
 
   function render(el) {
     ensureStyle();
-    el.innerHTML = "<div style=\"padding:28px;text-align:center;color:var(--ink-3,#A9B2BA);font-size:12.5px\">正在读取订阅…</div>";
+    el.innerHTML = "<div style=\"padding:28px;text-align:center;color:var(--ink-3,#A9B2BA);font-size:calc(12.5px * var(--ui-text-scale))\">正在读取订阅…</div>";
     Promise.all([loadPrefs(), loadFeeds(), loadItems()])
       .catch((e) => { console.error("[rss-reader] 读取本地数据失败", e); })
       .then(() => {

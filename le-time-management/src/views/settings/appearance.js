@@ -6,6 +6,7 @@ import {
   DEFAULT_UI_PREFERENCES,
   NAVBAR_SIZE_OPTIONS,
   STARTUP_VIEW_OPTIONS,
+  TEXT_SCALE_LIMITS,
   WINDOW_SIZE_OPTIONS,
   coreViewIds,
   getUiPreferences,
@@ -44,7 +45,15 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     }, label));
   }
 
-  const textScale = el("input", { type: "range", min: "90", max: "120", step: "5", value: String(prefs.textScale) });
+  // 「文字大小」80%~150%（TEXT_SCALE_LIMITS 单一事实源）：作用于**全部文字** ——
+  // styles.css 与各插件样式里的每一条 font-size 都乘了 --ui-text-scale（守卫：test-text-scale.mjs）。
+  const textScale = el("input", {
+    type: "range",
+    min: String(TEXT_SCALE_LIMITS.min),
+    max: String(TEXT_SCALE_LIMITS.max),
+    step: String(TEXT_SCALE_LIMITS.step),
+    value: String(prefs.textScale),
+  });
   const textScaleOut = el("output", {}, `${prefs.textScale}%`);
   textScale.addEventListener("input", () => {
     textScaleOut.textContent = `${textScale.value}%`;
@@ -53,10 +62,10 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   textScale.addEventListener("change", () => setUiPreferences({ textScale: Number(textScale.value) }));
 
   /* ── 界面缩放（80%~150%）──
-     与上面「文字大小」分工不同：文字大小只改 8 条手写 font-size，控件/间距/图标全不动；
-     界面缩放走 documentElement 的 `zoom`，整页等比放大缩小 —— 手机上「整个界面太小」
-     才是主要诉求，光放大字解决不了。两个实现坑（fixed 浮层要走 --ui-vw/--ui-vh、
-     100vw/100vh 不能用）见 src/uiScale.js 头部注释。
+     与上面「文字大小」分工不同：文字大小只放大缩小**文字**（全部 font-size 都乘
+     --ui-text-scale，控件/间距/图标不动）；界面缩放走 documentElement 的 `zoom`，
+     整页等比放大缩小 —— 手机上「整个界面太小」才是主要诉求，光放大字解决不了。
+     两个实现坑（fixed 浮层要走 --ui-vw/--ui-vh、100vw/100vh 不能用）见 src/uiScale.js 头部注释。
 
      与「启动窗口大小」的区别也说清：那个是**桌面端调整窗口**，这个是**调整窗口里的内容**，
      手机上后者才是唯一可用的那个。

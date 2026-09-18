@@ -35,17 +35,17 @@
     st.textContent = `
       .gx-wrap{max-width:880px;margin:0 auto}
       .gx-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0}
-      .gx-lab{font-size:11px;color:#A9B2BA;letter-spacing:.14em;flex:none;width:34px}
+      .gx-lab{font-size:calc(11px * var(--ui-text-scale));color:#A9B2BA;letter-spacing:.14em;flex:none;width:34px}
       .gx-chips{display:flex;gap:8px;flex-wrap:wrap;flex:1}
       .gx-kw{flex:1;min-width:170px;height:34px;border:1px solid #E4DFD6;border-radius:9px;padding:0 11px;background:#fff}
-      .gx-chip{font-size:12px;border:1px solid #E4DFD6;background:#fff;border-radius:16px;padding:6px 13px;cursor:pointer;color:#7E8B94}
+      .gx-chip{font-size:calc(12px * var(--ui-text-scale));border:1px solid #E4DFD6;background:#fff;border-radius:16px;padding:6px 13px;cursor:pointer;color:#7E8B94}
       .gx-chip.on{background:#0F4C5C;color:#fff;border-color:#0F4C5C}
-      .gx-toggle{display:flex;align-items:center;gap:6px;font-size:12px;color:#7E8B94;cursor:pointer;user-select:none}
+      .gx-toggle{display:flex;align-items:center;gap:6px;font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;cursor:pointer;user-select:none}
       .gx-toggle i{width:34px;height:19px;border-radius:10px;background:#D8D2C6;display:inline-block;position:relative;transition:.15s}
       .gx-toggle i::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s}
       .gx-toggle.on i{background:#2EC4B6}
       .gx-toggle.on i::after{left:17px}
-      .gx-status{font-size:12px;color:#7E8B94;margin:2px 0 8px}
+      .gx-status{font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;margin:2px 0 8px}
       .gx-status .err{color:#B03535}
       /* 无阴影 + 分块渲染 + 离屏跳过：滚动零成本 */
       .gx-card{display:flex;gap:12px;background:#fff;border:1px solid #E4DFD6;border-radius:14px;padding:12px 14px;margin-bottom:9px;cursor:pointer;content-visibility:auto;contain-intrinsic-size:auto 96px}
@@ -53,20 +53,20 @@
       .gx-card.seen{opacity:.55}
       .gx-cover{width:74px;height:56px;border-radius:8px;object-fit:cover;flex:none;background:#EFEAE1;transform:translateZ(0)}
       .gx-main{flex:1;min-width:0}
-      .gx-title{font-size:13.5px;font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      .gx-meta{display:flex;gap:8px;align-items:center;font-size:11px;color:#7E8B94;margin-top:4px;flex-wrap:wrap}
-      .gx-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:10px}
+      .gx-title{font-size:calc(13.5px * var(--ui-text-scale));font-weight:600;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .gx-meta{display:flex;gap:8px;align-items:center;font-size:calc(11px * var(--ui-text-scale));color:#7E8B94;margin-top:4px;flex-wrap:wrap}
+      .gx-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:calc(10px * var(--ui-text-scale))}
       .gx-tag.n{background:#EFE7FB;color:#6C3FB8}
-      .gx-new{background:#FF6B6B;color:#fff;border-radius:8px;padding:1px 7px;font-size:10px}
-      .gx-snip{font-size:11.5px;color:#7E8B94;margin-top:5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      .gx-new{background:#FF6B6B;color:#fff;border-radius:8px;padding:1px 7px;font-size:calc(10px * var(--ui-text-scale))}
+      .gx-snip{font-size:calc(11.5px * var(--ui-text-scale));color:#7E8B94;margin-top:5px;line-height:1.6;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
       .gx-act{display:flex;flex-direction:column;gap:6px;justify-content:center}
-      .gx-btn{font-size:11px;border:1px solid #E4DFD6;border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;color:#22303A;white-space:nowrap}
+      .gx-btn{font-size:calc(11px * var(--ui-text-scale));border:1px solid #E4DFD6;border-radius:8px;padding:5px 10px;background:#fff;cursor:pointer;color:#22303A;white-space:nowrap}
       .gx-btn:hover{border-color:#0F4C5C;color:#0F4C5C}
-      .gx-empty{border:1.5px dashed #CFC8BA;border-radius:12px;padding:26px;text-align:center;color:#A9B2BA;font-size:12.5px;line-height:1.8}
-      .gx-month{font-size:12.5px;font-weight:700;color:#0F4C5C;padding:9px 2px 7px;letter-spacing:.05em}
+      .gx-empty{border:1.5px dashed #CFC8BA;border-radius:12px;padding:26px;text-align:center;color:#A9B2BA;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.8}
+      .gx-month{font-size:calc(12.5px * var(--ui-text-scale));font-weight:700;color:#0F4C5C;padding:9px 2px 7px;letter-spacing:.05em}
       .gx-more{display:flex;justify-content:center;padding:8px 0 4px}
-      .gx-more .gx-btn{padding:8px 20px;font-size:12px}
-      .gx-refresh{font-size:12.5px;font-weight:600;height:34px;padding:0 15px;border-radius:9px;background:#0F4C5C;color:#fff;cursor:pointer}
+      .gx-more .gx-btn{padding:8px 20px;font-size:calc(12px * var(--ui-text-scale))}
+      .gx-refresh{font-size:calc(12.5px * var(--ui-text-scale));font-weight:600;height:34px;padding:0 15px;border-radius:9px;background:#0F4C5C;color:#fff;cursor:pointer}
       .gx-refresh:disabled{opacity:.5}
     `;
     document.head.append(st);
@@ -246,7 +246,7 @@
       b.addEventListener("click", () => { if (token === paintToken) fetchList(state.page + 1); });
       more.append(b);
     } else if (state.list.length) {
-      more.innerHTML = `<div style="font-size:11px;color:#A9B2BA">近期消息已全部展示</div>`;
+      more.innerHTML = `<div style="font-size:calc(11px * var(--ui-text-scale));color:#A9B2BA">近期消息已全部展示</div>`;
     }
     ui.list.append(more);
   }
@@ -305,7 +305,7 @@
     const wrap = document.createElement("div");
     wrap.className = "gx-wrap";
     wrap.innerHTML = `
-      <div style="font-size:11px;letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">竞 赛 消 息 雷 达 · 内 置 插 件</div>
+      <div style="font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:#7E8B94;margin:16px 0 4px">竞 赛 消 息 雷 达 · 内 置 插 件</div>
       <div class="gx-toolbar">
         <button class="gx-refresh">刷新</button>
         <input class="gx-kw" type="text" placeholder="关键词过滤：如 答辩 / 数学 / 报名 / 截止…">
@@ -379,7 +379,7 @@
 
   function render(el) {
     ensureStyle();
-    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:12.5px">正在读取偏好…</div>';
+    el.innerHTML = '<div style="padding:30px;text-align:center;color:#A9B2BA;font-size:calc(12.5px * var(--ui-text-scale))">正在读取偏好…</div>';
     loadPrefs().then(() => buildUI(el)).catch(() => buildUI(el));
   }
 

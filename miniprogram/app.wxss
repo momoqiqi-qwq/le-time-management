@@ -23,10 +23,10 @@ page {
   --mint: #2EC4B6;
 
   /* 四象限 */
-  --q1: #D64545; --q1-bg: #F9E4E1;
-  --q2: #D9A13B; --q2-bg: #F7ECD4;
-  --q3: #5B6BE8; --q3-bg: #E2E7FA;
-  --q4: #5B8F7B; --q4-bg: #E2EDE7;
+  --q1: #D64545; --q1-bg: #F3CBC8;
+  --q2: #D9A13B; --q2-bg: #F2E0BC;
+  --q3: #5B6BE8; --q3-bg: #CCD3F7;
+  --q4: #5B8F7B; --q4-bg: #CCDED6;
 
   /* 功能色 */
   --accent-soft: #DCEAEF;   /* 节奏图「今天」柱底 */

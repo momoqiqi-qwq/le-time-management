@@ -170,8 +170,9 @@ assert.match(wkScroll, /touch-action:\s*pan-x pan-y/,
 assert.doesNotMatch(wkGrid, /(?:^|[;{\s])zoom\s*:/,
   "课程表网格不能用 zoom 属性缩放 —— zoom 会缩小内部可用宽高，与 height:100% + 1fr 冲突，" +
   "缩小时行高反而变大。要用尺寸 × var(--wk-zoom)");
-assert.match(wkGrid, /font-size:\s*calc\(\s*\d+px\s*\*\s*var\(--wk-zoom\)\s*\)/,
-  "网格根字号必须走 calc(基准 px × var(--wk-zoom))，子元素才能靠 em 一起缩放");
+assert.match(wkGrid, /font-size:\s*calc\(\s*\d+px\s*\*\s*var\(--wk-zoom\)(?:\s*\*\s*var\(--ui-text-scale\))?\s*\)/,
+  "网格根字号必须走 calc(基准 px × var(--wk-zoom)[ × var(--ui-text-scale)])，子元素才能靠 em 一起缩放" +
+  "（v0.55.0 起根字号还要乘 --ui-text-scale，否则「文字大小」管不到 em 子元素）");
 // 子元素字号一律 em：改回 px 就会出现「格子缩了、字没缩」
 for (const sel of [".wk-corner", ".wk-day", ".wk-slot b", ".wk-slot span", ".wk-course b", ".wk-course span", ".wk-course small"]) {
   const re = new RegExp(`\\${sel.replace(/ /g, "\\s+")}\\s*\\{[^}]*font-size:\\s*([^;}]+)`);

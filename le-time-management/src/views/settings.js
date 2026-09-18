@@ -328,7 +328,7 @@ export function renderSettings(container, opts = {}) {
       // 状态行：两种状态下都展示，填满卡片下方空间
       const statusRow = (running, port, host) =>
         el("div", { style: "margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)" },
-          el("div", { style: "display:flex;flex-wrap:wrap;gap:6px 26px;font-size:12.5px;color:var(--ink-2)" },
+          el("div", { style: "display:flex;flex-wrap:wrap;gap:6px 26px;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink-2)" },
             el("span", {}, "状态 ", running
               ? el("span", { style: "font-weight:600;color:var(--mint)" }, "● 运行中")
               : el("span", { style: "font-weight:600;color:var(--ink-3)" }, "○ 已停止")),
@@ -336,8 +336,8 @@ export function renderSettings(container, opts = {}) {
             host ? el("span", {}, "本机地址 ", el("b", {}, host)) : null,
           ),
           running
-            ? el("div", { style: "margin-top:6px;font-size:12px;color:var(--ink-3)" }, "手机需与电脑处于同一 Wi-Fi / 局域网，扫码或打开链接即可配对联动。")
-            : el("div", { style: "margin-top:6px;font-size:12px;color:var(--ink-3)" }, "启动后手机浏览器 / 小程序可通过二维码或链接远程操作本机任务。"),
+            ? el("div", { style: "margin-top:6px;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-3)" }, "手机需与电脑处于同一 Wi-Fi / 局域网，扫码或打开链接即可配对联动。")
+            : el("div", { style: "margin-top:6px;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-3)" }, "启动后手机浏览器 / 小程序可通过二维码或链接远程操作本机任务。"),
         );
       if (lanStatus.running) {
         const lanPort = (lanStatus.url.match(/:(\d+)/) || [])[1] || st.lanPort;
@@ -379,7 +379,7 @@ export function renderSettings(container, opts = {}) {
         const portIn = el("input", { type: "number", value: st.lanPort, style: "width:110px;height:34px;border:1px solid var(--line);border-radius:8px;padding:0 10px;background:#fff" });
         lanBody.append(
           el("div", { style: "display:flex;gap:8px;align-items:center;margin-top:4px" },
-            el("span", { style: "font-size:12px;color:var(--ink-2)" }, "端口"),
+            el("span", { style: "font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2)" }, "端口"),
             portIn,
             el("button", {
               class: "btn pri sm",

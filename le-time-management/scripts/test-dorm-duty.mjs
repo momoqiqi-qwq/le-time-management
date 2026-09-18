@@ -95,8 +95,12 @@ assert.match(PLUGIN_SRC, /if \(!confirmFn\(/, '删除一整套轮换必须二次
 assert.ok(!/state\.members\b/.test(PLUGIN_SRC), '成员已经按组存放，不该再有全局 state.members（会串台）');
 assert.ok(!/state\.config\b/.test(PLUGIN_SRC), '配置已经按组存放，不该再有全局 state.config');
 assert.ok(!/state\.overrides\b/.test(PLUGIN_SRC), '换人记录已经按组存放，不该再有全局 state.overrides');
-// 「已换人 · 原 X」里的 X 必须是正常轮换本该当班的人，不是替补
-assert.match(PLUGIN_SRC, /已换人 · 原 \$\{esc\(normal\?\.name/, '「已换人 · 原 X」必须显示原排班的人，别把替补当成「原」');
+// 「已换人 · 原 X」里的 X 必须是正常排班本该当班的那批人，不是替补
+assert.match(PLUGIN_SRC, /已换人 · 原 \$\{esc\(normalNames\)/, '「已换人 · 原 X」必须显示原排班的名单，别把替补当成「原」');
+// 多人值日的关键写法：滑动窗口切片 + override 双格式（单人字符串 / 多人数组）
+assert.match(PLUGIN_SRC, /function normalAssignees\(/, '必须有「正常轮换该当班的一批人」纯函数（perRound 切片）');
+assert.match(PLUGIN_SRC, /Array\.isArray\(v\) \? v : \(v \? \[v\] : \[\]\)/, 'override 必须兼容双格式（单人字符串 / 多人数组）');
+assert.match(PLUGIN_SRC, /members\.length === 1 \? members\[0\]\.id : members\.map\(\(m\) => m\.id\)/, '单人换人必须写字符串（旧版本客户端还能读），多人才写数组');
 
 /* ── 三、真跑用的沙箱 ── */
 function fakeEl(tag) {
@@ -174,8 +178,9 @@ function bootPlugin({ seed = {}, today = '2026-09-17', navAlive = true, clock = 
       '  tide.ui.registerView({ id: VIEW_ID,',
       '  globalThis.__fx = { state, load, save, tick, stopTimer, snapshot, GROUP_MAX, NAME_MAX, confirmFn,\n'
       + '    defaultGroup, normalizeGroup, normalizeGroups, migrateLegacy, addTodayTask,\n'
-      + '    cycleStartOf, assigneeFor, cycleIndexAt, overrideHit, isCycleStartDay, reminderDue, periodOf,\n'
-      + '    nextBigText, render, heroHtml, rowsHtml, groupChipsHtml, setActiveGroup, addGroup, removeGroup, renameGroup,\n'
+      + '    cycleStartOf, assigneeFor, assigneesFor, cycleIndexAt, overrideHit, overrideHits, normalAssignees,\n'
+      + '    isCycleStartDay, reminderDue, periodOf, perRoundOf,\n'
+      + '    nextBigText, render, heroHtml, rowsHtml, groupChipsHtml, swapHtml, rulesHtml, setActiveGroup, addGroup, removeGroup, renameGroup,\n'
       + '    get MY_GEN() { return MY_GEN; }, set MY_GEN(v) { MY_GEN = v; } };\n'
       + '  tide.ui.registerView({ id: VIEW_ID,'
     ),
@@ -875,4 +880,123 @@ const quietSeed = (patch = {}) => ({ groups: [GROUP({ remindEnabled: false })], 
   assert.match(host.innerHTML, /dd-wrap/, 'render 必须先给出「正在读取」的占位，不能白屏');
 }
 
-console.log('PASS: dorm-duty 多套轮换互不串台、旧数据迁移不丢字段、轮换切段（周期 1/3/7/14）、换人只影响本轮、逐组提醒且各自去重、坏时刻不再静默失效、双实例与停用自终止、组增删改与上限、空态与多组渲染');
+/* ── 七、多人值日（perRound） ── */
+/* 7.1 perRound 归一化：0 / 负数 / 小数 / 超量都要夹住 */
+{
+  const { fx } = bootPlugin();
+  assert.equal(fx.normalizeGroup({ perRound: 0 }, '2026-09-17').perRound, 1, '0 是「没填」，退回单人');
+  assert.equal(fx.normalizeGroup({}, '2026-09-17').perRound, 1, '缺省 = 单人（历史数据默认）');
+  assert.equal(fx.normalizeGroup({ perRound: -2 }, '2026-09-17').perRound, 1, '负数夹到下限 1');
+  assert.equal(fx.normalizeGroup({ perRound: 2.4 }, '2026-09-17').perRound, 2, '小数取整');
+  assert.equal(fx.normalizeGroup({ perRound: 9999 }, '2026-09-17').perRound, 16, '上限对齐 MEMBER_MAX = 16');
+  assert.equal(fx.normalizeGroup({ perRound: 3 }, '2026-09-17').perRound, 3, '合法值原样保留');
+  assert.equal(fx.defaultGroup('2026-09-17', null).perRound, 1, '默认组是单人');
+}
+
+/* 7.2 多人排班：成员环上取 perRound 人的滑动窗口 —— [A,B,C] 每轮 2 人 → A,B / C,A / B,C */
+{
+  const { fx } = bootPlugin({ today: '2026-09-17' });
+  const g = fx.normalizeGroup(GROUP({ periodDays: 1, perRound: 2 }), '2026-09-17');
+  assert.equal(fx.assigneesFor(g, '2026-09-17').map((m) => m.name).join(','), '阿青,小北', '第 1 轮 = 名单前两人');
+  assert.equal(fx.assigneesFor(g, '2026-09-18').map((m) => m.name).join(','), '老陈,阿青', '第 2 轮从第 3 人起绕环滑动');
+  assert.equal(fx.assigneesFor(g, '2026-09-19').map((m) => m.name).join(','), '小北,老陈', '第 3 轮继续滑动');
+  assert.equal(fx.assigneesFor(g, '2026-09-20').map((m) => m.name).join(','), '阿青,小北', '3 人每轮 2 人的周期是 3 轮，之后回到起点');
+  // 单人视角仍是第一个（兼容旧调用点）
+  assert.equal(fx.assigneeFor(g, '2026-09-18')?.name, '老陈');
+  // perRound > 成员数：同一人会出现多次，去重保序，不能崩
+  const small = fx.normalizeGroup(GROUP({ periodDays: 1, perRound: 4, members: MEMBERS.slice(0, 2) }), '2026-09-17');
+  assert.equal(fx.assigneesFor(small, '2026-09-17').map((m) => m.name).join(','), '阿青,小北', '每轮 4 人但只有 2 人 → 去重后就是这 2 人');
+  // 步进 = perRound：与成员数互质时窗口才会滑动（4 ≡ 0 (mod 2)，起点恒定是数学事实，不是 bug）；
+  // 用 3 人档验证滑动：起点 3 ≡ 1 (mod 2)
+  const slide = fx.normalizeGroup(GROUP({ periodDays: 1, perRound: 3, members: MEMBERS.slice(0, 2) }), '2026-09-17');
+  assert.equal(fx.assigneesFor(slide, '2026-09-18').map((m) => m.name).join(','), '小北,阿青', 'perRound 与成员数互质时窗口正常滑动');
+  // 周期 > 1 时同一轮内每天都同一批人
+  const weekly = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2 }), '2026-09-17');
+  assert.equal(fx.assigneesFor(weekly, '2026-09-20').map((m) => m.name).join(','), '阿青,小北', '周期内每天沿用同一批人');
+  assert.equal(fx.assigneesFor(weekly, '2026-09-24').map((m) => m.name).join(','), '老陈,阿青', '下一轮才换批');
+}
+
+/* 7.3 多人临时换人：override 双格式 */
+{
+  const { fx } = bootPlugin({ today: '2026-09-17' });
+  // 多人 = 数组（桌面端写入）
+  const multi = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2, overrides: { '2026-09-17': ['mC', 'mA'] } }), '2026-09-17');
+  assert.equal(fx.assigneesFor(multi, '2026-09-17').map((m) => m.name).join(','), '老陈,阿青', '多人数组 override 按写入顺序生效');
+  assert.equal(fx.assigneesFor(multi, '2026-09-19').map((m) => m.name).join(','), '老陈,阿青', '周期内沿用同一次换人');
+  assert.equal(fx.assigneesFor(multi, '2026-09-24').map((m) => m.name).join(','), '老陈,阿青', '下一轮回到正常排班（轮 1 = 起点 2 → 老陈、阿青）');
+  assert.ok(fx.overrideHits(multi, '2026-09-17').length === 2, 'overrideHits 返回完整替补名单');
+  // 单人 = 字符串（历史格式，旧数据零迁移可读）
+  const single = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2, overrides: { '2026-09-17': 'mC' } }), '2026-09-17');
+  assert.equal(fx.assigneesFor(single, '2026-09-17').map((m) => m.name).join(','), '老陈', '字符串 override = 本轮换成他一个人');
+  // 混合失效：数组里有人已不在名单 → 滤掉他，剩下的照常生效
+  const partial = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2, overrides: { '2026-09-17': ['mGone', 'mB'] } }), '2026-09-17');
+  assert.equal(fx.assigneesFor(partial, '2026-09-17').map((m) => m.name).join(','), '小北', '失效的 id 要过滤掉，不挡其他人');
+  // 全部失效 → 退回正常排班，不算换人
+  const gone = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2, overrides: { '2026-09-17': ['mGone', 'mGone2'] } }), '2026-09-17');
+  assert.equal(fx.assigneesFor(gone, '2026-09-17').map((m) => m.name).join(','), '阿青,小北', 'override 全部失效时退回原排班');
+  assert.equal(fx.overrideHits(gone, '2026-09-17').length, 0, '全部失效不算换人');
+  // 数组去重：同一 id 写两遍只算一次
+  const dup = fx.normalizeGroup(GROUP({ periodDays: 7, overrides: { '2026-09-17': ['mC', 'mC'] } }), '2026-09-17');
+  assert.equal(fx.overrideHits(dup, '2026-09-17').length, 1, 'override 数组里的重复 id 要去重');
+}
+
+/* 7.4 snapshot / 提醒 / 任务都带完整多人名单 */
+{
+  const { fx } = bootPlugin({ today: '2026-09-17' });
+  const g = fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2 }), '2026-09-17');
+  const s = fx.snapshot(g);
+  assert.equal(s.per, 2, 'snapshot 带出每轮人数');
+  assert.equal(s.currentAll.map((m) => m.name).join(','), '阿青,小北', '当前当班 = 一批人');
+  assert.equal(s.nextWhoAll.map((m) => m.name).join(','), '老陈,阿青', '下一轮 = 滑动窗口的下一批');
+  assert.equal(s.rows.map((r) => r.whoAll.map((m) => m.name).join('、')).join('|'), '老陈、阿青|小北、老陈|阿青、小北|老陈、阿青|小北、老陈|阿青、小北', '轮次表每行是完整的名单（从轮 1 起：起点 2 → 1 → 0 循环）');
+  assert.equal(s.rows[0].swapped, false, '没有换人时不该标「换人」');
+  // 多人 override 时 rows / snapshot 要标「换人」（rows[0] 是下一轮，override 要写在那一轮的起始日上）
+  const swapped = fx.snapshot(fx.normalizeGroup(GROUP({ periodDays: 7, perRound: 2, overrides: { '2026-09-24': ['mC', 'mA'] } }), '2026-09-17'));
+  assert.equal(swapped.rows[0].swapped, true, '多人数组 override 也要标「换人」');
+  assert.equal(swapped.rows[0].whoAll.map((m) => m.name).join(','), '老陈,阿青', '该轮当班 = 换上的名单');
+
+  // 提醒文案带全部当班人
+  const { c } = bootPlugin({ seed: seed({ groups: [GROUP({ periodDays: 1, perRound: 2, remindTime: '00:00' })] }), today: '2026-09-17' });
+  await settle();
+  assert.equal(c.notified.length, 1);
+  assert.match(c.notified[0], /阿青、小北/, '提醒里必须是完整名单，不能只报第一个人');
+
+  // 加入今日任务：多人名字用「、」连接
+  const { fx: fx2, c: c2 } = bootPlugin({ seed: quietSeed({ groups: [GROUP({ perRound: 2, remindEnabled: false })] }), today: '2026-09-17' });
+  await settle();
+  await fx2.load();
+  await fx2.addTodayTask(fx2.state.groups[0]);
+  assert.equal(c2.created.length, 1);
+  assert.equal(c2.created[0].title, '值日 · 阿青、小北', '任务标题 = 轮换名 + 全部当班人');
+}
+
+/* 7.5 渲染：每轮人数设置、多人当班与勾选式换人 */
+{
+  const { fx } = bootPlugin({ seed: quietSeed({ groups: [GROUP({ periodDays: 7, perRound: 2, remindEnabled: false })] }), today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  const host = fakeEl('div');
+  await fx.render(host);
+  await settle();
+  const html = host.innerHTML;
+  assert.match(html, /class="dd-multi"/, '多人当班时名字要用小一号的字（dd-multi）');
+  assert.match(html, /每轮 2 人/, 'kicker 必须标出每轮人数');
+  assert.match(html, /<b class="dd-multi">阿青、小北<\/b>/, '首页显示完整的当班名单');
+  assert.match(html, /data-perround="2"/, '「每轮人数」快捷档要渲染成 chips');
+  assert.match(html, /data-perround="3"/, '每轮人数快捷档要有 3 人档');
+  assert.match(html, /data-perround-custom/, '每轮人数要有自定义输入');
+  assert.match(html, /data-swap-pick/, '换人必须是勾选式（可多选）');
+  assert.match(html, /换成所选/, '换人按钮文案 = 换成所选');
+  // 换过之后：勾选态落在换上的名单，「原 X」是正常排班的那批
+  const swapped = bootPlugin({ seed: quietSeed({ groups: [GROUP({ periodDays: 7, perRound: 2, remindEnabled: false, overrides: { '2026-09-17': ['mC', 'mA'] } })] }), today: '2026-09-17' });
+  await settle();
+  await swapped.fx.load();
+  const host2 = fakeEl('div');
+  await swapped.fx.render(host2);
+  await settle();
+  assert.match(host2.innerHTML, /<b class="dd-multi">老陈、阿青<\/b>/, '换人后显示换上的名单');
+  assert.match(host2.innerHTML, /已换人 · 原 阿青、小北/, '「原」必须显示正常排班的整批人');
+  assert.match(host2.innerHTML, /data-swap-clear/, '有换人记录时要有撤销入口');
+}
+
+console.log('PASS: dorm-duty 多套轮换互不串台、旧数据迁移不丢字段、轮换切段（周期 1/3/7/14）、换人只影响本轮、逐组提醒且各自去重、坏时刻不再静默失效、双实例与停用自终止、组增删改与上限、空态与多组渲染、多人值日（perRound 滑动窗口 + override 双格式 + 多人提醒/任务/渲染）');

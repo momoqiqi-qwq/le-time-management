@@ -17,7 +17,7 @@
     "cn-holiday":["打开即可优先读取本地节假日数据","需要最新调整时再手动联网更新","用于课程、计划和休息日判断"],
     "wechat-push":["按插件页面配置 PushPlus / 推送参数","选择需要推送的提醒","先测试连接，再开启日常使用"],
     "web-collector":["输入网址后点击自动识别并收藏","检查自动识别的网站名称、favicon 和图标","添加备注后保存，之后可搜索、刷新和一键打开"],
-    "dorm-duty":["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响","选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）","需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
+    "dorm-duty":["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响","选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）","支持多人值日：在「轮换规则 → 每轮人数」里选 2～4 人（或自定义 N），每轮就按名单顺序 N 人一起当班","需要时给某一轮临时换人（可勾选多人）；到点会提醒当班的人，也可一键加入今日任务"],
     "inbox-drop":["把聊天文字、通知截图、网页段落或文件直接拖到面板上；聊天里选中的消息也可以 Ctrl+V 粘贴","插件自动认出来源平台、消息类型与日期时间，在确认条上改错了的字段再收下","确认后进应用收件箱，可一键转成任务或排进时间块；重复消息自动去重","截图会跟着任务走（图片附件）；可执行文件会被拒收并说明原因"],
   };
   function esc(s){return String(s||"").replace(/[&<>\"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -38,7 +38,7 @@
 .pg-btn:active{transform:translateY(0) scale(.97);box-shadow:none}`;
     document.head.append(st);
   }
-  function button(label,fn,primary){const b=document.createElement("button");b.className="pg-btn";b.textContent=label;b.style.cssText=`border:1px solid var(--border,#E4DFD6);background:${primary?"var(--accent,#2F7C83)":"var(--card,#fff)"};color:${primary?"#fff":"var(--ink,#22303A)"};border-radius:10px;padding:8px 11px;cursor:pointer;font-size:12px`;b.onclick=fn;return b;}
+  function button(label,fn,primary){const b=document.createElement("button");b.className="pg-btn";b.textContent=label;b.style.cssText=`border:1px solid var(--border,#E4DFD6);background:${primary?"var(--accent,#2F7C83)":"var(--card,#fff)"};color:${primary?"#fff":"var(--ink,#22303A)"};border-radius:10px;padding:8px 11px;cursor:pointer;font-size:calc(12px * var(--ui-text-scale))`;b.onclick=fn;return b;}
   async function downloadDevDoc(){
     try{
       const text=await tide.assets.text("plugin-development.md");
@@ -65,7 +65,7 @@
     const links=tide.app&&tide.app.links?tide.app.links:{};
     const all=(tide.plugins&&tide.plugins.list?tide.plugins.list():[]).filter(x=>x.id!=="plugin-guide");
     const byId=Object.fromEntries(all.map(x=>[x.id,x]));
-    root.innerHTML=`<div style="max-width:1100px;margin:0 auto;padding:24px"><div style="margin-bottom:18px"><h2 style="margin:0 0 7px;font-size:25px">插件使用说明</h2><div style="color:var(--muted,#7E8B94);font-size:13px;line-height:1.7">按场景分类查看。插件名称、说明和平台能力直接读取主程序插件目录，避免文档与实际清单分叉。</div></div><div id="guide-resources" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px"></div><div id="guide-groups"></div><div style="margin-top:10px;padding:13px 15px;border:1px solid var(--border,#E4DFD6);border-radius:12px;color:var(--muted,#687780);font-size:12px;line-height:1.7">安全提示：当前外部 ZIP 插件仍属于受信任扩展模型。只安装来源可信、你已审核过的插件。</div></div>`;
+    root.innerHTML=`<div style="max-width:1100px;margin:0 auto;padding:24px"><div style="margin-bottom:18px"><h2 style="margin:0 0 7px;font-size:calc(25px * var(--ui-text-scale))">插件使用说明</h2><div style="color:var(--muted,#7E8B94);font-size:calc(13px * var(--ui-text-scale));line-height:1.7">按场景分类查看。插件名称、说明和平台能力直接读取主程序插件目录，避免文档与实际清单分叉。</div></div><div id="guide-resources" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px"></div><div id="guide-groups"></div><div style="margin-top:10px;padding:13px 15px;border:1px solid var(--border,#E4DFD6);border-radius:12px;color:var(--muted,#687780);font-size:calc(12px * var(--ui-text-scale));line-height:1.7">安全提示：当前外部 ZIP 插件仍属于受信任扩展模型。只安装来源可信、你已审核过的插件。</div></div>`;
     const r=root.querySelector("#guide-resources");
     r.append(
       button("官方网站",()=>safeOpen(links.website),true),
@@ -73,7 +73,7 @@
       button("下载插件开发文档",downloadDevDoc),
     );
     const host=root.querySelector("#guide-groups");
-    groups.forEach(g=>{const sec=document.createElement("section");sec.style.cssText="margin:0 0 26px";sec.innerHTML=`<h3 style="font-size:16px;margin:0 0 12px">${esc(g.name)}</h3><div class="guide-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px"></div>`;const grid=sec.querySelector(".guide-grid");g.ids.forEach(id=>{const p=byId[id]||{id,name:id,description:"插件清单中暂未找到此项。",platforms:{}};const steps=docs[id]||["打开插件","按页面提示完成配置","保存后即可使用"];const card=document.createElement("article");card.style.cssText="background:var(--card,#fff);border:1px solid var(--border,#E4DFD6);border-radius:15px;padding:16px;box-shadow:0 2px 8px rgba(34,48,58,.04)";card.innerHTML=`<div style="display:flex;gap:10px;align-items:flex-start"><img src="/icons/plugins/${encodeURIComponent(id)}.png" alt="" style="width:30px;height:30px;border-radius:9px;flex:none;object-fit:contain" onerror="this.style.display='none'"><div style="flex:1;min-width:0;display:flex;justify-content:space-between;gap:10px;align-items:start"><strong style="font-size:15px">${esc(p.name)}</strong><span style="font-size:10px;padding:3px 7px;border-radius:10px;background:var(--soft,#F4F1EB);color:var(--muted,#7E8B94);flex:none">${esc(platformText(p.platforms||{}))}</span></div></div><p style="font-size:12px;line-height:1.65;color:var(--muted,#687780);margin:9px 0 10px">${esc(p.description)}</p><ol style="padding-left:19px;margin:0;font-size:12px;line-height:1.8">${steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`;grid.append(card);});host.append(sec);});
+    groups.forEach(g=>{const sec=document.createElement("section");sec.style.cssText="margin:0 0 26px";sec.innerHTML=`<h3 style="font-size:calc(16px * var(--ui-text-scale));margin:0 0 12px">${esc(g.name)}</h3><div class="guide-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px"></div>`;const grid=sec.querySelector(".guide-grid");g.ids.forEach(id=>{const p=byId[id]||{id,name:id,description:"插件清单中暂未找到此项。",platforms:{}};const steps=docs[id]||["打开插件","按页面提示完成配置","保存后即可使用"];const card=document.createElement("article");card.style.cssText="background:var(--card,#fff);border:1px solid var(--border,#E4DFD6);border-radius:15px;padding:16px;box-shadow:0 2px 8px rgba(34,48,58,.04)";card.innerHTML=`<div style="display:flex;gap:10px;align-items:flex-start"><img src="/icons/plugins/${encodeURIComponent(id)}.png" alt="" style="width:30px;height:30px;border-radius:9px;flex:none;object-fit:contain" onerror="this.style.display='none'"><div style="flex:1;min-width:0;display:flex;justify-content:space-between;gap:10px;align-items:start"><strong style="font-size:calc(15px * var(--ui-text-scale))">${esc(p.name)}</strong><span style="font-size:calc(10px * var(--ui-text-scale));padding:3px 7px;border-radius:10px;background:var(--soft,#F4F1EB);color:var(--muted,#7E8B94);flex:none">${esc(platformText(p.platforms||{}))}</span></div></div><p style="font-size:calc(12px * var(--ui-text-scale));line-height:1.65;color:var(--muted,#687780);margin:9px 0 10px">${esc(p.description)}</p><ol style="padding-left:19px;margin:0;font-size:calc(12px * var(--ui-text-scale));line-height:1.8">${steps.map(x=>`<li>${esc(x)}</li>`).join("")}</ol>`;grid.append(card);});host.append(sec);});
   }
   tide.ui.registerView({id:"plugin-guide",title:"插件使用说明",icon:"circle-question",render});
 })();

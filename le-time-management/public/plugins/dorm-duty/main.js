@@ -4,16 +4,20 @@
 // 四个建模决定（改之前先读）：
 //   · **一个插件里放多套轮换**（`groups`）：每套各有成员、周期、起始日、换人记录与提醒设置。
 //     互不影响 —— A 组临时换人不改 B 组排班，A 组的提醒时刻与 B 组无关。宿舍和公区就是典型的两套。
-//   · 用「轮次」而不是「每天算一个人」：起始日按周期切段，一段一人。这样「每周轮换」的整周都显示
-//     同一个人，提醒也只在每段第一天触发一次 —— 否则会天天催人。
+//   · 用「轮次」而不是「每天算一个人」：起始日按周期切段，一段一批人。这样「每周轮换」的整周都显示
+//     同一批人，提醒也只在每段第一天触发一次 —— 否则会天天催人。
+//   · **每轮可以多人一起当班**（`perRound`）：成员顺序不变，按 perRound 人在环上取滑动窗口 ——
+//     [A,B,C] 每轮 2 人 → 第 1 轮 A、B；第 2 轮 C、A；第 3 轮 B、C（比硬切块更公平）。
 //   · 临时换人按**轮次起始日**记 override，一次换人管一整轮（周期 = 1 时就是当天）。
+//     override 的值是**双格式**：单人 = 字符串 id（历史格式，旧版本客户端仍能读）；多人 = id 数组。
+//     读的时候统一过 overrideHits()，别端不用关心格式。
 //   · 提醒靠自己的 setInterval（宿主没有「定时回调」API）。要扛住宿主两个行为：
 //       ① 停用再启用会**重新执行整个模块**，旧实例的 interval 还活着 → 用 storage 里的「代号」
 //          让旧实例发现被顶掉后自己 clearInterval 退出，否则会双份提醒；
 //       ② 停用（不重启用）只摘注册、interval 仍在 → tick 里查侧栏里本插件入口还在不在，不在就自杀。
 //
 // 存储（`dorm-duty` 命名空间）：
-//   groups   : [{ id, name, startDate, periodDays, remindEnabled, remindTime, sound,
+//   groups   : [{ id, name, startDate, periodDays, perRound, remindEnabled, remindTime, sound,
 //                 members, removed, overrides, lastNotified }]
 //   activeId : 界面当前选中的那套轮换
 //   gen      : 实例代号（防双份提醒）
@@ -32,6 +36,7 @@
   const DEFAULT_GROUP_NAME = "值日";
   const PERIOD_CHIPS = [1, 3, 7, 14];
   const PERIOD_LABEL = { 1: "每天", 3: "每 3 天", 7: "每周", 14: "每两周" };
+  const PERROUND_CHIPS = [1, 2, 3, 4]; // 「每轮人数」快捷档；更多用旁边的自定义输入
 
   const state = {
     groups: [],       // 多套轮换；顺序即界面上标签的顺序
@@ -93,6 +98,7 @@
       name: String(name || "").trim().slice(0, NAME_MAX) || DEFAULT_GROUP_NAME,
       startDate: validDate(today) ? today : tide.util.today(),
       periodDays: 7,
+      perRound: 1,
       remindEnabled: true,
       remindTime: "08:00",
       sound: "beep",
@@ -110,6 +116,9 @@
     g.name = String(g.name || "").trim().slice(0, NAME_MAX) || DEFAULT_GROUP_NAME;
     if (!validDate(g.startDate)) g.startDate = base.startDate;
     g.periodDays = Math.min(365, Math.max(1, Math.round(Number(g.periodDays) || 7)));
+    // 每轮人数：1 = 单人（历史默认）。上限对齐 MEMBER_MAX —— 成员数可能随时变，
+    // 这里不能 clamp 到当前成员数（否则移除一个人会偷偷改掉排班规则），计算时用模运算兜底。
+    g.perRound = Math.min(MEMBER_MAX, Math.max(1, Math.round(Number(g.perRound) || 1)));
     g.remindTime = normalizeTime(g.remindTime) || "08:00";
     g.remindEnabled = g.remindEnabled !== false;
     g.sound = String(g.sound || "beep");
@@ -206,6 +215,7 @@
 
   const activeGroup = () => state.groups.find((g) => g.id === state.activeId) || state.groups[0] || null;
   const periodOf = (g) => Math.max(1, Math.round(Number(g && g.periodDays) || 1));
+  const perRoundOf = (g) => Math.max(1, Math.round(Number(g && g.perRound) || 1));
 
   /* ── 轮换计算（纯函数：只吃传入的那一组，可被探针在任意「今天」下复算） ── */
   /** 某天落在哪一轮：返回该轮起始日；起始日之前返回 null（轮换还没开始）。 */
@@ -219,19 +229,47 @@
   }
   /** 轮次序号（从 0 起）。 */
   const cycleIndexAt = (g, cycleStart) => Math.round(diffDays(g.startDate, cycleStart) / periodOf(g));
-  /** 某一轮的换人是否**真的生效**：override 指向的人必须还在名单里。
-      指向已被移除的人时不算换人 —— 否则界面会显示「已换人 · 原 X」而实际当班的就是 X。 */
-  function overrideHit(g, cycleStart) {
-    const id = cycleStart ? (g.overrides || {})[cycleStart] : "";
-    if (!id) return null;
-    return g.members.find((m) => m.id === id) || null;
+  /** 某一轮的临时换人名单里**真的还在名单里**的人（保序、去重）。
+      override 值是双格式：单人 = 字符串 id（历史格式），多人 = id 数组。
+      指向已被移除的人要过滤掉 —— 全部失效时返回空数组，由调用方退回正常排班，
+      否则界面会显示「已换人 · 原 X」而实际当班的就是 X。 */
+  function overrideHits(g, cycleStart) {
+    const v = cycleStart ? (g.overrides || {})[cycleStart] : "";
+    const ids = Array.isArray(v) ? v : (v ? [v] : []);
+    const seen = new Set();
+    const hits = [];
+    for (const id of ids) {
+      const key = String(id);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const m = g.members.find((x) => x.id === key);
+      if (m) hits.push(m);
+    }
+    return hits;
   }
-  /** 某天的当班人：没成员 / 没开始 → null；有临时换人 → 换的人。 */
-  function assigneeFor(g, date) {
+  /** 单人视角的换人（兼容旧调用点 / 旧测试）：多人换人时取第一个。 */
+  const overrideHit = (g, cycleStart) => overrideHits(g, cycleStart)[0] || null;
+  /** 某一轮「正常轮换」该当班的一批人（不看临时换人）：从轮次序号 × perRound 起，
+      在成员环上取 perRound 个的滑动窗口。perRound > 成员数时同一人会出现多次，去重保序。 */
+  function normalAssignees(g, cycle) {
+    if (!cycle || !g.members.length) return [];
+    const per = perRoundOf(g);
+    const len = g.members.length;
+    const idx = cycleIndexAt(g, cycle);
+    const out = [];
+    for (let i = 0; i < per; i++) out.push(g.members[(idx * per + i) % len]);
+    return [...new Map(out.map((m) => [m.id, m])).values()];
+  }
+  /** 某天的当班人（可能多人）：没成员 / 没开始 → 空数组；有临时换人 → 换上的名单。 */
+  function assigneesFor(g, date) {
     const cycle = cycleStartOf(g, date);
-    if (!cycle || !g.members.length) return null;
-    return overrideHit(g, cycle) || g.members[cycleIndexAt(g, cycle) % g.members.length];
+    if (!cycle || !g.members.length) return [];
+    const ov = overrideHits(g, cycle);
+    return ov.length ? ov : normalAssignees(g, cycle);
   }
+  /** 单人视角（第一个当班人）：提醒判据、「有没有人当班」这类布尔判断用；
+      展示一律用 assigneesFor() 的数组，别丢人。 */
+  const assigneeFor = (g, date) => assigneesFor(g, date)[0] || null;
   const isCycleStartDay = (g, date) => cycleStartOf(g, date) === date;
   /** 某组此刻是否该提醒。纯函数 —— 任意「今天 / 当前分钟」都能真跑。
       五个条件缺一不可：开着提醒 + 有成员 + 今天是本轮第一天 + 已过设定时刻 + 这一轮还没提醒过。 */
@@ -271,14 +309,14 @@
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       const today = tide.util.today();
       // 逐组判断：每套轮换有各自的周期、提醒时刻与「已提醒」记录，互不干扰。
-      const due = state.groups.filter((g) => reminderDue(g, today, nowMinutes) && assigneeFor(g, today));
+      const due = state.groups.filter((g) => reminderDue(g, today, nowMinutes) && assigneesFor(g, today).length);
       if (!due.length) return;
       // 先落盘再提醒：万一还有旧实例同时 tick，也只有一个能抢到写入
       for (const g of due) g.lastNotified = today;
       await tide.storage.set("groups", state.groups);
       for (const g of due) {
-        const who = assigneeFor(g, today);
-        tide.notify(`「${g.name}」今天轮到 ${who.name}`, {
+        const names = assigneesFor(g, today).map((m) => m.name).join("、");
+        tide.notify(`「${g.name}」今天轮到 ${names}`, {
           actionLabel: "查看",
           action: () => tide.util.navigate(`plug:${VIEW_ID}`),
         });
@@ -304,27 +342,29 @@
       .dd-wrap{max-width:900px;margin:0 auto;padding-bottom:28px;color:var(--ink,#22303A)}
       .dd-groups{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:12px 0 4px}
       .dd-glist{display:flex;gap:7px;flex-wrap:wrap;min-width:0}
-      .dd-gchip{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-family:inherit;font-size:12.5px;color:var(--ink-2,#59656D);max-width:100%}
+      .dd-gchip{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-family:inherit;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink-2,#59656D);max-width:100%}
       .dd-gchip:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 42%,var(--line,#DCD6CB))}
       .dd-gchip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
-      .dd-gchip .dd-gwho{font-style:normal;font-size:11px;opacity:.72}
+      .dd-gchip .dd-gwho{font-style:normal;font-size:calc(11px * var(--ui-text-scale));opacity:.72}
       .dd-hero{display:grid;grid-template-columns:1.35fr .65fr;gap:14px;margin:12px 0 14px}
       .dd-card{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:20px 22px}
-      .dd-kicker{font-size:10px;color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
-      .dd-title{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:750;margin-bottom:12px}
+      .dd-kicker{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
+      .dd-title{display:flex;align-items:center;gap:7px;font-size:calc(14px * var(--ui-text-scale));font-weight:750;margin-bottom:12px}
       .dd-ico{width:14px;height:14px;flex:none;fill:currentColor;color:var(--deep,#0F4C5C)}
       .dd-who{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-      .dd-who b{font-size:30px;font-weight:800;letter-spacing:.01em}
-      .dd-badge{font-size:10.5px;font-weight:700;border-radius:999px;padding:4px 9px;background:color-mix(in srgb,var(--mint,#2ec4b6) 14%,var(--panel,#fff));color:var(--deep,#176C60)}
+      .dd-who b{font-size:calc(30px * var(--ui-text-scale));font-weight:800;letter-spacing:.01em}
+      /* 多人当班时名字串很长，30px 会把卡片撑成三行 —— 略缩一号 */
+      .dd-who b.dd-multi{font-size:calc(21px * var(--ui-text-scale));line-height:1.35}
+      .dd-badge{font-size:calc(10.5px * var(--ui-text-scale));font-weight:700;border-radius:999px;padding:4px 9px;background:color-mix(in srgb,var(--mint,#2ec4b6) 14%,var(--panel,#fff));color:var(--deep,#176C60)}
       .dd-badge.warn{background:color-mix(in srgb,var(--sun,#e3a008) 16%,var(--panel,#fff));color:var(--ink,#8A5A10)}
-      .dd-range{font-size:12px;color:var(--ink-2,#7E8B94);line-height:1.8;margin-top:8px}
-      .dd-big{font-size:22px;font-weight:750;margin:6px 0}
-      .dd-big em{font-style:normal;color:var(--deep,#0F4C5C);font-size:30px;margin-right:3px}
-      .dd-muted{font-size:12px;color:var(--ink-2,#7E8B94);line-height:1.75}
-      .dd-note{font-size:11px;color:var(--ink-3,#A1A9AF);line-height:1.7;margin-top:9px}
+      .dd-range{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.8;margin-top:8px}
+      .dd-big{font-size:calc(22px * var(--ui-text-scale));font-weight:750;margin:6px 0}
+      .dd-big em{font-style:normal;color:var(--deep,#0F4C5C);font-size:calc(30px * var(--ui-text-scale));margin-right:3px}
+      .dd-muted{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.75}
+      .dd-note{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A1A9AF);line-height:1.7;margin-top:9px}
       .dd-err{color:#B34747}
       .dd-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-      .dd-btn{height:34px;border-radius:9px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);padding:0 13px;cursor:pointer;font-size:12px;font-family:inherit;color:var(--ink,#22303A);display:inline-flex;align-items:center;gap:6px}
+      .dd-btn{height:34px;border-radius:9px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);padding:0 13px;cursor:pointer;font-size:calc(12px * var(--ui-text-scale));font-family:inherit;color:var(--ink,#22303A);display:inline-flex;align-items:center;gap:6px}
       .dd-btn.pri{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
       .dd-btn.pri .dd-ico{color:var(--on-deep,#fff)}
       .dd-btn.danger{color:var(--coral,#D64545);border-color:color-mix(in srgb,var(--coral,#D64545) 38%,var(--line,#DCD6CB))}
@@ -337,45 +377,46 @@
          不该折行，把弹性让给右侧的标签列。 */
       .dd-row{display:grid;grid-template-columns:96px auto 1fr;gap:12px;align-items:center;padding:13px 17px;border-bottom:1px solid var(--line-soft,#F0ECE5)}
       .dd-row:last-child{border-bottom:0}
-      .dd-row b{font-size:13px}
-      .dd-row .dd-d{font-size:12px;color:var(--ink-2,#687780);white-space:nowrap}
-      .dd-tag{font-size:11px;border-radius:999px;padding:4px 9px;background:color-mix(in srgb,var(--mint,#2ec4b6) 10%,var(--panel,#fff));color:var(--deep,#0F4C5C);white-space:nowrap;justify-self:end}
+      .dd-row b{font-size:calc(13px * var(--ui-text-scale))}
+      .dd-row .dd-d{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#687780);white-space:nowrap}
+      /* 多人当班时名字串可能很长，允许折行（text-align 保靠右），别把行撑破 */
+      .dd-tag{font-size:calc(11px * var(--ui-text-scale));border-radius:12px;padding:4px 9px;background:color-mix(in srgb,var(--mint,#2ec4b6) 10%,var(--panel,#fff));color:var(--deep,#0F4C5C);white-space:normal;text-align:right;max-width:100%;justify-self:end}
       .dd-row.now{background:color-mix(in srgb,var(--deep,#0F4C5C) 5%,var(--panel,#fff))}
       .dd-row.past b,.dd-row.past .dd-d{color:var(--ink-3,#A9B2BA)}
       .dd-mrow{display:grid;grid-template-columns:26px 1fr auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line-soft,#F0ECE5)}
       .dd-mrow:last-child{border-bottom:0}
-      .dd-mno{font-size:11px;color:var(--ink-3,#A1A9AF);text-align:center;font-variant-numeric:tabular-nums}
-      .dd-in{height:34px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:var(--panel,#fff);color:var(--ink,#22303A);font:inherit;font-size:13px;min-width:0;width:100%}
+      .dd-mno{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A1A9AF);text-align:center;font-variant-numeric:tabular-nums}
+      .dd-in{height:34px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:var(--panel,#fff);color:var(--ink,#22303A);font:inherit;font-size:calc(13px * var(--ui-text-scale));min-width:0;width:100%}
       .dd-in:focus{outline:2px solid color-mix(in srgb,var(--deep,#0F4C5C) 18%,transparent);border-color:var(--deep,#0F4C5C)}
       .dd-mbtns{display:flex;gap:5px;flex:none}
-      .dd-mini{height:32px;min-width:32px;padding:0 9px;border-radius:8px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-size:12px;font-family:inherit;color:var(--ink-2,#59656D)}
+      .dd-mini{height:32px;min-width:32px;padding:0 9px;border-radius:8px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-size:calc(12px * var(--ui-text-scale));font-family:inherit;color:var(--ink-2,#59656D)}
       .dd-mini:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 42%,var(--line,#DCD6CB));color:var(--deep,#0F4C5C)}
       .dd-mini.danger:hover{border-color:var(--coral,#D64545);color:var(--coral,#D64545)}
       .dd-mini:disabled{opacity:.4;cursor:not-allowed}
       .dd-add{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
       .dd-add .dd-in{flex:1;min-width:140px}
       .dd-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-      .dd-chip{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-size:12px;font-family:inherit;color:var(--ink-2,#59656D)}
+      .dd-chip{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);cursor:pointer;font-size:calc(12px * var(--ui-text-scale));font-family:inherit;color:var(--ink-2,#59656D)}
       .dd-chip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
       .dd-field{display:grid;grid-template-columns:104px 1fr;gap:10px;align-items:center;padding:8px 0}
-      .dd-field > span{font-size:12px;color:var(--ink-2,#7E8B94)}
+      .dd-field > span{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
       .dd-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .dd-num{width:76px}
       .dd-switch-row{display:flex;align-items:center;gap:10px}
-      .dd-switch-row label{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink,#22303A);cursor:pointer}
+      .dd-switch-row label{display:inline-flex;align-items:center;gap:8px;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink,#22303A);cursor:pointer}
       .dd-removed{margin-top:12px;border-top:1px dashed var(--line,#E4DFD6);padding-top:10px}
-      .dd-removed-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-2,#7E8B94)}
+      .dd-removed-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
       @media(max-width:720px){
         .dd-hero,.dd-grid{grid-template-columns:1fr}
         .dd-card{padding:17px}
-        .dd-who b{font-size:25px}
+        .dd-who b{font-size:calc(25px * var(--ui-text-scale))}
         .dd-groups{margin-top:8px}
         /* 显式定位，别靠自动排布：DOM 顺序是 b → .dd-d → .dd-tag，
            而 .dd-d 要跨满整行，自动排布就会把 .dd-tag 挤到下一行的第 1 列，
            1fr 列让它撑成整行横幅（实测截图里「小北 · 4 天后」被拉满一整行）。 */
         .dd-row{grid-template-columns:1fr auto;gap:6px 10px;padding:12px}
         .dd-row > b{grid-column:1;grid-row:1}
-        .dd-row > .dd-tag{grid-column:2;grid-row:1;justify-self:end;white-space:nowrap}
+        .dd-row > .dd-tag{grid-column:2;grid-row:1;justify-self:end}
         .dd-row > .dd-d{grid-column:1/-1;grid-row:2}
         .dd-mrow{grid-template-columns:22px 1fr;gap:6px 8px}
         .dd-mbtns{grid-column:2;justify-content:flex-end}
@@ -389,23 +430,34 @@
   function snapshot(g) {
     const today = tide.util.today();
     const p = periodOf(g);
+    const per = perRoundOf(g);
     const cycle = cycleStartOf(g, today);
     const started = !!cycle;
     const current = assigneeFor(g, today);
+    const currentAll = assigneesFor(g, today);
     const nextStart = cycle ? addDays(cycle, p) : (validDate(g.startDate) ? g.startDate : null);
     const rows = [];
     for (let i = 0; i < UPCOMING && nextStart; i++) {
       const start = addDays(nextStart, i * p);
+      const whoAll = assigneesFor(g, start);
       rows.push({
         start,
         end: addDays(start, p - 1),
-        who: assigneeFor(g, start),
+        who: whoAll[0] || null,
+        whoAll,
         index: cycleIndexAt(g, start) + 1,
         daysUntil: diffDays(today, start),
-        swapped: !!overrideHit(g, start),
+        swapped: overrideHits(g, start).length > 0,
       });
     }
-    return { g, today, cycle, started, current, nextStart, nextWho: nextStart ? assigneeFor(g, nextStart) : null, rows, period: p };
+    return {
+      g, today, cycle, started,
+      current, currentAll, per,
+      nextStart,
+      nextWho: nextStart ? assigneeFor(g, nextStart) : null,
+      nextWhoAll: nextStart ? assigneesFor(g, nextStart) : [],
+      rows, period: p,
+    };
   }
   const relLabel = (n) => (n === 0 ? "今天" : n === 1 ? "明天" : n > 0 ? `${n} 天后` : `${-n} 天前`);
   /** 「下次换人」大数字：没开始的阶段说的是「开始」而不是「换人」。 */
@@ -420,48 +472,52 @@
   /** 顶部轮换切换条：每套轮换一个标签，顺手带上它今天当班的人（一眼看全所有轮换）。 */
   function groupChipsHtml() {
     return state.groups.map((g) => {
-      const who = assigneeFor(g, tide.util.today());
+      const names = assigneesFor(g, tide.util.today()).map((m) => m.name).join("、");
       const on = g.id === state.activeId;
       return `<button class="dd-gchip${on ? " on" : ""}" data-group="${esc(g.id)}" type="button" aria-pressed="${on ? "true" : "false"}" title="切到「${esc(g.name)}」">
-        <span>${esc(g.name)}</span><em class="dd-gwho">${esc(who ? who.name : "未排班")}</em>
+        <span>${esc(g.name)}</span><em class="dd-gwho">${esc(names || "未排班")}</em>
       </button>`;
     }).join("");
   }
 
   function heroHtml(s) {
     const g = s.g;
-    const kicker = `${esc(g.name)} · ${PERIOD_LABEL[s.period] || `每 ${s.period} 天`}一轮`;
+    const kicker = `${esc(g.name)} · ${PERIOD_LABEL[s.period] || `每 ${s.period} 天`}一轮${s.per > 1 ? ` · 每轮 ${s.per} 人` : ""}`;
     if (!g.members.length) {
       return `<div class="dd-kicker">${kicker}</div>
         <div class="dd-who"><b>先添加成员</b></div>
         <div class="dd-range">在下面的「成员」里按顺序填写名字，第一个人先当班；<br>之后按你设定的周期自动轮换，到点会提醒当班的人。</div>`;
     }
     if (!s.started) {
+      const firstNames = (s.rows[0]?.whoAll || []).map((m) => m.name).join("、");
       return `<div class="dd-kicker">${kicker}</div>
         <div class="dd-who"><b>轮换还没开始</b><span class="dd-badge warn">未开始</span></div>
-        <div class="dd-range">将于 <b>${fmt(g.startDate)}（${weekday(g.startDate)}）</b> 开始，第一位是 <b>${esc(s.rows[0]?.who?.name || "—")}</b>。<br>想从今天开始就把下面的「起始日期」改成今天。</div>`;
+        <div class="dd-range">将于 <b>${fmt(g.startDate)}（${weekday(g.startDate)}）</b> 开始，第一批是 <b>${esc(firstNames || "—")}</b>。<br>想从今天开始就把下面的「起始日期」改成今天。</div>`;
     }
     const onSwitch = s.cycle === s.today;
-    // 「已换人 · 原 X」里的 X 是**正常轮换本该当班的人**，不是换上去的那个 ——
-    // overrideHit() 返回的是替补，别直接拿来当「原」。
-    const normal = s.cycle ? g.members[cycleIndexAt(g, s.cycle) % g.members.length] : null;
+    const names = s.currentAll.map((m) => m.name).join("、");
+    // 「已换人 · 原 X」里的 X 是**正常轮换本该当班的那批人**，不是换上去的 ——
+    // overrideHits() 返回的是替补，别直接拿来当「原」。
+    const normalNames = normalAssignees(g, s.cycle).map((m) => m.name).join("、");
     const rangeEnd = addDays(s.cycle, s.period - 1);
     return `<div class="dd-kicker">${kicker}</div>
-      <div class="dd-who"><b>${esc(s.current?.name || "—")}</b>${onSwitch ? '<span class="dd-badge">今天换人</span>' : ""}${overrideHit(g, s.cycle) ? `<span class="dd-badge warn">已换人 · 原 ${esc(normal?.name || "—")}</span>` : ""}</div>
+      <div class="dd-who"><b${s.currentAll.length > 1 ? ' class="dd-multi"' : ""}>${esc(names)}</b>${onSwitch ? '<span class="dd-badge">今天换人</span>' : ""}${overrideHits(g, s.cycle).length ? `<span class="dd-badge warn">已换人 · 原 ${esc(normalNames)}</span>` : ""}</div>
       <div class="dd-range">本轮 ${fmt(s.cycle)}${s.period > 1 ? ` — ${fmt(rangeEnd)}` : `（${weekday(s.cycle)}）`}${s.period > 1 ? ` · ${weekday(s.cycle)}起` : ""} · 第 ${cycleIndexAt(g, s.cycle) + 1} 轮</div>`;
   }
 
+  /** 「本轮换人」：勾选式多选。初始勾选 = 本轮**现在实际**当班的人（换过就是换上的名单），
+      点成员芯片勾上 / 取消，再点「换成所选」生效。 */
   function swapHtml(s) {
     const g = s.g;
     if (!g.members.length) return "";
-    const key = s.cycle || g.startDate;
-    const hasOverride = !!overrideHit(g, s.cycle);
-    const options = g.members.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+    const hits = s.cycle ? overrideHits(g, s.cycle) : [];
+    const activeIds = new Set((hits.length ? hits : s.currentAll).map((m) => m.id));
+    const options = g.members.map((m) => `<button class="dd-chip${activeIds.has(m.id) ? " on" : ""}" data-swap-pick="${esc(m.id)}" type="button" aria-pressed="${activeIds.has(m.id) ? "true" : "false"}">${esc(m.name)}</button>`).join("");
     return `<div class="dd-field"><span>本轮换人</span>
       <div class="dd-inline">
-        <select class="dd-in" data-swap style="max-width:150px" aria-label="选择本轮代班的人">${options}</select>
-        <button class="dd-btn" data-swap-apply type="button">换成他</button>
-        ${hasOverride ? '<button class="dd-btn" data-swap-clear type="button">撤销换人</button>' : ""}
+        <div class="dd-chips" data-swap-box role="group" aria-label="勾选本轮当班的人（可多选）">${options}</div>
+        <button class="dd-btn" data-swap-apply type="button">换成所选</button>
+        ${hits.length ? '<button class="dd-btn" data-swap-clear type="button">撤销换人</button>' : ""}
       </div>
     </div>`;
   }
@@ -470,11 +526,14 @@
     const g = s.g;
     if (!g.members.length) return `<div class="dd-row"><span class="dd-d">还没有成员，添加后会自动排班。</span></div>`;
     if (!s.rows.length) return `<div class="dd-row"><span class="dd-d">还没有可排的轮次。</span></div>`;
-    return s.rows.map((r) => `<div class="dd-row${r.daysUntil === 0 ? " now" : ""}">
+    return s.rows.map((r) => {
+      const names = r.whoAll.map((m) => m.name).join("、");
+      return `<div class="dd-row${r.daysUntil === 0 ? " now" : ""}">
       <b>${r.daysUntil === 0 ? "本轮" : `第 ${r.index} 轮`}</b>
       <span class="dd-d">${s.period > 1 ? `${fmt(r.start)} — ${fmt(r.end)} · ${weekday(r.start)}起` : `${fmt(r.start)}（${weekday(r.start)}）`}</span>
-      <span class="dd-tag">${esc(r.who?.name || "—")}${r.swapped ? " · 换人" : ""} · ${relLabel(r.daysUntil)}</span>
-    </div>`).join("");
+      <span class="dd-tag">${esc(names || "—")}${r.swapped ? " · 换人" : ""} · ${relLabel(r.daysUntil)}</span>
+    </div>`;
+    }).join("");
   }
 
   function membersHtml(g) {
@@ -502,6 +561,8 @@
   function rulesHtml(s) {
     const g = s.g;
     const custom = !PERIOD_CHIPS.includes(s.period);
+    const per = s.per;
+    const perCustom = !PERROUND_CHIPS.includes(per);
     const lastOne = state.groups.length <= 1;
     return `<div class="dd-field"><span>轮换名称</span>
         <input class="dd-in" data-group-name value="${esc(g.name)}" maxlength="${NAME_MAX}" placeholder="宿舍值日 / 公区卫生 / 打水">
@@ -519,7 +580,14 @@
           <span class="dd-muted">天一轮</span>
         </div>
       </div>
-      <div class="dd-note">起始日期就是「第一个人开始当班」的那天；改周期不会打乱已经排好的顺序。<br>每套轮换各自独立 —— 这里的成员、周期、换人与提醒都只影响「${esc(g.name)}」。</div>
+      <div class="dd-field"><span>每轮人数</span>
+        <div class="dd-chips">
+          ${PERROUND_CHIPS.map((n) => `<button class="dd-chip${n === per ? " on" : ""}" data-perround="${n}" type="button">${n === 1 ? "单人" : `${n} 人`}</button>`).join("")}
+          <input class="dd-in dd-num" data-perround-custom type="number" min="1" max="${MEMBER_MAX}" value="${perCustom ? per : ""}" placeholder="N" aria-label="自定义每轮人数">
+          <span class="dd-muted">人一起当班</span>
+        </div>
+      </div>
+      <div class="dd-note">起始日期就是「第一个人开始当班」的那天；改周期不会打乱已经排好的顺序。<br>每轮人数大于 1 时按名单顺序每轮取 N 人循环（如 3 人每轮 2 人：A、B → C、A → B、C）。<br>每套轮换各自独立 —— 这里的成员、周期、换人与提醒都只影响「${esc(g.name)}」。</div>
       <div class="dd-actions">
         <button class="dd-btn danger" data-group-del type="button"${lastOne ? " disabled" : ""} title="${lastOne ? "至少要留一套轮换" : `删除「${esc(g.name)}」`}">${faIcon("trash")}删除这个轮换</button>
       </div>`;
@@ -568,7 +636,7 @@
         <section class="dd-card">
           <div class="dd-kicker">${s.started ? "下次换人" : "轮换开始"}</div>
           ${g.members.length && s.nextStart ? `<div class="dd-big">${nextBigText(s)}</div>
-          <div class="dd-muted">${fmt(s.nextStart)} ${weekday(s.nextStart)} · 轮到 <b>${esc(s.nextWho?.name || "—")}</b></div>` : `<div class="dd-muted">${g.members.length ? "还没有可排的轮次。" : "还没有成员，无法排班。"}</div>`}
+          <div class="dd-muted">${fmt(s.nextStart)} ${weekday(s.nextStart)} · 轮到 <b>${esc(s.nextWhoAll.map((m) => m.name).join("、") || "—")}</b></div>` : `<div class="dd-muted">${g.members.length ? "还没有可排的轮次。" : "还没有成员，无法排班。"}</div>`}
         </section>
       </div>
       <div class="dd-grid" style="margin-bottom:14px">
@@ -641,13 +709,14 @@
   }
 
   /* ── 加入今日任务 ── */
-  /** 把这一组本轮的人做成一条今天的任务。同日同名的未完成任务视为重复，不重复添加。 */
+  /** 把这一组本轮的人做成一条今天的任务（多人用「、」连接）。同日同名的未完成任务视为重复。 */
   async function addTodayTask(g) {
     if (!g) return null;
     const today = tide.util.today();
-    const who = assigneeFor(g, today);
-    if (!who) { tide.notify("这一组还没有当班安排"); return null; }
-    const title = `${g.name} · ${who.name}`;
+    const all = assigneesFor(g, today);
+    if (!all.length) { tide.notify("这一组还没有当班安排"); return null; }
+    const names = all.map((m) => m.name).join("、");
+    const title = `${g.name} · ${names}`;
     const dup = (await tide.tasks.list()).find((t) => !t.done && t.due === today && t.title === title);
     if (dup) { tide.notify(`今天的「${title}」任务已经在列表里了`); return null; }
     try {
@@ -717,8 +786,14 @@
         await commit(() => {
           g.members.splice(idx, 1);
           g.removed = [{ id: m.id, name: m.name }, ...g.removed.filter((x) => x.id !== m.id)].slice(0, REMOVED_KEEP);
-          // 清掉指向他的换人记录，避免出现「换给一个已经不在名单里的人」
-          for (const [k, v] of Object.entries(g.overrides)) if (v === m.id) delete g.overrides[k];
+          // 清掉指向他的换人记录，避免出现「换给一个已经不在名单里的人」。
+          // override 值有双格式：单人字符串直接删；多人数组里滤掉他，滤空了整个键也删掉。
+          for (const [k, v] of Object.entries(g.overrides)) {
+            if (Array.isArray(v)) {
+              const next = v.filter((x) => x !== m.id);
+              if (next.length) g.overrides[k] = next; else delete g.overrides[k];
+            } else if (v === m.id) delete g.overrides[k];
+          }
         });
         tide.notify(`已把「${m.name}」移出轮换，可在「恢复已移除」里找回`);
       });
@@ -766,6 +841,19 @@
       await commit(() => { g.periodDays = raw; });
     });
 
+    // 每轮人数（多人值日）
+    root.querySelectorAll("[data-perround]").forEach((btn) => btn.addEventListener("click", async () => {
+      const n = Math.max(1, Math.round(Number(btn.dataset.perround) || 1));
+      if (n === perRoundOf(g)) return;
+      await commit(() => { g.perRound = n; });
+    }));
+    q("[data-perround-custom]")?.addEventListener("change", async () => {
+      const input = q("[data-perround-custom]");
+      const raw = Math.round(Number(input.value));
+      if (!Number.isFinite(raw) || raw < 1 || raw > MEMBER_MAX) { tide.notify(`每轮人数请填 1～${MEMBER_MAX}`); await paint(); return; }
+      await commit(() => { g.perRound = raw; });
+    });
+
     // 提醒
     q("[data-remind]")?.addEventListener("change", async (e) => {
       const on = !!e.currentTarget.checked;
@@ -785,21 +873,30 @@
     });
     q("[data-sound-try]")?.addEventListener("click", () => playSound(g.sound));
     q("[data-test]")?.addEventListener("click", () => {
-      const who = assigneeFor(g, tide.util.today());
-      tide.notify(who ? `提醒测试：「${g.name}」今天轮到 ${who.name}` : `提醒测试：「${g.name}」还没有成员，正式提醒时会跳过`);
+      const names = assigneesFor(g, tide.util.today()).map((m) => m.name).join("、");
+      tide.notify(names ? `提醒测试：「${g.name}」今天轮到 ${names}` : `提醒测试：「${g.name}」还没有成员，正式提醒时会跳过`);
       playSound(g.sound);
     });
 
-    // 本轮换人 / 撤销
+    // 本轮换人：勾选式多选 / 撤销
+    root.querySelectorAll("[data-swap-pick]").forEach((chip) => chip.addEventListener("click", () => {
+      const on = chip.classList.toggle("on");
+      chip.setAttribute("aria-pressed", on ? "true" : "false");
+    }));
     q("[data-swap-apply]")?.addEventListener("click", async () => {
-      const sel = q("[data-swap]");
-      const id = sel?.value;
-      const member = g.members.find((m) => m.id === id);
-      if (!member) return;
+      const picks = [...root.querySelectorAll("[data-swap-pick].on")].map((el) => el.dataset.swapPick);
+      const members = picks.map((id) => g.members.find((m) => m.id === id)).filter(Boolean);
+      if (!members.length) { tide.notify("先勾选本轮当班的人（至少一位）"); return; }
       const s = snapshot(g);
       const key = s.cycle || g.startDate;
-      await commit(() => { g.overrides[key] = id; });
-      tide.notify(`「${g.name}」本轮改由 ${member.name} 当班`);
+      // 与本轮现在的名单完全一致就不写 —— 避免把「正常排班」固化成 override
+      const activeIds = (overrideHits(g, s.cycle).length ? overrideHits(g, s.cycle) : s.currentAll).map((m) => m.id).join(",");
+      const nextIds = members.map((m) => m.id).join(",");
+      if (nextIds === activeIds) { tide.notify("勾选的就是本轮当班的名单，没有变化"); return; }
+      // 单人存字符串（历史格式，旧版本客户端也能读）；多人才存数组
+      const value = members.length === 1 ? members[0].id : members.map((m) => m.id);
+      await commit(() => { g.overrides[key] = value; });
+      tide.notify(`「${g.name}」本轮改由 ${members.map((m) => m.name).join("、")} 当班`);
     });
     q("[data-swap-clear]")?.addEventListener("click", async () => {
       const s = snapshot(g);

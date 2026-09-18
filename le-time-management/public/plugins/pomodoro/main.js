@@ -152,7 +152,7 @@
         dotsBox.append(d);
       }
       const lab = document.createElement("span");
-      lab.style.cssText = "font-size:11px;color:var(--ink-2,#7E8B94);margin-left:8px";
+      lab.style.cssText = "font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-left:8px";
       // 用真实累计分钟，别拿「番茄数 × 25」估 —— 自定义时长（尤其几十秒的短番茄）会估得离谱。
       lab.textContent = `累计 ${Number(n) || 0} 个番茄 · ${fmtMin(mins)} 分钟`;
       dotsBox.append(lab);
@@ -162,7 +162,7 @@
   function chip(text, onClick, primary = false) {
     const b = document.createElement("button");
     b.textContent = text;
-    b.style.cssText = `height:28px;padding:0 11px;border-radius:14px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;`
+    b.style.cssText = `height:28px;padding:0 11px;border-radius:14px;font-size:calc(12px * var(--ui-text-scale));font-weight:600;cursor:pointer;white-space:nowrap;`
       + `background:${primary ? "var(--deep,#0F4C5C)" : "var(--panel,#fff)"};`
       + `color:${primary ? "var(--on-deep,#fff)" : "var(--ink-2,#7E8B94)"};`
       + `border:1px solid ${primary ? "var(--deep,#0F4C5C)" : "var(--line,#E4DFD6)"}`;
@@ -182,11 +182,11 @@
     toggle.type = "button";
     // 面板头一行 = 「提醒设置」开关(flex:1) + 常驻「试听」按钮：收起状态也能直接试听，
     // 不必先展开面板（试听按钮在 head 里、toggle 外面，点它不会触发展开/收起）。
-    toggle.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0;background:transparent;border:0;padding:2px 0;cursor:pointer;color:var(--ink,#22303A);font:inherit;font-size:13px;font-weight:650";
+    toggle.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0;background:transparent;border:0;padding:2px 0;cursor:pointer;color:var(--ink,#22303A);font:inherit;font-size:calc(13px * var(--ui-text-scale));font-weight:650";
     const toggleText = document.createElement("span");
     toggleText.textContent = "提醒设置";
     const summary = document.createElement("span");
-    summary.style.cssText = "font-size:11px;font-weight:500;color:var(--ink-3,#8FA2A8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    summary.style.cssText = "font-size:calc(11px * var(--ui-text-scale));font-weight:500;color:var(--ink-3,#8FA2A8);overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     toggle.append(toggleText, summary);
 
     const body = document.createElement("div");
@@ -201,7 +201,7 @@
       const line = document.createElement("div");
       line.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:30px";
       const name = document.createElement("span");
-      name.style.cssText = "flex:0 0 auto;font-size:12.5px;color:var(--ink-2,#7E8B94)";
+      name.style.cssText = "flex:0 0 auto;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)";
       name.textContent = label;
       const right = document.createElement("span");
       right.style.cssText = "flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap";
@@ -212,7 +212,7 @@
 
     const check = (key, text) => {
       const label = document.createElement("label");
-      label.style.cssText = "display:inline-flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink,#22303A);cursor:pointer";
+      label.style.cssText = "display:inline-flex;align-items:center;gap:8px;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink,#22303A);cursor:pointer";
       const input = document.createElement("input");
       input.type = "checkbox";
       // v0.40.0：勾选框改滑块开关（与应用层 .switch 同一套外观，appearance:none 自绘轨道与滑块）
@@ -231,7 +231,7 @@
     const soundChips = document.createElement("div");
     soundChips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px";
     const soundNote = document.createElement("div");
-    soundNote.style.cssText = "font-size:11px;color:var(--ink-3,#8FA2A8);margin-top:-2px";
+    soundNote.style.cssText = "font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#8FA2A8);margin-top:-2px";
     const soundChipEls = new Map();
     function syncSoundChips() {
       for (const [id, b] of soundChipEls) {
@@ -276,7 +276,7 @@
     vol.value = String(Math.round(reminder.volume * 100));
     vol.style.cssText = "width:128px;accent-color:var(--deep,#0F4C5C)";
     const volText = document.createElement("b");
-    volText.style.cssText = "min-width:36px;text-align:right;font-size:12px;color:var(--ink,#22303A)";
+    volText.style.cssText = "min-width:36px;text-align:right;font-size:calc(12px * var(--ui-text-scale));color:var(--ink,#22303A)";
     volText.textContent = `${vol.value}%`;
     vol.addEventListener("input", () => { volText.textContent = `${vol.value}%`; reminder.volume = Number(vol.value) / 100; saveReminder(); });
     vol.addEventListener("change", () => playReminderSound(true));
@@ -286,7 +286,7 @@
     audioInput.accept = "audio/*,.mp3,.wav,.m4a,.aac,.ogg";
     audioInput.style.display = "none";
     const audioName = document.createElement("span");
-    audioName.style.cssText = "max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--ink-3,#8FA2A8)";
+    audioName.style.cssText = "max-width:132px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3,#8FA2A8)";
     const clearAudio = chip("清除", () => {
       reminder.customAudio = null;
       reminder.customAudioName = "";
@@ -379,7 +379,7 @@
     card.style.cssText = "max-width:520px;margin:30px auto;text-align:center;background:var(--custom-panel-mix,var(--panel,#fff));color:var(--ink,#22303A);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:34px 30px;box-shadow:var(--shadow,0 2px 10px rgba(34,48,58,.07));backdrop-filter:var(--custom-panel-glass,none);-webkit-backdrop-filter:var(--custom-panel-glass,none)";
 
     const title = document.createElement("div");
-    title.style.cssText = "font-size:11px;letter-spacing:.3em;color:var(--ink-2,#7E8B94);margin-bottom:14px";
+    title.style.cssText = "font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:var(--ink-2,#7E8B94);margin-bottom:14px";
     title.textContent = "番 茄 专 注 · 内 置 插 件";
 
     // 模式切换
@@ -389,7 +389,7 @@
       const b = document.createElement("button");
       b.textContent = m.label;
       b.dataset.m = m.id;
-      b.style.cssText = "font-size:12px;border-radius:16px;padding:7px 16px;border:1px solid var(--line,#E4DFD6);color:var(--ink-2,#7E8B94);background:var(--panel,#fff);cursor:pointer";
+      b.style.cssText = "font-size:calc(12px * var(--ui-text-scale));border-radius:16px;padding:7px 16px;border:1px solid var(--line,#E4DFD6);color:var(--ink-2,#7E8B94);background:var(--panel,#fff);cursor:pointer";
       b.addEventListener("click", () => {
         stop(); mode = m; left = modeSeconds(m);
         modes.querySelectorAll("button").forEach((x) => {
@@ -414,7 +414,7 @@
     const unitText = (text) => {
       const s = document.createElement("span");
       s.textContent = text;
-      s.style.cssText = "font-size:12px;color:var(--ink-3,#8FA2A8)";
+      s.style.cssText = "font-size:calc(12px * var(--ui-text-scale));color:var(--ink-3,#8FA2A8)";
       return s;
     };
     const minInput = numInput(240, Math.floor(customSec / 60));
@@ -450,7 +450,7 @@
       </svg>`;
     ring = ringWrap.querySelector(".ring");
     timeText = document.createElement("div");
-    timeText.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:300;font-variant-numeric:tabular-nums";
+    timeText.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:calc(44px * var(--ui-text-scale));font-weight:300;font-variant-numeric:tabular-nums";
     timeText.textContent = fmt(left);
     ringWrap.append(timeText);
 
@@ -459,7 +459,7 @@
     taskSel.style.cssText = "width:100%;max-width:340px;height:36px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 10px;background:var(--paper,#fff);color:var(--ink,#22303A);margin-bottom:18px";
     fillTasks();
     const selLab = document.createElement("div");
-    selLab.style.cssText = "font-size:11px;color:var(--ink-2,#7E8B94);margin-bottom:6px";
+    selLab.style.cssText = "font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-bottom:6px";
     selLab.textContent = "专注哪个任务（可选）";
 
     const newTaskRow=document.createElement("div"); newTaskRow.style.cssText="display:flex;gap:8px;max-width:340px;margin:-8px auto 18px";
@@ -515,7 +515,7 @@
   function mkBtn(text, bg, fg, ghost) {
     const b = document.createElement("button");
     b.textContent = text;
-    b.style.cssText = `min-width:110px;height:40px;border-radius:20px;font-size:13.5px;font-weight:600;cursor:pointer;background:${bg};color:${fg};border:${ghost ? "1px solid var(--line,#E4DFD6)" : "none"}`;
+    b.style.cssText = `min-width:110px;height:40px;border-radius:20px;font-size:calc(13.5px * var(--ui-text-scale));font-weight:600;cursor:pointer;background:${bg};color:${fg};border:${ghost ? "1px solid var(--line,#E4DFD6)" : "none"}`;
     return b;
   }
 

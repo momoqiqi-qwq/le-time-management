@@ -451,6 +451,13 @@ Page({
     const days = Number(e.currentTarget.dataset.days) || 7;
     this.ddCommit((g) => runtime.ddGroupPatch(g, { periodDays: days }));
   },
+  /** 每轮人数（多人值日）：1 = 单人；N = 每轮按名单顺序 N 人一起当班。 */
+  onDdPerRound(e) {
+    const n = Math.max(1, Math.round(Number(e.currentTarget.dataset.n) || 1));
+    const cur = (this.data.dd || {}).perRound || 1;
+    if (n === cur) return;
+    this.ddCommit((g) => runtime.ddGroupPatch(g, { perRound: n }));
+  },
   /** 轮换名 / 起始日 / 时刻都改成失焦或选择后提交：输入过程中反复落盘会把 storage 写爆，也没意义。 */
   onDdGroupName(e) {
     const raw = String(e.detail.value || "").trim();
@@ -471,18 +478,20 @@ Page({
     if (!v) { wx.showToast({ title: "时刻格式不对，已保留原值", icon: "none" }); this.loadDormDuty(); return; }
     this.ddCommit((g) => runtime.ddGroupPatch(g, { remindTime: v }));
   },
-  /** 临时换人：一次管一整轮（按轮次起始日记 override），撤销即回到原排班。 */
+  /** 临时换人：一次管一整轮（按轮次起始日记 override），撤销即回到原排班。
+      小程序面板是单选（ActionSheet），选谁本轮就整轮换成他一个人；
+      桌面 / Android 端支持一次勾选多人，那边写的是数组，本端读取已兼容。 */
   onDdSwap() {
     const dd = this.data.dd || {};
     const members = dd.members || [];
     if (!members.length) return;
-    const cur = dd.current ? dd.current.id : "";
+    const curIds = dd.currentIds || [];
     wx.showActionSheet({
-      itemList: members.map((m) => m.name + (m.id === cur ? "（本轮已是他）" : "")),
+      itemList: members.map((m) => m.name + (curIds.indexOf(m.id) >= 0 ? "（本轮已是他）" : "")),
       success: (res) => {
         const pick = members[res.tapIndex];
         if (!pick) return;
-        if (pick.id === cur) { wx.showToast({ title: "本轮已经是他", icon: "none" }); return; }
+        if (curIds.indexOf(pick.id) >= 0) { wx.showToast({ title: "本轮已经是他", icon: "none" }); return; }
         // 用视图模型里的本轮起始日（未开始时为空串），别自己再算一遍
         const cycle = dd.cycle;
         if (!cycle) { wx.showToast({ title: "轮换还没开始，无法换人", icon: "none" }); return; }

@@ -766,12 +766,12 @@
       .id-stats .id-kicker{margin:0;flex:none}
       .id-stats .id-tags{flex:0 1 auto;min-width:0}
       .id-stats .id-actions{margin:0 0 0 auto;padding:0}
-      .id-stats .id-btn{height:28px;padding:0 10px;font-size:11.5px;border-radius:8px}
-      .id-kicker{font-size:10px;color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
-      .id-title{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:750;margin-bottom:12px}
+      .id-stats .id-btn{height:28px;padding:0 10px;font-size:calc(11.5px * var(--ui-text-scale));border-radius:8px}
+      .id-kicker{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
+      .id-title{display:flex;align-items:center;gap:7px;font-size:calc(14px * var(--ui-text-scale));font-weight:750;margin-bottom:12px}
       .id-ico{width:14px;height:14px;flex:none;fill:currentColor;color:var(--deep,#0F4C5C)}
-      .id-muted{font-size:12px;color:var(--ink-2,#7E8B94);line-height:1.75}
-      .id-note{font-size:11px;color:var(--ink-3,#A1A9AF);line-height:1.7;margin-top:9px}
+      .id-muted{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.75}
+      .id-note{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A1A9AF);line-height:1.7;margin-top:9px}
       .id-err{color:#B34747}
       /* 拖放区：虚线框 + 明确的「可放置」态。dragover 必须 preventDefault，否则 drop 不触发 */
       .id-zone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:150px;
@@ -779,28 +779,28 @@
         padding:20px 18px;cursor:pointer;transition:border-color .15s ease,background .15s ease}
       .id-zone:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 40%,var(--line,#DCD6CB))}
       .id-zone.on{border-color:var(--deep,#0F4C5C);background:color-mix(in srgb,var(--deep,#0F4C5C) 7%,var(--panel,#fff))}
-      .id-zone .id-zbig{font-size:14px;font-weight:700;color:var(--ink,#22303A)}
+      .id-zone .id-zbig{font-size:calc(14px * var(--ui-text-scale));font-weight:700;color:var(--ink,#22303A)}
       .id-zone .id-zico{width:30px;height:30px;fill:currentColor;color:var(--deep,#0F4C5C)}
-      .id-zone .id-zsub{font-size:11.5px;color:var(--ink-2,#7E8B94);line-height:1.7;max-width:430px}
+      .id-zone .id-zsub{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.7;max-width:430px}
       .id-zone input[type=file]{display:none}
       /* 确认条：识别结果落在这里，改完再收 */
       .id-pend{margin-top:14px;border:1px solid color-mix(in srgb,var(--deep,#0F4C5C) 30%,var(--line,#E4DFD6));
         border-radius:16px;padding:16px 17px;background:color-mix(in srgb,var(--deep,#0F4C5C) 4%,var(--panel,#fff))}
-      .id-pend-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:750;margin-bottom:11px}
-      .id-badge{font-size:10.5px;font-weight:700;border-radius:999px;padding:3px 9px;
+      .id-pend-h{display:flex;align-items:center;gap:8px;font-size:calc(13px * var(--ui-text-scale));font-weight:750;margin-bottom:11px}
+      .id-badge{font-size:calc(10.5px * var(--ui-text-scale));font-weight:700;border-radius:999px;padding:3px 9px;
         background:color-mix(in srgb,var(--mint,#2ec4b6) 16%,var(--panel,#fff));color:var(--deep,#176C60)}
       .id-badge.warn{background:color-mix(in srgb,var(--sun,#e3a008) 18%,var(--panel,#fff));color:var(--ink,#8A5A10)}
       .id-fields{display:grid;grid-template-columns:64px 1fr;gap:9px 11px;align-items:center}
-      .id-fields > span{font-size:12px;color:var(--ink-2,#7E8B94)}
+      .id-fields > span{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
       .id-in{height:34px;border:1px solid var(--line,#DDD7CD);border-radius:9px;padding:0 10px;background:var(--panel,#fff);
-        color:var(--ink,#22303A);font:inherit;font-size:13px;min-width:0;width:100%}
+        color:var(--ink,#22303A);font:inherit;font-size:calc(13px * var(--ui-text-scale));min-width:0;width:100%}
       .id-in:focus{outline:2px solid color-mix(in srgb,var(--deep,#0F4C5C) 18%,transparent);border-color:var(--deep,#0F4C5C)}
-      .id-ta{min-height:64px;padding:8px 10px;resize:vertical;line-height:1.6;font-size:12.5px}
+      .id-ta{min-height:64px;padding:8px 10px;resize:vertical;line-height:1.6;font-size:calc(12.5px * var(--ui-text-scale))}
       .id-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .id-inline .id-in{flex:1;min-width:110px}
       .id-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
       .id-btn{height:34px;border-radius:9px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);padding:0 13px;
-        cursor:pointer;font-size:12px;font-family:inherit;color:var(--ink,#22303A);display:inline-flex;align-items:center;gap:6px}
+        cursor:pointer;font-size:calc(12px * var(--ui-text-scale));font-family:inherit;color:var(--ink,#22303A);display:inline-flex;align-items:center;gap:6px}
       .id-btn:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 42%,var(--line,#DCD6CB))}
       .id-btn.pri{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
       .id-btn.pri:hover{filter:brightness(1.06)}
@@ -809,7 +809,7 @@
       .id-preview{margin-top:10px;max-height:260px;object-fit:contain;border-radius:12px;border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);align-self:flex-start}
       .id-filters{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:16px 0 10px}
       .id-chip{height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);
-        cursor:pointer;font-size:12px;font-family:inherit;color:var(--ink-2,#59656D)}
+        cursor:pointer;font-size:calc(12px * var(--ui-text-scale));font-family:inherit;color:var(--ink-2,#59656D)}
       .id-chip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
       .id-list{display:flex;flex-direction:column;gap:9px}
       .id-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start;background:var(--panel,#fff);
@@ -819,18 +819,18 @@
         background:color-mix(in srgb,var(--deep,#0F4C5C) 8%,var(--panel,#fff))}
       .id-mark .id-ico{width:15px;height:15px}
       .id-main{min-width:0;display:flex;flex-direction:column;gap:5px}
-      .id-rowtitle{font-size:13.5px;font-weight:700;line-height:1.45;word-break:break-word}
-      .id-rowtitle .id-seq{font-size:11px;font-weight:600;color:var(--ink-3,#A1A9AF);margin-right:5px;font-variant-numeric:tabular-nums}
+      .id-rowtitle{font-size:calc(13.5px * var(--ui-text-scale));font-weight:700;line-height:1.45;word-break:break-word}
+      .id-rowtitle .id-seq{font-size:calc(11px * var(--ui-text-scale));font-weight:600;color:var(--ink-3,#A1A9AF);margin-right:5px;font-variant-numeric:tabular-nums}
       .id-tags{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-      .id-tag{font-size:10.5px;border-radius:999px;padding:3px 8px;white-space:nowrap;
+      .id-tag{font-size:calc(10.5px * var(--ui-text-scale));border-radius:999px;padding:3px 8px;white-space:nowrap;
         background:color-mix(in srgb,var(--mint,#2ec4b6) 11%,var(--panel,#fff));color:var(--deep,#176C60)}
       .id-tag.gray{background:var(--soft,#F4F1EB);color:var(--ink-2,#7E8B94)}
       .id-tag.sun{background:color-mix(in srgb,var(--sun,#e3a008) 15%,var(--panel,#fff));color:var(--ink,#8A5A10)}
-      .id-when{font-size:11.5px;color:var(--ink-2,#687780);font-variant-numeric:tabular-nums}
+      .id-when{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2,#687780);font-variant-numeric:tabular-nums}
       /* 原文展开/收起：grid 0fr→1fr 高度过渡（原生 details 没有动画）。
          .id-fold-clip 必须 overflow:hidden + min-height:0，0fr 才能真正压到 0。 */
       .id-fold{margin-top:4px}
-      .id-fold-btn{cursor:pointer;font-size:11.5px;color:var(--ink-2,#7E8B94);background:none;border:0;padding:0;font-family:inherit}
+      .id-fold-btn{cursor:pointer;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);background:none;border:0;padding:0;font-family:inherit}
       .id-fold-btn:hover{color:var(--ink,#22303A)}
       .id-fold-btn::before{content:"▸ ";color:var(--ink-3,#A1A9AF)}
       .id-fold.open .id-fold-btn::before{content:"▾ "}
@@ -838,18 +838,18 @@
       .id-fold.open .id-fold-body{grid-template-rows:1fr}
       .id-fold-clip{overflow:hidden;min-height:0}
       .id-raw{margin:7px 0 0;padding:9px 11px;border-radius:10px;background:var(--soft,#F7F5F0);
-        font-size:12px;line-height:1.7;color:var(--ink-2,#59656D);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto}
+        font-size:calc(12px * var(--ui-text-scale));line-height:1.7;color:var(--ink-2,#59656D);white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto}
       .id-thumb{margin-top:7px;max-height:150px;border-radius:10px;border:1px solid var(--line,#E4DFD6);align-self:flex-start}
       .id-rowbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
       .id-mini{height:31px;padding:0 10px;border-radius:8px;border:1px solid var(--line,#DCD6CB);background:var(--panel,#fff);
-        cursor:pointer;font-size:11.5px;font-family:inherit;color:var(--ink-2,#59656D);white-space:nowrap}
+        cursor:pointer;font-size:calc(11.5px * var(--ui-text-scale));font-family:inherit;color:var(--ink-2,#59656D);white-space:nowrap}
       .id-mini:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 42%,var(--line,#DCD6CB));color:var(--deep,#0F4C5C)}
       .id-mini.danger:hover{border-color:var(--coral,#D64545);color:var(--coral,#D64545)}
       /* 空态只用文字，不放图标：这张卡本来就在一个「拖到上面」的引导下面，
          再挂一个灰调的大图标只会和上面的虚线框图标打架，读起来像图裂了。 */
       .id-empty{display:flex;flex-direction:column;align-items:center;gap:7px;padding:30px 18px;text-align:center;
         border:1px dashed var(--line,#E4DFD6);border-radius:16px;color:var(--ink-2,#7E8B94)}
-      .id-empty b{font-size:13px;color:var(--ink,#22303A);font-weight:700}
+      .id-empty b{font-size:calc(13px * var(--ui-text-scale));color:var(--ink,#22303A);font-weight:700}
       /* 减弱动态效果偏好：原文展开退回瞬切（布局结果不变，只是不播过渡） */
       @media (prefers-reduced-motion: reduce){.id-fold-body{transition:none}}
       @media(max-width:720px){
@@ -858,8 +858,8 @@
         /* 手机上所有可点控件抬到 44px 触控下限：33px 高在窄屏上点得很难受，
            而这一页的主要操作恰恰都是这几个按钮。 */
         .id-btn,.id-mini,.id-chip{height:44px}
-        .id-btn{padding:0 15px;font-size:12.5px}
-        .id-mini{padding:0 13px;font-size:12px}
+        .id-btn{padding:0 15px;font-size:calc(12.5px * var(--ui-text-scale))}
+        .id-mini{padding:0 13px;font-size:calc(12px * var(--ui-text-scale))}
         .id-row{grid-template-columns:auto 1fr;gap:8px 11px;padding:12px}
         /* 按钮组跨满整行靠左：手机上挤在右上角会只剩图标宽度、连「建任务」都显示不全 */
         .id-rowbtns{grid-column:1/-1;justify-content:flex-start;gap:8px}

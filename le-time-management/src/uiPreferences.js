@@ -13,6 +13,11 @@ export function coreViewIds() {
   return isDesktopRuntime() ? DESKTOP_CORE_VIEWS : MOBILE_CORE_VIEWS;
 }
 
+/** 「文字大小」合法区间与步进（百分比）。v0.55.0 起 80~150（旧为 90~120）：
+ *  只动 font-size 不动盒模型，拉宽区间也不会撑破布局；与界面缩放（uiScale）同区间同步进，
+ *  两个滑杆的手感一致。设置页滑杆的 min/max/step 必须从这里取，不许再写死。 */
+export const TEXT_SCALE_LIMITS = Object.freeze({ min: 80, max: 150, step: 5 });
+
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   // 默认紧凑：小屏与笔记本上信息密度优先；想要宽松的用户可在设置里切回「舒适」
   density: "compact",
@@ -78,7 +83,7 @@ export function normalizeUiPreferences(raw = {}) {
   if (!MOTIONS.has(next.motion)) next.motion = DEFAULT_UI_PREFERENCES.motion;
   if (!NAVBAR_SIZES.has(next.navBarSize)) next.navBarSize = DEFAULT_UI_PREFERENCES.navBarSize;
   if (!STARTUP_VIEWS.has(next.startupView)) next.startupView = DEFAULT_UI_PREFERENCES.startupView;
-  next.textScale = Math.round(clamp(next.textScale, 90, 120) / 5) * 5;
+  next.textScale = Math.round(clamp(next.textScale, TEXT_SCALE_LIMITS.min, TEXT_SCALE_LIMITS.max) / TEXT_SCALE_LIMITS.step) * TEXT_SCALE_LIMITS.step;
   next.uiScale = normalizeUiScale(next.uiScale);
   next.swipeNavigation = next.swipeNavigation !== false;
   next.showTopStats = next.showTopStats !== false;

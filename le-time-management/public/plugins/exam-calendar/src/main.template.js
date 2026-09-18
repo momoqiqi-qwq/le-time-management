@@ -203,20 +203,20 @@
     st.id = STYLE_ID;
     st.textContent =
       // 工具条：今天 + 筛选 chips + 搜索 + 最近一场 + 计数
-      ".ecal-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:12px}" +
+      ".ecal-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:calc(12px * var(--ui-text-scale))}" +
       ".ecal-today{color:var(--muted,#7E8B94);font-variant-numeric:tabular-nums}" +
       ".ecal-chips{display:flex;flex-wrap:wrap;gap:6px}" +
-      ".ecal-chip{font:inherit;font-size:12px;padding:3px 10px;border-radius:999px;border:1px solid var(--border,#E4DFD6);background:transparent;color:var(--muted,#7E8B94);cursor:pointer}" +
+      ".ecal-chip{font:inherit;font-size:calc(12px * var(--ui-text-scale));padding:3px 10px;border-radius:999px;border:1px solid var(--border,#E4DFD6);background:transparent;color:var(--muted,#7E8B94);cursor:pointer}" +
       ".ecal-chip:hover{border-color:var(--ink-3,#A9B2BA);color:var(--ink,#22303A)}" +
       ".ecal-chip[aria-pressed=true]{background:var(--accent,#0F4C5C);border-color:var(--accent,#0F4C5C);color:#fff}" +
-      ".ecal-search{font:inherit;font-size:12px;padding:4px 10px;border-radius:8px;border:1px solid var(--border,#E4DFD6);background:transparent;color:inherit;min-width:150px;max-width:220px}" +
+      ".ecal-search{font:inherit;font-size:calc(12px * var(--ui-text-scale));padding:4px 10px;border-radius:8px;border:1px solid var(--border,#E4DFD6);background:transparent;color:inherit;min-width:150px;max-width:220px}" +
       ".ecal-count{margin-left:auto;color:var(--muted,#7E8B94);font-variant-numeric:tabular-nums}" +
-      ".ecal-btn{font:inherit;font-size:12px;padding:3px 10px;border-radius:8px;border:1px solid var(--border,#E4DFD6);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}" +
+      ".ecal-btn{font:inherit;font-size:calc(12px * var(--ui-text-scale));padding:3px 10px;border-radius:8px;border:1px solid var(--border,#E4DFD6);background:transparent;color:inherit;cursor:pointer;white-space:nowrap}" +
       ".ecal-btn:hover:not([disabled]){border-color:var(--ink-3,#A9B2BA)}" +
       ".ecal-btn[disabled]{opacity:.45;cursor:default}" +
       ".ecal-btn.done{border-color:var(--mint,#2EC4B6);color:var(--mint,#2EC4B6)}" +
       // 年份分组
-      ".ecal-year{display:flex;align-items:baseline;gap:8px;margin:14px 2px 8px;padding-bottom:4px;border-bottom:1px dashed var(--border,#E4DFD6);font-size:12px;font-weight:700;letter-spacing:.14em;color:var(--muted,#7E8B94)}" +
+      ".ecal-year{display:flex;align-items:baseline;gap:8px;margin:14px 2px 8px;padding-bottom:4px;border-bottom:1px dashed var(--border,#E4DFD6);font-size:calc(12px * var(--ui-text-scale));font-weight:700;letter-spacing:.14em;color:var(--muted,#7E8B94)}" +
       ".ecal-year small{font-weight:400;letter-spacing:0;opacity:.85}" +
       // 行：日期列（定宽，考试名才不会参差）+ 主体 + 操作。
       // 用 flex-wrap 而不是三列 grid：日期 87px + 间隔 24px + 操作 226px 已经 337px，
@@ -234,35 +234,35 @@
       // flex 会把主体整列挤到第 2 行、日期孤零零占一行，行高从 96 涨到 143。
       ".ecal-main{flex:1 1 404px;min-width:0;display:flex;align-items:flex-start;gap:12px}" +
       ".ecal-dcol{flex:0 0 var(--ecal-date-w,92px);min-width:0}" +
-      ".ecal-d1{font-size:13px;line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
-      ".ecal-d2{font-size:12px;line-height:1.5;color:var(--muted,#7E8B94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".ecal-d1{font-size:calc(13px * var(--ui-text-scale));line-height:1.5;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".ecal-d2{font-size:calc(12px * var(--ui-text-scale));line-height:1.5;color:var(--muted,#7E8B94);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
       ".ecal-d2.same{opacity:.55}" +
       ".ecal-bcol{flex:1 1 0;min-width:0;overflow:hidden}" +
-      ".ecal-l1{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;line-height:1.5}" +
-      ".ecal-name{font:inherit;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:0;margin:0;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}" +
+      ".ecal-l1{display:flex;align-items:center;gap:6px;min-width:0;font-size:calc(13px * var(--ui-text-scale));line-height:1.5}" +
+      ".ecal-name{font:inherit;font-size:calc(13px * var(--ui-text-scale));font-weight:600;background:none;border:none;color:inherit;padding:0;margin:0;cursor:pointer;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto;min-width:0}" +
       ".ecal-name:hover{text-decoration:underline;text-underline-offset:3px}" +
       ".ecal-dot{flex:none;width:6px;height:6px;border-radius:50%;background:var(--mint,#2EC4B6)}" +
       ".ecal-dot.est{background:transparent;box-shadow:inset 0 0 0 1px var(--ink-3,#A9B2BA)}" +
-      ".ecal-tag{display:inline-block;vertical-align:1px;margin-right:6px;font-size:12px;font-weight:400;padding:1px 6px;border-radius:4px;background:var(--soft,#F7F6F2);color:var(--muted,#7E8B94)}" +
-      ".ecal-l2{font-size:12px;line-height:1.5;color:var(--muted,#7E8B94);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+      ".ecal-tag{display:inline-block;vertical-align:1px;margin-right:6px;font-size:calc(12px * var(--ui-text-scale));font-weight:400;padding:1px 6px;border-radius:4px;background:var(--soft,#F7F6F2);color:var(--muted,#7E8B94)}" +
+      ".ecal-l2{font-size:calc(12px * var(--ui-text-scale));line-height:1.5;color:var(--muted,#7E8B94);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
       ".ecal-acts{flex:0 0 auto;margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:8px}" +
-      ".ecal-cd{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted,#7E8B94)}" +
+      ".ecal-cd{font-size:calc(12px * var(--ui-text-scale));font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--muted,#7E8B94)}" +
       ".ecal-cd.urgent{color:var(--coral,#FF6B6B);font-weight:600}" +
       ".ecal-cd.soon{color:var(--sun,#E3A008);font-weight:600}" +
       ".ecal-cd.near{color:var(--ink,#22303A)}" +
       ".ecal-cd.live{color:var(--sea,#118AB2);font-weight:600}" +
       ".ecal-empty{opacity:.7;padding:12px 0}" +
-      ".ecal-foot{margin-top:12px;font-size:12px;opacity:.6;line-height:1.7}" +
-      ".ecal-stale{margin:10px 0;padding:9px 12px;border:1px solid var(--border,#E4DFD6);border-left:3px solid var(--sun,#E3A008);border-radius:10px;font-size:12px;color:var(--muted,#7E8B94);line-height:1.7}" +
+      ".ecal-foot{margin-top:12px;font-size:calc(12px * var(--ui-text-scale));opacity:.6;line-height:1.7}" +
+      ".ecal-stale{margin:10px 0;padding:9px 12px;border:1px solid var(--border,#E4DFD6);border-left:3px solid var(--sun,#E3A008);border-radius:10px;font-size:calc(12px * var(--ui-text-scale));color:var(--muted,#7E8B94);line-height:1.7}" +
       ".ecal-flow{margin:10px 0 12px;padding:12px;border:1px solid var(--border,#E4DFD6);border-radius:12px;background:var(--soft,#F7F6F2)}" +
       ".ecal-flow-title{font-weight:700;margin-bottom:7px}" +
-      ".ecal-flow-line{font-size:12px;line-height:1.75;opacity:.85}" +
+      ".ecal-flow-line{font-size:calc(12px * var(--ui-text-scale));line-height:1.75;opacity:.85}" +
       ".ecal-flow>.ecal-btn{margin-top:8px;margin-right:6px}" +
-      ".ecal-warn{margin-top:8px;padding:8px 10px;border-left:3px solid var(--sun,#E3A008);font-size:12px;line-height:1.75;opacity:.85}" +
+      ".ecal-warn{margin-top:8px;padding:8px 10px;border-left:3px solid var(--sun,#E3A008);font-size:calc(12px * var(--ui-text-scale));line-height:1.75;opacity:.85}" +
       ".ecal-hist{margin-top:16px;padding-top:12px;border-top:1px solid var(--border,#E4DFD6)}" +
       ".ecal-hist-box{margin-top:10px}" +
-      ".ecal-hist-year{margin:10px 2px 4px;font-size:12px;color:var(--muted,#7E8B94);letter-spacing:.14em}" +
-      ".ecal-hist-line{display:flex;gap:10px;padding:4px 2px;font-size:12px;color:var(--muted,#7E8B94);border-bottom:1px solid var(--line-soft,#EFEAE1)}" +
+      ".ecal-hist-year{margin:10px 2px 4px;font-size:calc(12px * var(--ui-text-scale));color:var(--muted,#7E8B94);letter-spacing:.14em}" +
+      ".ecal-hist-line{display:flex;gap:10px;padding:4px 2px;font-size:calc(12px * var(--ui-text-scale));color:var(--muted,#7E8B94);border-bottom:1px solid var(--line-soft,#EFEAE1)}" +
       ".ecal-hist-line b{font-weight:600;color:var(--ink,#22303A);min-width:112px;font-variant-numeric:tabular-nums}" +
       ".ecal-hist-line span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}";
     document.head.append(st);
