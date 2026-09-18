@@ -1,5 +1,8 @@
 (function () {
-  let host = null, items = [], query = "", busy = false, openMode = "external", iconPreview = null;
+  // 默认「应用内显示」：点卡片「打开」直接在本应用的面板里加载，不跳出到系统浏览器。
+  // 用户仍可在工具栏下拉里改成「浏览器打开」，该选择会存进 storage 并被尊重。
+  const DEFAULT_OPEN_MODE = "inside";
+  let host = null, items = [], query = "", busy = false, openMode = DEFAULT_OPEN_MODE, iconPreview = null;
   const DEFAULT_ITEMS = [
     { url: "http://daxue.qiyemulu.cn/", title: "大学名录", host: "daxue.qiyemulu.cn", iconUrl: "http://daxue.qiyemulu.cn/favicon.ico", iconName: "school", note: "默认：大学名录" },
     { url: "https://www.resource.edu.cn/", title: "国家教育资源公共服务平台", host: "resource.edu.cn", iconUrl: "https://www.resource.edu.cn/favicon.ico", iconName: "school", note: "默认：教育资源入口" },
@@ -192,7 +195,7 @@
   }
   async function render(el) {
     host = el; styles(); items = await tide.storage.get("items", []); if (!Array.isArray(items)) items = [];
-    openMode = await tide.storage.get("openMode", "external"); if (!["external", "inside"].includes(openMode)) openMode = "external";
+    openMode = await tide.storage.get("openMode", DEFAULT_OPEN_MODE); if (!["external", "inside"].includes(openMode)) openMode = DEFAULT_OPEN_MODE;
     await ensureDefaults(); await migrateNotes(); paint();
     host.addEventListener("click", (e) => {
       // ⚠️ 顶栏按钮与卡片按钮必须用**不同**的 data 标记：

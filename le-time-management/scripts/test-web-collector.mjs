@@ -27,7 +27,7 @@ const ctx = vm.createContext({
 vm.runInContext(
   src.replace(
     'tide.ui.registerView({',
-    '  globalThis.__fx = { migrateNotes, ensureDefaults, DEFAULT_ITEMS, LEGACY_NOTE_PREFIX,\n'
+    '  globalThis.__fx = { migrateNotes, ensureDefaults, DEFAULT_ITEMS, LEGACY_NOTE_PREFIX, DEFAULT_OPEN_MODE,\n'
     + '    get items() { return items; }, set items(v) { items = v; } };\n'
     + '  tide.ui.registerView({',
   ),
@@ -93,9 +93,10 @@ assert.match(src, /await ensureDefaults\(\);\s*await migrateNotes\(\);/, 'render
 /* ── 七、卡片编辑框不许把卡片撑爆（长标题/长备注溢出，用户实测截图）── */
 const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-collector/manifest.json', import.meta.url), 'utf8'));
 // 1.1.2 → 编辑框字号自适应；1.2.0 → 拆出「自动获取网站图标」与「换图标」两个入口；
-// 1.2.1 → manifest 补 notify 权限（此前 tide.notify 每次都抛权限错，收藏/失败提示全被吞掉）。
+// 1.2.1 → manifest 补 notify 权限（此前 tide.notify 每次都抛权限错，收藏/失败提示全被吞掉）；
+// 1.2.2 → 打开方式默认由「浏览器打开」改为「应用内显示」。
 // 这条断言的作用是「改了行为就必须动版本号」，所以每加一批行为就往上抬一格，别删。
-assert.equal(manifest.version, '1.2.1', '编辑框字号自适应之后必须升插件版本');
+assert.equal(manifest.version, '1.2.2', '打开方式默认值变更后必须升插件版本');
 assert.match(src, /\.wc-edit\{[^}]*minmax\(0,1fr\)[^}]*\}/, '.wc-edit 两列轨道必须 minmax(0,1fr) —— 1fr 的下限是 min-content，会被长值撑破卡片');
 assert.match(src, /\.wc-edit input\{[^}]*min-width:0[^}]*\}/, '.wc-edit input 必须 min-width:0，否则输入框固有宽度把卡片顶破');
 assert.match(src, /\.wc-edit input\{[^}]*width:100%[^}]*\}/, '.wc-edit input 必须 width:100% 才会老老实实缩进轨道里');
@@ -130,4 +131,25 @@ assert.doesNotMatch(src, /\.wc-preview-text code\{[^}]*word-break:break-all/,
 assert.match(src, /@media\(max-width:640px\)\{[\s\S]*?\.wc-preview-text\{flex-basis:100%\}/,
   '窄屏下图标地址要独占一行（否则按钮挤占宽度，URL 只剩十几个字符可见）');
 
-console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移、卡片编辑框宽度约束与图标单独获取');
+/* ── 十、打开方式默认「应用内显示」──
+   用户要求：点卡片「打开」默认在本应用的面板里加载，不再跳出到系统浏览器。
+   三处默认值（模块初始化 / storage 读取 fallback / 脏值兜底）必须全部指向同一个常量 ——
+   漏改任何一处，就会在「storage 里没有 openMode」或「存了脏值」这两条路径上退回浏览器打开。 */
+assert.equal(fx.DEFAULT_OPEN_MODE, 'inside', '默认打开方式必须是应用内显示');
+assert.match(src, /openMode = DEFAULT_OPEN_MODE, iconPreview/,
+  '模块初始化必须用 DEFAULT_OPEN_MODE，不能写死 external');
+assert.match(src, /openMode = await tide\.storage\.get\("openMode", DEFAULT_OPEN_MODE\)/,
+  'storage 读取的 fallback 必须是 DEFAULT_OPEN_MODE，且读到的值要原样赋给 openMode（尊重用户已存的选择）');
+assert.match(src, /!\["external", "inside"\]\.includes\(openMode\)\) openMode = DEFAULT_OPEN_MODE/,
+  '脏值兜底也要落回 DEFAULT_OPEN_MODE');
+assert.match(src, /if \(openMode === "inside"\) openInside\(item\);/, 'openItem 仍以 openMode 为准');
+// 下拉框的选中态必须跟 openMode 走 —— 默认 inside ⇒ 打开插件第一眼看到的就是「应用内显示」
+assert.match(src, /<option value="inside"\$\{openMode === "inside" \? " selected" : ""\}>应用内显示<\/option>/,
+  '「应用内显示」选项必须在 openMode === "inside" 时选中');
+assert.match(src, /<option value="external"\$\{openMode === "external" \? " selected" : ""\}>浏览器打开<\/option>/,
+  '「浏览器打开」选项必须在 openMode === "external" 时选中（两条一起钉住方向，反转会被抓到）');
+// 反面：任何一处把 external 写死成默认/兜底都算漏改
+assert.doesNotMatch(src, /"openMode",\s*"external"/, '不该再有把 external 当 fallback 的写法');
+assert.doesNotMatch(src, /openMode = "external"/, '不该再有把 external 写死为默认值的写法');
+
+console.log('PASS: web-collector 默认条目文案（默认收集 → 默认）、老数据一次性迁移、卡片编辑框宽度约束与图标单独获取、打开方式默认应用内显示');
