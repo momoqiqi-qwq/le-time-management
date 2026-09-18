@@ -13,7 +13,7 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
-import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, getAutoScaleFactor, normalizeUiScale, parseCustomScaleInput } from "../../uiScale.js";
+import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, dragStableScale, getAutoScaleFactor, normalizeUiScale, parseCustomScaleInput } from "../../uiScale.js";
 import { toggleSwitch } from "../../switchControl.js";
 
 /* 开关行：左侧只有名称，右侧一个滑块开关（说明文字已按要求全部去掉，见 v0.37.19）。 */
@@ -82,11 +82,57 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     "aria-label": "界面缩放",
   });
   const uiScaleOut = el("output", {}, `${prefs.uiScale}%`);
+
+  /* ── 拖动稳定映射（v0.58.0）──
+     input 直接改 zoom 会把整页（含滑杆轨道）按新系数立即重排：设置弹窗是 margin:auto
+     居中的 fixed 浮层，轨道在指针下水平平移，浏览器下一次 pointermove 按**新几何**重算值
+     → 值跳 → zoom 又变 —— 几何正反馈回路，实测拖动值在 80~125% 之间剧烈振荡
+     （用户看到的「一闪一闪」，机理与实测数据见 src/uiScale.js 的 dragStableScale 一节）。
+     解法：pointerdown 时冻结轨道几何，拖动期间按「按下瞬间的基准」做增量映射
+     （纯函数 dragStableScale），轨道平移被增量数学吸收，回路断开。
+     只包「界面缩放」滑杆：「文字大小」只改 font-size、轨道不动，没有这个问题。
+     键盘方向键不产生 pointer 事件（无会话），input 走浏览器原生值，行为不变。 */
+  let dragSession = null;
+  uiScale.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !e.isPrimary) return;
+    const rect = uiScale.getBoundingClientRect();
+    dragSession = {
+      pointerId: e.pointerId,
+      x0: e.clientX,
+      lastX: e.clientX,
+      baseLeft: rect.left,
+      baseWidth: rect.width,
+      v0: null, // 等第一次 input：浏览器在 pointerdown 后把值跳到点击位置（点轨道跳转语义）
+    };
+  });
+  window.addEventListener("pointermove", (e) => {
+    // range input 拖动有隐式指针捕获，move 会冒泡到 window；只认同一个 pointerId，
+    // 第二根手指 / 别的指针不干扰会话。
+    if (dragSession && e.pointerId === dragSession.pointerId) dragSession.lastX = e.clientX;
+  });
+  const endDragSession = (e) => {
+    if (dragSession && e.pointerId === dragSession.pointerId) dragSession = null;
+  };
+  window.addEventListener("pointerup", endDragSession);
+  window.addEventListener("pointercancel", endDragSession);
+
   // 拖动时实时预览（persist:false），松手才落盘，避免拖动过程中每 5% 写一次盘。
   // 动画分工（v0.54.0）：input 拖动**直设不动画** —— 拖动本身就是连续输入，
   // 每一档立即生效才是「跟手」；动画留给离散入口（松手落定、点档位、界面预设），
   // 那些才会一步跨 20%+，不动画就是「一闪一闪」。
   uiScale.addEventListener("input", () => {
+    if (dragSession) {
+      // 第一次 input 的原生值（点轨道跳到点击位置 / 按住 thumb 的当前值）作增量基准 v0。
+      if (dragSession.v0 === null) dragSession.v0 = Number(uiScale.value);
+      // 用冻结几何把指针位移换算成缩放值并写回控件 —— 覆盖浏览器按漂移后几何算的原生值。
+      uiScale.value = String(dragStableScale({
+        v0: dragSession.v0,
+        x0: dragSession.x0,
+        x: dragSession.lastX,
+        baseLeft: dragSession.baseLeft,
+        baseWidth: dragSession.baseWidth,
+      }));
+    }
     uiScaleOut.textContent = `${uiScale.value}%`;
     setUiPreferences({ uiScale: Number(uiScale.value) }, { persist: false });
     paintScalePresets();

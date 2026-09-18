@@ -59,16 +59,40 @@ assert.match(css, /\.tkc\s*\{[^}]*align-items:\s*flex-start/, "任务卡在变�
 assert.match(quadrant, /class: "tt-top"/, "标题与展开箭头必须包在 .tt-top 里同处一行");
 assert.match(quadrant, /const expandable = hasNote;/, "标题不再截断后，展开只服务于备注，不再看标题长度");
 
-// v0.37.15 回归 2：顶栏右侧工具不再套外层框（用户反馈「框太多」）。
-// .topbar-action-card 必须透明无边框，视觉层级由各按钮自身表达；标题卡的框保留。
+// v0.58.0 回归：顶栏 5 键合一框（用户需求「有把这5个按钮做到1个方框里面吗」）。
+// 前史：v0.37.15/v0.39.0 因「框太多」去掉外层框、闪电/搜索/窗口键各自带小框；
+// v0.58.0 用户要求反转 —— 5 个键收进同一个方框。规则：外框有边框+底色，
+// **内层按钮一律裸图标无边框**（嵌套框才是当年「框太多」的本意），
+// hover/激活用底色表达。
 // 注意：共享规则 `.topbar-title-card, .topbar-action-card { border: 1px … }` 依然存在
-// （标题卡要用），所以判定必须落在靠后的那条覆盖规则上。
+// （标题卡要用），方框判定必须落在靠后的那条覆盖规则上。
 const actionCardRules = [...css.matchAll(/\.topbar-action-card\s*\{([^}]*)\}/g)].map((m) => m[1]);
-const overridden = actionCardRules.find((r) => /padding:\s*0/.test(r)) ?? "";
-assert.ok(overridden, "必须有一条 .topbar-action-card 覆盖规则把外层内边距清零");
-assert.match(overridden, /border:\s*0/, "顶栏右侧工具外层不能有边框");
-assert.match(overridden, /background:\s*none/, "顶栏右侧工具外层不能有底色");
-assert.match(overridden, /box-shadow:\s*none/, "顶栏右侧工具外层不能有阴影");
+// v0.58.0 方框覆盖规则的特征：4px 内边距 + 边框 + 渐变底色（与 2068 行的共享规则
+// `.topbar-title-card, .topbar-action-card` 区分开 —— 那条是标题卡用的 8px 12px）。
+const framed = actionCardRules.find((r) => /padding:\s*4px/.test(r) && /border:\s*1px/.test(r) && /background:\s*linear-gradient/.test(r)) ?? "";
+assert.ok(framed, "顶栏工具必须恢复带边框+渐变底色的方框规则（5 键合一框，v0.58.0）");
+// 内层三件套必须去框：嵌套框 = 当年「框太多」的回归。
+// 判定「任一 .topbar-action-card .X … {…} 规则块含 border:0」——
+// 同一选择器在文件里有多条（2128 附近的 margin-right 覆盖、hover 规则等），
+// 只要去框那条存在即可；注意搜索/快捷入口的去框是合体选择器（逗号分隔），
+// 正则要跨过 `,\n.sel {` 到达块体，用 [^{]* 而不是 \s*。
+const innerBlocks = (sel) => [...css.matchAll(new RegExp(sel + "[^{]*\\{([^}]*)\\}", "g"))].map((m) => m[1]);
+for (const [sel, name] of [
+  ["\\.topbar-action-card \\.top-search", ".top-search（搜索）"],
+  ["\\.topbar-action-card \\.top-mini-btn", ".top-mini-btn（快捷入口）"],
+  ["\\.topbar-action-card \\.window-controls", ".window-controls（窗口三键组）"],
+]) {
+  const bodies = innerBlocks(sel);
+  assert.ok(bodies.length >= 1, `内层 ${name} 必须有卡内作用域规则`);
+  assert.ok(
+    bodies.some((b) => /border:\s*0/.test(b)),
+    `${name} 在方框内必须去边框（嵌套框 = 「框太多」回归）`,
+  );
+}
+assert.ok(
+  innerBlocks("\\.topbar-action-card \\.window-controls").some((b) => /background:\s*transparent/.test(b)),
+  ".window-controls 必须显式透明底色（不再做独立胶囊）",
+);
 
 // v0.57.0 回归：顶栏工具行改「图标一行 + 统计居中」。
 // ① 搜索钮必须是纯放大镜图标（用户原话「搜索/命令也弄成一个放大镜图标，不用文字」）：
@@ -90,6 +114,32 @@ assert.match(css, /\[data-center-top-stats="on"\]\s+\.topbar-action-card\s*>\s*\
 // ④ 拖动排序保留：居中只是默认姿态，四个部件仍可在顶栏一行内自由换位。
 assert.ok(shell.includes("TOPBAR_PARTS"), "顶栏四部件（search/quick/stats/window）清单必须保留");
 assert.match(shell, /moveTopbarPart/, "拖动换位逻辑必须保留（用户：可以自由拖动切换位置）");
+
+// ⑤ v0.58.0：顶栏加深浅色切换键 + 整框贴右（用户需求「这一套按键放在右边，并且
+//    添加深色和浅色切换按钮」）。
+//    部件清单：theme 必须在列，且 window 恒排最后（窗口键贴最右的 Windows 习惯）。
+const topbarPartsDecl = shell.match(/const TOPBAR_PARTS = \[([^\]]*)\]/)?.[1] ?? "";
+const topbarPartIds = topbarPartsDecl.split(",").map((s) => s.trim().replace(/"/g, "")).filter(Boolean);
+assert.ok(topbarPartIds.includes("theme"), "TOPBAR_PARTS 必须含 theme（顶栏深浅切换键）");
+assert.equal(topbarPartIds[topbarPartIds.length - 1], "window", "TOPBAR_PARTS 里 window 必须排最后");
+// 老存档升级：新增部件补尾时必须插到 window 之前（否则新键排到窗口键右边）
+assert.match(shell, /indexOf\("window"\)/, "topbarOrderState 必须把新增部件插到 window 之前");
+// 按钮接线：切换走 setThemeMode（与侧栏/设置页同一动画路径），图标随亮暗翻转
+assert.match(shell, /top-theme-toggle/, "顶栏必须有 .top-theme-toggle 按钮");
+assert.match(shell, /paintTopTheme/, "顶栏主题键图标必须由 paintTopTheme 统一刷新");
+assert.ok(
+  (shell.match(/new MutationObserver\(paintTopTheme\)/g) || []).length === 1,
+  "顶栏主题键必须用 MutationObserver 监听 data-theme-mode（跟随系统时系统亮暗翻转也要刷新）",
+);
+// 整框贴右：margin-left 必须 auto（12px 会让无 strip 的环境贴在标题卡后面）
+const actionCardFramed = actionCardRules.find((r) => /padding:\s*4px/.test(r)) ?? "";
+assert.ok(actionCardFramed, "v0.58.0 方框规则必须存在（前文断言）");
+const marginAutoRule = actionCardRules.find((r) => /margin-left:\s*auto/.test(r)) ?? "";
+assert.ok(marginAutoRule, ".topbar-action-card 必须 margin-left:auto 贴顶栏右侧");
+// 瓷砖规格：34×34 方形、padding 归零（.top-mini-btn 的横向 padding 会把它撑成椭圆）
+const themeBtnRule = css.match(/\.topbar-action-card \.top-theme-toggle\s*\{[^}]*\}/)?.[0] ?? "";
+assert.match(themeBtnRule, /width:\s*34px/, "顶栏主题键必须 34px 宽（对齐搜索瓷砖）");
+assert.match(themeBtnRule, /padding:\s*0/, "顶栏主题键必须归零横向 padding（top-mini-btn 残留会撑成椭圆）");
 
 // v0.39.0 回归：顶栏标题左侧小框回归（紧凑版）。前史：v0.38.2 之前是一颗 42×42
 // 死框、恒装 Le 应用图标，用户嫌噪音删掉（v0.38.2）；随后用户回头表示想要框 ——

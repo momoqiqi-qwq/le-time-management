@@ -325,6 +325,17 @@ input, select, textarea { font-family: inherit; font-size: calc(13px * var(--ui-
 
 /* ── 主区 ── */
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+/* ── v0.58.0：侧栏宽度分隔条（.rail 与 .main 之间）──
+   基础规则只有占位；几何（负边距骑间隙）与指示线都在 ≥901px 块里 —— 那才是
+   「左侧竖栏 + 8px 间隙」的形态。窄屏（≤900px）侧栏变底栏，整条隐藏（见该块）。 */
+.rail-resizer { flex: none; }
+/* 拖拽会话全局态（shell.js 在 pointerdown/up 时加减 body.rail-resizing）：
+   全局光标与禁选中让指针跑出分隔条后拖拽依然「像在拖」；iframe 一律禁命中 ——
+   插件视图的 iframe 会吞掉指针让 pointermove 断流（拖到一半卡住的经典原因）。 */
+body.rail-resizing { cursor: col-resize; user-select: none; -webkit-user-select: none; }
+body.rail-resizing iframe { pointer-events: none !important; }
+
 .topbar {
   height: calc(58px + var(--sat, env(safe-area-inset-top, 0px))); flex: none;
   padding: var(--sat, env(safe-area-inset-top, 0px)) 26px 0;
@@ -788,6 +799,9 @@ button, .nav { touch-action: manipulation; }
   .app.rail-hidden .rail { display: none; }
   .app.rail-hidden .view { padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .rail { order: 2; }
+  /* v0.58.0：窄屏侧栏变底栏，「侧栏宽度」没有意义，分隔条整条隐藏（flex 子元素
+     默认 order:0 会排到最前，不能只靠视觉隐藏，必须 display:none） */
+  .rail-resizer { display: none; }
   /* 底栏：扁平单行核心入口，图标+小字，激活变色不加底。高度档位由设置「底栏高度」控制 */
   .rail {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 55;
@@ -1154,6 +1168,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 @media (min-width: 901px) {
   .app { padding: 8px; gap: 8px; }
+  /* v0.58.0：侧栏宽度分隔条。16px 命中区用 -12px×2 负边距骑在 .app 的 8px 间隙上：
+     净占位 = 16 - 24 = -8，与两道间隙相加恰好等于改动前的 8px 间距 —— 布局零位移。
+     命中区几何上盖过边界两侧（侧栏 4px + 间隙 + 主区 4px），从哪边起拖都行。 */
+  .rail-resizer {
+    width: 16px; margin: 0 -12px;
+    position: relative; z-index: 6;
+    cursor: col-resize; touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    border-radius: 10px;
+  }
+  /* 指示线：平时隐形，悬停 / 拖动中 / 键盘聚焦时现形（56px 居中短棒，不做通天长线） */
+  .rail-resizer::before {
+    content: ""; position: absolute; left: 50%; top: 50%;
+    width: 3px; height: 56px; transform: translate(-50%, -50%);
+    border-radius: 999px; background: var(--line); opacity: 0;
+    transition: opacity .12s ease, background-color .12s ease;
+  }
+  .rail-resizer:hover::before,
+  .rail-resizer.active::before,
+  .rail-resizer:focus-visible::before { opacity: 1; }
+  .rail-resizer:hover::before { background: color-mix(in srgb, var(--ink) 26%, transparent); }
+  .rail-resizer.active::before { background: var(--deep); }
+  .rail-resizer:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
   .rail {
     border: 1px solid var(--line);
     border-radius: var(--radius-lg);
@@ -2072,15 +2109,61 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .topbar-title-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .topbar-title-copy h1 { margin: 0; }
 .topbar-title-copy .sub { display: block; }
-.topbar-action-card { gap: 8px; margin-left: 12px; }
-/* 顶栏右侧工具不再套外层大框（用户反馈「框太多」）：外层容器透明无边框，
-   视觉层级只由各按钮自身的边框/底色表达；标题卡的框保留不变。 */
+/* v0.58.0：margin-left 12px → auto —— 这套按键（搜索/快捷/深浅切换/统计/窗口键）
+   整框贴顶栏右侧（用户需求「这一套按键放在右边」）。桌面端 window-drag-strip
+   (flex:1) 已把剩余空间吃掉，auto 无空间可分、行为不变；无 strip 的环境
+   （浏览器预览等）则由 auto 推到最右。 */
+.topbar-action-card { gap: 8px; margin-left: auto; }
+/* v0.58.0 · 顶栏 5 键合一框（用户需求「有把这5个按钮做到1个方框里面吗」）。
+   前史：v0.37.15/v0.39.0 因「框太多」去掉外层框、闪电/搜索/窗口键各自带小框；
+   用户现在要反过来 —— 5 个键收进同一个方框。规则：**外框有边框底色，内层按钮
+   一律裸图标**（嵌套框才是当年「框太多」的本意），hover/激活改用底色表达
+   （守卫见 test-android-layout.mjs 的「5 键合一框」段）。 */
 .topbar-action-card {
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 92%, transparent), color-mix(in srgb, var(--paper) 90%, var(--panel)));
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .06), inset 0 1px 0 rgba(255,255,255,.05);
+}
+/* 内层三件套去框：搜索 / 快捷入口不再自带边框底色，窗口三键组也不再是独立胶囊 ——
+   视觉上与闪电、放大镜并列成同一框内的 5 颗裸图标键。 */
+.topbar-action-card .top-search,
+.topbar-action-card .top-mini-btn {
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+}
+.topbar-action-card .top-search:hover,
+.topbar-action-card .top-mini-btn:hover,
+.topbar-action-card .top-mini-btn.on {
+  color: var(--deep);
+  background: color-mix(in srgb, var(--deep) 8%, var(--panel));
+}
+.topbar-action-card .window-controls {
+  gap: 0;
   padding: 0;
+  margin-left: 0;
   border: 0;
   border-radius: 0;
-  background: none;
-  box-shadow: none;
+  background: transparent;
+}
+/* 顶栏深浅色切换键（v0.58.0）：对齐搜索瓷砖 —— 34×34 方形、图标 15px。
+   .top-mini-btn 的横向 padding 会把它撑成椭圆，必须归零后定宽。 */
+.topbar-action-card .top-theme-toggle {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-action-card .top-theme-toggle .fa-ic {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  display: block;
 }
 .topbar-action-card .pill {
   background: color-mix(in srgb, var(--deep) 8%, var(--panel));

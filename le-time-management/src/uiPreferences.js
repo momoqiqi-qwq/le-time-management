@@ -49,7 +49,7 @@ export const NAVBAR_SIZE_OPTIONS = Object.freeze([
 
 export const STARTUP_VIEW_OPTIONS = Object.freeze([
   ["last", "继续上次页面"],
-  ["quadrant", "四象限"],
+  ["quadrant", "任务表"],
   ["timeline", "时间线（手机端）"],
   ["timeblock", "时间块"],
   ["inbox", "收件箱"],

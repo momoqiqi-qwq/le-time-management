@@ -19,6 +19,8 @@ import { closeLayer, observePluginMotion, reducedMotion, removeWithMotion } from
 import { isDesktopRuntime } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
+import { RAIL_WIDTH_LIMITS, RAIL_WIDTH_STEP, applyRailWidth, clampRailWidth, normalizeRailWidth, steppedRailWidth } from "./railWidth.js";
+import { getUiScaleFactor } from "./uiScale.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -41,7 +43,7 @@ function ensureActiveView() {
 }
 
 const VIEWS = [
-  { id: "quadrant", icon: "table-cells-large", title: "四象限", sub: "先决定，再动手" },
+  { id: "quadrant", icon: "table-cells-large", title: "任务表", sub: "先决定，再动手" },
   // v0.52.0：时间线 —— APK（移动运行时）专属核心视图，替代窄屏下的时间块 / 收件箱；
   // 桌面端不出这个入口（coreViewIds() 按平台裁剪，见 uiPreferences.js）。
   { id: "timeline", icon: "timeline", title: "时间线", sub: "按日期串起安排与截止" },
@@ -57,12 +59,21 @@ const PLUGIN_ICONS = {
   "cppu-notify": "building-columns",
   "wechat-push": "comment-dots",
 };
-const TOPBAR_PARTS = ["search", "quick", "stats", "window"];
+// v0.58.0 加 "theme"（顶栏深浅色切换键，用户需求「添加深色和浅色切换按钮」）。
+// window 恒作为兜底排最后（Windows 习惯：窗口键必须贴最右），见 topbarOrderState。
+const TOPBAR_PARTS = ["search", "quick", "theme", "stats", "window"];
 
 function topbarOrderState() {
   const settings = S.getState().settings;
   const saved = Array.isArray(settings.topbarOrder) ? settings.topbarOrder : [];
-  settings.topbarOrder = [...saved.filter((id) => TOPBAR_PARTS.includes(id)), ...TOPBAR_PARTS.filter((id) => !saved.includes(id))];
+  // 归一化：保留存档里仍存在的部件顺序，新增部件补进尾部 —— 但**不许落在 window
+  // 之后**（老存档升级时新键若直接补尾，会排到窗口键右边，违反窗口键贴最右的习惯）。
+  const order = [...saved.filter((id) => TOPBAR_PARTS.includes(id))];
+  for (const id of TOPBAR_PARTS.filter((x) => !saved.includes(x))) {
+    const wi = order.indexOf("window");
+    if (wi >= 0) order.splice(wi, 0, id); else order.push(id);
+  }
+  settings.topbarOrder = order;
   return settings.topbarOrder;
 }
 
@@ -259,6 +270,32 @@ export function renderShell(root) {
   // 快捷键说明挪进 title；命令面板入口（tide:command-palette）与拖动排序不变。
   const topSearch = el("button", { class: "top-search", title: "全局搜索 / 命令面板（Ctrl+K）· 拖动可调整位置", "aria-label": "全局搜索 / 命令", type: "button", onclick: () => window.dispatchEvent(new CustomEvent("tide:command-palette")) },
     el("span", { class: "top-search-glyph", "aria-hidden": "true" }, faIcon("magnifying-glass")));
+
+  // v0.58.0：顶栏深浅色切换键（用户需求「添加深色和浅色切换按钮」）。与左下角操作条 /
+  // 设置页同一条动画路径（setThemeMode → View Transitions 圆形揭示，圆心取点击位置 ——
+  // theme.js 的全局 pointerdown 监听自动记录 lastPointer）。图标随**实际生效**亮暗翻转
+  //（深色显太阳 = 点了去浅色），「跟随系统」时系统亮暗翻转也由 MutationObserver 驱动刷新，
+  // 逻辑照抄 railDock 的 theme-toggle 注册（shell.js 下方 registerRailAction("theme-toggle")）。
+  const topTheme = el("button", {
+    class: "top-mini-btn top-theme-toggle",
+    title: "切换深浅模式",
+    "aria-label": "切换深浅模式",
+    type: "button",
+    onclick: () => {
+      const next = resolveThemeMode() === "dark" ? "light" : "dark";
+      setThemeMode(next, { animate: true });
+      toast(`已切换为${next === "dark" ? "深色" : "浅色"}模式`);
+      // 图标刷新由下面的 MutationObserver 驱动，不在这里手动调（与侧栏同一模式）
+    },
+  });
+  const paintTopTheme = () => {
+    const dark = resolveThemeMode() === "dark";
+    topTheme.replaceChildren(el("span", { class: "top-theme-glyph", "aria-hidden": "true" }, faIcon(dark ? "sun" : "moon")));
+    topTheme.title = dark ? "切换到浅色模式 · 拖动可调整位置" : "切换到深色模式 · 拖动可调整位置";
+  };
+  paintTopTheme();
+  new MutationObserver(paintTopTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme-mode"] });
+
   const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
   const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
@@ -276,11 +313,143 @@ export function renderShell(root) {
     view,
   );
 
-  const appFrame = el("div", { class: "app" }, rail, main);
+  // v0.58.0：侧栏宽度分隔条 —— 骑在 .rail 与 .main 的间隙上（几何见 styles.css），
+  // 桌面（≥901px）显示，窄屏侧栏变底栏后整条隐藏。事件接线在下方 root.append 之后。
+  const railResizer = el("div", {
+    class: "rail-resizer",
+    role: "separator",
+    "aria-orientation": "vertical",
+    "aria-label": "调整侧栏宽度",
+    "aria-valuemin": String(RAIL_WIDTH_LIMITS.min),
+    "aria-valuemax": String(RAIL_WIDTH_LIMITS.max),
+    title: "拖动调整侧栏宽度 · 双击恢复默认",
+    tabindex: 0,
+  });
+
+  const appFrame = el("div", { class: "app" }, rail, railResizer, main);
   root.append(appFrame);
 
+  /* ── v0.58.0：侧栏宽度分隔条接线 ──
+   * 拖动实时改宽（rAF 合帧），松手落盘 settings.railWidth；pointercancel 回滚到
+   * 拖动前宽度（不留半截状态）；双击恢复默认；键盘 ←/↓ 变窄、→/↑ 变宽、Home/End 到界。
+   *
+   * 坐标换算：zoom 下 clientX 与 getBoundingClientRect() 同为屏幕视觉 px，一律除以
+   * 生效缩放系数（getUiScaleFactor()）换成布局 px（与 uiScale.js 的 viewportWidth()
+   * 同一口径）—— 不除的话 125% 缩放下侧栏会比手指快 25%。
+   *
+   * 会话兜底照抄 attachRailDockDrag：setPointerCapture 失败（或环境不支持）时，
+   * document 捕获阶段的 pointerup/pointercancel 兜底收会话，指针在元素外松手也不会挂死。
+   */
+  let resizeSess = null;
+  let resizeFrame = 0;
+  let resizePending = null;
+  applyRailWidth(normalizeRailWidth(S.getState().settings.railWidth), appFrame);
+  const railWidthLayoutPx = () => {
+    const factor = getUiScaleFactor() || 1;
+    const w = rail.getBoundingClientRect().width / factor;
+    return Number.isFinite(w) && w > 0 ? w : null;
+  };
+  const syncResizerAria = () => {
+    const w = railWidthLayoutPx();
+    if (w !== null) railResizer.setAttribute("aria-valuenow", String(Math.round(w)));
+  };
+  syncResizerAria();
+  const paintResize = () => {
+    resizeFrame = 0;
+    if (resizePending === null) return;
+    applyRailWidth(resizePending, appFrame);
+    resizePending = null;
+    syncResizerAria();
+  };
+  const endResizeSession = (event, commit) => {
+    const st = resizeSess;
+    if (!st || (event && event.pointerId !== st.pointerId)) return;
+    if (resizeFrame) { // 收帧：拖动中松手时把最后一帧宽度立即落定，不丢尾帧
+      cancelAnimationFrame(resizeFrame);
+      resizeFrame = 0;
+      paintResize();
+    }
+    resizeSess = null;
+    document.removeEventListener("pointerup", st.docUp, true);
+    document.removeEventListener("pointercancel", st.docCancel, true);
+    document.body.classList.remove("rail-resizing");
+    railResizer.classList.remove("active");
+    try { railResizer.releasePointerCapture(st.pointerId); } catch { /* 未捕获过 */ }
+    if (commit) {
+      // st.last === null = 原地点击没拖动，不落盘；与拖动前值相同也不必写
+      if (st.last !== null && st.last !== st.startSaved) {
+        S.getState().settings.railWidth = st.last;
+        S.persistSoon();
+      }
+    } else if (st.last !== null) {
+      // pointercancel（触摸被打断 / 系统手势接管）：回滚到拖动前的宽度
+      applyRailWidth(st.startSaved, appFrame);
+      syncResizerAria();
+    }
+  };
+
+  railResizer.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (resizeSess) return;
+    const startW = railWidthLayoutPx();
+    if (startW === null) return;
+    resizeSess = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      factor: getUiScaleFactor() || 1,
+      startW,
+      startSaved: normalizeRailWidth(S.getState().settings.railWidth),
+      last: null,
+      docUp: null,
+      docCancel: null,
+    };
+    document.body.classList.add("rail-resizing");
+    railResizer.classList.add("active");
+    event.preventDefault(); // 不让按下起点变成文本选区；键盘焦点走 Tab，不抢鼠标焦点
+    try { railResizer.setPointerCapture(event.pointerId); } catch { /* 下面有 document 兜底 */ }
+    resizeSess.docUp = (e) => endResizeSession(e, true);
+    resizeSess.docCancel = (e) => endResizeSession(e, false);
+    document.addEventListener("pointerup", resizeSess.docUp, true);
+    document.addEventListener("pointercancel", resizeSess.docCancel, true);
+  });
+  railResizer.addEventListener("pointermove", (event) => {
+    const st = resizeSess;
+    if (!st || event.pointerId !== st.pointerId) return;
+    const delta = (event.clientX - st.startX) / st.factor;
+    const next = clampRailWidth(st.startW + delta);
+    if (next === null) return;
+    st.last = next;
+    // rAF 合帧：宽度变化会重排整个 .app，pointermove 的触发频率没必要逐事件重排
+    resizePending = next;
+    if (!resizeFrame && typeof window.requestAnimationFrame === "function") resizeFrame = window.requestAnimationFrame(paintResize);
+    else if (typeof window.requestAnimationFrame !== "function") paintResize();
+  });
+  railResizer.addEventListener("keydown", (event) => {
+    const base = S.getState().settings.railWidth;
+    let next = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = steppedRailWidth(base, -1, railWidthLayoutPx());
+    else if (event.key === "ArrowRight" || event.key === "ArrowUp") next = steppedRailWidth(base, 1, railWidthLayoutPx());
+    else if (event.key === "Home") next = clampRailWidth(RAIL_WIDTH_LIMITS.min);
+    else if (event.key === "End") next = clampRailWidth(RAIL_WIDTH_LIMITS.max);
+    if (next === null) return;
+    event.preventDefault();
+    applyRailWidth(next, appFrame);
+    S.getState().settings.railWidth = next;
+    S.persistSoon();
+    syncResizerAria();
+  });
+  // 双击恢复默认：删内联 --rail-w + 删落盘值，密度档位的默认宽度立刻生效
+  railResizer.addEventListener("dblclick", () => {
+    if (normalizeRailWidth(S.getState().settings.railWidth) === null) return;
+    delete S.getState().settings.railWidth;
+    applyRailWidth(null, appFrame);
+    S.persistSoon();
+    syncResizerAria();
+    toast("侧栏宽度已恢复默认");
+  });
+
   function renderTopbarOrder() {
-    const parts = { search: topSearch, quick: quickDockToggle, stats: statPill, window: windowControls };
+    const parts = { search: topSearch, quick: quickDockToggle, theme: topTheme, stats: statPill, window: windowControls };
     topbarActionCard.replaceChildren(...topbarOrderState().map((id) => parts[id]).filter(Boolean));
     for (const [id, node] of Object.entries(parts)) {
       if (!node) continue;
@@ -833,7 +1002,7 @@ export function renderShell(root) {
       el("div", { class: "quick-dock-grid" },
         createQuickDockButton("plus", "快速新建", () => openQuickCapture()),
         createQuickDockButton("magnifying-glass", "命令搜索", () => window.dispatchEvent(new CustomEvent("tide:command-palette"))),
-        createQuickDockButton("table-cells", "四象限", () => switchTo("quadrant")),
+        createQuickDockButton("table-cells", "任务表", () => switchTo("quadrant")),
         // v0.52.0：快捷菜单跟随平台 —— APK 端给时间线（fa 精灵图 id="timeline"），
         // 桌面端保留时间块 / 收件箱直达（桌面没有时间线入口）。
         ...(desktopWindow ? [

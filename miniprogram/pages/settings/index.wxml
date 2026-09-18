@@ -53,7 +53,7 @@
     <view class="about-head-mini">
       <view>
         <view class="at">关 于 Le时间管理</view>
-        <view class="desc">本地优先 · 四象限 + 时间块 + 插件扩展</view>
+        <view class="desc">本地优先 · 任务表 + 时间块 + 插件扩展</view>
       </view>
       <view class="version-pill">v{{about.version}}</view>
     </view>

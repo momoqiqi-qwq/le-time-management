@@ -72,7 +72,7 @@ function entries() {
     { kind: "命令", title: "快速捕获", sub: "粘贴一句话，自动识别日期和时间", keywords: "capture 新建 收集", priority: 90, run: () => openQuickCapture() },
     { kind: "命令", title: "新建任务", sub: "创建一条任务并立即编辑", keywords: "task 待办", priority: 85, run: () => { const t = S.addTask({ title: "新任务" }); navigate("quadrant"); setTimeout(() => openTaskDrawer(t.id), 40); } },
     { kind: "导航", title: "今天的时间块", sub: S.todayStr(), keywords: "today 日程 时间轴", priority: 80, run: () => { S.getState().settings.lastDate = S.todayStr(); S.persistSoon(); navigate("timeblock"); } },
-    { kind: "导航", title: "四象限", sub: "任务优先级", keywords: "quadrant 任务", priority: 70, run: () => navigate("quadrant") },
+    { kind: "导航", title: "任务表", sub: "任务优先级", keywords: "quadrant 任务 任务表 四象限", priority: 70, run: () => navigate("quadrant") },
     { kind: "导航", title: "插件中心", sub: "搜索、启停和管理插件", keywords: "plugin market 插件", priority: 70, run: () => navigate("market") },
     { kind: "导航", title: "设置", sub: "提醒、同步、快捷键、插件权限", keywords: "settings 配置", priority: 60, run: () => navigate("settings") },
   ];

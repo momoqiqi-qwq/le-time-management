@@ -30,7 +30,7 @@
       },
       {
         "pagePath": "pages/quadrant/index",
-        "text": "四象限",
+        "text": "任务表",
         "iconPath": "images/tab/quadrant.png",
         "selectedIconPath": "images/tab/quadrant-on.png"
       },

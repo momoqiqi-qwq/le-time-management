@@ -43,6 +43,7 @@ import {
   UI_SCALE_PRESETS,
   __resetUiScaleForTest,
   applyUiScale,
+  dragStableScale,
   getAutoScaleFactor,
   getUiScale,
   getUiScaleFactor,
@@ -185,6 +186,82 @@ assert.ok(narrowAutoFactor(359) < 1);
 // 纯函数：同输入同输出
 assert.equal(narrowAutoFactor(288), narrowAutoFactor(288));
 
+/* ──────────────── 1d. 拖动稳定映射（v0.58.0） ────────────────
+ *
+ * 「界面缩放」滑杆的 input 直接改 zoom 时存在**几何正反馈回路**（实测，2026-09-18）：
+ * input 改 zoom → 整页含滑杆立即重排，设置弹窗 margin:auto 居中 ⇒ 轨道在指针下水平平移
+ * （每 5% 档漂移约 14px）→ 浏览器下一次 pointermove 按**新几何**重算值 → 值跳 → zoom 又变。
+ * 实测指针匀速右移时值 95→100→95→105→95→110→90→120→…剧烈振荡；原地 ±1px 微抖，
+ * 值在 110→80→125→95 之间摆动 45% —— 用户看到的「一闪一闪」。
+ *
+ * 修复 = 拖动期间以**按下瞬间冻结的轨道几何**做增量映射（dragStableScale）：
+ *   v = normalizeUiScale(v0 + (f(x) - f(x0)) × (max - min))，f(x) = (x-baseLeft)/baseWidth。
+ * 轨道平移对 f 与 f0 是同一个平移，差值不变 —— 正反馈在数学上被拆掉。
+ * 接线在 views/settings/appearance.js（pointerdown 冻结 rect / input 重映射），
+ * 键盘方向键无 pointer 会话、不走本函数。 */
+
+// 典型轨道几何：设置弹窗里实测量级（left≈900、宽≈200）
+const track = { baseLeft: 900, baseWidth: 200 };
+// 按下点：指针在轨道 25% 处，按下后第一次 input 的原生值 v0=100
+const X0 = 950;
+
+// ① 单调跟随：指针位移决定值，右移只增不减（这是「回路已断」的基本面）
+{
+  const at = (dx) => dragStableScale({ v0: 100, x0: X0, x: X0 + dx, ...track });
+  assert.equal(at(0), 100, "按住不动 = 原值（点轨道跳转后的 v0 必须原样保持）");
+  assert.equal(at(10), 105, "右移 5% 轨道宽 → +3.5 满量程 → 对齐 105");
+  assert.equal(at(30), 110);
+  assert.equal(at(40), 115);
+  assert.equal(at(100), 135, "右移半条轨道 → +35 满量程 → 135");
+  let prev = at(-200); // 拖出左端 → 80
+  assert.equal(prev, 80);
+  for (let dx = -199; dx <= 200; dx++) {
+    const v = at(dx);
+    assert.ok(v >= prev, `指针右移值不许回退：dx=${dx} 时 ${v} < ${prev}`);
+    prev = v;
+  }
+}
+
+// ② 夹取：拖出轨道两端仍落在 [80, 150]（normalizeUiScale 同一口径）
+assert.equal(dragStableScale({ v0: 100, x0: X0, x: 5000, ...track }), 150, "拖出右端夹上限");
+assert.equal(dragStableScale({ v0: 100, x0: X0, x: -5000, ...track }), 80, "拖出左端夹下限");
+
+// ③ 抖动稳定（本修复的回归核心）：原地 ±1~2px 来回，值必须停在同一档。
+//    旧实现（浏览器按漂移后的几何重算）实测同一位置值摆 45%（110→80→125→95）。
+{
+  const jitters = [0, 1, -1, 1, -1, 0, 2, -2, 1, -2, 0];
+  const values = jitters.map((dx) => dragStableScale({ v0: 110, x0: X0, x: X0 + dx, ...track }));
+  assert.equal(
+    new Set(values).size,
+    1,
+    `原地微抖只许停在同一档，实测序列：${values.join("→")}`,
+  );
+}
+
+// ④ 轨道平移被吸收：zoom 变了轨道真的会平移（实测每档 ~14px），但映射基准是冻结的 ——
+//    同样的指针位移必须给出同样的值，与「轨道此刻画在哪」无关。
+//    数学上 baseLeft 平移对 f 与 f0 同加同减，差不变 —— 这就是断开正反馈的判据。
+assert.equal(
+  dragStableScale({ v0: 100, x0: X0, x: 980, baseLeft: 900, baseWidth: 200 }),
+  dragStableScale({ v0: 100, x0: X0, x: 980, baseLeft: 914, baseWidth: 200 }),
+  "轨道平移 14px 不得改变映射值（否则回路复通）",
+);
+
+// ⑤ 退化输入兜底：拿不到 rect / 坐标异常时回 v0（夹取对齐），不许 NaN 进 DOM
+for (const bad of [
+  { v0: 110, x0: X0, x: 980, baseLeft: 900, baseWidth: 0 },
+  { v0: 110, x0: X0, x: 980, baseLeft: 900, baseWidth: -5 },
+  { v0: 110, x0: X0, x: 980, baseLeft: NaN, baseWidth: 200 },
+  { v0: 110, x0: X0, x: 980, baseLeft: undefined, baseWidth: 200 },
+  { v0: 110, x0: X0, x: NaN, baseLeft: 900, baseWidth: 200 },
+  { v0: 110, x0: NaN, x: 980, baseLeft: 900, baseWidth: 200 },
+]) {
+  assert.equal(dragStableScale(bad), 110, `退化输入应兜底回 v0：${JSON.stringify(bad)}`);
+}
+// v0 本身脏：走 normalizeUiScale 的兜底（回默认 100）
+assert.equal(dragStableScale({ v0: NaN, x0: X0, x: 980, baseLeft: 900, baseWidth: 0 }), 100);
+assert.equal(dragStableScale({}), 100, "空参兜底回默认");
+
 /* ────────────────────── 2. applyUiScale 的 DOM 写入 ────────────────────── */
 
 // 假 document / window：只要 root.style.setProperty / addEventListener 够用就行。
@@ -233,7 +310,7 @@ const loadModuleInEnv = (env) => {
   const src = readSrc("src/uiScale.js")
     // 剥掉 ESM 导出语法，改成往 globalThis 上挂，好在 vm 里跑
     .replace(/^export\s+/gm, "")
-    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, getAutoScaleFactor, narrowAutoFactor, viewportWidth, viewportHeight, normalizeUiScale, UI_SCALE_LIMITS, UI_SCALE_ANIM_MS, NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR };\n");
+    .concat("\nglobalThis.__uiScale = { __resetUiScaleForTest, applyUiScale, initUiScale, getUiScale, getUiScaleFactor, getAutoScaleFactor, narrowAutoFactor, viewportWidth, viewportHeight, normalizeUiScale, parseCustomScaleInput, dragStableScale, UI_SCALE_LIMITS, UI_SCALE_ANIM_MS, NARROW_REFERENCE_WIDTH, NARROW_MIN_FACTOR };\n");
   const ctx = { console, document: env.document, window: env.window };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
@@ -639,5 +716,13 @@ assert.ok(!/min:\s*"80"/.test(appearanceAnimCode), "自定义输入的范围要�
 // 样式：输入框宽度写死（否则输入时整组宽度抽动）、档位组允许换行（极窄屏 5 项不许横向溢出）
 assert.match(styles, /\.pref-choice-input\s*\{/, "styles.css 要有自定义缩放输入框的样式");
 assert.match(styles, /\.scale-presets\s*\{[^}]*flex-wrap:\s*wrap/, "档位组要允许换行，否则极窄屏 5 项会横向溢出");
+
+// 3f-4. 拖动稳定映射（v0.58.0）：「界面缩放」滑杆的拖动必须走 uiScale.js 的 dragStableScale
+//       （pointerdown 冻结轨道 rect + 增量映射）。不许退回「input 直接采用浏览器原生值」——
+//       那条路径有实测的几何正反馈回路：input 改 zoom → 轨道在指针下平移（每档 ~14px）→
+//       浏览器按新几何重算值 → 值振荡（110↔80↔125↔95）→ 用户看到的「一闪一闪」。
+assert.match(appearanceAnimCode, /dragStableScale/, "滑杆拖动必须走 dragStableScale（冻结几何增量映射），直接用原生值会振荡");
+assert.match(appearanceAnimCode, /pointerdown/, "拖动会话从 pointerdown 冻结轨道 rect 开始");
+assert.match(appearanceAnimCode, /pointercancel/, "pointercancel 也要结束会话（触摸被滚动接管时不许残留旧基准）");
 
 console.log("PASS: UI scale normalization, custom-input parsing, zoom/vw-vh emission, animation interpolation and zoom-safety guards");

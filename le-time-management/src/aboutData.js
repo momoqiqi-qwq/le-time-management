@@ -11,7 +11,7 @@ export const FRAMEWORKS = [
   { name: "Vanilla JavaScript", version: "ES Modules", role: "主界面、状态管理与插件宿主" },
   { name: "Rust", version: "2021 edition", role: "本地存储、HTTP、插件 ZIP、局域网联动等原生能力" },
   { name: "Kotlin", version: "Android bridge", role: "Android 原生插件与生命周期桥接" },
-  { name: "微信小程序", version: "原生运行时", role: "四象限、时间块、捕获、设置与可移植插件适配" },
+  { name: "微信小程序", version: "原生运行时", role: "任务表、时间块、捕获、设置与可移植插件适配" },
 ];
 
 export const OPEN_SOURCE_PROJECTS = [

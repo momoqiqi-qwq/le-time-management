@@ -9,7 +9,7 @@ import { applyIngestEvents, normalizeIngestEvent, revertIngest, INGEST_KINDS } f
 
 const KIND_LABEL = { task: "任务", timeblock: "时间块", inbox: "收件箱", course: "课程表" };
 const KIND_HINT = {
-  task: "进四象限待办",
+  task: "进任务表待办",
   timeblock: "排进时间轴",
   inbox: "先收着，不排时间",
   course: "合并进课程表",

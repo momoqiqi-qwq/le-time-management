@@ -202,6 +202,56 @@ export function parseCustomScaleInput(raw) {
   return { mode: "preview", value: normalizeUiScale(n) };
 }
 
+/* ── 拖动稳定映射（v0.58.0）──
+ *
+ * **问题**：设置页「界面缩放」滑杆的 input 直接改 zoom 时，拖动整条滑杆会「一闪一闪」。
+ * 这不是动画、不是渲染循环，是一个**几何正反馈回路**：
+ * input 改 `documentElement.style.zoom` → 整页（含滑杆自身）按新系数立即重排，
+ * 设置弹窗是 `margin:auto` 居中的 fixed 浮层，轨道在指针下**水平平移**
+ * （2026-09-18 无头 Chrome 实测，每 5% 档漂移约 14px：
+ * 轨道 left 898.3@0.95 → 912@1.0 → 926.3@1.05 → 940.5@1.1 → 859@0.8 → 903.3@1.25）；
+ * 浏览器下一次 pointermove 按**新几何**重算滑杆值 → 值跳 → zoom 又变 → 再平移……
+ * 实测指针匀速右移，值 95→100→95→105→95→110→90→120→100→110→95→120→105 剧烈振荡；
+ * 原地 ±1px 微抖，值在 110→80→125→95 之间摆动 45% —— 这就是用户看到的「一闪一闪」。
+ * 「文字大小」滑杆只改 font-size、轨道不动，没有这个问题（别把它也包进来）。
+ *
+ * **解法**：拖动期间不用「当前轨道几何」，用**按下瞬间冻结的轨道几何**做增量映射：
+ *   v = normalizeUiScale(v0 + (f(x) - f(x0)) × (max - min))
+ * 其中 f(x) = (x - baseLeft) / baseWidth 是基于冻结 rect 的线性分数（0=左端，1=右端），
+ * v0 是按下后第一次 input 的浏览器原生值（保留「点轨道跳转」的语义），
+ * x0 是按下时的指针位置。指针位移换算成缩放增量、叠加在 v0 上 ——
+ * 轨道在指针下平移多少都只是**基准的移动**，被「增量」数学吸收，不再进回路：
+ * 回路从正反馈变成构造上稳定的负反馈（值跟随指针位移单调变化）。
+ * 拖动结束（pointerup / pointercancel）后会话作废，回到浏览器原生映射。
+ */
+
+/**
+ * 拖动「界面缩放」滑杆时的稳定值映射（v0.58.0）。纯函数，便于单测。
+ *
+ * 接线在 `views/settings/appearance.js`：pointerdown 冻结轨道 rect、
+ * window 级 pointermove 记录 clientX、input 里用本函数把「指针位移」换算成缩放值。
+ * 键盘方向键不产生 pointer 事件（无会话），调用方必须原样走浏览器原生值，不许包本函数。
+ *
+ * @param {object} p
+ * @param {number} p.v0 按下后第一次 input 的滑杆值（保留点轨道跳转语义）
+ * @param {number} p.x0 按下时的指针 clientX
+ * @param {number} p.x 当前指针 clientX
+ * @param {number} p.baseLeft 按下瞬间冻结的轨道 left（getBoundingClientRect().left）
+ * @param {number} p.baseWidth 按下瞬间冻结的轨道宽（getBoundingClientRect().width）
+ * @returns {number} 对齐步进、夹取到 [min, max] 的缩放百分比
+ */
+export function dragStableScale({ v0, x0, x, baseLeft, baseWidth }) {
+  // 退化输入（没拿到 rect、指针坐标异常）兜底回 v0 —— 宁可这一下不映射，也不要跳值。
+  if (typeof baseWidth !== "number" || !(baseWidth > 0)
+    || typeof baseLeft !== "number" || !Number.isFinite(baseLeft)
+    || !Number.isFinite(x0) || !Number.isFinite(x)) {
+    return normalizeUiScale(v0);
+  }
+  const f0 = (x0 - baseLeft) / baseWidth;
+  const f = (x - baseLeft) / baseWidth;
+  return normalizeUiScale(v0 + (f - f0) * (UI_SCALE_LIMITS.max - UI_SCALE_LIMITS.min));
+}
+
 /** 当前缩放百分比（100 = 不缩放）。 */
 export function getUiScale() {
   return currentScale;
