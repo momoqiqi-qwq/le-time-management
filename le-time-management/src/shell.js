@@ -12,10 +12,12 @@ import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
+import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
 import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
+import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -124,7 +126,7 @@ function movePluginBefore(sourcePluginId, targetPluginId) {
 // ① 内置插件的 order 是策划过的重要度，「番茄专注」这类旗舰不该被「插件使用说明」抢走首字母；
 // ② 用户拖动调整显示顺序时，已自动分配的字母不能跟着洗牌。
 function shortcutEntries() {
-  return pluginViews.map((pv) => ({ pluginId: pv.pluginId, viewId: pv.id }));
+  return pluginShortcutEntries();
 }
 function effectiveShortcutMap() {
   return computePluginShortcutMap(shortcutEntries(), getPluginShortcutCustoms());
@@ -204,6 +206,7 @@ export function renderShell(root) {
   );
 
   let settingsDockBtn = null;
+  let themeToggleBtn = null;
   let quickDock = null;
   let pinActionBtn = null;
   let navTransitionSeq = 0;
@@ -222,6 +225,7 @@ export function renderShell(root) {
     ),
     nav,
     el("div", { class: "rail-bottom" },
+      themeToggleBtn = createThemeToggle(),
       settingsDockBtn = settingsButton(),
     ),
   );
@@ -472,10 +476,18 @@ export function renderShell(root) {
     const on = activeView === id || (id === "market" && activeView.startsWith("plug:"));
     // 生效的 Alt 字母快捷键（显式指定优先，否则按插件 ID 首字母自动分配，先到先得）
     const sc = isPlug && def.pluginView?.pluginId ? effectiveShortcutLetter(def.pluginView.pluginId) : "";
+    // 插件导航条右侧的来源标签：内置 → 「内置」，用户导入 → 「导入」；
+    // 兜底（registry 还没建好等异常态）回落到「插件」，保持原有文案。
+    let pvLabel = "插件";
+    if (isPlug) {
+      const pid = def.pluginView?.pluginId;
+      const rec = pid && getRegistry().find((r) => r.id === pid);
+      if (rec) pvLabel = rec.source === "builtin" ? "内置" : "导入";
+    }
     const b = el("button", { class: on ? "on" : "", "data-view": id },
       el("span", { class: "ic", style: isPlug ? `--plugin-accent:${pluginAccent(def.pluginView?.pluginId)}` : null }, isPlug ? pluginDisplayIcon(def.pluginView.pluginId, def.title) : appIcon(id)),
       el("span", { class: "lb" }, def.title),
-      isPlug ? el("span", { class: "pv-count" }, "插件") : null,
+      isPlug ? el("span", { class: "pv-count" }, pvLabel) : null,
       // 快捷键徽标：平时收着（opacity:0），悬停 / 选中 / 键盘聚焦时现形，不挤占常驻空间
       sc ? el("kbd", { class: "nav-kbd", "aria-hidden": "true" }, `${PLUGIN_SHORTCUT_MODIFIER}+${sc}`) : null,
     );
@@ -513,6 +525,33 @@ export function renderShell(root) {
     return b;
   }
 
+  // 左下角深浅色切换按钮：与设置 › 主题的切换共用同一条动画路径
+  //（setThemeMode → applyTheme → runThemeMutation → View Transitions 圆形揭示）。
+  // 点击位置由 theme.js 的全局 pointerdown 监听自动记录为 lastPointer，
+  // 所以圆形从按钮位置向外扩散 —— 与设置页点按钮的动画完全一致。
+  // 图标用 MutationObserver 驱 data-theme-mode 刷新，覆盖「跟随系统」时系统亮暗翻转。
+  function createThemeToggle() {
+    const btn = el("button", {
+      class: "settings-icon-button theme-toggle-btn",
+      type: "button",
+      title: "",
+      "aria-label": "切换深浅模式",
+    });
+    const update = () => {
+      const dark = resolveThemeMode() === "dark";
+      btn.replaceChildren(el("span", { class: "ic" }, faIcon(dark ? "sun" : "moon")));
+      btn.title = dark ? "切换到浅色模式" : "切换到深色模式";
+    };
+    btn.addEventListener("click", () => {
+      const next = resolveThemeMode() === "dark" ? "light" : "dark";
+      setThemeMode(next, { animate: true });
+      toast(`已切换为${next === "dark" ? "深色" : "浅色"}模式`);
+      // update() 由 MutationObserver 驱动，不需要手动调
+    });
+    update();
+    new MutationObserver(update).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme-mode"] });
+    return btn;
+  }
   function settingsButton() {
     const b = el("button", { class: "settings-icon-button", "data-view": "settings", title: "设置", "aria-label": "设置" },
       el("span", { class: "ic" }, appIcon("settings")),
@@ -1037,6 +1076,9 @@ export function renderShell(root) {
   view.addEventListener("touchend", (e) => {
     if (!swOn) return;
     if (!getUiPreferences().swipeNavigation) { swOn = false; return; }
+    // 拖拽排序等手势会话期间让路：拖拽卡片的横移距离会满足滑动手势阈值，
+    // 不拦会把「拖完松手」误判成一次滑动返回（v0.52.0 与四象限拖拽排序配套）
+    if (document.body.dataset.swipeSuspended === "1") { swOn = false; return; }
     swOn = false;
     const dx = e.changedTouches[0].clientX - swX;
     const dy = e.changedTouches[0].clientY - swY;
