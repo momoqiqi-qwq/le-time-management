@@ -64,7 +64,9 @@
     feeds: [],           // [{ id, url, title, color, enabled, addedAt, lastAt, lastError, count }]
     items: [],           // [{ id, feedId, title, link, date, author, snippet, cover, read, star }]
     prefs: { kw: "", feed: "all", unreadOnly: false, starOnly: false, autoMin: 0, showCover: true, style: "card" },
-    expanded: new Set(),
+    expanded: new Set(),     // 已展开正文的条目 id
+    bodies: new Map(),       // link → 抽出的原文正文。**只留内存**：一篇几 KB 到几十 KB，写进 storage 会把缓存撑爆
+    bodyLoading: new Set(),  // 正在抓正文的 link（防重复请求，也让重绘后仍显示「正在读取正文…」）
     fetchedAt: 0,
     fetching: false,
     error: null,
@@ -459,7 +461,7 @@
   }
 
   /* 合并新抓到的条目：同 id 保留原有的 read / star（这是「刷新不掉已读」的关键）。 */
-  function mergeItems(feedId, fresh) {
+  function mergeItems(feedId, fresh, out) {
     const byId = new Map(state.items.map((it) => [it.id, it]));
     let added = 0;
     for (let i = 0; i < fresh.length; i++) {
@@ -474,12 +476,14 @@
         old.cover = raw.cover || old.cover;
         old.author = raw.author || old.author;
       } else {
-        byId.set(id, {
+        const item = {
           id, feedId,
           title: raw.title, link: raw.link, date: raw.date,
           author: raw.author, snippet: raw.snippet, cover: raw.cover,
           read: false, star: false,
-        });
+        };
+        byId.set(id, item);
+        if (out) out.push(item);   // 传了 out 才收集本次新增条目（notice:new 广播要条目本身，不只是计数）
         added += 1;
       }
     }
@@ -522,16 +526,37 @@
         throw new Error(looksLikeHtml(res.body) ? "这个地址返回的是网页，不是订阅源" : "内容不是有效的 RSS / Atom");
       }
       if (parsed.title && (!feed.title || feed.customTitle !== true)) feed.title = parsed.title;
-      const added = mergeItems(feed.id, parsed.items);
+      // 这个源本地还没有任何条目 = 首次同步：全部条目都是「新增」，但它们是历史存量，
+      // 只入库不广播，否则刚订阅一个源就把几十条旧内容推到微信。
+      const firstSync = !state.items.some((it) => it.feedId === feed.id);
+      const news = [];
+      const added = mergeItems(feed.id, parsed.items, news);
       feed.lastAt = Date.now();
       feed.lastError = "";
       feed.count = parsed.items.length;
-      return { feed, added, total: parsed.items.length };
+      return { feed, added, total: parsed.items.length, news: firstSync ? [] : news };
     } catch (e) {
       feed.lastError = String((e && e.message) || e);
       feed.lastAt = Date.now();
       return { feed, added: 0, total: 0, error: feed.lastError };
     }
+  }
+
+  /* ── 插件联动：抓到新内容时广播 notice:new，微信推送插件按插件勾选合并成一条推送 ──
+     所有源的新条目并成一次广播（标题前缀源名），不按源各发一次 —— 推送侧要省着占 PushPlus 频次额度。
+     广播失败不影响抓取本身，所以单独 try/catch。 */
+  function broadcastNews(news) {
+    if (!news.length) return;
+    try {
+      tide.events.emit("notice:new", {
+        source: "rss-reader", sourceName: "RSS 订阅", total: news.length,
+        items: news.slice(0, 5).map(({ feed, item }) => ({
+          title: `${feed.title || hostOf(feed.url)}｜${item.title || "(无标题)"}`,
+          time: item.date || "",
+          sender: item.author || "",
+        })),
+      });
+    } catch {}
   }
 
   /* 并发抓取：CONCURRENCY 个 worker 抢同一个游标 —— 比 Promise.all 全量并发温和，
@@ -546,11 +571,13 @@
     let cursor = 0;
     let added = 0;
     const failures = [];
+    const news = [];
     const worker = async () => {
       while (cursor < targets.length) {
         const feed = targets[cursor++];
         const r = await fetchFeed(feed);
         added += r.added;
+        for (const item of r.news || []) news.push({ feed, item });
         if (r.error) failures.push(feed.title || hostOf(feed.url));
       }
     };
@@ -570,6 +597,7 @@
         action: () => tide.util.navigate(VIEW_ID),
       });
     }
+    broadcastNews(news);
   }
 
   /* 添加订阅：地址可能是 feed 本身，也可能是网站首页。后者先读 HTML 找声明的
@@ -716,6 +744,9 @@
    必须自己截断：flex 容器上的 text-overflow 对匿名文本节点不生效，得先包一层块级子元素。 */
 .rss-chip-name{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rss-dot{width:6px;height:6px;border-radius:50%;flex:none;display:inline-block}
+/* 顶栏的「＋ 添加源」：虚线描边，与实心边框的源 chip 区分开 —— 读起来是「这里能加」，不是「又一个源」 */
+.rss-add-src{flex:none;display:inline-flex;align-items:center;gap:3px;height:30px;padding:0 12px;border:1px dashed var(--line,#E4DFD6);border-radius:999px;background:none;color:var(--ink-2,#7E8B94);font-size:calc(12px * var(--ui-text-scale));cursor:pointer;transition:border-color .2s ease,color .2s ease}
+.rss-add-src:hover{border-color:var(--deep,#0F4C5C);border-style:solid;color:var(--deep,#0F4C5C)}
 .rss-status{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-top:9px;line-height:1.7}
 .rss-status .err{color:var(--danger,#B03535)}
 .rss-status b{color:var(--ink,#22303A)}
@@ -741,6 +772,9 @@
 .rss-card{display:flex;gap:11px;align-items:flex-start;background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:14px;padding:11px 13px;margin-bottom:8px;content-visibility:auto;contain-intrinsic-size:auto 88px}
 .rss-card:hover{border-color:var(--deep,#0F4C5C)}
 .rss-card.read{opacity:.62}
+/* 展开态必须退出 content-visibility:auto（否则滚出屏幕时按 88px 占位收，正文再滚回来会跳），
+   并且不再压已读的 62% 透明度 —— 正在读的长文被调暗了读不动。 */
+.rss-card.open{content-visibility:visible;opacity:1}
 .rss-card-main{flex:1;min-width:0}
 .rss-card-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
 .rss-src-tag{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-soft,#EFEAE1);background:var(--paper,#F7F6F2);border-radius:999px;padding:2px 9px;color:var(--ink-2,#7E8B94);max-width:170px}
@@ -748,8 +782,21 @@
 .rss-new{background:var(--coral,#FF6B6B);color:var(--deep-2,#12333D);border-radius:7px;padding:1px 6px;font-size:calc(10px * var(--ui-text-scale));font-weight:700}
 .rss-card-title{font-size:calc(14px * var(--ui-text-scale));font-weight:650;line-height:1.5;margin:5px 0 0;color:var(--ink,#22303A);cursor:pointer}
 .rss-card.read .rss-card-title{font-weight:600}
-.rss-snip{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.65;margin:5px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.rss-snip.open{-webkit-line-clamp:unset;overflow:visible}
+.rss-snip{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.65;margin:5px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+/* 展开正文的动画与 警大通知 .pp-detail-shell、学校通知 .sn-detail-shell **逐字同款**：
+   高度用 grid-template-rows 0fr→1fr 撑（实测 Chromium 里「定长轨道（px 或 lh）→ 1fr」只做
+   discrete 插值 —— 前一半时间停在原高再一次性跳到位，只有 0fr 起跳才连续），
+   箭头 ⌄ 转 180°，正文再补一个 translateY 收口。时长与曲线一律照抄，不要在这里另起一套。 */
+.rss-expand{margin-top:7px;display:inline-flex;align-items:center;gap:7px;font-size:calc(11px * var(--ui-text-scale));transition:background .2s ease,border-color .2s ease,color .2s ease}
+.rss-expand::after{content:"⌄";display:inline-block;font-size:calc(14px * var(--ui-text-scale));line-height:1;transform:translateY(-1px);transition:transform .36s cubic-bezier(.22,.8,.22,1)}
+.rss-card.open .rss-expand::after{transform:translateY(1px) rotate(180deg)}
+.rss-detail-shell{display:grid;grid-template-rows:0fr;opacity:0;margin-top:0;transition:grid-template-rows .42s cubic-bezier(.2,.78,.2,1),opacity .24s ease,margin-top .42s cubic-bezier(.2,.78,.2,1)}
+.rss-card.open .rss-detail-shell{grid-template-rows:1fr;opacity:1;margin-top:9px}
+.rss-detail-clip{min-height:0;overflow:hidden}
+.rss-detail{border-top:1px dashed var(--line-soft,#EFEAE1);padding-top:9px;transform:translateY(-6px);transition:transform .36s cubic-bezier(.2,.78,.2,1)}
+.rss-card.open .rss-detail{transform:translateY(0)}
+.rss-body{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);line-height:1.9;white-space:pre-wrap;word-break:break-word;max-height:320px;overflow-y:auto;overscroll-behavior:contain}
+.rss-body.err{color:var(--danger,#B03535)}
 .rss-cover{width:78px;height:58px;border-radius:9px;object-fit:cover;flex:none;background:var(--line-soft,#EFEAE1)}
 .rss-card-act{display:flex;flex-direction:column;gap:5px;flex:none}
 .rss-card-act button{font-size:calc(11px * var(--ui-text-scale));border:1px solid var(--line,#E4DFD6);border-radius:7px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);padding:4px 9px;cursor:pointer;white-space:nowrap}
@@ -810,6 +857,9 @@
   /* 窄屏下「来源 / 推荐」这两个前缀会被挤到独立一行（chips 占满剩余宽度），
      而 chips 本身已经说明了它是什么，直接收掉更省地方 */
   .rss-lab{display:none}
+  /* 390px 这一行要给 chips 让位：「＋ 添加源」收成只剩符号，靠 title 与虚线圈说明它是干什么的 */
+  .rss-add-src span{display:none}
+  .rss-add-src{padding:0 10px}
   .rss-src{flex-wrap:wrap}
   .rss-src-act{width:100%;justify-content:flex-start}
   .rss-cover{width:64px;height:48px}
@@ -944,7 +994,17 @@
       + (terse ? (it.star ? "★" : "☆") : (it.star ? "★ 已收藏" : "☆ 收藏")) + "</button>"
       + "<button data-act=\"remind\" title=\"转成提醒\">提醒</button>"
       + "</div>";
-    return "<article class=\"rss-card" + (it.read ? " read" : "") + "\" data-id=\"" + esc(it.id) + "\">"
+    /* 展开正文：只有卡片档渲染 —— 紧凑/标题档是一行式扫描视图，塞一段可滚动的正文会把行高撑乱。
+       没有 link 就无从抓取，按钮也不出现（不留一个点了报错的死控件）。
+       正文节点常驻 DOM：收起态由 .rss-detail-shell 的 0fr + overflow:hidden 收掉高度，
+       这样列表重绘（刷新 / 改筛选 / 换样式）后已抓到的全文还在，不必重抓。 */
+    const detail = style === "card" && it.link
+      ? "<button class=\"rss-btn rss-expand\" data-act=\"expand\" aria-expanded=\"" + (expanded ? "true" : "false")
+      + "\" title=\"读取原文页面并抽取正文\"><span>" + (expanded ? "收起正文" : "展开正文") + "</span></button>"
+      + "<div class=\"rss-detail-shell\" aria-hidden=\"" + (expanded ? "false" : "true")
+      + "\"><div class=\"rss-detail-clip\"><div class=\"rss-detail\">" + bodyHtml(it) + "</div></div></div>"
+      : "";
+    return "<article class=\"rss-card" + (it.read ? " read" : "") + (expanded ? " open" : "") + "\" data-id=\"" + esc(it.id) + "\">"
       + cover
       + "<div class=\"rss-card-main\">"
       + "<div class=\"rss-card-head\">"
@@ -955,10 +1015,76 @@
       + (it.read ? "" : "<span class=\"rss-new\">NEW</span>")
       + "</div>"
       + "<h3 class=\"rss-card-title\" data-act=\"open\">" + esc(it.title) + "</h3>"
-      + (style === "card" && it.snippet ? "<p class=\"rss-snip" + (expanded ? " open" : "") + "\" data-act=\"expand\">" + esc(it.snippet) + "</p>" : "")
+      + (style === "card" && it.snippet ? "<p class=\"rss-snip\" data-act=\"expand\">" + esc(it.snippet) + "</p>" : "")
+      + detail
       + "</div>"
       + act
       + "</article>";
+  }
+
+  /* 详情区内容：正在抓 → 占位；抓过 → 全文；没抓过 → 空（收起态本来就不占高度）。 */
+  function bodyHtml(it) {
+    if (state.bodyLoading.has(it.link)) return "<div class=\"rss-body\">正在读取正文…</div>";
+    const text = state.bodies.get(it.link);
+    return text === undefined ? "" : "<div class=\"rss-body\">" + esc(text) + "</div>";
+  }
+
+  /* 展开 / 收起**一律就地改类，不走 paintList()**：paintList 会整体重写 ui.list.innerHTML，
+     新建的卡片一出生就带着 .open 终态，0fr→1fr 的过渡根本不会播放，观感就是「闪一下」。
+     学校通知的 setItemOpen 同理，那边踩过这个坑。 */
+  function setCardOpen(card, open) {
+    card.classList.toggle("open", open);
+    const btn = card.querySelector(".rss-expand");
+    if (btn) {
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      const span = btn.querySelector("span");
+      if (span) span.textContent = open ? "收起正文" : "展开正文";
+    }
+    const shell = card.querySelector(".rss-detail-shell");
+    if (shell) shell.setAttribute("aria-hidden", open ? "false" : "true");
+  }
+  function setCardBody(card, it) {
+    const box = card.querySelector(".rss-detail");
+    if (box) box.innerHTML = bodyHtml(it);
+  }
+  /* 抓取期间列表可能被整体重绘 ⇒ 手里这个 card 元素已经离开文档。
+     正文要写进**当前**那张同 id 的卡片，否则它会永远停在「正在读取正文…」。 */
+  function liveCard(id) {
+    if (!ui) return null;
+    for (const c of ui.list.querySelectorAll(".rss-card")) {
+      if (c.dataset.id === id) return c;
+    }
+    return null;
+  }
+  async function toggleBody(card, it) {
+    const open = !state.expanded.has(it.id);
+    if (open) state.expanded.add(it.id); else state.expanded.delete(it.id);
+    setCardOpen(card, open);
+    if (!open || state.bodies.has(it.link) || state.bodyLoading.has(it.link)) return;
+    state.bodyLoading.add(it.link);
+    setCardBody(card, it);
+    let err = null;
+    try {
+      const res = await httpGet(it.link);
+      const art = tide.util.web.extractArticleText(res.body, res.finalUrl || it.link);
+      state.bodies.set(it.link, String((art && art.text) || "").trim()
+        || "没有从原文页面识别出正文，点「打开 ↗」直接看原网页。");
+    } catch (e) { err = e; }
+    /* 顺序是修好的，别改回去：**先摘 loading 再写正文**。bodyHtml() 第一眼看的 loading，
+       把写正文留在 try 里 / 清 loading 放进 finally，正文永远停在「正在读取正文…」
+       （浏览器探针实测到过：抓取已返回、卡片却还是占位文案）。 */
+    state.bodyLoading.delete(it.link);
+    const target = liveCard(it.id);
+    if (!target) return;
+    if (err) {
+      /* 失败不进缓存：下次点展开要能重试。错误只写在当前这张卡片上。 */
+      if (state.expanded.has(it.id)) {
+        const box = target.querySelector(".rss-detail");
+        if (box) box.innerHTML = "<div class=\"rss-body err\">读取正文失败：" + esc(String((err && err.message) || err)) + "，再点一次可重试</div>";
+      }
+      return;
+    }
+    setCardBody(target, it);
   }
 
   function paintList(reset) {
@@ -1145,6 +1271,16 @@
 
   /* ═══════════════ 视图 ═══════════════ */
 
+  /* 顶栏「＋ 添加源」= 「订阅管理」的外层入口。添加与删除本来就在里面
+     （地址框 + 每行的 启用/停用 · 改名 · 删除），只是收在折叠里不好找 ——
+     这里只补入口，不另做一套添加/删除逻辑。 */
+  function focusAddBox() {
+    if (!ui) return;
+    ui.manage.open = true;
+    ui.addUrl.focus({ preventScroll: true });
+    ui.addUrl.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
   function buildUI(el) {
     el.innerHTML = "";
     el.style.overscrollBehavior = "contain";
@@ -1165,7 +1301,7 @@
           <span class="rss-seg" data-seg role="group" aria-label="条目显示样式"></span>
           <span class="rss-toggle" data-cover-toggle title="卡片档是否显示封面图"><i></i>封面图</span>
         </div>
-        <div class="rss-toolbar"><span class="rss-lab">来源</span><div class="rss-chips" data-chips></div></div>
+        <div class="rss-toolbar"><span class="rss-lab">来源</span><div class="rss-chips" data-chips></div><button class="rss-add-src" data-add-src type="button" title="添加订阅源（展开「订阅管理」并把光标放到地址框）">＋<span>添加源</span></button></div>
         <div class="rss-status" data-status></div>
       </div>
       <details class="rss-manage" data-manage>
@@ -1200,6 +1336,7 @@
       coverToggle: wrap.querySelector("[data-cover-toggle]"),
       refreshBtn: wrap.querySelector("[data-refresh]"),
       addUrl: wrap.querySelector("[data-add-url]"),
+      addSrcBtn: wrap.querySelector("[data-add-src]"),
       manage: wrap.querySelector("[data-manage]"),
       manageSummary: wrap.querySelector("[data-manage-summary]"),
     };
@@ -1241,6 +1378,7 @@
       if (e.key === "Enter") addFeed(ui.addUrl.value);
     });
     wrap.querySelector("[data-add]").addEventListener("click", () => addFeed(ui.addUrl.value));
+    ui.addSrcBtn.addEventListener("click", focusAddBox);
 
     let kwTimer = null;
     ui.kw.addEventListener("input", () => {
@@ -1268,14 +1406,12 @@
       if (!card) return;
       const it = state.items.find((x) => x.id === card.dataset.id);
       if (!it) return;
+      /* 正文区里选字、点链接不能落到下面的兜底分支（openItem 会把人踢去浏览器，读到一半就丢）。
+         展开按钮是 .rss-detail-clip 的兄弟节点，不会被这条拦住。 */
+      if (e.target.closest(".rss-detail-clip")) return;
       const act = e.target.closest("[data-act]");
       const kind = act ? act.dataset.act : "";
-      if (kind === "expand") {
-        if (state.expanded.has(it.id)) state.expanded.delete(it.id);
-        else state.expanded.add(it.id);
-        paintList();
-        return;
-      }
+      if (kind === "expand") { toggleBody(card, it); return; }
       if (kind === "star") { toggleStar(it); return; }
       if (kind === "remind") { toReminder(it); return; }
       openItem(it);

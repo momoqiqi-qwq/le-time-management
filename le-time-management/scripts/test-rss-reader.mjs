@@ -69,7 +69,7 @@ vm.runInContext(
     + '    parseFeed, decodeEntities, stripCdata, toText, esc, absolutize, normalizePath, normalizeFeedUrl, hashId,\n'
     + '    parseDateAny, discoverFeedUrls, looksLikeFeed, looksLikeHtml, itemAuthor, itemLink,\n'
     +     '    mergeItems, trimItems, filtered, groupOf, fmtWhen, makeFeed, state,\n'
-    + '    cardHtml, applyStyle, setStyle, STYLES, loadPrefs,\n'
+    + '    cardHtml, applyStyle, setStyle, STYLES, loadPrefs, focusAddBox, toggleBody,\n'
     + '    get UI() { return ui; }, set UI(v) { ui = v; },\n'
     + '    DEFAULT_FEEDS, SUGGESTED_FEEDS, PER_FEED_KEEP, CACHE_MAX,\n'
     + '  };\n'
@@ -466,8 +466,8 @@ const JUYA = `<?xml version='1.0' encoding='utf-8'?>
   assert.equal(manifest.id, 'rss-reader');
   /* 版本号**故意钉死具体值**：插件内容改了（哪怕只是换一条预置源）就必须来这里确认一次。
      别把它改成 /^\d+\.\d+\.\d+$/ 之类的格式检查 —— 那样「改了内容却忘升版本」就再也拦不住了。 */
-  assert.equal(manifest.version, '1.1.0');
-  for (const perm of ['ui', 'storage', 'notify', 'http', 'openUrl', 'tasks', 'blocks', 'timeParse']) {
+  assert.equal(manifest.version, '1.4.0');
+  for (const perm of ['ui', 'storage', 'notify', 'http', 'openUrl', 'tasks', 'blocks', 'timeParse', 'events']) {
     assert.ok(manifest.permissions.includes(perm), 'manifest 必须声明 ' + perm);
   }
   /* 小程序端没有原生适配页 —— 标 unavailable，插件中心才不会出现点不开的入口
@@ -714,4 +714,165 @@ const JUYA = `<?xml version='1.0' encoding='utf-8'?>
   assert.equal(b.link, 'https://daily.juya.uk/issues/2026-09-17/', 'link 仍要按 <link> 取，不能拿 guid 顶替');
 }
 
-console.log('PASS: RSS/Atom/RDF 解析、实体与链接清洗、日期归一、订阅发现、合并保读、裁剪保护、筛选分组、筛选刷新契约、显示样式三档、description/content:encoded 取值优先级，以及清单/图标/生成物同步');
+/* ═══════════ 十九、卡片「展开正文」：抓原文正文 + 与同仓库插件同款的展开动画 ═══════════ */
+{
+  const feed = fx.makeFeed('https://r.com/feed', 'R 站', 0);
+  const it = {
+    id: 'e1', feedId: feed.id, title: '一篇有正文的文章', link: 'https://r.com/post/1',
+    date: TODAY + ' 10:00', author: '', snippet: '摘要有两行，得展开才看得全。'.repeat(3),
+    cover: '', read: false, star: false,
+  };
+  fx.state.feeds = [feed];
+  fx.state.items = [it];
+  fx.state.prefs = { kw: '', feed: 'all', unreadOnly: false, starOnly: false, autoMin: 0, showCover: true, style: 'card' };
+  fx.state.expanded.clear();
+  fx.state.bodies.clear();
+  fx.state.bodyLoading.clear();
+
+  /* ① 收起态：按钮在、文案「展开正文」、详情壳常驻但 aria-hidden。
+     详情壳**不是**条件渲染 —— 它是 grid 0fr 收起的，所以 DOM 一直在，只是不占高度。 */
+  const closed = fx.cardHtml(it);
+  assert.match(closed, /<button class="rss-btn rss-expand" data-act="expand" aria-expanded="false"/, '收起态要有「展开正文」按钮且 aria-expanded=false');
+  assert.match(closed, /<span>展开正文<\/span>/);
+  assert.match(closed, /class="rss-detail-shell" aria-hidden="true"/, '正文常驻 DOM，收起时不标 aria-hidden 读屏就会念出来');
+  assert.match(closed, /<div class="rss-detail"><\/div>/, '没抓过正文时详情区为空');
+  assert.ok(!/class="rss-card[^"]*open/.test(closed), '收起态卡片不带 open 类');
+
+  /* ② 展开态：open 类挂在**卡片**上（`.rss-card.open` 是全部过渡规则的开关），文案与 aria 同步翻转 */
+  fx.state.expanded.add(it.id);
+  const opened = fx.cardHtml(it);
+  assert.match(opened, /class="rss-card open"/, '展开态的 open 类必须挂在 .rss-card 上，否则 .rss-card.open 的选择器全不生效');
+  assert.match(opened, /aria-expanded="true"/);
+  assert.match(opened, /<span>收起正文<\/span>/);
+  assert.match(opened, /class="rss-detail-shell" aria-hidden="false"/);
+  fx.state.expanded.delete(it.id);
+
+  /* ③ 抓回来的正文要渲进详情区，且必须转义 —— 原文页面里的 <script> 只是文章里贴的一段代码 */
+  fx.state.bodies.set(it.link, '第一段\n<script>alert(1)</script>&第二段');
+  const cached = fx.cardHtml(it);
+  assert.ok(cached.includes('<div class="rss-body">第一段\n'), '正文换行原样带过（.rss-body 用 white-space:pre-wrap 排版）');
+  assert.ok(cached.includes('&lt;script&gt;alert(1)&lt;\/script&gt;&amp;第二段'), '正文必须转义：' + cached.slice(cached.indexOf('rss-body')));
+  assert.ok(!cached.includes('<script>'), '正文里绝不能出现未转义的 <script>');
+
+  /* ④ 抓取中：占位文案写在详情区里，靠它把「点了但还没回来」这件事说出来 */
+  fx.state.bodies.clear();
+  fx.state.bodyLoading.add(it.link);
+  assert.match(fx.cardHtml(it), /<div class="rss-body">正在读取正文…<\/div>/, '抓取中要显示占位文案');
+  fx.state.bodyLoading.delete(it.link);
+
+  /* ⑤ 没有 link 就无从抓取 ⇒ 整个展开入口不渲染，不留一个点了必然报错的死控件 */
+  assert.doesNotMatch(fx.cardHtml({ ...it, link: '' }), /rss-expand|rss-detail-shell/, '无 link 的条目不渲染展开入口');
+
+  /* ⑥ 紧凑 / 标题档不渲染（与摘要同一规律：JS 侧就不出，而不是渲染了再靠 CSS 藏） */
+  for (const s of ['compact', 'title']) {
+    fx.state.prefs = { ...fx.state.prefs, style: s };
+    assert.doesNotMatch(fx.cardHtml(it), /rss-expand|rss-detail-shell/, s + ' 档不渲染展开入口');
+  }
+  fx.state.prefs = { ...fx.state.prefs, style: 'card' };
+
+  /* ⑦ 🔴 动画必须是「本仓库插件展开收起的事实标准」：与 警大通知 / 学校通知 的详情壳
+     **同一套时长与曲线**。为什么不能就地换一套：实测 Chromium 里 grid 轨道只有
+     「0fr → 1fr」是连续插值，「定长轨道（px 或 lh）→ 1fr」只做 discrete 插值
+     （前一半时间停在原高，然后一次性跳到位）；改成 max-height 或 JS 测高又会做出
+     第三种手感 —— 同一类操作上出现三种动画。 */
+  const shellRule = (rel, cls) => {
+    const s = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    return (s.match(new RegExp('\\.' + cls + '-detail-shell\\s*\\{[^}]*\\}')) || [''])[0];
+  };
+  const transOf = (rule) => (rule.match(/transition:([^;]+)/) || [, ''])[1].replace(/\s+/g, ' ').trim();
+  const rssShell = shellRule('../public/plugins/rss-reader/main.js', 'rss');
+  const ppShell = shellRule('../public/plugins/cppu-notify/main.js', 'pp');
+  const snShell = shellRule('../public/plugins/school-notice/main.js', 'sn');
+  assert.match(rssShell, /display:grid;grid-template-rows:0fr/, '收起态必须是 0fr 起跳（定长轨道不会平滑），且要先抓到的是收起态那条规则');
+  const [rssTrans, ppTrans, snTrans] = [rssShell, ppShell, snShell].map(transOf);
+  assert.ok(ppTrans && snTrans, '没在 警大通知 / 学校通知 里找到 .xx-detail-shell 的 transition —— 基准插件是不是改了写法？');
+  assert.equal(rssTrans, ppTrans, '展开动画的时长/曲线要和 警大通知 一致\n  rss: ' + rssTrans + '\n  pp : ' + ppTrans);
+  assert.equal(rssTrans, snTrans, '展开动画的时长/曲线要和 学校通知 一致\n  rss: ' + rssTrans + '\n  sn : ' + snTrans);
+  assert.match(src, /\.rss-card\.open \.rss-detail-shell\{grid-template-rows:1fr/, '展开态要把轨道切到 1fr');
+  assert.match(src, /\.rss-expand::after\{content:"⌄"/, '箭头用 ⌄，与 警大 / 学校通知 同一个字符');
+  assert.match(src, /\.rss-card\.open \.rss-expand::after\{transform:translateY\(1px\) rotate\(180deg\)/, '展开时箭头转 180°');
+
+  /* ⑧ 就地改类，不整体重绘：paintList 会重写 innerHTML，新卡片一出生就带着 .open 终态，
+     0fr→1fr 的过渡根本不会播放（观感就是「闪一下」）。 */
+  assert.doesNotMatch(src, /kind === "expand"[\s\S]{0,160}paintList\(/, '展开/收起不许走 paintList()');
+  assert.match(src, /closest\("\.rss-detail-clip"\)/, '正文区里的点击不能被兜底分支当成「打开原文」，读到一半被踢去浏览器');
+  assert.match(src, /\.rss-card\.open\{content-visibility:visible/, '展开态要退出 content-visibility:auto，否则滚出屏幕按 88px 占位收、滚回来会跳');
+
+  /* ⑨ 🔴 回归（浏览器探针实测到的 bug）：抓回来的正文必须真的写进卡片。
+     bodyHtml() 第一眼就是 bodyLoading，所以「清 loading」与「写正文」的先后是决定性的 ——
+     旧写法把写正文放在 try 里、清 loading 放 finally，结果抓取已返回而卡片永远停在
+     「正在读取正文…」。这条用假卡片真跑 toggleBody()，量的就是那一下。 */
+  const detailBox = { innerHTML: '' };
+  const labelSpan = { textContent: '展开正文' };
+  const fakeCard = {
+    dataset: { id: it.id },
+    classList: { toggle() {} },
+    querySelector: (sel) => (sel === '.rss-expand'
+      ? { setAttribute() {}, querySelector: () => labelSpan }
+      : sel === '.rss-detail' ? detailBox : sel === '.rss-detail-shell' ? { setAttribute() {} } : null),
+  };
+  const realGet = ctx.tide.http.get;
+  ctx.tide.util.web = { extractArticleText: (html) => ({ text: String(html).replace(/<[^>]+>/g, '\n').replace(/\s*\n\s*/g, '\n').trim() }) };
+  ctx.tide.http.get = async () => ({ status: 200, body: '<div><p>原文第一段</p><p>第二段</p></div>', finalUrl: it.link });
+  fx.UI = { list: { querySelectorAll: () => [fakeCard] } };
+  fx.state.expanded.clear();
+  fx.state.bodies.clear();
+  fx.state.bodyLoading.clear();
+  await fx.toggleBody(fakeCard, it);
+  assert.ok(detailBox.innerHTML.includes('原文第一段'), '正文要真的写进详情区，实际：' + detailBox.innerHTML);
+  assert.ok(!detailBox.innerHTML.includes('正在读取正文'), '不许停在占位文案（loading 没清就先写正文）');
+  assert.equal(fx.state.expanded.has(it.id), true, '展开状态要记下');
+  assert.equal(fx.state.bodies.get(it.link), '原文第一段\n第二段', '正文按 link 入内存缓存');
+  assert.equal(fx.state.bodyLoading.has(it.link), false, '抓完要摘掉 loading');
+
+  /* ⑩ 抓失败：错误写在卡片上、**不进缓存**（下次展开能重试）、loading 摘掉 */
+  ctx.tide.http.get = async () => ({ status: 403, body: '', finalUrl: it.link });
+  fx.state.expanded.clear();
+  fx.state.bodies.clear();
+  detailBox.innerHTML = '';
+  await fx.toggleBody(fakeCard, it);
+  assert.match(detailBox.innerHTML, /读取正文失败：HTTP 403/, '失败要有可行动的文案，实际：' + detailBox.innerHTML);
+  assert.match(detailBox.innerHTML, /class="rss-body err"/, '失败文案走 .err 上色');
+  assert.equal(fx.state.bodies.has(it.link), false, '失败不许进缓存（否则一次抖动就把这条永久钉死）');
+  assert.equal(fx.state.bodyLoading.has(it.link), false, '失败也要摘 loading');
+  ctx.tide.http.get = realGet;
+  fx.UI = null;
+}
+
+/* ═══════════ 二十、顶栏「＋ 添加源」入口（订阅管理的外层把手） ═══════════ */
+{
+  /* 添加与删除本来就都在「订阅管理」里，问题是入口藏太深。这一节钉两件事：
+     ① 里面那套既有控件一个都没被拆走；② 顶栏那颗只是把手，不是第二套添加逻辑。 */
+
+  /* ① 每行仍有 启用/停用 与 删除，内部仍有 添加 按钮与地址输入框 */
+  assert.match(src, /srcBtn\(f\.enabled === false \? "启用" : "停用", \(\) => toggleFeed\(f\)\)/, '源行必须仍有 启用/停用');
+  assert.match(src, /srcBtn\("删除", \(\) => removeFeed\(f\)\)/, '源行必须仍有 删除（顶栏加了入口也不能把它换掉）');
+  assert.match(src, /<input class="rss-input" data-add-url/, '「订阅管理」里必须仍有地址输入框');
+  assert.match(src, /<button class="rss-btn pri" data-add>添加<\/button>/, '「订阅管理」里必须仍有 添加 按钮');
+
+  /* ② 顶栏那颗按钮：在「来源」那一行、在 .rss-hero 内（不滚到页面底部也够得着），且是 button 元素 */
+  const hero = (src.match(/<div class="rss-hero[\s\S]*?<div data-list/) || [''])[0];
+  assert.ok(hero, '没在 .rss-hero 到列表之间找到视图骨架（顶栏结构是不是动了？）');
+  assert.match(hero, /<button class="rss-add-src" data-add-src type="button"/, '顶栏必须有一颗真的 <button> 加源入口（不是 span/chip）');
+  assert.match(hero, /data-chips><\/div><button class="rss-add-src"/, '入口要挂在「来源」那一行的行尾');
+  assert.match(hero, /title="[^"]*添加订阅源/, '触屏没有 hover 提示，但读屏要能念出来 —— title 不能省');
+
+  /* ③ 行为：展开 <details> 并把光标放到地址框上。focus 必须 preventScroll ——
+     否则浏览器自己那一下跳转会和下面的 scrollIntoView 抢，观感是跳两次。 */
+  const calls = [];
+  const manage = { open: false };
+  const addUrl = {
+    focus: (o) => calls.push(['focus', o]),
+    scrollIntoView: (o) => calls.push(['scrollIntoView', o]),
+  };
+  fx.UI = { manage, addUrl };
+  fx.focusAddBox();
+  assert.equal(manage.open, true, '点顶栏入口必须把「订阅管理」展开');
+  assert.deepEqual(calls.map((c) => c[0]), ['focus', 'scrollIntoView'], '要聚焦地址框并带到视野内');
+  assert.equal(calls[0][1].preventScroll, true, 'focus 要 preventScroll，别和 scrollIntoView 抢');
+  /* 只是把手：不许在这里顺手加源，否则「按 Enter 添加 / 点添加添加」会多出一条路径 */
+  assert.doesNotMatch(src, /function focusAddBox\(\)\s*\{[\s\S]{0,260}?(addFeed|removeFeed)\(/, '入口只负责展开与聚焦，不自己添加/删除源');
+  fx.UI = null;
+}
+
+console.log('PASS: RSS/Atom/RDF 解析、实体与链接清洗、日期归一、订阅发现、合并保读、裁剪保护、筛选分组、筛选刷新契约、显示样式三档、description/content:encoded 取值优先级、卡片展开正文（含与同仓库插件同款的展开动画）、顶栏加源入口，以及清单/图标/生成物同步');
