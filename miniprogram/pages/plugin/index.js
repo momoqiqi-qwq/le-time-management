@@ -32,7 +32,7 @@ const GUIDE_DOCS = {
   "exam-calendar": ["选择考试类别或时间范围", "查看考试节点和来源说明", "把需要关注的日期加入计划"],
   "pomodoro": ["选择预设时间或输入自定义倒计时", "选择已有任务，或直接新建一个专注任务", "开始计时；完成后自动累计专注统计"],
   "weekly-report": ["打开后自动读取任务与时间块", "查看每天投入、分类占比和完成情况", "用周报复盘下一周安排"],
-  "gx-news": ["设置竞赛关键词和筛选条件", "刷新获取竞赛通知", "重要消息可直接转成提醒"],
+  "gx-news": ["设置竞赛关键词和筛选条件", "刷新获取竞赛通知", "重要消息可直接转成提醒", "切换竞赛源与自定义源需在桌面端使用（微信只放行了摩课云一个域名）"],
   "rss-reader": ["在桌面端展开「订阅管理」，粘贴 RSS / Atom 地址或网站首页（会自动发现订阅）", "回到列表点「刷新」抓取内容，未读条目带 NEW 标记", "点标题打开原文；要跟进的条目点「提醒」转成 Le 提醒"],
   "cn-holiday": ["打开即可优先读取本地节假日数据", "需要最新调整时再手动联网更新", "用于课程、计划和休息日判断"],
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
@@ -1059,7 +1059,11 @@ Page({
         kw: f.kw || "", type: ["all", "n202", "n203", "other"].indexOf(f.type) >= 0 ? f.type : "all",
         month: f.month || "all", hideSeen: !!f.hideSeen,
       },
-      seen: new Set(store.pluginStorageGet("gx-news", "seen", []) || []),
+      /* 桌面端 v0.66.0 起条目 id 带源前缀（`mokeroad:123`），因为多源之后三家的 id 都是自增数字、必然撞号。
+         data.json 是两端共用的，这里要把前缀摘掉再比，否则手机端的已读记录全不命中、消息整列表复活成 NEW。
+         写回时仍写裸 id —— 桌面端读回来会自己补回前缀。 */
+      seen: new Set((store.pluginStorageGet("gx-news", "seen", []) || [])
+        .map((x) => String(x).replace(/^mokeroad:/, ""))),
       list: [], page: 1, hasMore: true, fetching: false, fetchedAt: 0, error: "",
       rendered: 14,
     };
