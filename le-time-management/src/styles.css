@@ -2585,7 +2585,10 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   top: 50%;
   transform: translate(-50%, -50%);
   width: min(720px, calc(var(--ui-vw, 100vw) - 28px));
-  max-height: min(760px, calc(var(--ui-vh, 100dvh) - 32px));
+  /* v0.58.1：居中弹窗的高度上限必须扣掉安全区。原写法只减 32px ⇒ 居中后上下
+     各剩 16px，手机上是「状态栏压标题、导航栏压底部按钮」（--sat/--sab 各 30px 上下）。
+     桌面 / iOS 的 env() 为 0、Android 走注入值，两边都成立（铁律四）。 */
+  max-height: min(760px, calc(var(--ui-vh, 100dvh) - 32px - var(--sat, env(safe-area-inset-top, 0px)) - var(--sab, env(safe-area-inset-bottom, 0px))));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3311,6 +3314,13 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   }
   .quick-dock.collapsed { width: min(292px, calc(var(--ui-vw, 100vw) - 24px)); }
   .settings-modal { inset: 0; border-radius: 0; border-left: 0; border-right: 0; }
+  /* v0.58.1：全屏弹窗滚到底时最后一项会被导航栏 / 手势条压住 ——
+     窄屏 .set-wrap 的 padding-bottom 只有 2px（那是桌面压缩留白的值），
+     而本层是 fixed 全屏，不走 .view 的 --nav-pad 安全区。加在滚动容器上，
+     等于给内容区底部垫出系统栏高度。 */
+  .settings-modal-body {
+    padding-bottom: var(--sab, env(safe-area-inset-bottom, 0px));
+  }
   /* 全屏贴顶 ⇒ 顶栏必须自己让开状态栏，否则「设置」二字与「关闭」按钮被状态栏压住
      （用户反馈：APK 里顶栏挡到手机状态栏）。Android WebView 不实现 env(safe-area-inset-*)，
      只有 MainActivity 注入的 --sat 是真的 ⇒ 必须走双路写法（铁律四）。
@@ -3562,9 +3572,12 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   position: fixed;
   /* 左下角：右下角已被 #toasts 占用（z-index 100），挤在一起会互相盖住。
      z-index 低于设置弹窗（1900/1901），用户打开设置后提示条自动沉到后面去。 */
-  left: 22px;
-  /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处） */
-  bottom: calc(22px / var(--ui-scale, 1));
+  /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处）。
+     v0.58.1：再叠安全区 —— 22px 的物理边距在手机上小于导航栏 / 手势条 inset，
+     提示条会被系统栏压掉一截（与 #toasts 同理，那边早就在窄屏补了 --sab）。
+     桌面 / iOS 走 env() 兜底，Android 走 MainActivity 注入值（铁律四）。 */
+  left: calc(22px / var(--ui-scale, 1) + var(--sal, env(safe-area-inset-left, 0px)));
+  bottom: calc(22px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
   z-index: 1890;
   width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
   padding: 13px 15px;

@@ -389,4 +389,48 @@ assert.match(reminderKvBase, /flex-direction:\s*column/,
 assert.ok(!/min-height:\s*74px/.test(reminderKvBase),
   "竖排后不许再钉死 min-height:74px 的单行高度，要由内容撑开");
 
-console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, back-key history stack, pinch zoom, the narrow-screen settings accordion and the task-drawer reminder layout");
+// ── v0.58.1：安全区补漏 ────────────────────────────────────────────────
+// 前情：Android WebView 不实现 env(safe-area-inset-*)，只有 MainActivity 注入的
+// --sat/--sab/--sal/--sar 是真的（铁律四）。下列四处漏了双路写法 —— 它们用的都是
+// 「固定物理边距」（22px / 18px / 32px），而系统栏 inset 实测在布局坐标约 30px 上下，
+// 于是被状态栏或导航栏压住。判据必须**钉住精确的 calc 结构**：
+// 只查「出现了 --sab」的话，`bottom: var(--sab)` 这种把 22px 边距整个丢掉的写法也会过。
+
+// ① 应用内更新提示条（左下角）。#toasts 早在窄屏补了 --sab，同族的这条漏了。
+const updateToast = css.match(/\.update-toast\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.ok(updateToast, "必须存在 .update-toast 规则");
+assert.match(updateToast, /bottom:\s*calc\(22px \/ var\(--ui-scale, 1\) \+ var\(--sab,\s*env\(safe-area-inset-bottom/,
+  "🔴 更新提示条贴底要「原物理边距 + --sab」，否则被导航栏 / 手势条压住");
+assert.match(updateToast, /left:\s*calc\(22px \/ var\(--ui-scale, 1\) \+ var\(--sal,\s*env\(safe-area-inset-left/,
+  "🔴 更新提示条贴左要「原物理边距 + --sal」（横屏挖孔在侧边）");
+assert.ok(!/bottom:\s*env\(safe-area-inset-bottom/.test(updateToast),
+  "🔴 不许裸用 env()：Android WebView 里恒为 0，等于没写");
+
+// ② AI 规则编辑器（居中弹窗）。原写法 max-height 只减 32px ⇒ 居中后上下各剩 16px，
+//    状态栏压标题、导航栏压底部按钮。扣掉两个 inset 后居中才是真的躲开。
+const aiEditor = css.match(/\.ai-rule-editor\s*\{([^}]*)\}/)?.[1] ?? "";
+assert.ok(aiEditor, "必须存在 .ai-rule-editor 规则");
+assert.match(aiEditor, /max-height:[^;]*var\(--sat,\s*env\(safe-area-inset-top/,
+  "🔴 居中弹窗的高度上限必须扣 --sat，否则标题被状态栏压住");
+assert.match(aiEditor, /max-height:[^;]*var\(--sab,\s*env\(safe-area-inset-bottom/,
+  "🔴 居中弹窗的高度上限必须扣 --sab，否则底部按钮被导航栏压住");
+assert.ok(!/max-height:\s*min\(760px,\s*calc\(var\(--ui-vh, 100dvh\) - 32px\)\)/.test(aiEditor),
+  "🔴 不许退回「只减 32px」的旧写法（手机上必然被两端系统栏压住）");
+
+// ③ 设置弹窗在窄屏是全屏 inset:0，它不走 .view 的 --nav-pad 安全区，
+//    而窄屏 .set-wrap 的 padding-bottom 只有 2px ⇒ 滚到底时最后一项被导航栏盖住。
+const modalIdx = css.indexOf(".settings-modal { inset: 0");
+assert.ok(modalIdx > 0, "窄屏设置弹窗必须走 inset:0 全屏（改动这里要同步改本断言）");
+assert.match(css.slice(modalIdx, modalIdx + 700),
+  /\.settings-modal-body\s*\{[^}]*padding-bottom:\s*var\(--sab,\s*env\(safe-area-inset-bottom/,
+  "🔴 窄屏全屏设置弹窗的滚动容器必须垫 --sab，否则最后一项被导航栏压住");
+
+// ④ 插件（web-collector）的内嵌网页面板。插件样式没有隔离，同样得吃宿主变量；
+//    18px 的物理边距小于状态栏 inset，面板顶部会伸到状态栏下面。
+const wcPanel = read("../public/plugins/web-collector/main.js");
+assert.match(wcPanel, /\.wc-web-panel\{position:fixed;inset:calc\(18px \+ var\(--sat,/,
+  "🔴 插件浮层面板顶部必须「18px + --sat」，否则压状态栏");
+assert.match(wcPanel, /\.wc-web-panel\{position:fixed;inset:[^;]*var\(--sab,env\(safe-area-inset-bottom/,
+  "🔴 插件浮层面板底部必须「18px + --sab」");
+
+console.log("PASS: Android natural-height layout, tappable quadrant controls, desktop-only window actions, wrapping task cards, single-layer topbar tools, launcher label, status-bar safe-area insets, the four v0.58.1 safe-area fill-ins, back-key history stack, pinch zoom, the narrow-screen settings accordion and the task-drawer reminder layout");

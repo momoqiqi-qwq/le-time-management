@@ -1,6 +1,6 @@
 [package]
 name = "letime"
-version = "0.58.0"
+version = "0.58.1"
 description = "Le时间管理 · 时间块与四象限"
 authors = ["yile"]
 edition = "2021"
@@ -39,6 +39,8 @@ tauri-plugin-global-shortcut = "2"
 jni = "0.21"
 
 [profile.release]
-codegen-units = 1
-lto = true
+# v0.58.1：lto 由 true 改 "thin"（链接期 2~5 倍提速、恢复多核并行），
+# 移除 codegen-units = 1（原为单线程优化，是构建慢的最大单项）。
+# 代价：二进制略大、运行时性能略降，对此类桌面工具无感。
+lto = "thin"
 strip = true
