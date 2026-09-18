@@ -767,6 +767,31 @@
     }, AUTO_REFRESH_MS);
   }
 
+  /* ── 插件联动：第 1 页抓到新通知时广播 notice:new，微信推送插件按插件勾选合并推送 ──
+     判「新」用「上次第 1 页的 RESOURCE_ID 快照」，不复用界面上的已读集合 state.seen ——
+     那个只在点开详情/转提醒时才写，拿它差分等于每次刷新都把没点开的旧通知重推一遍。
+     没有快照键（首次抓取）只记不广播，否则一登录成功就把整页历史通知推到微信。 */
+  async function broadcastNew(items) {
+    const stored = await tide.storage.get("knownIds", null);
+    const known = new Set(Array.isArray(stored) ? stored : []);
+    const fresh = stored === null ? [] : items.filter((it) => itemKey(it) && !known.has(itemKey(it)));
+    await tide.storage.set("knownIds", items.map(itemKey).filter(Boolean));
+    if (!fresh.length) return;
+    try {
+      tide.events.emit("notice:new", {
+        source: "cppu-notify", sourceName: "警大门户", total: fresh.length,
+        items: fresh.slice(0, 5).map((it) => {
+          const t = Number(it.CREATE_TIME || 0);
+          return {
+            title: titleOf(it),
+            time: t ? new Date(t).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "",
+            sender: String(it.CREATE_USER_NAME || ""),
+          };
+        }),
+      });
+    } catch {}
+  }
+
   /* ── 通知数据 ── */
   async function loadPage(page = 1, renewed = false) {
     if (state.fetching) return;
@@ -808,6 +833,7 @@
           tide.inbox.create({ sourceKey: `cppu:${key}`, title, note: "警大门户新通知 · 打开通知详情后可进一步识别日期和时间", suggestion: "create-task" });
         }
       }
+      if (page === 1) await broadcastNew(items);
     } catch (e) {
       // 会话过期先尝试静默续期一次
       if (!renewed && await silentRenew()) {

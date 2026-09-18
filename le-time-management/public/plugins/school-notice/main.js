@@ -125,6 +125,24 @@
     };
   }
 
+  /* ── 插件联动：抓到新公告时广播 notice:new，微信推送插件订阅后按插件勾选合并推送 ──
+     判「新」用「上次见过的 URL 集合」而不是列表差分：本插件没有已读标记，靠上次快照才能认出新条目。
+     存储里没有 seen 键 = 这个站点第一次读到列表，只记集合不广播，否则装好插件就把整页历史公告推一遍。
+     广播失败绝不能影响读取本身，所以单独 try/catch。 */
+  async function broadcastNew(site, rows) {
+    const stored = await tide.storage.get(`seen:${site.id}`, null);
+    const known = new Set(Array.isArray(stored) ? stored : []);
+    const fresh = stored === null ? [] : rows.filter((n) => n.url && !known.has(n.url));
+    await tide.storage.set(`seen:${site.id}`, rows.map((n) => n.url));
+    if (!fresh.length) return;
+    try {
+      tide.events.emit("notice:new", {
+        source: "school-notice", sourceName: "学校通知", total: fresh.length,
+        items: fresh.slice(0, 5).map((n) => ({ title: n.title, time: n.date || "", sender: site.name || "" })),
+      });
+    } catch {}
+  }
+
   async function readNotices(site) {
     const res = await fetchPage(site, site.url);
     if (res.status >= 400) throw new Error(`HTTP ${res.status}`);
@@ -148,6 +166,7 @@
     site.cms = got.mode; site.spaHint = got.hint;
     notices = got.rows;
     await tide.storage.set(`notices:${site.id}`, notices.slice(0, 100)); await save();
+    await broadcastNew(site, notices);
     return { login: false, html: res.body };
   }
 
