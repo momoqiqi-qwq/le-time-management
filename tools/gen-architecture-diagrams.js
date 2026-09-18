@@ -169,13 +169,16 @@ function layersDiagram() {
     "依赖方向严格向下：上层可调下层，下层绝不 import 上层。v0.58.2 · 前端 12.7k 行 JS / Rust 2.9k 行 / 15 个内置插件",
     W
   );
+  // 层名 + 说明两行文字占掉的高度：pad14 + 基线12 + 行距22 + 下沉留白14
+  const HEAD = 62;
+  if (HEAD < 14 + 12 + 22 + 6) overflow.push("00: HEAD 小于两行文字高度，芯片会压住说明文字");
   for (const L of layers) {
-    const ch = chips(CX, y + 44, CR - CX, L.c, L.k);
-    const h = Math.max(ch.bottom - y - 44 + 14, 66);
-    body += box(CX - 10, y, CR - CX + 20, h + 40, L.k, [L.n, L.d], { fs: 15, lh: 22, pad: 14, tag: `00 ${L.n}` });
+    const ch = chips(CX, y + HEAD, CR - CX, L.c, L.k);
+    const h = HEAD + (ch.bottom - y - HEAD) + 14;
+    body += box(CX - 10, y, CR - CX + 20, h, L.k, [L.n, L.d], { fs: 15, lh: 22, pad: 14, tag: `00 ${L.n}` });
     body += ch.svg;
     if (y > 108) body += arrow((CX + CR) / 2, y - 18, (CX + CR) / 2, y - 2, "", { w: 2 });
-    y += h + 40 + 22;
+    y += h + 22;
   }
   const totalBottom = y - 2;
   body += `<text x="${LX + 8}" y="130" font-size="13" fill="#2563eb" font-weight="700">调用方向 ↓</text>`;
@@ -206,7 +209,7 @@ function layersDiagram() {
   ], { fs: 13, lh: 20, pad: 14, tag: "00 右侧横切栏" });
 
   // 底部：小程序同源栈
-  y = totalBottom + 30;
+  y = totalBottom + 40;
   const miniChips = ["tools/test-miniprogram-core.js 260 断言", "tools/check-miniprogram.js 静态校验", "gen-miniprogram-tab-icons.js", "core/appMeta.js 版本由 sync-version.js 写", "备份 JSON 与桌面双向可恢复"];
   const miniLines = [
     "⑨ 微信小程序（同源平行栈，不依赖 Tauri、无 npm 构建）",
