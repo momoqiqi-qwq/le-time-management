@@ -3981,6 +3981,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .sync-result.is-ok { color: var(--deep); }
 .sync-result.is-error { color: var(--danger); }
 .sync-daily { margin-top: 16px; }
+.sync-lan { margin-top: 18px; padding-top: 13px; border-top: 1px dashed var(--line); }
 
 
 /* 窄屏：操作条是底栏的一部分（.rail-bottom 那组规则给了 order:-1 / width:20%），
@@ -3999,3 +4000,6 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .sync-pass-row .btn { min-height: 34px; }
 }
 
+/* 引导卡里的按钮在"还没到那一步"时是 disabled 的（比如没连上电脑之前的「拉回本机」）。
+   不给个灰态，它看起来就是主操作，人会以为可以直接点 —— 与 .update-actions / .plugin-toolbar 同一口径。 */
+.sync-card .btn:disabled { opacity: .45; cursor: not-allowed; }

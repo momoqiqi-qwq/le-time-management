@@ -1,5 +1,10 @@
 // 局域网联动服务：Win 作为控制端，手机浏览器/小程序通过本服务查看与操作
 // 安全：所有 /m、/api、/qr.svg 请求都需要配对令牌（token）
+//
+// 本服务对数据**只读**：/api/state 与 /api/info 供手机端「局域网直连」拉快照用，
+// 唯一的写入口是 /api/command 那两条动作（勾选任务 / 快速添加），且一律经前端
+// 统一数据层落盘。想隔着一根网线覆盖整台设备的数据，这里没有对应的路由 ——
+// 这是刻意的：手机 → 电脑的推送一旦开出来，同网段里任何拿到配对码的人都能抹掉电脑数据。
 use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -112,6 +117,29 @@ pub fn spawn_server(
                     let data = std::fs::read_to_string(&data_path)
                         .unwrap_or_else(|e| format!("{{\"error\":\"{e}\"}}"));
                     (200, json_headers(), data)
+                }
+                // 拉之前的「电脑上是什么货」：条数 + 落盘时间。只读，不引入任何写入口。
+                (&tiny_http::Method::Get, "/api/info") => {
+                    let saved_at = std::fs::metadata(&data_path).ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs());
+                    let parsed: Option<serde_json::Value> = std::fs::read_to_string(&data_path).ok()
+                        .and_then(|s| serde_json::from_str(&s).ok());
+                    let count = |key: &str| parsed.as_ref()
+                        .and_then(|v| v.get(key))
+                        .and_then(|v| v.as_array())
+                        .map(|a| a.len())
+                        .unwrap_or(0);
+                    let body = serde_json::json!({
+                        "ok": true,
+                        "appVersion": env!("CARGO_PKG_VERSION"),
+                        "savedAtEpoch": saved_at,
+                        "dataOk": parsed.is_some(),
+                        "tasks": count("tasks"),
+                        "blocks": count("blocks"),
+                    });
+                    (200, json_headers(), body.to_string())
                 }
                 (&tiny_http::Method::Post, "/api/command") => {
                     // 转发给前端，由前端经统一的数据层落盘

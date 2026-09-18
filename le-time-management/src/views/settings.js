@@ -159,7 +159,7 @@ export function renderSettings(container, opts = {}) {
     abEnabled.onchange = persistAb; abFreq.onchange = persistAb; abKeep.onchange = persistAb; paintBackups();
 
     /* 可选同步：网盘快照的分步引导与一键配置，实现拆在 views/settings/sync.js（和 ai.js 同一个理由）*/
-    const syncCard = await createSyncCard({ rerender: render, appVersion: info?.version || "" });
+    const syncCard = await createSyncCard({ appVersion: info?.version || "", os: info?.os || "" });
 
     /* 全局快捷键 */
     const shortcutCfg = getShortcutConfig();

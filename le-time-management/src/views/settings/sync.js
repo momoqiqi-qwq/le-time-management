@@ -13,6 +13,8 @@ import { api } from "../../api.js";
 import * as S from "../../store.js";
 import { el, toast } from "../../ui.js";
 import { toggleSwitch } from "../../switchControl.js";
+import { createAutoBackup } from "../../dataCenter.js";
+import { parseLanTarget, lanInfo, lanPullSnapshot, describeLanInfo, DEFAULT_LAN_PORT } from "../../lanSync.js";
 import {
   WEBDAV_PRESETS, DEFAULT_SYNC_FILE_NAME, getPreset,
   buildDavUrl, migrateLegacyUrl,
@@ -22,7 +24,7 @@ import {
   uploadWebDav, downloadWebDav, isPotentiallyUnsafeWebDav,
 } from "../../syncLayer.js";
 
-export async function createSyncCard({ rerender = () => {}, appVersion = "" } = {}) {
+export async function createSyncCard({ appVersion = "", os = "" } = {}) {
   const settings = S.getState().settings;
   settings.sync ??= {};
   const cfg = settings.sync.webdav ??= {};
@@ -136,7 +138,7 @@ export async function createSyncCard({ rerender = () => {}, appVersion = "" } = 
       el("br"),
       "不自动上传、不注册账号，不点按钮就没有任何东西离开这台设备。",
     ),
-    ...steps, dailyCard,
+    ...steps, dailyCard, createLanSection(settings, { appVersion, os }),
   );
 
   const isConfigured = () => Boolean(cfg.root && cfg.lastSyncAt);
@@ -279,10 +281,12 @@ export async function createSyncCard({ rerender = () => {}, appVersion = "" } = 
           say("正在读取网盘上的快照…");
           const snap = await downloadWebDav({ url: buildDavUrl(form), username: form.username, password });
           const when = snap.exportedAt ? new Date(snap.exportedAt).toLocaleString("zh-CN") : "时间未知";
-          if (!window.confirm(`网盘上的快照：${when}${snap.appVersion ? ` · v${snap.appVersion}` : ""}\n\n拉回来会把这台设备现在的数据整份换掉。拿不准就先点一次「上传本地 → 网盘」留个底。确定继续？`)) {
-            say("已取消，本地数据没动");
+          if (!window.confirm(`网盘上的快照：${when}${snap.appVersion ? ` · v${snap.appVersion}` : ""}\n\n拉回来会把这台设备现在的数据整份换掉。本机这份会先自动存一个恢复点，拉错了能退回去。确定继续？`)) {
+            say("已取消，本机数据没动");
             return;
           }
+          // 与局域网那条同一个口径：覆盖本机之前一定先留一个可回退的恢复点。
+          createAutoBackup("从网盘拉回前", appVersion);
           S.replaceAll(snap.data);
           await S.saveNow();
           await applyPasswordPreference(password);
@@ -290,7 +294,6 @@ export async function createSyncCard({ rerender = () => {}, appVersion = "" } = 
           await persist({ lastSyncAt: new Date().toISOString() });
           succeed(`已从网盘拉回本地 · ${when}`);
           toast("远端快照已恢复到本机");
-          rerender();
         } catch (e) { fail(e); }
       } }, "从网盘拉回本地"),
       el("button", { class: "btn ghost sm", type: "button", onclick: async () => {
@@ -316,3 +319,106 @@ export async function createSyncCard({ rerender = () => {}, appVersion = "" } = 
   return card;
 }
 
+
+/**
+ * 「不用网盘：从电脑直接拉」—— 局域网单向拉取。
+ *
+ * 只有拉、没有推，而且「拉回本机」在「连接看看」成功之前一直是锁着的：
+ * 让人先看清电脑上躺着多少条数据，再决定要不要覆盖自己手上这份。
+ * 配对码不落盘（它跟着链接走，粘一次用一次）—— 存进 settings 就等于存进 data.json，
+ * 而 data.json 会被 WebDAV 原样传到网盘上去。
+ */
+function createLanSection(settings, { appVersion = "", os = "" } = {}) {
+  const lanCfg = settings.sync.lan ??= {};
+  const isDesktop = ["windows", "macos", "linux"].includes(String(os));
+  const linkInput = el("input", {
+    type: "text", value: lanCfg.host || "",
+    placeholder: `电脑上「复制链接」得来的整条，或 192.168.1.5:${DEFAULT_LAN_PORT}`,
+    autocomplete: "off", spellcheck: "false",
+  });
+  const tokenInput = el("input", {
+    type: "text", value: "", placeholder: "配对码（链接里带了就不用填）", autocomplete: "off", spellcheck: "false",
+  });
+  const result = el("div", { class: "shortcut-status sync-result" });
+  const pullBtn = el("button", { class: "btn pri sm", type: "button", disabled: true }, "拉回本机（覆盖本机现在的数据）");
+  const howto = el("ol", { class: "sync-howto" },
+    el("li", {}, "在电脑上打开 Le时间管理，两边连同一个 Wi-Fi（手机用流量连不上）"),
+    el("li", {}, "电脑上进 设置 → 局域网联动 → 点「启动服务」"),
+    el("li", {}, "点「复制链接」，把这条链接发到手机上（微信发给自己就行）"),
+    el("li", {}, "回到这里粘进上面的框 → 先「连接看看电脑上有什么」，确认无误再「拉回本机」"),
+  );
+  const howtoToggle = el("button", { class: "btn ghost sm", type: "button" }, "电脑上要怎么准备？");
+  let howtoOpen = false;
+  const paintHowto = () => {
+    howto.style.display = howtoOpen ? "" : "none";
+    howtoToggle.textContent = howtoOpen ? "收起说明" : "电脑上要怎么准备？";
+  };
+  howtoToggle.addEventListener("click", () => { howtoOpen = !howtoOpen; paintHowto(); });
+
+  const say = (msg, tone = "") => {
+    result.className = `shortcut-status sync-result${tone ? ` ${tone}` : ""}`;
+    result.textContent = msg;
+  };
+
+  let target = null;
+  const connectBtn = el("button", {
+    class: "btn ghost sm", type: "button", onclick: async () => {
+      try {
+        target = parseLanTarget(linkInput.value, tokenInput.value);
+        say("正在连电脑…");
+        const seen = await lanInfo(target);
+        // 只记地址，不记配对码
+        lanCfg.host = target.base.replace(/^https?:\/\//, "");
+        await S.saveNow();
+        say(`${describeLanInfo(seen)}。确认是你要的那份，再点「拉回本机」`, "is-ok");
+        pullBtn.disabled = false;
+      } catch (e) {
+        target = null;
+        pullBtn.disabled = true;
+        say(e?.message || String(e), "is-error");
+      }
+    },
+  }, "连接看看电脑上有什么");
+
+  pullBtn.addEventListener("click", async () => {
+    if (!target) return;
+    try {
+      const snap = await lanPullSnapshot(target);
+      const n = snap.data?.tasks?.length ?? 0;
+      const m = snap.data?.blocks?.length ?? 0;
+      if (!window.confirm(`要把电脑上的 ${n} 条任务、${m} 个时间块拉到本机，覆盖本机现在的数据。\n\n本机这份会先自动存一个恢复点（设置 → 数据中心 → 自动备份），拉错了能退回去。继续？`)) {
+        say("已取消，本机数据没动");
+        return;
+      }
+      createAutoBackup("局域网拉回前", appVersion);
+      S.replaceAll(snap.data);
+      await S.saveNow();
+      say(`已拉回本机 · ${n} 条任务、${m} 个时间块`, "is-ok");
+      toast("已从电脑拉回本机");
+    } catch (e) { say(e?.message || String(e), "is-error"); }
+  });
+
+  paintHowto();
+  return el("div", { class: "sync-lan" },
+    el("div", { class: "data-section-title" }, "不用网盘：从电脑直接拉（局域网）"),
+    el("p", { class: "desc" },
+      "手机和电脑在同一个 Wi-Fi 时，跳过网盘直接拿电脑上的数据。",
+      el("br"),
+      "这条路径只能「手机拉电脑」：本程序不会把任何数据从手机写回电脑，电脑上那份永远是电脑自己说了算。",
+      el("br"),
+      "注意拉回来的是电脑上的整份状态，连电脑那台的「同步设置」（网盘地址、账号）也会一起过来；本机原来那份可以用恢复点退回（设置 → 数据中心）。",
+    ),
+    el("div", { class: "sync-form" },
+      el("label", { class: "sync-field" }, el("span", {}, "电脑地址或配对链接"), linkInput),
+      el("label", { class: "sync-field" }, el("span", {}, "配对码"), tokenInput),
+    ),
+    el("div", { class: "data-actions", style: "margin-top:10px" },
+      connectBtn, pullBtn, howtoToggle,
+      isDesktop ? el("button", {
+        class: "btn ghost sm", type: "button",
+        onclick: () => window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: "lan" } })),
+      }, "本机就是电脑 · 去启动服务") : null,
+    ),
+    result, howto,
+  );
+}
