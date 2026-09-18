@@ -114,6 +114,7 @@ npm test                                # 必须全部通过（脚本数会变�
 |---|---|---|
 | `public/plugins/<id>/manifest.json` | `node tools/sync-plugins.js` | 桌面 `src/pluginCatalog.js`、小程序 `core/pluginCatalog.js`、插件图标副本 |
 | `public/plugins/shiguang-schedule/` 的 `model.js` + `ui.js` | `node tools/build-schedule-plugin.js`（`--check` 只校验） | 插件入口 `main.js`、`adapters/cppu.js`。**课程表插件只认 `main.js`，直接改它等于白改** |
+| `public/plugins/exam-calendar/` 的 `src/main.template.js` + `src/exam-data.json` | `node tools/build-exam-calendar-plugin.js`（`--check` 只校验） | 插件入口 `main.js`（80 条考试数据在构建时内嵌）。**改数据只改 `src/exam-data.json`，不要动 `main.js`** |
 | `package.json` 的 `version` | `node tools/sync-version.js` | 三端版本号（**不含** `package-lock.json`，要手改两处） |
 | `src/styles.css` 的主题令牌 | `node tools/gen-theme-dark.js` | `src/styles/theme-derived.css`、`src/themeDarkPreview.js` |
 | 插件图标清单 | `python tools/gen-plugin-icons.py` | 桌面 + 小程序插件 PNG、`ATTRIBUTION.md` |
