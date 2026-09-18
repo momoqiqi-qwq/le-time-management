@@ -249,10 +249,20 @@ struct AiVaultStatus {
     key_masked: String,
 }
 
+/// 一条对话消息。`content` 允许两种形态：
+///
+/// - **纯字符串** —— 纯文本消息，v0.55.0 及之前的调用方全部沿用这一形态；
+/// - **OpenAI 兼容的多模态 content 数组** ——
+///   `[{"type":"text","text":"..."},{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}]`
+///
+/// 为什么用 `serde_json::Value` 而不是定义枚举：这里要**原样透传**给上游。
+/// 各家「OpenAI 兼容」端点在 content parts 上的字段并不一致（有的要 `detail`、
+/// 有的不认多出来的键），本地拆解再重组只会把本来能用的端点挡在门外。
+/// 校验交给 `inspect_ai_content`，它只读不写，不认识的结构直接拒绝。
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 struct AiMessage {
     role: String,
-    content: String,
+    content: serde_json::Value,
 }
 
 fn ai_vault_key_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -542,6 +552,59 @@ fn plugin_vault_del(app: AppHandle, plugin_id: String, key: String) -> Result<()
     save_plugin_vault(&app, &vault)
 }
 
+/// 单张图片 data URL 的字符上限。base64 约为原始字节的 4/3，2_000_000 字符 ≈ 1.5 MB
+/// 二进制 —— 截图经前端压到长边 900px 后通常在 100~300 KB，这个上限留了充足余量，
+/// 同时挡住「直接把 20 MB 原图拖进来」这种会白烧 token 又被端点拒收的情况。
+const AI_IMAGE_DATA_URL_MAX_CHARS: usize = 2_000_000;
+
+/// 单次请求最多几张图。视觉模型按图计费，一次课表/通知截图通常 1~2 张；
+/// 给到 6 张是留给「一周 5 天通知截图」这类批量场景的上限。
+const AI_IMAGE_MAX_COUNT: usize = 6;
+
+/// 读取一条消息的内容，返回 `(文本字符数, 图片张数)`。
+///
+/// 只读校验，不修改 `content` —— 原样透传给上游（见 `AiMessage` 的注释）。
+/// 任何不认识的 content part 类型一律拒绝：白名单比黑名单安全，
+/// 也避免上游端点收到半懂不懂的结构后返回一个更难查的 400。
+fn inspect_ai_content(content: &serde_json::Value) -> Result<(usize, usize), String> {
+    match content {
+        serde_json::Value::String(text) => Ok((text.chars().count(), 0)),
+        serde_json::Value::Array(parts) => {
+            let mut chars = 0usize;
+            let mut images = 0usize;
+            for part in parts {
+                let kind = part.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                match kind {
+                    "text" => {
+                        chars += part
+                            .get("text")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .chars()
+                            .count();
+                    }
+                    "image_url" => {
+                        let url = part
+                            .pointer("/image_url/url")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        if !url.starts_with("data:image/") {
+                            return Err("图片必须是 data:image/* 内联数据（不接受远程 URL）".into());
+                        }
+                        if url.chars().count() > AI_IMAGE_DATA_URL_MAX_CHARS {
+                            return Err("单张图片过大（超过约 1.5 MB），请先压缩或裁剪后重试".into());
+                        }
+                        images += 1;
+                    }
+                    other => return Err(format!("不支持的消息内容类型: {other}")),
+                }
+            }
+            Ok((chars, images))
+        }
+        _ => Err("消息 content 必须是字符串或多模态数组".into()),
+    }
+}
+
 #[tauri::command]
 async fn ai_chat(
     app: AppHandle,
@@ -553,9 +616,20 @@ async fn ai_chat(
     if messages.is_empty() || messages.len() > 24 {
         return Err("AI 消息数量必须在 1～24 条之间".into());
     }
-    let total_chars: usize = messages.iter().map(|m| m.content.chars().count()).sum();
+    // 文本按字符数封顶；图片单独计数与限长 —— 图片字节数不进 chars 统计，
+    // 否则一张 300 KB 的截图会被算成 40 万「字符」而误触发「上下文过长」。
+    let mut total_chars = 0usize;
+    let mut total_images = 0usize;
+    for m in &messages {
+        let (chars, images) = inspect_ai_content(&m.content)?;
+        total_chars += chars;
+        total_images += images;
+    }
     if total_chars > 60_000 {
         return Err("AI 上下文过长，请减少内容后重试".into());
+    }
+    if total_images > AI_IMAGE_MAX_COUNT {
+        return Err(format!("一次最多分析 {AI_IMAGE_MAX_COUNT} 张图片"));
     }
     if messages
         .iter()

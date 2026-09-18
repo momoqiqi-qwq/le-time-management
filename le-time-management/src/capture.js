@@ -3,6 +3,8 @@
 import * as S from "./store.js";
 import { el, toast } from "./ui.js";
 import { parseWhen, guessCategory, guessQuad } from "./timeParser.js";
+import { aiAnalyzeContent, isAiIngestReady } from "./aiIngest.js";
+import { openIngestPanel } from "./views/ingestPanel.js";
 import { openTaskDrawer } from "./views/drawer.js";
 import { previewSchedule } from "./scheduleConflict.js";
 import { closeLayer, removeWithMotion } from "./motion.js";
@@ -106,11 +108,19 @@ function onPaste(e) {
       const f = it.getAsFile();
       if (f) {
         e.preventDefault();
-        fileToDataUrl(f).then((u) => openCaptureModal(u, "")).catch(() => {});
+        fileToDataUrl(f)
+          .then(async (u) => {
+            if (await tryAiIngest({ imageDataUrl: u, fileName: "剪贴板截图" })) return;
+            openCaptureModal(u, "");
+          })
+          .catch(() => {});
         return;
       }
     }
   }
+  // 粘贴的纯文本**不自动走 AI**：粘贴是最高频的动作，随手贴一句聊天记录就触发一次
+  // 付费请求，用户会觉得这功能在偷偷烧钱。AI 只留给「图片」与「显式拖入的文件」——
+  // 拖入是刻意行为，愿意付这个成本。规则解析认不出的文本仍会照旧进任务池。
   const text = e.clipboardData.getData("text/plain");
   if (text && text.trim().length > 1 && /\S/.test(text)) {
     e.preventDefault();
@@ -168,17 +178,63 @@ function handleText(text) {
   }
 }
 
-/* ── 文件：图片 → 弹窗确认；文本文件 → 解析；其他 → 收纳 ── */
+/**
+ * 尝试让 AI 接手解析。
+ *
+ * 返回 `true` = AI 已接手（确认面板已弹出）；`false` = 不可用或失败，**调用方要走老路**。
+ * 失败也返回 `false` 是有意的：图片识别失败时退回「手选时间」弹窗，比只弹一个错误框有用得多。
+ *
+ * 调用前必须先过 `isAiIngestReady()` —— 没配凭据时 `api.aiChat` 会直接抛错，
+ * 白等一轮没有意义。
+ */
+async function tryAiIngest({ text = "", imageDataUrl = "", fileName = "" } = {}) {
+  if (!(await isAiIngestReady())) return false;
+  try {
+    toast(imageDataUrl ? "正在用 AI 读图…" : "正在用 AI 解析…", { ms: 2600 });
+    const result = await aiAnalyzeContent({ text, imageDataUrl, fileName });
+    openIngestPanel({
+      result,
+      source: fileName ? `AI 解析 · ${fileName}` : "AI 解析",
+      attachments: imageDataUrl ? [imageDataUrl] : [],
+    });
+    return true;
+  } catch (error) {
+    toast(`AI 解析失败，改用本地识别：${error?.message || error}`, { ms: 6000 });
+    return false;
+  }
+}
+
+/**
+ * 文本的择优路径：**规则优先，AI 兜底**。
+ *
+ * 规则解析（timeParser）免费、即时、离线可用，对「明天下午 3 点交论文」这类规整消息
+ * 已经够用；只有它**认不出日期**时才值得花钱请 AI —— 否则每一次粘贴都要付一次
+ * API 费用，用户会觉得这功能在偷偷烧钱。
+ */
+async function handleTextSmart(text, fileName = "") {
+  if (parseWhen(text).date) { handleText(text); return; }
+  if (await tryAiIngest({ text, fileName })) return;
+  handleText(text);
+}
+
+/* ── 文件：图片 → AI 读图（无 AI 时手选时间）；文本 → 择优解析；其他 → 收纳 ── */
 async function handleFiles(files, text) {
   for (const f of files.slice(0, 3)) {
     if (f.type.startsWith("image/")) {
       try {
         const dataUrl = await fileToDataUrl(f);
+        if (await tryAiIngest({ imageDataUrl: dataUrl, fileName: f.name, text })) continue;
         openCaptureModal(dataUrl, text);
       } catch { toast("这张图片读取失败"); }
     } else if (f.type.startsWith("text/") || /\.(txt|md|csv)$/i.test(f.name)) {
       const content = (await f.text()).slice(0, 4000);
-      handleText(content);
+      await handleTextSmart(content, f.name);
+    } else if (/\.(pdf|docx?|xlsx?|pptx?)$/i.test(f.name)) {
+      // 诚实告知：这些格式要先在应用外转成图片或文本再拖进来。
+      // 不假装支持 —— 静默存成附件会让用户以为「已经解析过了」。
+      const task = S.addTask({ title: f.name, quad: 3, tags: ["附件"], note: `拖入的文件：${f.name}（该格式暂不支持自动解析，请截图后拖入）` });
+      toast(`已收纳「${f.name}」；该格式暂不支持自动解析，可截图后拖入让 AI 读图`, { ms: 7000 });
+      void task;
     } else {
       const task = S.addTask({ title: f.name, quad: 3, tags: ["附件"], note: `拖入的文件：${f.name}` });
       toast(`已收纳文件「${f.name}」为任务`);
@@ -280,7 +336,7 @@ function showOverlay() {
       el("div", { style: "font-size:calc(40px * var(--ui-text-scale))" }, "⤵"),
       el("div", { class: "t1" }, "松手，Le时间管理来自动识别"),
       el("div", { class: "t2" }, "聊天文字 / 网页文本 / 链接 → 自动提取日期时间并创建时间块"),
-      el("div", { class: "t2" }, "截图 / 图片 → 附到事件上（时间手选）"),
+      el("div", { class: "t2" }, "截图 / 图片 / 文本文件 → AI 读图识别，确认后写入任务、时间块或课表"),
     ),
   );
   document.body.append(overlay);

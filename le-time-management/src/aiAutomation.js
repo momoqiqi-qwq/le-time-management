@@ -5,6 +5,16 @@ const clone = (x) => JSON.parse(JSON.stringify(x));
 const MAX_AI_RULES = 30;
 const WEEKDAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 
+/**
+ * 合法分类 id，直接取自 `store.js` 的 `CATEGORIES`。
+ *
+ * ⚠️ 这里曾经手抄过一份白名单，抄成了 `["work","study","life","exercise","rest"]` ——
+ * 应用里**没有** `exercise` 这个分类（真实 id 是 `sport`）。后果是 AI 生成的时间块
+ * 拿到一个没有 `--cat-*` 变量的分类，渲染出来没有配色、`catLabel` 直接回显 id，
+ * 而且全程不报错。别再手抄，用事实源。
+ */
+const CAT_IDS = new Set(S.CATEGORIES.map((c) => c.id));
+
 function automationState() {
   const st = S.getState();
   st.automation ??= {};
@@ -93,7 +103,14 @@ export function aiScheduleLabel(rule) {
   return `每天 ${s.time}`;
 }
 
-function extractJson(text) {
+/**
+ * 从模型回复里抠出 JSON。
+ *
+ * 导出给 `aiIngest.js` 共用 —— 两家解析器（定时任务 / 内容解析）面对的是同一批
+ * 「不听话的模型」，有的裹 ```json 围栏、有的前面加一句「好的，这是结果：」，
+ * 两处各写一份迟早会分叉。
+ */
+export function extractJson(text) {
   const raw = String(text || "").trim();
   if (!raw) throw new Error("AI 没有返回内容");
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
@@ -166,7 +183,7 @@ function opSystemPrompt(rule) {
 允许 operations：
 1) {"type":"create_task","title":"...","due":"YYYY-MM-DD|null","dueTime":"HH:MM|null","quad":1-4,"estMin":分钟,"tags":["..."]}
 2) {"type":"update_task","id":"现有任务ID","patch":{"title":"可选","done":true|false,"due":"YYYY-MM-DD|null","dueTime":"HH:MM|null","quad":1-4,"estMin":分钟}}
-3) {"type":"create_timeblock","date":"YYYY-MM-DD","start":"HH:MM","durMin":分钟,"title":"...","taskId":"可选现有任务ID|null","cat":"work|study|life|exercise|rest"}
+3) {"type":"create_timeblock","date":"YYYY-MM-DD","start":"HH:MM","durMin":分钟,"title":"...","taskId":"可选现有任务ID|null","cat":"${[...CAT_IDS].join("|")}"}
 4) {"type":"add_inbox","title":"...","when":"YYYY-MM-DD|null","note":"..."}
 最多返回 12 个操作。不要返回文件路径、脚本、URL 请求或未列出的操作。自动任务名称：${rule.name}`;
 }
@@ -245,7 +262,7 @@ function applyOperations(rule, operations) {
           continue;
         }
         const taskId = op.taskId && st.tasks.some((x) => x.id === op.taskId) ? op.taskId : null;
-        S.addBlock({ date, start, durMin, title, taskId, cat: ["work", "study", "life", "exercise", "rest"].includes(op.cat) ? op.cat : "work" });
+        S.addBlock({ date, start, durMin, title, taskId, cat: CAT_IDS.has(op.cat) ? op.cat : "work" });
         applied++;
       } else if (op.type === "add_inbox") {
         const title = String(op.title || "").trim().slice(0, 160);

@@ -14,6 +14,7 @@ const plugins = [
       "blocks",
       "notify",
       "http",
+      "events",
       "schoolImport"
     ],
     "entry": "main.js",

@@ -696,6 +696,48 @@ input, select, textarea { font-family: inherit; font-size: calc(13px * var(--ui-
 .cap-foot { display: flex; gap: 9px; margin-top: 16px; }
 .cap-foot .pri { flex: 1; }
 
+/* ── AI 解析确认面板 ──
+   结构：mask + panel（头部 / 可滚动列表 / 吸底操作条）。
+   列表必须能滚 —— 一张课表照片一次能出几十条事件；头部与底栏留在滚动区外，
+   否则「确认写入」按钮会被长列表顶到看不见的地方。
+   字号一律 calc(Npx * var(--ui-text-scale))，跟随全局文字大小（v0.55.0 铁律）。 */
+.ingest-mask { position: fixed; inset: 0; background: rgba(20, 30, 36, .35); z-index: 1110; }
+.ingest-panel { position: fixed; z-index: 1111; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 560px; max-width: calc(var(--ui-vw, 100vw) * 0.94); max-height: calc(var(--ui-vh, 100dvh) * 0.86);
+  display: flex; flex-direction: column;
+  background: var(--panel); border-radius: 18px; box-shadow: var(--shadow-lg); padding: 18px 20px 16px; }
+.ingest-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.ingest-head b { display: block; font-size: calc(16px * var(--ui-text-scale)); }
+.ingest-head small { display: block; color: var(--ink-3); font-size: calc(11px * var(--ui-text-scale)); margin-top: 4px; line-height: 1.5; }
+.ingest-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.ingest-row { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--paper); }
+/* 课程行左侧一条分类色，让「这条会进课表」一眼可辨 */
+.ingest-row.is-course { border-left: 3px solid var(--sea); }
+.ingest-pick { flex: none; display: flex; align-items: center; padding-top: 8px; }
+.ingest-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+/* flex-wrap + 标题的最小基准宽：面板窄到放不下「落点下拉 + 标题」时标题自动换行。
+   刻意**不用媒体查询** —— styles.css 的断点是**有台账的**（scripts/test-ui-scale.mjs
+   逐个断点计数，多一个就报「出现了预期外的断点」），为一个弹窗新增断点会让那份台账
+   失真；而且断点式写法要么在 320px 上不够、要么在 390px 上过早换行。 */
+.ingest-line { display: flex; gap: 8px; align-items: center; min-width: 0; flex-wrap: wrap; }
+.ingest-kind { flex: none; width: 88px; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink); font-size: calc(12px * var(--ui-text-scale)); padding: 0 6px; }
+.ingest-title { flex: 1 1 140px; min-width: 0; height: 30px; border: 1px solid var(--line); border-radius: 8px;
+  padding: 0 9px; background: var(--panel); color: var(--ink); font-size: calc(12.5px * var(--ui-text-scale)); }
+.ingest-when { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ingest-when input { height: 28px; border: 1px solid var(--line); border-radius: 8px; padding: 0 7px;
+  background: var(--panel); color: var(--ink); font-size: calc(11.5px * var(--ui-text-scale)); }
+.ingest-end, .ingest-dur { color: var(--ink-3); font-size: calc(11px * var(--ui-text-scale)); }
+.ingest-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ingest-badge { flex: none; padding: 2px 7px; border-radius: 999px; font-size: calc(10px * var(--ui-text-scale));
+  background: color-mix(in srgb, var(--mint) 22%, var(--panel)); color: var(--ink-2); }
+.ingest-badge.low { background: color-mix(in srgb, var(--coral) 20%, var(--panel)); color: var(--ink); }
+.ingest-hint { color: var(--ink-3); font-size: calc(10.5px * var(--ui-text-scale)); }
+.ingest-note { color: var(--ink-3); font-size: calc(10.5px * var(--ui-text-scale));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.ingest-foot { flex: none; display: flex; align-items: center; gap: 9px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
+.ingest-count { margin-right: auto; color: var(--ink-2); font-size: calc(12px * var(--ui-text-scale)); }
 /* 附件缩略 */
 .tkc .att, .ptask .att { font-size: calc(11px * var(--ui-text-scale)); color: var(--sea); flex: none; }
 .drawer .att-imgs { display: flex; flex-direction: column; gap: 10px; }

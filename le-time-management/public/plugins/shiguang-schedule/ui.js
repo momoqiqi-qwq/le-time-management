@@ -509,15 +509,48 @@ case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.da
    el.addEventListener('pointerup',e=>{if(!swipeStart)return;const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y;swipeStart=null;if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.25)action(dx>0?'prev':'next').catch(notice);});
    el.addEventListener('pointercancel',()=>{swipeStart=null;});
  }
- async function render(el){
-   host=el;styles();bindEvents(el);bindMoreDismiss();bindSchoolImporter().catch(notice);
-   // Re-opening the view reuses the already-normalized in-memory table. This avoids storage read + full normalization on every navigation.
-   if(loaded&&table){week=currentWeek();mode='week';paint();return;}
-   el.innerHTML='<div class="sg"><div class="loading">正在读取课程表…</div></div>';
-   const target=el;
-   try{const [raw,storedTables,storedId,storedStyle]=await Promise.all([tide.storage.get('table',M.empty()),tide.storage.get('tables',null),tide.storage.get('currentTableId',''),tide.storage.get('style',defaultStyle)]);style=normalizeStyle(storedStyle);if(Array.isArray(storedTables)&&storedTables.length){tables=storedTables.map((p,i)=>({id:String(p.id||p.tableId||makeId()),name:String(p.name||p.tableName||`课表 ${i+1}`),createdAt:Number(p.createdAt)||Date.now()+i,data:M.normalize(p.data||p.tableData)}));currentTableId=tables.some(p=>p.id===storedId)?storedId:tables[0].id;}else{table=M.normalize(raw);currentTableId=makeId();tables=[{id:currentTableId,name:'我的课表',createdAt:Date.now(),data:table}];await saveTables();}table=M.normalize(activePack().data);loaded=true;week=currentWeek();if(host===target&&target.isConnected)paint();}
-   catch(e){if(host===target)host.textContent='课表读取失败：'+e.message;}
- }
+/* 从 tide.storage 把全部状态读进内存。之所以抽出来：它现在有两个入口 ——
+   打开视图（render）和宿主广播的外部导入（下面的 ingest:courses 订阅）。
+   后者可能发生在用户**从没打开过课表**的情况下，那时 `loaded` 还是 false，
+   内存里什么都没有，直接 merge 会把整张课表当成空的。 */
+async function loadState(){
+  const [raw,storedTables,storedId,storedStyle]=await Promise.all([tide.storage.get('table',M.empty()),tide.storage.get('tables',null),tide.storage.get('currentTableId',''),tide.storage.get('style',defaultStyle)]);
+  style=normalizeStyle(storedStyle);
+  if(Array.isArray(storedTables)&&storedTables.length){tables=storedTables.map((p,i)=>({id:String(p.id||p.tableId||makeId()),name:String(p.name||p.tableName||`课表 ${i+1}`),createdAt:Number(p.createdAt)||Date.now()+i,data:M.normalize(p.data||p.tableData)}));currentTableId=tables.some(p=>p.id===storedId)?storedId:tables[0].id;}
+  else{table=M.normalize(raw);currentTableId=makeId();tables=[{id:currentTableId,name:'我的课表',createdAt:Date.now(),data:table}];await saveTables();}
+  table=M.normalize(activePack().data);
+  loaded=true;week=currentWeek();
+}
+async function render(el){
+  host=el;styles();bindEvents(el);bindMoreDismiss();bindSchoolImporter().catch(notice);
+  // Re-opening the view reuses the already-normalized in-memory table. This avoids storage read + full normalization on every navigation.
+  if(loaded&&table){week=currentWeek();mode='week';paint();return;}
+  el.innerHTML='<div class="sg"><div class="loading">正在读取课程表…</div></div>';
+  const target=el;
+  try{await loadState();if(host===target&&target.isConnected)paint();}
+  catch(e){if(host===target)host.textContent='课表读取失败：'+e.message;}
+}
+/* ── 外部导入：把 AI 解析出的课程并进当前课表 ──
+   宿主核心通过 emitPluginEvent('ingest:courses') 广播（见 src/aiIngest.js）。
+   为什么不让核心直接写 tide.storage：`tables` / `table` 在本文件里是**内存副本**，
+   核心写盘之后插件下一次 saveTables() 会把旧副本覆盖回去 —— 新课程凭空消失。
+   所以必须由插件自己 normalize → merge → persist，走和「教务导入」同一条链路。 */
+tide.events.on('ingest:courses',async(payload)=>{
+  const incoming=Array.isArray(payload&&payload.courses)?payload.courses:[];
+  if(!incoming.length)throw new Error('没有可导入的课程');
+  if(!loaded||!table)await loadState();
+  const before=table;
+  // 用**当前课表**的节次表校验，不要用 M.empty() 的默认 10 节 ——
+  // 教务课表常见 12 节，拿 10 节去验会误报「课程引用了不存在的节次 11」。
+  const added=M.normalize({courses:incoming,timeSlots:table.timeSlots,config:table.config});
+  const next=M.mergeTables(table,added);
+  const addedCount=next.courses.length-table.courses.length;
+  await persist(next);
+  week=currentWeek();
+  if(host&&host.isConnected)paint();
+  tide.notify(`AI 已导入 ${addedCount} 门课程到「${activePack()?activePack().name:'当前课表'}」`,{actionLabel:'撤销',action:async()=>{await persist(before);week=currentWeek();paint();}});
+  return{added:addedCount,total:next.courses.length};
+});
  /* immersive:true ⇒ 窄屏下隐藏 APP 全局底栏，把那一截高度让给课表（见 shell.js /
     styles.css 的 .rail-hidden）。课表是「一屏内要排开 7 天 × 全部节次」的视图，
     底栏那 ~50px 直接决定末尾节次要不要额外滚动，所以这里明确声明要沉浸。

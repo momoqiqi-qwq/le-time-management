@@ -38,6 +38,11 @@ export async function createAiSettingsCard() {
       el("label", { class: "ai-field" }, el("span", {}, "模型"), model),
       el("label", { class: "ai-field ai-key-field" }, el("span", {}, "API Key"), key),
     ),
+    el("p", { class: "desc" },
+      "配置后把截图 / 图片 / 文本文件拖进窗口，AI 会读图识别其中的时间安排，结果先逐条列出确认，再写入任务、时间块、收件箱或课程表。",
+      el("br"),
+      "粘贴纯文本与「快速捕获」仍走本地规则解析（免费、离线可用），只有本地认不出日期时才回落到 AI；识别课表类图片需要模型支持视觉输入。",
+    ),
     el("div", { class: "data-actions ai-settings-actions" },
       el("button", { class: "btn pri sm", onclick: async () => {
         const old = state.textContent;

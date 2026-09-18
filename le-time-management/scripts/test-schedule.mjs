@@ -17,7 +17,12 @@ const ics=M.ics(table);assert.equal(ics.split('BEGIN:VEVENT').length-1,4);assert
 assert.equal(M.packs({allTables:[{tableName:'A',tableData:raw}]}).length,1);
 console.log('PASS: upstream JSON round-trip, sections/custom time, odd weeks, semester boundaries, conflicts, invalid import rejection and ICS occurrences');
 const savedBlocks=[];
-const uiContext=vm.createContext({TextEncoder,modelScope:{ShiguangModel:M},tide:{ui:{registerView(){}},util:{today:()=> '2026-09-09'},notify(){},blocks:{list:date=>savedBlocks.filter(b=>b.date===date),create:b=>{const block={...b,id:'block-'+savedBlocks.length};savedBlocks.push(block);return block;},remove:id=>{const i=savedBlocks.findIndex(b=>b.id===id);if(i>=0)savedBlocks.splice(i,1);}}}});
+/* 桩必须提供 events 与 storage：v0.56.0 起 ui.js 还会订阅宿主广播的
+   ingest:courses（AI 解析出的课程并进课表）。少了 events，ui.js 在**模块求值阶段**
+   就抛 `Cannot read properties of undefined (reading 'on')`，下面所有断言一行都跑不到。
+   storage 用来让导入链路真的走一遍 loadState → merge → persist。 */
+const ingestHandlers={};const savedTables=[];
+const uiContext=vm.createContext({TextEncoder,modelScope:{ShiguangModel:M},tide:{ui:{registerView(){}},util:{today:()=> '2026-09-09'},notify(){},events:{on:(name,fn)=>{ingestHandlers[name]=fn;}},storage:{get:async(k,def)=>k==='tables'?[{id:'t1',name:'我的课表',createdAt:1,data:table}]:k==='currentTableId'?'t1':k==='table'?table:def,set:async(k,v)=>{if(k==='tables'){savedTables.length=0;savedTables.push(...v);}}},blocks:{list:date=>savedBlocks.filter(b=>b.date===date),create:b=>{const block={...b,id:'block-'+savedBlocks.length};savedBlocks.push(block);return block;},remove:id=>{const i=savedBlocks.findIndex(b=>b.id===id);if(i>=0)savedBlocks.splice(i,1);}}}});
 const ui=fs.readFileSync(new URL('../public/plugins/shiguang-schedule/ui.js',import.meta.url),'utf8');
 for(const marker of ['今日课表','课程管理','课表管理','个性化配置','rename-table','import-all','pointerdown','prefers-reduced-motion'])assert.ok(ui.includes(marker),`missing embedded Shiguang feature: ${marker}`);
 const pluginHost=fs.readFileSync(new URL('../src/pluginHost.js',import.meta.url),'utf8');
@@ -420,3 +425,29 @@ assert.doesNotMatch(ui, /\.sg \.switch[^-]/, '样式里不得再有 .sg .switch 
 assert.match(ui, /\.sg \.sg-switch input:checked\+\.track\{background:var\(--sg-accent\)/,
   'sg-switch 的选中态仍要按插件自己的令牌上色');
 console.log('PASS: 个性化配置 —— 滑杆读 .value 且旧坏数据自愈、开关类名不与宿主 .switch 冲突');
+
+/* ── v0.56.0 AI 解析导入：宿主广播 ingest:courses → 课程表自己 merge + persist ──
+   为什么必须由插件自己落盘：`tables` / `table` 在 ui.js 里是**内存副本**，
+   核心直接写 tide.storage 会被插件下一次 saveTables() 覆盖回去，新课程凭空消失。 */
+const ingestCourses = ingestHandlers['ingest:courses'];
+assert.equal(typeof ingestCourses, 'function', '课程表必须订阅 ingest:courses（AI 解析导入的入口）');
+// 插件还没被打开过（loaded=false）也要能用 —— 用户完全可能先拖课表截图、后打开课表
+const baseCount = M.normalize(table).courses.length;
+const ingested = await ingestCourses({ courses: [{ name: 'AI 导入课', teacher: 'AI 老师', position: 'A101', day: 2, weeks: [1, 2, 3], startSection: 1, endSection: 2 }] });
+assert.equal(ingested.added, 1, 'AI 课程应新增 1 门');
+assert.equal(ingested.total, baseCount + 1, '合并后总数应 +1');
+const persisted = savedTables[0]?.data;
+assert.ok(persisted, '导入后必须落盘（不能只改内存）');
+const aiCourse = persisted.courses.find((c) => c.name === 'AI 导入课');
+assert.ok(aiCourse, 'AI 课程必须真的进课表');
+assert.equal(aiCourse.day, 2, '星期必须保留（插件字段是 day，1=周一）');
+assert.deepEqual(Array.from(aiCourse.weeks), [1, 2, 3], '周次必须保留');
+assert.equal(aiCourse.position, 'A101', '上课地点必须保留');
+// 幂等：同一门课再导一次不能变成两门（mergeTables 按 名称+星期+周次+节次+地点 去重）
+const again = await ingestCourses({ courses: [{ name: 'AI 导入课', teacher: 'AI 老师', position: 'A101', day: 2, weeks: [1, 2, 3], startSection: 1, endSection: 2 }] });
+assert.equal(again.added, 0, '重复导入必须幂等');
+// 空载荷要抛错，不能静默「成功」
+await assert.rejects(ingestCourses({ courses: [] }), /没有可导入的课程/);
+// 节次必须按**当前课表**的节次表校验：默认 10 节，第 11 节要被拒绝而不是静默接受
+await assert.rejects(ingestCourses({ courses: [{ name: '越界课', day: 1, weeks: [1], startSection: 11, endSection: 12 }] }));
+console.log('PASS: AI 解析导入课程 —— 插件自己 merge+persist、字段映射、重复幂等、空载荷与越界节次被拒');

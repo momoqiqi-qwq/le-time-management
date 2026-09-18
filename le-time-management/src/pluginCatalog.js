@@ -14,6 +14,7 @@ export const BUILTIN_PLUGINS = [
       "blocks",
       "notify",
       "http",
+      "events",
       "schoolImport"
     ],
     "entry": "main.js",

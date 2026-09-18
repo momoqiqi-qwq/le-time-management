@@ -300,6 +300,35 @@ function makeApi(man, source) {
   };
 }
 
+/**
+ * 由**宿主核心**向插件广播事件（插件与插件之间用 `tide.events.emit`）。
+ *
+ * 为什么需要它：核心要做的事，有些**必须由插件自己落地**。典型例子是 AI 解析出的课程
+ * 要写进课表 —— 核心直接写插件的 storage 会绕过插件的内存副本，而课程表 `ui.js`
+ * 的 `loadAll` 会把 tables/table 缓存在内存里，下一次它自己保存就把新数据覆盖回去了。
+ * 广播出去、由插件用 `M.normalize` + `M.mergeTables` + `persist` 走自己的链路才安全。
+ *
+ * **返回每个订阅者的处理结果**，让调用方能区分三种情况：
+ * 没有订阅者（`[]`）⇒ 要降级；处理成功；处理抛错 ⇒ 要报错。
+ * 混成一个布尔值就只能靠猜，而「静默丢数据」是这个项目最不能接受的结果。
+ *
+ * 异步：插件的处理常常要落盘（`persist`），不等它就没法知道到底成没成。
+ */
+export async function emitPluginEvent(name, data) {
+  const set = eventBus.get(name);
+  if (!set || !set.size) return [];
+  const results = [];
+  for (const entry of set) {
+    try {
+      results.push({ pluginId: entry.pluginId, ok: true, value: await entry.fn(data) });
+    } catch (error) {
+      console.error(`插件 ${entry.pluginId} 处理事件 ${name} 失败:`, error);
+      results.push({ pluginId: entry.pluginId, ok: false, error: String(error?.message || error) });
+    }
+  }
+  return results;
+}
+
 function removeRegistrations(id) {
   for (let i = pluginViews.length - 1; i >= 0; i--) if (pluginViews[i].pluginId === id) pluginViews.splice(i, 1);
   for (let i = taskActions.length - 1; i >= 0; i--) if (taskActions[i].pluginId === id) taskActions.splice(i, 1);
