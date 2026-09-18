@@ -11,6 +11,14 @@ const DAY_END = 24 * 60;     // 24:00
 const HOUR_PX = 62;
 const PX_PER_MIN = HOUR_PX / 60;
 
+/* 分类色：唯一事实源是 styles.css 的 --cat-*（一种类型一种颜色），这里只做引用。
+   历史坑：本文件原来自带一份 { work: var(--deep), study: var(--grape), ... }，
+   而时间视图那边是另一份十六进制表，同一个「工作」在两边颜色不同。 */
+const CAT_COLOR = {
+  work: "var(--cat-work)", study: "var(--cat-study)", sport: "var(--cat-sport)",
+  life: "var(--cat-life)", rest: "var(--cat-rest)",
+};
+
 export function renderTimeblock(container) {
   let curDate = S.getState().settings.lastDate || S.todayStr();
   container.classList.add("tb-root");
@@ -263,7 +271,7 @@ export function renderTimeblock(container) {
     for (const b of blocks) byCat[b.cat] = (byCat[b.cat] || 0) + b.durMin;
     const meter = el("div", { class: "meter" });
     const legend = el("div", { class: "legend" });
-    const colors = { work: "var(--deep)", study: "var(--grape)", sport: "var(--coral)", life: "var(--sun)", rest: "var(--mint)" };
+    const colors = CAT_COLOR;
     const names = { work: "深度工作", study: "学习", sport: "运动", life: "生活", rest: "休息" };
     for (const [cat, min] of Object.entries(byCat)) {
       meter.append(el("i", { style: `width:${(min / Math.max(total, 1)) * 100}%;background:${colors[cat]}` }));
@@ -297,7 +305,7 @@ export function renderTimeblock(container) {
       el("div", { class: "acard tomorrow" },
         el("div", { class: "at" }, "明 天 预 告"),
         ...(tom.length ? tom.map((b) => el("div", { class: "trow" },
-          el("span", { class: "td", style: `background:var(--${ { work: "deep", study: "grape", sport: "coral", life: "sun", rest: "mint" }[b.cat] || "deep" })` }),
+          el("span", { class: "td", style: `background:${CAT_COLOR[b.cat] || CAT_COLOR.work}` }),
           el("span", { class: "tt" }, `${b.start} ${b.title}`),
           el("span", { class: "du" }, S.durLabel(b.durMin)),
         )) : [el("div", { class: "trow" }, el("span", { class: "tt", style: "color:var(--ink-3)" }, "明天还是空的，去前面安排一下吧"))]),

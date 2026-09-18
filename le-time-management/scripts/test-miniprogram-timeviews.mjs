@@ -270,4 +270,29 @@ assert.equal(desktopPairs.map(([, label]) => label).join(","),
   captured.data.viewTabs.map((t) => t.label).join(","),
   "两端视图显示名必须逐字一致 —— 改名时漏改一端就会在这里红");
 
-console.log("PASS: 小程序时间块 —— 7 样式收进展开菜单 + 5 个横向滚动视图改折叠/纵向（真跑数据构造）");
+/* ── 分类配色：两端必须同色（v0.55.0「一种类型一种颜色」）──
+   小程序取不到 CSS 变量，只能写十六进制；只改一端就会出现
+   「桌面端工作=黄、手机端工作=青绿」—— 而这正是这次要消灭的问题。
+   所以这里把两边的值对起来：桌面端 --cat-* 必须引用强调色令牌，小程序必须等于同一个值。 */
+const desktopCss = read("le-time-management/src/styles.css");
+const classicBlock = desktopCss.match(/:root \{([\s\S]*?)\n\}/)?.[1] ?? "";
+assert.ok(classicBlock, "必须能从桌面端 styles.css 读到基础 :root");
+const cssToken = (name) => classicBlock.match(new RegExp(`--${name}:\\s*([^;]+);`))?.[1]?.trim();
+const mpColors = pageSrc.match(/const CAT_COLORS = \{([^}]*)\}/)?.[1] ?? "";
+assert.ok(mpColors, "小程序必须有 CAT_COLORS（分类配色的唯一出口）");
+for (const cat of ["work", "study", "sport", "life", "rest"]) {
+  const want = cssToken(`cat-${cat}`);
+  const ref = want?.match(/^var\(--([\w-]+)\)$/)?.[1];
+  assert.ok(ref, `桌面端 --cat-${cat} 必须引用强调色令牌（实际读到 ${want}）`);
+  const hex = (cssToken(ref) || "").toUpperCase();
+  assert.match(hex, /^#[0-9A-F]{6}$/, `桌面端 --${ref} 必须是十六进制`);
+  const got = (mpColors.match(new RegExp(`${cat}:\\s*"(#[0-9A-Fa-f]{6})"`))?.[1] || "").toUpperCase();
+  assert.equal(got, hex, `分类 ${cat} 两端必须同色：桌面端 ${ref}=${hex}，小程序 ${got || "缺失"}`);
+}
+// 分类色块上的文字色：黄 / 红 / 青绿底偏亮，白字只有 2.2~2.8:1，必须配深字
+assert.match(wxss, /\.block\.cat-work\s*\{\s*color:\s*#17323A/, "小程序时间块的黄底必须配深字");
+assert.match(wxss, /\.ms-date\.cat-work[^{]*\{\s*color:\s*#17323A/, "小程序里程碑日期徽章同理");
+assert.match(wxss, /\.chron-v-date\.cat-work[^{]*\{\s*color:\s*#17323A/, "小程序年表日期徽章同理");
+
+console.log("PASS: 小程序时间块 —— 7 样式收进展开菜单 + 5 个横向滚动视图改折叠/纵向（真跑数据构造）"
+  + " + 分类配色与桌面端同源同值");

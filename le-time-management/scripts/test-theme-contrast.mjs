@@ -107,6 +107,27 @@ for (const id of themeIds) {
   // 强调色当按钮底 → 上面的字必须能看（浅色主题用白字，night 与深色版用深字）
   record(`${id}(浅色)`, "--on-deep/--deep", lightTokens["--on-deep"], lightTokens["--deep"], 3.0);
 
+  /* 分类色块上的文字（v0.55.0「一种类型一种颜色」）。
+     --cat-* 的值是 var() 引用（这样才跟随主题与深浅色），断言前要解开这一层：
+     声明永远取自浅色表（--cat-* 只在基础 :root 里写一次），
+     内层 var(--sun) 之类的解析则要用当前模式那张表。
+     历史坑：黄 / 红 / 青绿三种底色偏亮，白字只有 2.2~2.8:1 —— 所以 --cat-*-fg
+     不是一律沿用 --on-accent，而是按实测选定。 */
+  const resolveIn = (tokens, value) => {
+    const m = /^var\((--[\w-]+)\)$/.exec(String(value || "").trim());
+    return m ? tokens[m[1]] : value;
+  };
+  for (const cat of ["work", "study", "sport", "life", "rest"]) {
+    const decl = lightTokens[`--cat-${cat}`];
+    const declFg = lightTokens[`--cat-${cat}-fg`];
+    assert.ok(decl && declFg, `${id} 缺少 --cat-${cat} / --cat-${cat}-fg（分类配色的事实源）`);
+    const bgLight = resolveIn(lightTokens, decl), fgLight = resolveIn(lightTokens, declFg);
+    assert.ok(hexToRgb(bgLight), `${id} 的 --cat-${cat} 解析后不是十六进制：${bgLight}`);
+    assert.ok(hexToRgb(fgLight), `${id} 的 --cat-${cat}-fg 解析后不是十六进制：${fgLight}`);
+    record(`${id}(浅色)`, `--cat-${cat}-fg`, fgLight, bgLight, 3.0);
+    record(`${id}(深色)`, `--cat-${cat}-fg`, resolveIn(darkTokens, declFg), resolveIn(darkTokens, decl), 3.0);
+  }
+
   // 深色模式真的得是深色，浅色模式真的得是浅色。night 是原生深色主题，不参与这组判断。
   if (id !== "night") {
     assert.ok(relativeLuminance(darkTokens["--bg"]) < 0.06, `${id} 的深色 --bg 不够深：${darkTokens["--bg"]}`);

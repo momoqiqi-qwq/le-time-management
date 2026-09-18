@@ -173,6 +173,13 @@
 }
 .block .bm { font-size: 10px; opacity: 0.85; margin-top: 2px; }
 .block.tiny { padding: 4px 10px; }
+/* 块上的文字必须跟着分类底色走：黄 / 红 / 青绿底太亮，白字只有 2.2~2.8:1。
+   基础色 var(--on-deep) 留给蓝 / 紫两色（浅色模式白字、暗色模式深字都够清楚）。
+   选择器必须写成 .block.cat-* 才压得住上面的 .block —— 两者同为 (0,1,0)，
+   而 .cat-* 定义在 app.wxss 里、排在本文件之前。 */
+.block.cat-work { color:#17323A; }
+.block.cat-sport { color:#3A1512; }
+.block.cat-rest { color:#0E2A26; }
 .block.dragging {
   opacity: 0.78;
   box-shadow: 0 10px 24px rgba(34, 48, 58, 0.4);
@@ -395,11 +402,11 @@
 .wk-row-meta { font-size:20rpx; color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* 左侧色条沿用 cat-* 令牌（.block 用的同一套），列表里靠 padding-left + 边框呈现 */
 .wk-row { border-left:6rpx solid transparent; padding-left:14rpx; border-radius:6rpx; }
-.wk-row.cat-work { border-left-color:#168f88; }
-.wk-row.cat-study { border-left-color:#26b99a; }
-.wk-row.cat-sport { border-left-color:#e28aa1; }
-.wk-row.cat-life { border-left-color:#6b8be0; }
-.wk-row.cat-rest { border-left-color:#5bbf8f; }
+.wk-row.cat-work { border-left-color:#E3A008; }
+.wk-row.cat-study { border-left-color:#118AB2; }
+.wk-row.cat-sport { border-left-color:#FF6B6B; }
+.wk-row.cat-life { border-left-color:#9B5DE5; }
+.wk-row.cat-rest { border-left-color:#2EC4B6; }
 
 /* ── 里程碑：纵向时间线 ── */
 .ms-list { padding:20rpx 24rpx 8rpx; }
@@ -417,7 +424,7 @@
 .ms-item:last-child .ms-rail::after { display:none; }
 .ms-card { flex:1; min-width:0; padding:14rpx 0 26rpx; }
 .ms-row1 { display:flex; align-items:center; gap:12rpx; margin-bottom:8rpx; }
-.ms-date { color:#fff; font-size:19rpx; font-weight:700; padding:4rpx 12rpx; border-radius:6rpx; font-variant-numeric:tabular-nums; }
+.ms-date { color:var(--on-deep); font-size:19rpx; font-weight:700; padding:4rpx 12rpx; border-radius:6rpx; font-variant-numeric:tabular-nums; }
 .ms-year-l { font-size:20rpx; color:var(--ink-3); font-variant-numeric:tabular-nums; }
 .ms-title { display:block; font-size:25rpx; font-weight:700; line-height:1.45; word-break:break-all; }
 .ms-sub { display:block; font-size:20rpx; color:var(--ink-3); line-height:1.5; margin-top:6rpx; }
@@ -449,9 +456,17 @@
   box-shadow:0 0 0 7rpx var(--panel);
 }
 .chron-v-date {
-  position:absolute; top:16rpx; color:#fff; font-size:18rpx; font-weight:700;
+  position:absolute; top:16rpx; color:var(--on-deep); font-size:18rpx; font-weight:700;
   padding:4rpx 10rpx; border-radius:6rpx; font-variant-numeric:tabular-nums;
 }
+/* 日期徽章是「分类色块 + 文字」，文字色必须跟着分类底色走 —— 写死 #fff 的话，
+   黄 / 红 / 青绿底上只有 2.2~2.8:1（与桌面端同一组实测值）。
+   基础色用 var(--on-deep)（浅色模式白字、暗色模式深字，蓝 / 紫两色正好用它），
+   黄 / 红 / 青绿三色改深字。取值与桌面端 --cat-*-fg 一致。
+   背景由行内 style 给（优先级高于类），所以这里加 cat-* 类不会被全局 .cat-* 的底色顶掉。 */
+.ms-date.cat-work, .chron-v-date.cat-work { color:#17323A; }
+.ms-date.cat-sport, .chron-v-date.cat-sport { color:#3A1512; }
+.ms-date.cat-rest, .chron-v-date.cat-rest { color:#0E2A26; }
 .chron-v-item.left .chron-v-date { left:calc(50% + 22rpx); }
 .chron-v-item.right .chron-v-date { right:calc(50% + 22rpx); }
 /* 长间隔省略提示（与桌面端 chronicle 同语义） */

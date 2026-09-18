@@ -148,11 +148,14 @@ page {
   .btn { font-size: 25rpx; padding-left: 22rpx; padding-right: 22rpx; }
 }
 
-/* ── 分类色 ── */
-.cat-work { background: var(--deep); }
-.cat-study { background: var(--grape); }
+/* ── 分类色 ──
+   一种类型一种颜色，映射与桌面端 styles.css 的 --cat-* 完全一致：
+   工作=黄 / 学习=蓝 / 运动=红 / 生活=紫 / 休息=青绿。
+   值一律引用令牌（深色模式那段会重定义 --sun 等），不写死十六进制。 */
+.cat-work { background: var(--sun); }
+.cat-study { background: var(--sea); }
 .cat-sport { background: var(--coral); }
-.cat-life { background: var(--sun); }
+.cat-life { background: var(--grape); }
 .cat-rest { background: var(--mint); }
 .cat-pill {
   display: inline-block;
@@ -162,6 +165,15 @@ page {
   padding: 3rpx 12rpx;
   line-height: 1.4;
 }
+/* 药丸上的字必须跟着分类底色走：黄 / 红 / 青绿底太亮，白字只有 2.2~2.8:1（桌面端实测同值）。
+   ⚠️ 选择器要写 .cat-pill.cat-*，**不要**写 .cat-*：后者是全局类名，插件页的
+   `.cx-card.cat-work`（那里表示「通知类型」，不是任务分类）也会命中，
+   给它一个固定的深色 color 会让深色模式下卡片正文变成深色、糊在深色底上。 */
+.cat-pill.cat-work { color: #17323A; }
+.cat-pill.cat-study { color: var(--on-deep); }
+.cat-pill.cat-sport { color: #3A1512; }
+.cat-pill.cat-life { color: var(--on-deep); }
+.cat-pill.cat-rest { color: #0E2A26; }
 
 /* v0.9 · 参考 tauri-app-template 的统一组件风格 */
 page {

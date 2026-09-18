@@ -271,5 +271,78 @@ assert.match(css, /\.ce-gap-mark\s*\{[^}]*background:\s*var\(--panel\)/,
   "芯片要垫 panel 底色盖住轴线 —— 否则渐变轴线从「⋯⋯」字缝里穿出来，不像断口");
 assert.match(css, /\.cv-gap\s*\{/, "窄屏省略提示必须有样式");
 
+/* ───────────── v0.55.0：一种类型一种颜色 ─────────────
+   用户截图指出：里程碑轴上同一个「工作」会变出蓝 / 绿 / 黄 / 紫四种颜色。
+   根因是它按序号取 PALETTE。顺带查出全仓库有 4 套互不一致的分类映射
+   （styles.css 的 .cat-block-*、timeline.js、timeblock.js、timeViews.js）——
+   同一个「工作」在时间块视图是深青、在时间视图是蓝。现在只留 styles.css 的 --cat-* 一份。 */
+
+// 1) 事实源：映射钉在 CSS，且必须是用户指定的那套（工作=黄 --sun、学习=蓝 --sea）
+for (const [cat, token] of [["work", "sun"], ["study", "sea"], ["sport", "coral"], ["life", "grape"], ["rest", "mint"]]) {
+  assert.match(css, new RegExp(`--cat-${cat}:\\s*var\\(--${token}\\)`),
+    `分类 ${cat} 必须映射到 --${token} —— 这是「一种类型一种颜色」的唯一事实源`);
+  assert.match(css, new RegExp(`--cat-${cat}-fg:`), `分类 ${cat} 必须有配套的前景色令牌`);
+}
+
+// 2) 里程碑按事件分类取色，不许再按序号
+assert.match(timeViews, /const tones = slice\.map\(catTone\);/,
+  "里程碑节点必须按事件的分类取色");
+assert.doesNotMatch(timeViews, /PALETTE\[\(start \+ k\) % PALETTE\.length\]/,
+  "按序号取彩虹色正是「同一种类型出现多种颜色」的来源（用户截图指出的就是这条）");
+
+// 3) 其余视图里「有分类的元素」也不许按序号上色。
+//    注意不能一刀切禁用 PALETTE：课程表视图的颜色来自课表插件的数据，与任务分类无关。
+for (const [pattern, why] of [
+  [/--ec:\$\{PALETTE\[i % PALETTE\.length\]\}/, "横向年表要按分类取色"],
+  [/--ct:\$\{PALETTE\[i % PALETTE\.length\]\}/, "卡片时间轴要按分类取色"],
+  [/--gm:\$\{PALETTE\[i % PALETTE\.length\]\}/, "年度甘特（窄屏按月）要按分类取色"],
+  [/class: "gantt-bar"[^}]*background:\$\{PALETTE\[/, "年度甘特（桌面）要按分类取色"],
+  [/PALETTE\[\(i \+ CATS\.indexOf\(cat\)\) % PALETTE\.length\]/, "泳道一行就是一个分类，条要用本行的分类色"],
+]) {
+  assert.doesNotMatch(timeViews, pattern, why);
+}
+
+// 3b) 🔴 只写「不许出现什么」是不够的 —— 变异实测漏过一次：
+//     把泳道条改写成 PALETTE[(0 + 0) % PALETTE.length] 就不再匹配上面那条正则，断言却照样 PASS。
+//     所以每条都要**正面**钉住实现表达式，且计数必须精确（多一处少一处都说明改错了地方）。
+for (const [needle, count, why] of [
+  ["--ms:${colors[k]};--tone-fg:${tones[k].fg}", 1, "里程碑节点"],
+  ["--ec:${catTone(e).c};--tone-fg:${catTone(e).fg}", 2, "横向年表（桌面 + 窄屏各一处）"],
+  ["--ct:${catTone(e).c}", 1, "卡片时间轴"],
+  ["background:${catTone(r).c};--tone-fg:${catTone(r).fg}", 1, "年度甘特（桌面）"],
+  ["--gm:${catTone(r).c}", 1, "年度甘特（窄屏按月）"],
+  ["background:${CAT_COLOR[cat]};--tone-fg:${CAT_FG[cat]}", 2, "泳道（行标签 + 条）"],
+]) {
+  const got = timeViews.split(needle).length - 1;
+  assert.equal(got, count, `${why} 必须用分类色（期望出现 ${count} 次，实际 ${got} 次）`);
+}
+
+// 4) 分类色只许引用令牌，不许在 JS 里再写一份十六进制表
+assert.doesNotMatch(timeViews, /const CAT_COLOR = \{[^}]*#/, "timeViews 的 CAT_COLOR 不许写死十六进制");
+assert.match(timeViews, /work: "var\(--cat-work\)"/, "CAT_COLOR 必须引用 --cat-* 令牌");
+assert.match(read("../src/views/timeline.js"), /work: "var\(--cat-work\)"/,
+  "timeline.js 的分类色必须与 timeViews 同源（历史上有 4 套，改一处漏三处）");
+assert.match(read("../src/views/timeblock.js"), /work: "var\(--cat-work\)"/,
+  "timeblock.js 的侧栏图例必须与 timeViews 同源");
+
+// 5) 分类色块上的文字色：黄 / 红 / 青绿底偏亮，必须配深字（白字只有 2.2~2.8:1）
+for (const sel of [".ms-arrow", ".ms-pin"]) {
+  assert.match(css, new RegExp(`${sel.replace(".", "\\.")}\\s*\\{[^}]*color:\\s*var\\(--tone-fg,\\s*#fff\\)`),
+    `${sel} 是「分类色块 + 文字」，文字色必须读 --tone-fg，不能写死 white`);
+}
+assert.match(timeViews, /--tone-fg:\$\{tones\[k\]\.fg\}/, "里程碑节点必须把前景色一起交给 CSS");
+for (const sel of ["work", "sport", "rest"]) {
+  assert.match(css, new RegExp(`--cat-${sel}-fg:\\s*#`),
+    `${sel} 的底色偏亮，前景色必须是深色（不能沿用 --on-accent 的白）`);
+}
+
+// 6) 分类色当「文字」压在面板上时必须混向 --ink。
+//    黄当背景配深字没问题，但当文字只有 2.26:1 —— 时间线视图的时间戳就是这种用法。
+assert.match(css, /\.tlv-time\s*\{[^}]*color:\s*color-mix\(in srgb,\s*var\(--tc,\s*var\(--deep\)\)\s*55%,\s*var\(--ink\)\)/,
+  "时间线视图的时间戳把分类色当文字用，必须混向 --ink");
+assert.match(css, /\.wm-time\s*\{[^}]*color:\s*color-mix\(in srgb,\s*var\(--wk,\s*var\(--deep\)\)\s*55%,\s*var\(--ink\)\)/,
+  "窄屏课表的时段文字可能吃到兜底的分类色，同样要混向 --ink");
+
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
-  + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）");
+  + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）"
+  + " + 分类配色唯一事实源（一种类型一种颜色，按分类取色而非按序号）");

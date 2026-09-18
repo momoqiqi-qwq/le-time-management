@@ -59,6 +59,26 @@
      styles/theme-derived.css 改成深字，否则白字会糊在亮底上。 */
   --on-deep: #FFFFFF;
   --on-accent: #FFFFFF;
+
+  /* ── 分类色：一种类型一种颜色（唯一事实源）──────────────────────────────
+     全应用只在这里定义「分类 → 颜色」。JS 侧一律引用 var(--cat-*)，不许再各写一份
+     十六进制表 —— 历史上有 4 套互不一致的映射（styles.css 的 .cat-block-*、
+     timeline.js、timeblock.js、timeViews.js），同一个「工作」在不同视图里是深青 / 蓝 /
+     黄三种颜色；里程碑轴更是干脆按序号取彩虹色，同一种类型会变出 4 种颜色。
+
+     值写成 var() 引用既有强调色：解析发生在 :root（= html）上，主题块
+     `:root[data-theme=x]` 也作用在同一个元素且特异性更高，所以换主题、切深浅色都会
+     自动跟着走，这里不需要重复维护 14 套值。
+
+     ⚠️ --cat-*-fg 是压在分类底色上的文字色，**必须按对比度实测选定，不能一律用
+     --on-accent**：--on-accent 在浅色模式下是白字，压在 --sun 上只有 2.26:1、
+     压在 --mint 上只有 2.17:1（14 套主题实测，见 scripts/test-theme-contrast.mjs 第 4 节）。
+     黄 / 红 / 青绿三色偏亮，改用深字；蓝 / 紫两色白字反而更清楚（蓝 3.96 vs 深字 3.45）。 */
+  --cat-work:  var(--sun);    --cat-work-fg:  #17323A;              /* 工作 · 黄 */
+  --cat-study: var(--sea);    --cat-study-fg: var(--on-accent);     /* 学习 · 蓝 */
+  --cat-sport: var(--coral);  --cat-sport-fg: #3A1512;              /* 运动 · 红 */
+  --cat-life:  var(--grape);  --cat-life-fg:  var(--on-accent);     /* 生活 · 紫 */
+  --cat-rest:  var(--mint);   --cat-rest-fg:  #0E2A26;              /* 休息 · 青绿 */
 }
 
 :root[data-theme="fresh"] {
@@ -436,10 +456,12 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .ptask .n { font-size: 13px; font-weight: 600; }
 .ptask .m { display: flex; gap: 7px; font-size: 10.5px; color: var(--ink-2); margin-top: 5px; align-items: center; }
 .cat-pill { border-radius: 6px; padding: 2px 8px; font-size: 10px; }
-.cat-work { background: #E1EEF3; color: var(--deep); }
-.cat-study { background: #EFE7FB; color: #6C3FB8; }
+/* 淡色小药丸（任务池 / 列表）与 .cat-block-* 共用同一套分类语义，
+   底色是分类色的极淡版本、文字是同色相的深色版本。改分类映射时两处要一起改。 */
+.cat-work { background: #FFF3D6; color: #8A6410; }
+.cat-study { background: #E1EEF3; color: #0F4C5C; }
 .cat-sport { background: #FFE7E5; color: #D64550; }
-.cat-life { background: #FFF3D6; color: #9A7420; }
+.cat-life { background: #EFE7FB; color: #6C3FB8; }
 .cat-rest { background: #DFF5F2; color: #17877D; }
 .pool .empty { border: 1.5px dashed #CFC8BA; border-radius: 12px; padding: 18px 12px; text-align: center; color: var(--ink-3); font-size: 12px; line-height: 1.7; }
 
@@ -463,11 +485,13 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .block .bm { font-size: 10px; opacity: .85; margin-top: 2px; }
 .block.tiny { padding: 4px 10px; }
 .block.dragging { opacity: .55; z-index: 8; }
-.cat-block-work { background: var(--deep); }
-.cat-block-study { background: var(--grape); }
-.cat-block-sport { background: var(--coral); }
-.cat-block-life { background: var(--sun); }
-.cat-block-rest { background: var(--mint); }
+/* 分类底色 + 前景。前景不能沿用 .block 的 --on-accent（见 :root 里 --cat-*-fg 的说明），
+   这里的 (0,1,0) 与 .block 同级但写在后面，所以能盖住它。 */
+.cat-block-work { background: var(--cat-work); color: var(--cat-work-fg); }
+.cat-block-study { background: var(--cat-study); color: var(--cat-study-fg); }
+.cat-block-sport { background: var(--cat-sport); color: var(--cat-sport-fg); }
+.cat-block-life { background: var(--cat-life); color: var(--cat-life-fg); }
+.cat-block-rest { background: var(--cat-rest); color: var(--cat-rest-fg); }
 .now-line { position: absolute; left: 14px; right: 14px; height: 2px; background: var(--coral); z-index: 5; pointer-events: none; }
 .now-line::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--coral); }
 .now-line .t { position: absolute; right: 0; top: -9px; background: var(--coral); color: var(--on-accent); font-size: 10px; border-radius: 8px; padding: 2px 8px; }
@@ -1444,17 +1468,20 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ms-row[data-dir="fwd"]::before { right: calc(12.5% - 2px); }   /* 末节点落在最右列的中心 */
 .ms-row[data-dir="rev"]::before { left: calc(12.5% - 2px); }    /* 末节点落在最左列的中心 */
 .ms-row:last-child::before { display: none; }                    /* 最后一行不再往下接 */
-.ms-cell { --ms:#2397e5; position: relative; z-index: 1; min-height: 250px; text-align: center; color: var(--ink); }
+.ms-cell { --ms: var(--cat-work); --tone-fg: var(--cat-work-fg); position: relative; z-index: 1; min-height: 250px; text-align: center; color: var(--ink); }
 .ms-stage { margin: 0 10px 28px; min-height: 42px; border-radius: 5px 5px 0 0; background: color-mix(in srgb, var(--ms) 28%, white); color: color-mix(in srgb, var(--ms) 88%, #19303c); font-weight: 700; font-size: 15px; display:flex; align-items:center; justify-content:center; padding: 0 8px; border-bottom: 2px solid var(--ms); }
 .ms-line { position:absolute; left:50%; top:42px; width:1.5px; height:60px; background:var(--ms); transform:translateX(-50%); }
-.ms-arrow { position:relative; height:48px; margin: 0 -1px; background:var(--ms); color:white; display:flex; align-items:center; justify-content:center; gap:5px; clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); z-index:2; }
+/* 箭头与图钉是「色块 + 文字」，文字色必须跟着分类底色走：黄 / 红 / 青绿底上白字
+   只有 2.2~2.8:1（实测），所以要读 --tone-fg（由 JS 与色块一起给），不能写死 white。
+   同一个变量名给年表 / 甘特 / 泳道复用，语义统一为「压在本元素内联色块上的文字色」。 */
+.ms-arrow { position:relative; height:48px; margin: 0 -1px; background:var(--ms); color:var(--tone-fg, #fff); display:flex; align-items:center; justify-content:center; gap:5px; clip-path:polygon(0 0,88% 0,100% 50%,88% 100%,0 100%,12% 50%); z-index:2; }
 .ms-arrow b { font-size:21px; font-variant-numeric: tabular-nums; }
 .ms-arrow span { font-size:11px; opacity:.9; }
 /* 反向行的箭头要指向那一行的行进方向（它从右往左走）。
    clip-path 左右镜像：原式每个 x 换成 100% − x，尖与缺口对调 ⇒ 左端变尖、右端变缺口。
    行内相邻箭头「尖插缺口」的衔接关系不变（每个箭头仍是左尖右缺），文字与 DOM 顺序也都不动。 */
 .ms-row[data-dir="rev"] .ms-arrow { clip-path: polygon(100% 0,12% 0,0 50%,12% 100%,100% 100%,88% 50%); }
-.ms-pin { width:32px; height:40px; margin:26px auto 7px; background:var(--ms); color:white; display:flex; align-items:flex-start; justify-content:center; padding-top:6px; font-size:14px; clip-path:polygon(0 0,100% 0,100% 74%,50% 100%,0 74%); }
+.ms-pin { width:32px; height:40px; margin:26px auto 7px; background:var(--ms); color:var(--tone-fg, #fff); display:flex; align-items:flex-start; justify-content:center; padding-top:6px; font-size:14px; clip-path:polygon(0 0,100% 0,100% 74%,50% 100%,0 74%); }
 .ms-copy { padding:0 10px; display:flex; flex-direction:column; gap:6px; }
 .ms-copy b { font-size:12.5px; line-height:1.35; }
 .ms-copy span { font-size:10.5px; color:var(--ink-2); line-height:1.45; }
@@ -1475,7 +1502,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ce-dot { position:absolute; left:50%; width:8px; height:8px; border-radius:50%; background:var(--ec); transform:translate(-50%,-50%); }
 .chronicle-event.up .ce-dot { top:211px; }
 .chronicle-event.down .ce-dot { top:-31px; }
-.ce-date { position:absolute; left:50%; transform:translateX(-50%); background:var(--ec); color:var(--on-accent); font-size:10px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; }
+.ce-date { position:absolute; left:50%; transform:translateX(-50%); background:var(--ec); color:var(--tone-fg, var(--on-accent)); font-size:10px; font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; }
 .chronicle-event.up .ce-date { top:207px; transform:translate(-50%, -50%); }
 .chronicle-event.down .ce-date { top:-35px; transform:translate(-50%, -50%); }
 /* 长空档省略号（v0.50.0）：两个事件相隔太久时把中轴「剪断」，位置让给密集段。
@@ -1520,7 +1547,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .gantt-month { display:flex; align-items:center; justify-content:center; border-right:1px solid var(--line); background:#f1f1f1; font-size:11px; font-weight:700; }
 .gantt-cells { position:relative; display:grid; grid-template-columns:repeat(12,1fr); }
 .gantt-cells > i { border-right:1px solid var(--line-soft); }
-.gantt-bar { position:absolute; top:9px; height:29px; border-radius:2px; color:var(--on-accent); font-size:10.5px; line-height:29px; padding:0 9px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; box-shadow:0 1px 4px rgba(34,48,58,.12); min-width:12px; }
+.gantt-bar { position:absolute; top:9px; height:29px; border-radius:2px; color:var(--tone-fg, var(--on-accent)); font-size:10.5px; line-height:29px; padding:0 9px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; box-shadow:0 1px 4px rgba(34,48,58,.12); min-width:12px; }
 
 /* 手机专用容器：基础态就隐藏，只在 ≤760px 打开。
    写在媒体查询外，避免首帧（媒体查询尚未生效时）两端布局同时出现。 */
@@ -1533,10 +1560,10 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .swim-year { background:#075f5b !important; color:white; font-weight:800; }
 .swim-day { display:flex; align-items:center; justify-content:center; border-left:1px solid rgba(255,255,255,.24); font-size:10px; }
 .swim-row { display:grid; grid-template-columns:160px 1fr; min-height:105px; border-top:1px solid #cbd8d9; }
-.swim-label { color:white; font-weight:800; font-size:16px; padding:12px; display:flex; align-items:center; justify-content:center; text-align:center; }
+.swim-label { color:var(--tone-fg, #fff); font-weight:800; font-size:16px; padding:12px; display:flex; align-items:center; justify-content:center; text-align:center; }
 .swim-cells { --days:31; position:relative; display:grid; grid-template-columns:repeat(var(--days),1fr); background:#eef5f5; }
 .swim-cells > i { border-left:1px solid #d5e0e1; }
-.swim-bar { position:absolute; top:28px; height:32px; min-width:48px; max-width:320px; color:white; font-size:10.5px; line-height:32px; padding:0 9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+.swim-bar { position:absolute; top:28px; height:32px; min-width:48px; max-width:320px; color:var(--tone-fg, #fff); font-size:10.5px; line-height:32px; padding:0 9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 3px rgba(0,0,0,.08); }
 
 /* ═══════════════════════════════════════════════════════════════
    窄屏（≤760px）时间视图适配
@@ -1580,7 +1607,8 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   .tv-fold-body { display:block; padding:0 13px 12px; }
   .tv-fold.is-today { border-color:color-mix(in srgb, var(--deep) 38%, var(--line)); }
   .tv-fold.is-today .tv-fold-title { color:var(--deep); }
-  .tv-fold-cat .tv-fold-title { color:var(--cat, var(--ink)); }
+  /* 分类色当文字用时一律混向 --ink（同 .tlv-time 的理由：黄当背景没问题，当文字只有 2.26:1）。 */
+  .tv-fold-cat .tv-fold-title { color:color-mix(in srgb, var(--cat, var(--ink)) 55%, var(--ink)); }
 
   /* ── WakeUp 课表：网格 → 按天分组 ── */
   .wakeup-scroll { display:none; }
@@ -1592,7 +1620,9 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   .wm-item:first-child { border-top:0; }
   .wm-time {
     flex:none; width:52px; white-space:pre-line; font-size:10.5px; font-weight:700;
-    color:var(--wk, var(--deep)); font-variant-numeric:tabular-nums; line-height:1.35;
+    /* --wk 可能是课程表插件的课程色，也可能是没有课表数据时兜底用的分类色 —— 后者含黄色，
+       直接当文字压在白底上只有 2.26:1。混向 --ink 后两种来源都够清楚（左边框仍用纯色）。 */
+    color:color-mix(in srgb, var(--wk, var(--deep)) 55%, var(--ink)); font-variant-numeric:tabular-nums; line-height:1.35;
     border-left:3px solid var(--wk, var(--deep)); padding-left:7px;
   }
   .wm-copy { min-width:0; display:grid; gap:2px; }
@@ -1646,7 +1676,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
     background:var(--ec); box-shadow:0 0 0 2px var(--panel);
   }
   .cv-date {
-    justify-self:start; background:var(--ec); color:var(--on-accent); font-size:10px; font-weight:700;
+    justify-self:start; background:var(--ec); color:var(--tone-fg, var(--on-accent)); font-size:10px; font-weight:700;
     padding:2px 7px; border-radius:4px; font-variant-numeric:tabular-nums;
   }
   .cv-card {
@@ -3620,12 +3650,16 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .tlv-card.is-done .tlv-title { text-decoration: line-through; color: var(--ink-3); }
 .tlv-card-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .tlv-time {
-  font-weight: 800; font-size: 12px; color: var(--tc, var(--deep));
+  font-weight: 800; font-size: 12px;
+  /* 分类色当**文字**用时不能直接写 var(--tc)：黄当背景配深字没问题，
+     但当文字压在白色面板上只有 2.26:1（实测）。统一混向 --ink ——
+     浅色模式下 --ink 是深色 = 同色相压暗；深色模式下 --ink 是浅色 = 同色相提亮。 */
+  color: color-mix(in srgb, var(--tc, var(--deep)) 55%, var(--ink));
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .tlv-kind {
   flex: none; font-size: 10.5px; font-weight: 700; line-height: 1.6; padding: 0 7px; border-radius: 99px;
-  color: var(--tc, var(--deep)); background: color-mix(in srgb, var(--tc, var(--deep)) 13%, transparent);
+  color: color-mix(in srgb, var(--tc, var(--deep)) 55%, var(--ink)); background: color-mix(in srgb, var(--tc, var(--deep)) 13%, transparent);
 }
 .tlv-flag { font-size: 10.5px; font-weight: 700; margin-left: auto; white-space: nowrap; }
 .tlv-flag.done { color: var(--mint); }

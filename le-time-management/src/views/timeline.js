@@ -12,8 +12,9 @@ import * as S from "../store.js";
 import { el, QUADS } from "../ui.js";
 import { openTaskDrawer } from "./drawer.js";
 
-/* ── 分类色（与时间块概览/时间视图同一套语义令牌）── */
-const CAT_COLOR = { work: "var(--deep)", study: "var(--grape)", sport: "var(--coral)", life: "var(--sun)", rest: "var(--mint)" };
+/* ── 分类色（唯一事实源是 styles.css 的 --cat-*，这里只做引用）──
+   不要再写死强调色令牌：那等于在 JS 里维护第二份映射，一改就漏（历史上有 4 套）。 */
+const CAT_COLOR = { work: "var(--cat-work)", study: "var(--cat-study)", sport: "var(--cat-sport)", life: "var(--cat-life)", rest: "var(--cat-rest)" };
 const CAT_NAME = { work: "工作", study: "学习", sport: "运动", life: "生活", rest: "休息" };
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 

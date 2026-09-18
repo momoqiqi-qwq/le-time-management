@@ -11,10 +11,29 @@ const VIEW_META = [
   ["swimlane", "阶段甘特", "按分类分泳道查看时间占用"],
 ];
 
-const CAT_COLOR = {
-  work: "#2d8ee6", study: "#68b7ef", sport: "#ef6a6a", life: "#ffb64d", rest: "#79c77d",
-};
 const CAT_NAME = { work: "工作", study: "学习", sport: "运动", life: "生活", rest: "休息" };
+/* 分类色只认 styles.css 的 --cat-*（唯一事实源），这里不再写第二份十六进制表。
+   历史坑：这张表曾是 #2d8ee6 那一系的自配色，与 styles.css 的 .cat-block-* 毫无关系 ——
+   同一个「工作」在时间块视图是深青、在这里是蓝；而里程碑轴更彻底，它按序号取 PALETTE，
+   于是同一种类型能同时出现蓝 / 绿 / 黄 / 紫四种颜色（用户截图指出）。 */
+const CAT_COLOR = {
+  work: "var(--cat-work)", study: "var(--cat-study)", sport: "var(--cat-sport)",
+  life: "var(--cat-life)", rest: "var(--cat-rest)",
+};
+/* 压在分类底色上的文字色。不能一律用 --on-accent：浅色模式下它是白字，
+   而黄 / 红 / 青绿三种底色都偏亮（白字只有 2.2~2.8:1，见 :root 的实测记录）。 */
+const CAT_FG = {
+  work: "var(--cat-work-fg)", study: "var(--cat-study-fg)", sport: "var(--cat-sport-fg)",
+  life: "var(--cat-life-fg)", rest: "var(--cat-rest-fg)",
+};
+/* 「截止」节点的标签是「目标」，它不显示分类，所以也不该借分类的颜色 ——
+   给一个独立的品牌深青，色与字才对得上。 */
+const GOAL_TONE = { c: "var(--deep)", fg: "var(--on-deep)" };
+function catTone(e) {
+  if (e.kind === "截止") return GOAL_TONE;
+  return CAT_COLOR[e.cat] ? { c: CAT_COLOR[e.cat], fg: CAT_FG[e.cat] } : GOAL_TONE;
+}
+/* 仅供课程表视图：那里的颜色来自课程表插件的数据，不是任务分类。 */
 const PALETTE = ["#2397e5", "#62b2ea", "#7bc886", "#ffbb52", "#e86d70", "#ff3d35", "#9061bd", "#42b6a2"];
 
 /* ═══════════════════ 视图切换栏 ═══════════════════
@@ -355,10 +374,13 @@ function milestoneView(data) {
     const slice = list.slice(start, start + MS_COLS);
     const rev = (start / MS_COLS) % 2 === 1;
     const row = el("div", { class: "ms-row", "data-dir": rev ? "rev" : "fwd" });
-    const colors = slice.map((_, k) => PALETTE[(start + k) % PALETTE.length]);
+    // 一种类型一种颜色：取色只认事件的分类，不再看它排在第几位。
+    // 折返跑道上同色行会让 --ms-rail 退化成一条纯色，这是正确结果 —— 不要为了「好看」再按序号上色。
+    const tones = slice.map(catTone);
+    const colors = tones.map((t) => t.c);
     slice.forEach((e, k) => {
       const label = e.kind === "截止" ? "目标" : CAT_NAME[e.cat] || "安排";
-      row.append(el("div", { class: "ms-cell", style: `--ms:${colors[k]}` },
+      row.append(el("div", { class: "ms-cell", style: `--ms:${colors[k]};--tone-fg:${tones[k].fg}` },
         el("div", { class: "ms-stage" }, label),
         el("div", { class: "ms-line" }),
         el("div", { class: "ms-arrow" }, el("b", {}, e.date.slice(0, 4)), el("span", {}, shortDate(e.date))),
@@ -463,7 +485,7 @@ function chronicleView(data) {
   });
   events.forEach((e, i) => {
     const upper = i % 2 === 0;
-    canvas.append(el("div", { class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${xs[i]}%;--ec:${PALETTE[i % PALETTE.length]}` },
+    canvas.append(el("div", { class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${xs[i]}%;--ec:${catTone(e).c};--tone-fg:${catTone(e).fg}` },
       el("div", { class: "ce-card" }, el("b", {}, e.title), el("span", {}, `${e.date} · ${e.subtitle || e.kind}`)),
       el("div", { class: "ce-stem" }), el("div", { class: "ce-dot" }),
       el("div", { class: "ce-date" }, e.date),
@@ -479,7 +501,7 @@ function chronicleView(data) {
       if (d > gapThreshold) vertical.append(el("div", { class: "cv-gap" }, `⋯ 间隔 ${d} 天 ⋯`));
     }
     const side = i % 2 ? "right" : "left";
-    vertical.append(el("article", { class: `cv-item ${side}`, style: `--ec:${PALETTE[i % PALETTE.length]}` },
+    vertical.append(el("article", { class: `cv-item ${side}`, style: `--ec:${catTone(e).c};--tone-fg:${catTone(e).fg}` },
       el("span", { class: "cv-date" }, e.date),
       el("div", { class: "cv-card" }, el("b", {}, e.title), el("span", {}, e.subtitle || e.kind)),
     ));
@@ -499,7 +521,7 @@ function cardTimelineView(data) {
   const lane = el("div", { class: "card-timeline" });
   data.events.slice(0, 16).forEach((e, i) => {
     const side = i % 2 ? "right" : "left";
-    lane.append(el("article", { class: `ct-item ${side}`, style: `--ct:${PALETTE[i % PALETTE.length]}` },
+    lane.append(el("article", { class: `ct-item ${side}`, style: `--ct:${catTone(e).c}` },
       el("div", { class: "ct-card" },
         el("div", { class: "ct-date" }, e.date),
         el("h3", {}, e.title),
@@ -529,14 +551,14 @@ function ganttView(data) {
   const header = el("div", { class: "gantt-headrow" }, el("div", { class: "gantt-label head" }, `${year} · 项目 / 任务`));
   for (let m = 1; m <= 12; m++) header.append(el("div", { class: "gantt-month" }, `${m}月`));
   grid.append(header);
-  rows.forEach((r, i) => {
+  rows.forEach((r) => {
     const rs = clamp(dayDiff(start, r.start), 0, total - 1), re = clamp(dayDiff(start, r.end), rs, total - 1);
     const left = rs / total * 100, width = Math.max(1.2, (re - rs + 1) / total * 100);
     grid.append(el("div", { class: "gantt-row" },
       el("div", { class: "gantt-label" }, el("b", {}, r.group), el("span", {}, r.title)),
       el("div", { class: "gantt-cells" },
         ...Array.from({ length: 12 }, () => el("i")),
-        el("div", { class: "gantt-bar", title: `${r.start} ~ ${r.end} · ${r.title}`, style: `left:${left}%;width:${width}%;background:${PALETTE[i % PALETTE.length]}` }, r.title),
+        el("div", { class: "gantt-bar", title: `${r.start} ~ ${r.end} · ${r.title}`, style: `left:${left}%;width:${width}%;background:${catTone(r).c};--tone-fg:${catTone(r).fg}` }, r.title),
       ),
     ));
   });
@@ -559,11 +581,11 @@ function ganttView(data) {
   for (const { m, dim, first, hit } of shown) {
     const fold = collapsible(`${year}.${String(m).padStart(2, "0")} · ${hit.length} 项`, "tv-fold-month", hit.length > 0 || onlyMonth);
     if (!hit.length) { fold.body.append(el("p", { class: "wm-none" }, "本月没有安排")); }
-    hit.forEach((r, i) => {
+    hit.forEach((r) => {
       const from = Math.max(1, dayDiff(first, r.start) + 1), to = Math.min(dim, dayDiff(first, r.end) + 1);
       fold.body.append(el("article", { class: "gm-item" },
         el("div", { class: "gm-copy" }, el("b", {}, r.group), el("span", {}, r.title)),
-        el("div", { class: "gm-track", style: `--days:${dim};--gm-from:${from};--gm-to:${to};--gm:${PALETTE[i % PALETTE.length]}` },
+        el("div", { class: "gm-track", style: `--days:${dim};--gm-from:${from};--gm-to:${to};--gm:${catTone(r).c}` },
           el("i", { class: "gm-span" }),
           el("small", {}, `${from} → ${to} 日`)),
       ));
@@ -595,13 +617,15 @@ function swimlaneView(data, anchorDate) {
   for (let d = 1; d <= days; d++) hdr.append(el("div", { class: "swim-day" }, d));
   lane.append(hdr);
   for (const cat of CATS) {
-    const row = el("div", { class: "swim-row" }, el("div", { class: "swim-label", style: `background:${CAT_COLOR[cat]}` }, CAT_NAME[cat]));
+    // 泳道一行就是一个分类，条当然也用这一行的分类色 —— 原来按 (行号 + 序号) 取彩虹色，
+    // 同一行里每根条颜色都不一样，等于把「分类」这层信息又抹掉了。
+    const row = el("div", { class: "swim-row" }, el("div", { class: "swim-label", style: `background:${CAT_COLOR[cat]};--tone-fg:${CAT_FG[cat]}` }, CAT_NAME[cat]));
     const cells = el("div", { class: "swim-cells", style: `--days:${days}` }, ...Array.from({ length: days }, () => el("i")));
     const list = monthBlocks.filter(b => (b.cat || "work") === cat);
-    list.forEach((b, i) => {
+    list.forEach((b) => {
       const d = parseDate(b.date).getDate();
       const width = Math.min(6, Math.max(1.3, b.durMin / 120));
-      cells.append(el("div", { class: "swim-bar", title: `${b.date} ${b.start} · ${b.title}`, style: `left:${(d - 1) / days * 100}%;width:${width}%;background:${PALETTE[(i + CATS.indexOf(cat)) % PALETTE.length]}` }, b.title));
+      cells.append(el("div", { class: "swim-bar", title: `${b.date} ${b.start} · ${b.title}`, style: `left:${(d - 1) / days * 100}%;width:${width}%;background:${CAT_COLOR[cat]};--tone-fg:${CAT_FG[cat]}` }, b.title));
     });
     row.append(cells); lane.append(row);
   }

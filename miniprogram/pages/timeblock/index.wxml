@@ -222,7 +222,7 @@
         </view>
         <view class="ms-card">
           <view class="ms-row1">
-            <text class="ms-date" style="background:{{item.color}}">{{item.md}}</text>
+            <text class="ms-date cat-{{item.cat}}" style="background:{{item.color}}">{{item.md}}</text>
             <text class="ms-year-l">{{item.year}}</text>
           </view>
           <text class="ms-title">{{item.title}}</text>
@@ -246,7 +246,7 @@
             <text class="cv-sub">{{item.date}} · {{item.sub}}</text>
           </view>
           <view class="chron-v-dot"></view>
-          <text class="chron-v-date" style="background:{{item.color}}">{{item.md}}</text>
+          <text class="chron-v-date cat-{{item.cat}}" style="background:{{item.color}}">{{item.md}}</text>
         </view>
       </block>
     </view>

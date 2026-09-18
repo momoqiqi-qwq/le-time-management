@@ -16,6 +16,12 @@ const TAG_CAT = {
   运动: "sport", 健身: "sport", 跑步: "sport", 生活: "life", 休息: "rest",
 };
 const CAT_NAMES = { work: "工作", study: "学习", sport: "运动", life: "生活", rest: "休息" };
+/* 分类色：一种类型一种颜色。小程序侧取不到 CSS 变量，只能写值 ——
+   这 5 个值必须等于桌面端 styles.css 的 --cat-* 在 classic 主题下的解析结果
+   （工作=黄 --sun / 学习=蓝 --sea / 运动=红 --coral / 生活=紫 --grape / 休息=青绿 --mint）。
+   改桌面端映射时这里要一起改，scripts/test-miniprogram-timeviews.mjs 有断言守着。
+   历史坑：这里原本是 #168f88 一系的自配色，工作=青绿、生活=蓝，与桌面端对不上。 */
+const CAT_COLORS = { work: "#E3A008", study: "#118AB2", sport: "#FF6B6B", life: "#9B5DE5", rest: "#2EC4B6" };
 
 Page({
   data: {
@@ -318,7 +324,6 @@ Page({
   /* 阶段甘特：按分类折叠 + 占比条。分类内按日期排序，条宽表示这一天排了多久。 */
   buildSwimCats(anchorDate, swim) {
     const [yy, mm] = (anchorDate || store.todayStr()).split("-").map(Number);
-    const catColors = { work:"#168f88", study:"#26b99a", sport:"#e28aa1", life:"#6b8be0", rest:"#5bbf8f" };
     const dim = new Date(yy, mm, 0).getDate();
     const raw = ["work", "study", "sport", "life", "rest"].map((cat) => {
       const src = (swim || []).find((s) => s.cat === cat) || { bars: [] };
@@ -336,20 +341,20 @@ Page({
       bars.sort((a, b) => a.day - b.day);
       const sumMin = bars.reduce((acc, b) => acc + b.durMin, 0);
       const pct = totalMin ? Math.round((sumMin / totalMin) * 100) : 0;
-      return { cat, label: CAT_NAMES[cat] || cat, bars, sumLabel: store.durLabel(sumMin), pct, color: catColors[cat] };
+      return { cat, label: CAT_NAMES[cat] || cat, bars, sumLabel: store.durLabel(sumMin), pct, color: CAT_COLORS[cat] };
     });
     return { cats, label: yy + " 年 " + mm + " 月" };
   },
 
   buildVisualData(anchorDate) {
     const st = store.getState();
-    const colors = ["#2397e5", "#62b2ea", "#7bc886", "#ffbb52", "#e86d70", "#ff3d35", "#9061bd", "#42b6a2"];
-    const catNames = { work: "工作", study: "学习", sport: "运动", life: "生活", rest: "休息" };
     const events = [];
     (st.blocks || []).forEach((b) => events.push({ date: b.date, title: b.title, sub: b.start + " · " + store.durLabel(b.durMin), cat: b.cat || "work" }));
-    (st.tasks || []).filter((t) => !t.done && t.due).forEach((t) => events.push({ date: t.due.slice(0, 10), title: t.title, sub: t.project || "任务截止", cat: "work" }));
+    // 任务的分类按标签判（与桌面端 collectTimelineData 同口径），不能一律当「工作」——
+    // 否则所有截止事项都会被涂成工作的黄色，又变回「一种类型一种颜色」的反面。
+    (st.tasks || []).filter((t) => !t.done && t.due).forEach((t) => events.push({ date: t.due.slice(0, 10), title: t.title, sub: t.project || "任务截止", cat: TAG_CAT[(t.tags || [])[0] || ""] || "work" }));
     events.sort((a, b) => a.date.localeCompare(b.date));
-    const ve = events.slice(0, 16).map((e, i) => ({ ...e, color: colors[i % colors.length], side: i % 2 ? "right" : "left", catLabel: catNames[e.cat] || "安排", year: e.date.slice(0,4), md: e.date.slice(5).replace("-", "/") }));
+    const ve = events.slice(0, 16).map((e, i) => ({ ...e, color: CAT_COLORS[e.cat] || CAT_COLORS.work, side: i % 2 ? "right" : "left", catLabel: CAT_NAMES[e.cat] || "安排", year: e.date.slice(0,4), md: e.date.slice(5).replace("-", "/") }));
     // 长间隔省略提示（与桌面端 chronicle 同一口径：>60 天且占跨度 15%+）——
     // 纵向列表没有「叠卡」问题，但同样要让用户看出「这里跳过了很多天」。
     if (ve.length > 1) {
@@ -365,7 +370,7 @@ Page({
     const year = +(anchorDate || store.todayStr()).slice(0, 4);
     const y0 = year + "-01-01", y1 = year + "-12-31";
     const toDay = (s) => Math.round((new Date(s + "T00:00:00") - new Date(y0 + "T00:00:00")) / 86400000);
-    const gantt = (st.tasks || []).filter((t) => !t.done).slice(0, 14).map((t, i) => {
+    const gantt = (st.tasks || []).filter((t) => !t.done).slice(0, 14).map((t) => {
       const due = (t.due || anchorDate || store.todayStr()).slice(0, 10);
       const created = new Date(Number(t.createdAt) || Date.now());
       let start = created.getFullYear() === year ? store.fmtDate(created) : y0;
@@ -374,24 +379,26 @@ Page({
       const b = Math.max(a, Math.min(364, toDay(end)));
       // `_a` / `_b` 是年内日序号（0~364），月份折叠时用它判断「这条和该月是否相交」。
       // 不叫 a/b 是为了避免和下面的 left/width 计算混在一起看错。
-      return { title: t.title, group: t.project || ((t.tags || [])[0]) || "任务", left: a / 365 * 100, width: Math.max(2, (b - a + 1) / 365 * 100), color: colors[i % colors.length], _a: a, _b: b, rangeLabel: start.slice(5).replace("-","/") + " → " + end.slice(5).replace("-","/") };
+      return { title: t.title, group: t.project || ((t.tags || [])[0]) || "任务", left: a / 365 * 100, width: Math.max(2, (b - a + 1) / 365 * 100), color: CAT_COLORS[TAG_CAT[(t.tags || [])[0] || ""] || "work"], _a: a, _b: b, rangeLabel: start.slice(5).replace("-","/") + " → " + end.slice(5).replace("-","/") };
     });
 
     const [yy, mm] = (anchorDate || store.todayStr()).split("-").map(Number);
     const days = new Date(yy, mm, 0).getDate();
-    const swim = ["work", "study", "sport", "life", "rest"].map((cat, ci) => {
+    const swim = ["work", "study", "sport", "life", "rest"].map((cat) => {
       const bars = (st.blocks || [])
         .filter((b) => b.cat === cat && b.date.slice(0,7) === String(yy) + "-" + String(mm).padStart(2,"0"))
-        .map((b, i) => ({
+        .map((b) => ({
           title: b.title,
           left: (+b.date.slice(8,10) - 1) / days * 100,
           width: Math.max(7, Math.min(26, b.durMin / 8)),
-          color: colors[(ci + i) % colors.length],
+          // 泳道一行就是一个分类，条当然用这一行的分类色 —— 原来按 (行号 + 序号) 取彩虹色，
+          // 同一行里每根条颜色都不一样，等于把「分类」这层信息又抹掉了。
+          color: CAT_COLORS[cat],
           // durMin 要带上：分类占比按「时长 / 当月总时长」算（与桌面端同口径），
           // 拿条宽反推出来的百分数没有意义。
           durMin: Number(b.durMin) || 0,
         }));
-      return { cat, label: catNames[cat], bars, sumMin: bars.reduce((a, b) => a + b.durMin, 0) };
+      return { cat, label: CAT_NAMES[cat], bars, sumMin: bars.reduce((a, b) => a + b.durMin, 0) };
     });
     return { events: ve, gantt, swim };
   },
