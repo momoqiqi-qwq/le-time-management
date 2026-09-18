@@ -14,7 +14,8 @@ import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, 
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
 import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
-import { closeLayer, observePluginMotion, removeWithMotion } from "./motion.js";
+import { listRailActions, moveRailAction, normalizeRailActionOrder, registerRailAction, slotIndexFor } from "./railActions.js";
+import { closeLayer, observePluginMotion, reducedMotion, removeWithMotion } from "./motion.js";
 import { isDesktopRuntime } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
@@ -205,8 +206,8 @@ export function renderShell(root) {
     el("span", { class: "quick-menu-trigger-label" }, "快捷入口"),
   );
 
+  // v0.53.0：操作条里的设置按钮由 renderRailDock() 建好后回填 —— 切换视图时要摘掉它的 .on
   let settingsDockBtn = null;
-  let themeToggleBtn = null;
   let quickDock = null;
   let pinActionBtn = null;
   let navTransitionSeq = 0;
@@ -218,16 +219,25 @@ export function renderShell(root) {
     ? window.matchMedia("(max-width: 900px)")
     : { matches: false };
 
+  // ── v0.53.0：左下角快捷操作条 ──
+  // 竖排两颗按钮 → 横排一条，按住任一按钮可拖动重排（其余按钮实时让位，落点由指针
+  // 实时决定，见 attachRailDockDrag）。按钮不再在这里手写，改由注册表驱动：
+  //   registerRailAction({ id, label, icon, onClick })  ← 「后续添加按钮的接口」
+  // 顺序持久化在 settings.railActionOrder。容器仍带 .rail-bottom 类 —— 窄屏底栏
+  // 那批规则（order/width/子按钮尺寸）全部挂在它上面，换名会连带动几十条 CSS。
+  const railDock = el("div", {
+    class: "rail-bottom rail-dock",
+    role: "toolbar",
+    "aria-label": "快捷操作",
+    "data-rail-dock": "",
+  });
   const rail = el("aside", { class: "rail" },
       el("div", { class: "brand" },
       el("span", { class: "mark" }),
       el("div", {}, el("b", {}, "Le时间管理"), el("small", {}, "LE · TIME MANAGEMENT")),
     ),
     nav,
-    el("div", { class: "rail-bottom" },
-      themeToggleBtn = createThemeToggle(),
-      settingsDockBtn = settingsButton(),
-    ),
+    railDock,
   );
 
   const makeWindowControl = (kind, label, handler) => el("button", {
@@ -525,41 +535,111 @@ export function renderShell(root) {
     return b;
   }
 
-  // 左下角深浅色切换按钮：与设置 › 主题的切换共用同一条动画路径
+  // ── v0.53.0：操作条动作注册 ──
+  // 「后续添加按钮的接口」就是 registerRailAction —— 新增按钮不必再改 shell 的建 DOM
+  // 代码，调一次即可（图标给一个返回节点的函数，onMount 用于需要自己订阅刷新的场景）。
+
+  // 深浅色切换：与设置 › 主题的切换共用同一条动画路径
   //（setThemeMode → applyTheme → runThemeMutation → View Transitions 圆形揭示）。
   // 点击位置由 theme.js 的全局 pointerdown 监听自动记录为 lastPointer，
   // 所以圆形从按钮位置向外扩散 —— 与设置页点按钮的动画完全一致。
   // 图标用 MutationObserver 驱 data-theme-mode 刷新，覆盖「跟随系统」时系统亮暗翻转。
-  function createThemeToggle() {
-    const btn = el("button", {
-      class: "settings-icon-button theme-toggle-btn",
-      type: "button",
-      title: "",
-      "aria-label": "切换深浅模式",
-    });
-    const update = () => {
-      const dark = resolveThemeMode() === "dark";
-      btn.replaceChildren(el("span", { class: "ic" }, faIcon(dark ? "sun" : "moon")));
-      btn.title = dark ? "切换到浅色模式" : "切换到深色模式";
-    };
-    btn.addEventListener("click", () => {
+  registerRailAction({
+    id: "theme-toggle",
+    label: "切换深浅模式",
+    className: "theme-toggle-btn",
+    icon: () => faIcon(resolveThemeMode() === "dark" ? "sun" : "moon"),
+    onMount: (btn) => {
+      const update = () => {
+        const dark = resolveThemeMode() === "dark";
+        btn.replaceChildren(el("span", { class: "ic" }, faIcon(dark ? "sun" : "moon")));
+        btn.title = dark ? "切换到浅色模式" : "切换到深色模式";
+      };
+      update(); // 首次同步（icon() 已给过图标，这里顺手把 title 也写对）
+      new MutationObserver(update).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme-mode"] });
+    },
+    onClick: () => {
       const next = resolveThemeMode() === "dark" ? "light" : "dark";
       setThemeMode(next, { animate: true });
       toast(`已切换为${next === "dark" ? "深色" : "浅色"}模式`);
-      // update() 由 MutationObserver 驱动，不需要手动调
+      // 图标刷新由 onMount 里的 MutationObserver 驱动，不需要手动调
+    },
+  });
+
+  registerRailAction({
+    id: "settings",
+    label: "设置",
+    icon: () => appIcon("settings"),
+    onClick: () => openSettingsModal(),
+  });
+
+  // 顺序状态：settings.railActionOrder（与 settings.topbarOrder 同构）。
+  // 归一化只保留仍注册着的 id，未记录的按注册顺序补到尾部 ⇒ 新增按钮自动出现在末尾。
+  function railActionOrderState() {
+    const settings = S.getState().settings;
+    settings.railActionOrder = normalizeRailActionOrder(settings.railActionOrder);
+    return settings.railActionOrder;
+  }
+
+  function buildRailButton(def) {
+    const btn = el("button", {
+      class: `settings-icon-button rail-dock-btn${def.className ? ` ${def.className}` : ""}`,
+      type: "button",
+      title: def.title || def.label || def.id,
+      "aria-label": def.label || def.title || def.id,
+      "data-rail-id": def.id,
     });
-    update();
-    new MutationObserver(update).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme-mode"] });
+    const ic = el("span", { class: "ic" });
+    const node = def.icon?.();
+    if (node) ic.append(node);
+    btn.append(ic);
+    if (def.onClick) btn.addEventListener("click", (event) => def.onClick(event, btn));
+    def.onMount?.(btn);
     return btn;
   }
-  function settingsButton() {
-    const b = el("button", { class: "settings-icon-button", "data-view": "settings", title: "设置", "aria-label": "设置" },
-      el("span", { class: "ic" }, appIcon("settings")),
-      el("span", { class: "lb" }, "设置"),
-    );
-    b.addEventListener("click", () => openSettingsModal());
-    return b;
+
+  // ⚠️ 必须**复用已有节点**（append 移动）而不是 replaceChildren 重建：
+  // theme-toggle 的 MutationObserver 挂在 documentElement 上、闭包持有按钮引用，
+  // 每次重建都会多留一个 observer 指向已被移除的按钮（键盘重排会反复触发重建）。
+  function renderRailDock() {
+    const byId = new Map(listRailActions().map((def) => [def.id, def]));
+    const existing = new Map([...railDock.children].map((b) => [b.dataset.railId, b]));
+    const nodes = railActionOrderState()
+      .map((id) => existing.get(id) || (byId.has(id) ? buildRailButton(byId.get(id)) : null))
+      .filter(Boolean);
+    for (const child of [...railDock.children]) if (!nodes.includes(child)) child.remove();
+    railDock.append(...nodes); // 已在容器里的节点会先被移出再追加 ⇒ 最终顺序 = nodes 顺序
+    settingsDockBtn = railDock.querySelector('[data-rail-id="settings"]');
   }
+  renderRailDock();
+
+  attachRailDockDrag(railDock, () => {
+    // 落库：DOM 序就是用户拖出的序。走 normalize 而不是直接赋值 ——
+    // 归一化保证落库的永远是「当前注册表的一个完整排列」（不多不少不重复）。
+    S.getState().settings.railActionOrder = normalizeRailActionOrder(
+      [...railDock.querySelectorAll(".rail-dock-btn")].map((b) => b.dataset.railId),
+    );
+    S.persistSoon();
+  });
+
+  // Alt+←/→ 键盘重排（与拖拽同一条持久化路径）—— 只有键盘的用户也能调整顺序。
+  railDock.addEventListener("keydown", (event) => {
+    if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+    const btn = event.target.closest?.(".rail-dock-btn");
+    if (!btn) return;
+    const order = [...railDock.querySelectorAll(".rail-dock-btn")].map((b) => b.dataset.railId);
+    const at = order.indexOf(btn.dataset.railId);
+    const to = at + (event.key === "ArrowRight" ? 1 : -1);
+    if (at < 0 || to < 0 || to >= order.length) return;
+    const next = moveRailAction(order, order[at], order[to], event.key === "ArrowLeft");
+    if (!next) return;
+    event.preventDefault();
+    S.getState().settings.railActionOrder = next;
+    S.persistSoon();
+    renderRailDock();
+    railDock.querySelector(`[data-rail-id="${order[at]}"]`)?.focus();
+    toast("操作条顺序已保存");
+  });
 
   // 标题卡小框的图标跟随当前视图：插件页 → 插件自己的图标（含用户自定义覆盖），
   // 核心页 → 该视图的导航图标。图标由 pluginDisplayIcon/appIcon 每次新建，直接替换子节点即可。
@@ -1120,4 +1200,182 @@ export function renderShell(root) {
   window.addEventListener("popstate", syncBackButton);
   syncBackButton();
   S.subscribe(renderStat);
+}
+
+/* ── v0.53.0：侧栏操作条拖拽重排 ──
+ * 与四象限卡片拖拽（views/quadrant.js 的 attachListDrag）同一套范式，轴向换成 X：
+ *   桌面：按住按钮移动 ≥6px 即进入拖拽；触屏：长按 240ms 进入（期间移动 >8px 视为滚动意图）。
+ *   拖动中幽灵卡跟随指针、原按钮留成半透明空槽，其余按钮用 WAAPI FLIP 平滑让位；
+ *   松手把 DOM 序（= 用户拖出的序）交给 onCommit 落库。
+ *
+ * 落点判定用几何推演（offsetWidth + columnGap 递推），不读 getBoundingClientRect：
+ *   让位动画进行中 rect 含残余 transform，会把槽位判定污染到动画中间态。
+ *
+ * ⚠️ 拖拽激活后必须吞掉紧随其后的 click：pointerup → click 是浏览器固定顺序，
+ *   不拦的话松手会顺带触发按钮自己的动作（比如把主题切了）。所以进入拖拽时就挂
+ *   捕获阶段的一次性拦截，并在**下一个宏任务**里摘掉 —— 在 pointerup 处理器里
+ *   同步摘会让紧随其后的 click 漏过去。
+ */
+function attachRailDockDrag(list, onCommit) {
+  let pd = null; // 当前按下会话
+  const items = () => [...list.children].filter((c) => c.classList.contains("rail-dock-btn"));
+  const clearLong = (st) => { if (st.longTimer) { clearTimeout(st.longTimer); st.longTimer = null; } };
+
+  // document 捕获阶段兜底：setPointerCapture 失败（或环境不支持）时，指针在容器外
+  // 松手的 pointerup/pointercancel 不会冒泡回 list，会话会挂起（幽灵卡不消失、顺序不落库）。
+  const detachDoc = (st) => {
+    if (st.docUp) document.removeEventListener("pointerup", st.docUp, true);
+    if (st.docCancel) document.removeEventListener("pointercancel", st.docCancel, true);
+    st.docUp = st.docCancel = null;
+  };
+
+  const moveGhost = (st, x, y) => {
+    st.ghost?.style.setProperty("transform", `translate(${x - st.gx}px, ${y - st.gy}px) scale(1.08)`);
+  };
+
+  const endSession = (st) => {
+    clearLong(st);
+    detachDoc(st);
+    st.ghost?.remove();
+    st.ghost = null;
+    st.card?.classList.remove("dragging");
+    list.classList.remove("drag-live");
+    if (st.pointerId != null && st.card) { try { st.card.releasePointerCapture(st.pointerId); } catch { /* 已释放 */ } }
+    if (st.swallowClick) setTimeout(() => document.removeEventListener("click", st.swallowClick, true), 0);
+    if (pd === st) pd = null;
+  };
+
+  const cancel = () => {
+    const st = pd;
+    if (!st) return;
+    // DOM 已被实时重排过 → 按启动时快照复原（append 移动，节点不重建）
+    if (st.active) for (const c of st.originOrder || []) list.append(c);
+    st.active = false;
+    endSession(st);
+  };
+
+  // 落点：mids 只含「非拖拽项」的中心点，与 slotIndexFor 的约定一致
+  const computeSlot = (st, x) => {
+    const mids = [];
+    let acc = list.getBoundingClientRect().left;
+    for (const c of items()) {
+      const w = st.w[c.dataset.railId] || c.offsetWidth;
+      if (c !== st.card) mids.push(acc + w / 2);
+      acc += w + st.gap;
+    }
+    return slotIndexFor(mids, x);
+  };
+
+  const reorderDOM = (st, k) => {
+    const vis = items().filter((c) => c !== st.card);
+    const before = vis.map((c) => c.getBoundingClientRect().left);
+    list.insertBefore(st.card, vis[k] ?? null);
+    if (reducedMotion()) return;
+    vis.forEach((c, i) => {
+      const dx = before[i] - c.getBoundingClientRect().left;
+      if (dx) c.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }],
+        { duration: 170, easing: "cubic-bezier(.22,.8,.22,1)" });
+    });
+  };
+
+  const beginDrag = (st, x, y) => {
+    if (!list.contains(st.card) || st.card.classList.contains("dragging")) { if (pd === st) pd = null; return; }
+    st.active = true;
+    clearLong(st);
+    list.classList.add("drag-live");
+    navigator.vibrate?.(10); // 触屏进入拖拽的触觉反馈（不支持则静默）
+    const rect = st.card.getBoundingClientRect();
+    st.gx = x - rect.left; st.gy = y - rect.top;
+    if (!reducedMotion()) {
+      const ghost = st.card.cloneNode(true);
+      ghost.classList.add("rail-dock-ghost");
+      ghost.removeAttribute("data-rail-id"); // 避免被 items()/querySelector 当成真按钮
+      ghost.style.width = `${rect.width}px`;
+      ghost.style.height = `${rect.height}px`;
+      document.body.append(ghost);
+      st.ghost = ghost;
+      moveGhost(st, x, y);
+    }
+    st.originOrder = [...list.children];
+    // 槽位推演用的宽度表：offsetWidth 不含 transform，拖拽中按钮尺寸不变
+    st.gap = parseFloat(getComputedStyle(list).columnGap) || 0;
+    st.w = {};
+    for (const c of items()) st.w[c.dataset.railId] = c.offsetWidth;
+    st.card.classList.add("dragging");
+    st.swallowClick = (event) => { event.preventDefault(); event.stopPropagation(); };
+    document.addEventListener("click", st.swallowClick, true);
+    try { st.card.setPointerCapture(st.pointerId); } catch { /* 部分环境拿不到 capture，下面有 document 兜底 */ }
+    st.docUp = (event) => {
+      if (event.pointerId !== st.pointerId) return;
+      detachDoc(st);
+      if (st.active) endDrag(st); else endSession(st);
+    };
+    st.docCancel = (event) => {
+      if (event.pointerId !== st.pointerId) return;
+      detachDoc(st);
+      cancel();
+    };
+    document.addEventListener("pointerup", st.docUp, true);
+    document.addEventListener("pointercancel", st.docCancel, true);
+    st.slot = computeSlot(st, x);
+  };
+
+  const endDrag = (st) => {
+    if (!st.active) return;
+    st.active = false;
+    const ghostRect = st.ghost?.getBoundingClientRect() ?? null;
+    st.card.classList.remove("dragging");
+    list.classList.remove("drag-live");
+    onCommit?.(); // DOM 序 = 用户拖出的序 → 落库（renderRailDock 复用节点，st.card 仍在文档里）
+    // 原按钮从幽灵落点平滑接位
+    if (ghostRect && !reducedMotion() && list.contains(st.card)) {
+      const r1 = st.card.getBoundingClientRect();
+      st.card.animate([
+        { transform: `translate(${ghostRect.left - r1.left}px, ${ghostRect.top - r1.top}px) scale(1.08)` },
+        { transform: "none" },
+      ], { duration: 200, easing: "cubic-bezier(.22,.8,.22,1)" });
+    }
+    endSession(st);
+  };
+
+  list.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const card = event.target.closest?.(".rail-dock-btn");
+    if (!card || !list.contains(card)) return;
+    pd = { id: card.dataset.railId, card, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false, ghost: null, slot: -1, originOrder: null, longTimer: null, swallowClick: null };
+    if (event.pointerType !== "mouse") {
+      // 触屏：长按 240ms 进入拖拽；期间移动 >8px 视为滚动意图，取消长按
+      pd.longTimer = setTimeout(() => { if (pd && pd.card === card && !pd.active) beginDrag(pd, pd.x, pd.y); }, 240);
+    }
+  });
+  list.addEventListener("pointermove", (event) => {
+    const st = pd;
+    if (!st || event.pointerId !== st.pointerId) return;
+    if (st.active) {
+      if (st.ghost) moveGhost(st, event.clientX, event.clientY);
+      const k = computeSlot(st, event.clientX);
+      if (k !== st.slot) { st.slot = k; reorderDOM(st, k); }
+      return;
+    }
+    const dx = event.clientX - st.x, dy = event.clientY - st.y;
+    if (st.longTimer) {
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLong(st);
+      return;
+    }
+    if (event.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) beginDrag(st, event.clientX, event.clientY);
+  });
+  list.addEventListener("pointerup", (event) => {
+    const st = pd;
+    if (!st || event.pointerId !== st.pointerId) return;
+    if (st.active) endDrag(st); else endSession(st);
+  });
+  list.addEventListener("pointercancel", (event) => {
+    const st = pd;
+    if (!st || event.pointerId !== st.pointerId) return;
+    cancel();
+  });
+  // 长按进入拖拽后浏览器可能仍尝试滚动 → 会话活跃时阻断
+  list.addEventListener("touchmove", (event) => { if (pd?.active) event.preventDefault(); }, { passive: false });
+
+  return { cancel };
 }

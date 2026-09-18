@@ -3640,3 +3640,80 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .tlv-note span { font-size: 12px; }
   .tlv-jump { top: 6px; padding: 4px 10px; font-size: 11.5px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   v0.53.0 · 侧栏操作条（左下角）—— 竖排 → 横排 + 按住拖拽重排
+
+   原来两颗按钮是 `width:100%` 的块级堆叠（各占一行）；现在改成横排一条，
+   按住任一按钮可拖动重排：被按住的浮起（幽灵卡跟随指针），其余按钮实时让位腾出空槽，
+   落点由指针位置实时决定。动作注册与顺序持久化见 src/railActions.js，
+   拖拽手势见 shell.js 的 attachRailDockDrag。
+
+   ⚠️ 容器仍带 `.rail-bottom` 类 —— 窄屏底栏那批规则（order / width / 子按钮尺寸）
+   全挂在它上面，换名会连带动几十条 CSS。这里只补横排与拖拽态。
+   ═══════════════════════════════════════════════════════════════ */
+.rail-dock {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+/* 横排后按钮不再撑满整行：定宽 + 禁止伸缩（否则会被 flex 拉伸变形）。
+   touch-action:none —— 按钮上没有任何滚动/缩放手势，横向拖动完全交给指针拖拽。 */
+.rail-dock > .rail-dock-btn {
+  width: 40px;
+  flex: none;
+  margin: 0;
+  touch-action: none;
+  cursor: grab;
+}
+.rail-dock.drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.rail-dock.drag-live > .rail-dock-btn { cursor: grabbing; }
+/* 被按住的那颗留在流里当「空槽」占位，半透明表示它已经浮起来了 */
+.rail-dock > .rail-dock-btn.dragging { opacity: .3; cursor: grabbing; }
+/* 幽灵卡：跟随指针的副本。它挂在 body 下 ⇒ 拿不到 `.rail-bottom > …` 那批后代规则，
+   尺寸由 JS 按原按钮 rect 写死，`.ic` 的视觉在这里补齐（背景表达式与上方
+   `.rail-bottom > button .ic` 保持一致，跟随主题）。 */
+.rail-dock-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1200;
+  margin: 0;
+  padding: 4px;
+  box-sizing: border-box;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: .96;
+  will-change: transform;
+}
+.rail-dock-ghost .ic {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  box-shadow: 0 10px 24px rgba(8, 20, 26, .42);
+}
+.rail-dock-ghost .ic .app-icon { width: 18px; height: 18px; }
+.rail-dock-ghost .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
+
+/* 窄屏：操作条是底栏的一部分（.rail-bottom 那组规则给了 order:-1 / width:20%），
+   按钮必须回到 flex:1 平分 —— 上面的 `.rail-dock > .rail-dock-btn`（0,2,0）压得过
+   `.rail-bottom > button`（0,1,1），不在这里还回去，底栏就只剩两颗 40px 的钮挤在左侧。 */
+@media (max-width: 760px) {
+  .rail-bottom.rail-dock { gap: 0; }
+  .rail-bottom.rail-dock > .rail-dock-btn { width: auto; flex: 1; min-width: 0; }
+  .rail-dock-ghost .ic { width: var(--nav-ic, 22px); height: var(--nav-ic, 22px); border-radius: 8px; }
+  .rail-dock-ghost .ic .app-icon { width: 15px; height: 15px; }
+  .rail-dock-ghost .ic .fa-ic { width: 15px; height: 15px; }
+}
