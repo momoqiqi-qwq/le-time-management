@@ -3,10 +3,11 @@
 """Le时间管理 · 图标生成器（Icons8 / iGoutu Color 彩色图标集）
 
 用途
-    ① 把 12 个内置插件的图标统一成 Icons8「Color」彩色风格（品牌类走 3D 图标）；
-    ② 把 6 个主导航图标（四象限/时间块/收件箱/插件/设置/快速捕获）也做成随包
-       Color PNG —— 此前导航图标走 Icons8 CDN 的 iOS Filled 直链，离线即裂，
-       且与插件图标的彩色风格不统一（v0.42.0 起随包化）。
+    ① 把内置插件的图标统一成 Icons8「Color」彩色风格（品牌类走 3D 图标）；
+       没有合适图形素材的插件走 TEXT_ICONS 代码绘制（印章式文字图标）；
+    ② 把 7 个主导航图标（四象限/时间线/时间块/收件箱/插件中心/设置/快速捕获）
+       也做成随包 Color PNG —— 此前导航图标走 Icons8 CDN 的 iOS Filled 直链，
+       离线即裂，且与插件图标的彩色风格不统一（v0.42.0 起随包化）。
     生成 81×81 的透明 PNG，并把来源台账写进各自目录的 ATTRIBUTION.md。
 
 来源
@@ -37,7 +38,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 REPO = Path(__file__).resolve().parent.parent
 DESKTOP_OUT = REPO / "le-time-management" / "public" / "icons" / "plugins"
@@ -64,6 +65,13 @@ ICONS = {
     "weekly-report":     ("color",      "statistics",       "周度报告 / 数据看板"),
     "dorm-duty":         ("color",      "broom",            "轮换值日 / 扫帚"),
     "inbox-drop":        ("color",      "downloading-updates", "拖入消息收纳 / 箭头入托盘"),
+}
+
+# 印章式文字图标：plugin-id -> (文字(至多 2 字，竖排堆叠), 说明)。
+# 图标系统没有合适图形素材时用代码绘制：圆角渐变朱红底 + 白字，
+# 视觉上是一枚中式印章。不依赖网络，输出确定性（同机重生成 sha 一致，--check 可校验）。
+TEXT_ICONS = {
+    "example-plugin": ("示例", "内置示例插件 / 印章式文字图标（代码绘制，非 Icons8 素材）"),
 }
 
 # 主导航 key -> (候选 slug 列表, 说明)。Color 风格，候选按序尝试、第一个下载成功的生效；
@@ -135,6 +143,45 @@ def normalize(raw: bytes) -> Image.Image:
     return canvas
 
 
+def _cn_font(size: int):
+    """挑一个可用的中文粗体字体（Windows 自带，按优先级）。"""
+    windir = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+    for name in ("msyhbd.ttc", "msyh.ttc", "simhei.ttf"):
+        p = windir / name
+        if p.exists():
+            return ImageFont.truetype(str(p), size)
+    raise SystemExit("找不到中文字体（msyhbd.ttc / msyh.ttc / simhei.ttf）")
+
+
+def draw_text_icon(text: str) -> Image.Image:
+    """印章式文字图标：81×81 透明画布中央一枚 GLYPH 见方的圆角渐变朱红印章，
+    文字（至多 2 字）白色竖排堆叠。确定性绘制，重生成 sha 不变。"""
+    canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
+    side = GLYPH
+    x0 = (CANVAS - side) // 2
+    y0 = (CANVAS - side) // 2
+
+    # 底板：上亮下暗的垂直渐变朱红（linear_gradient 上黑下白，0→亮色、255→暗色）
+    grad = Image.linear_gradient("L").resize((side, side), Image.LANCZOS)
+    c_light = Image.new("RGBA", (side, side), (226, 96, 74, 255))
+    c_dark = Image.new("RGBA", (side, side), (190, 54, 40, 255))
+    seal = Image.composite(c_dark, c_light, grad)
+
+    mask = Image.new("L", (side, side), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, side - 1, side - 1], radius=13, fill=255)
+    canvas.paste(seal, (x0, y0), mask)
+
+    # 白字竖排：每字占印章高度的一半，水平垂直居中
+    font = _cn_font(26)
+    draw = ImageDraw.Draw(canvas)
+    cx = x0 + side / 2
+    chars = list(text)[:2]
+    for i, ch in enumerate(chars):
+        cy = y0 + side * (i + 0.5) / len(chars)
+        draw.text((cx, cy), ch, font=font, fill=(255, 255, 255, 255), anchor="mm")
+    return canvas
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--offline", action="store_true", help="只使用本地缓存，不联网")
@@ -146,6 +193,24 @@ def main() -> int:
     MINI_OUT.mkdir(parents=True, exist_ok=True)
 
     rows = []
+    for plugin_id, (text, note) in TEXT_ICONS.items():
+        img = draw_text_icon(text)
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=True)
+        data = buf.getvalue()
+        digest = hashlib.sha256(data).hexdigest()
+
+        existing = DESKTOP_OUT / f"{plugin_id}.png"
+        if args.check:
+            same = existing.exists() and hashlib.sha256(existing.read_bytes()).hexdigest() == digest
+            print(f"{'OK ' if same else 'DIFF'} {plugin_id:20} text/{text}")
+            continue
+
+        existing.write_bytes(data)
+        (MINI_OUT / f"{plugin_id}.png").write_bytes(data)
+        rows.append((plugin_id, "text", text, note, digest))
+        print(f"写入 {plugin_id:20} text/{text:14} {len(data):6} B  sha256={digest[:12]}")
+
     for plugin_id, (style, slug, note) in ICONS.items():
         img = normalize(fetch(style, slug, args.offline))
         buf = io.BytesIO()
@@ -184,11 +249,14 @@ def main() -> int:
         print(f"写入 [nav] {key:20} color/{slug:18} {len(data):6} B  sha256={digest[:12]}")
 
     if not args.check:
+        text_rows = [r for r in rows if r[1] == "text"]
         lines = [
             "# public/icons/plugins 素材台账（内置插件图标）",
             "",
-            f"共 {len(rows)} 个图标，全部来自 **Icons8 / iGoutu** 的 **Color 彩色风格**"
-            "（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）。",
+            f"共 {len(rows)} 个图标：{len(rows) - len(text_rows)} 个来自 **Icons8 / iGoutu** 的 **Color 彩色风格**"
+            "（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）；"
+            f"{len(text_rows)} 个为印章式文字图标（`风格` 列为 `text`，由本脚本代码绘制，"
+            "非 Icons8 素材、无需署名）。",
             "",
             "图标集入口：<https://igoutu.cn/icons/set/标志--style-color> ｜ "
             "CDN 直链格式：`https://img.icons8.com/<style>/96/<slug>.png`",

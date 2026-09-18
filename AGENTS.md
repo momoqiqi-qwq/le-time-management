@@ -119,6 +119,7 @@ npm test                                # 必须全部通过（脚本数会变�
 | `src/styles.css` 的主题令牌 | `node tools/gen-theme-dark.js` | `src/styles/theme-derived.css`、`src/themeDarkPreview.js` |
 | 插件图标清单 | `python tools/gen-plugin-icons.py` | 桌面 + 小程序插件 PNG、`ATTRIBUTION.md` |
 | `le-time-management/android/gradle/` 的原生 Kotlin + 清单声明 | `node tools/sync-android-native.js`（`--check` 只校验） | `src-tauri/gen/android/` 里的 Kotlin、AndroidManifest 权限、`file_paths.xml`。**该目录 gitignored，`tauri android init` 会整个重建 → 手机端功能静默消失** |
+| 汉字 → 拼音首字母表（插件快捷键自动分配用） | `NODE_PATH=<node workspace> node tools/gen-pinyin-initial.js`（`--check` 只校验，**需要 pinyin-pro**） | `le-time-management/src/pinyinInitial.js` 的标记区。**只收 GB2312 常用字（22 KB）；收全表 69 KB 会白占核心 bundle**。解析函数在标记区外，是手写的 |
 
 **主题配色的分层**：`src/styles.css` 手写浅色 → `tools/lib/theme-tokens.js` 按 WCAG 反解派生深色 →
 `theme-derived.css`（生成物）。所以**每套主题在深色模式下都有自己的一套色板**，

@@ -1,6 +1,7 @@
 # Le时间管理 · 插件开发文档
 
-> 适用于 Le时间管理 v0.9.x 的 Windows / Android Tauri 插件宿主。
+> 适用于 Le时间管理 v0.52.x 的 Windows / Android Tauri 插件宿主。`permissions` 是运行时权限闸门：调用未声明的能力时宿主直接抛错。
+> **可跑的参考实现**：内置的「示例插件」，源码在仓库 `le-time-management/public/plugins/example-plugin/`（两个文件、六张演示卡片，覆盖存储 / 任务 / 智能排程 / 通知 / 事件 / 子页面栈），复制改名即可作为新插件起点。
 
 ## 1. 最小插件结构
 
@@ -26,6 +27,8 @@ my-plugin/
 ```
 
 建议：`id` 只使用小写英文字母、数字和短横线；版本号使用语义化版本格式；`description` 直接说明“解决什么问题”。
+
+内置插件的 manifest 还有两个宿主侧字段（外部插件不需要）：`order` 决定侧栏与加载顺序，`platforms` 声明 `windows / android / miniprogram` 三端的可用级别；两者都由 `node tools/sync-plugins.js` 校验。想看一份「每行都有理由」的真实 manifest，读 `example-plugin/manifest.json`。
 
 ## 2. 安装与调试
 
@@ -153,6 +156,8 @@ tide.util.navigate("timeblock");
 
 参考实现（页面栈 + 顶部返回按钮）：
 
+> **示例插件 `example-plugin` 的 ⑥ 号卡片就是这套契约的完整落地**（`show()` 实现页面栈、栈顶渲染时带「← 返回」）。下面是可复制的最小骨架：
+
 ```js
 tide.ui.registerView({
   id: "my-view",
@@ -214,7 +219,7 @@ backButton.onclick = () => tide.util.navigate(fromView);
 
 ## 5. 安全说明
 
-当前 v0.9.x 外部插件属于“受信任扩展”模型：插件代码在应用前端上下文中执行。只安装你自己编写、审核过或可信来源提供的插件 ZIP。不要把未知来源插件当作完全隔离的沙箱应用。
+外部插件属于“受信任扩展”模型：插件代码在应用前端上下文中执行（`new Function` 注入 `tide`，不是安全隔离，代码可访问 `document` / `window`）。宿主侧的防线是**运行时权限闸门**——插件调用未在 `permissions` 声明的能力时直接抛错，但这是约束“插件作者声明要真实”，不是安全边界。只安装你自己编写、审核过或可信来源提供的插件 ZIP。不要把未知来源插件当作完全隔离的沙箱应用。
 
 后续若需要面向公开插件市场，建议把第三方插件迁移到隔离 iframe / Worker / 独立 WebView，并通过消息桥暴露最小权限 API。
 
@@ -232,7 +237,9 @@ backButton.onclick = () => tide.util.navigate(fromView);
 
 ## 7. 项目资源
 
-- 项目仓库：https://github.com/momoqiqi-qwq/tidebalance
+- 项目仓库：https://github.com/momoqiqi-qwq/le-time-management
+- 示例插件源码：`le-time-management/public/plugins/example-plugin/`（manifest + main.js 各一份，即第 1 节结构的最完整示范）
+- 在线版手册：仓库 `docs/index.html`（GitHub Pages），内容与本文件同步维护
 - 官方网站：https://YOUR-WEBSITE.example
 
 > 官网地址为待配置占位符。请在发布前替换为你的真实网站域名。

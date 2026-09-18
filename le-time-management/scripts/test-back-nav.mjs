@@ -527,6 +527,8 @@ async function pressBack(world) {
       "滑动返回要受设置里既有的滑动开关控制（键名不回退，语义改为返回）");
     assert.match(swipeBlock, /Math\.abs\(dx\) < 56/,
       "横滑阈值守卫保留：足够长且横向主导才触发，别误伤纵向滚动");
+    assert.match(swipeBlock, /document\.body\.dataset\.swipeSuspended === "1"/,
+      "touchend 必须检查 swipeSuspended：拖拽排序等手势会话期间滑动返回让路（v0.52.0 配套）");
   }
 }
 

@@ -8,10 +8,17 @@
 // 分配规则（computePluginShortcutMap）：
 //   1. 显式指定优先：settings.pluginShortcuts[pluginId] = "A".."Z" 先全部登记进占用表
 //      （显式之间同样先到先得，后到的重复字母退回自动分配）；
-//   2. 没显式的用**插件 ID 首字母**（A–Z）自动分配，撞了就被先注册的拿走，自己空手。
+//   2. 没显式的自动分配，候选按优先级排：**插件中文名首字母（拼音）** → 插件 ID 首字母。
+//      撞车就试下一个候选，全被占则空手（侧栏显示「无」，用户可手动指定）。
 //   「先到先得」的顺序 = 插件视图的注册顺序（= manifest order，稳定、不随用户拖动洗牌），
 //   侧栏徽标、按键命中、设置页回显三处看到的是同一份结果。
+//
+// ⚠️ 为什么候选里要留「插件 ID 首字母」这一档：中文名首字母只有 23 个（无 i/u/v），
+// 内置插件就有 5 组撞车（学习通/学校通知网站都是 X、中国节假日/周度报告都是 Z…）。
+// 只按中文名分配会让一批插件彻底没有快捷键 —— 比改规则前还差。留着 ID 兜底，
+// 至少保证「有字母的插件不会变少」，多数插件还能拿到更贴合标签的那个字母。
 import * as S from "./store.js";
+import { pinyinInitialOf } from "./pinyinInitial.js";
 
 export const PLUGIN_SHORTCUT_MODIFIER = "Alt";
 
@@ -41,16 +48,33 @@ export function setPluginShortcut(pluginId, value) {
 }
 
 /**
+ * 自动分配的候选字母（按优先级）：插件中文名首字母 → 插件 ID 首字母。
+ *
+ * `name` 缺省（老调用点只传 pluginId）时只剩 ID 这一档，行为与改规则前完全一致。
+ * @param {{pluginId?: string, name?: string}} entry
+ * @returns {string[]} 去重后的大写字母，可能为空数组（= 这个插件自动分配拿不到字母）
+ */
+export function autoShortcutCandidates(entry) {
+  const out = [];
+  const byName = pinyinInitialOf(entry?.name);
+  if (byName) out.push(byName);
+  const m = /^[a-z]/i.exec(String(entry?.pluginId || ""));
+  if (m) {
+    const byId = m[0].toUpperCase();
+    if (!out.includes(byId)) out.push(byId);
+  }
+  return out;
+}
+
+/**
  * 纯函数：按显示顺序给插件视图分配生效的 Alt 字母。
- * @param {Array<{pluginId: string, viewId: string}>} entries 显示顺序的插件视图
+ * @param {Array<{pluginId: string, viewId: string, name?: string}>} entries 显示顺序的插件视图
  * @param {Record<string, string>} customs 显式指定 { pluginId: "A".."Z" }
  * @returns {Map<string, {letter: string, viewId: string}>} letter 为空串 = 没有快捷键
  */
 export function computePluginShortcutMap(entries, customs = {}) {
   const claimed = new Set();
   const map = new Map();
-  // 第一遍只登记显式指定 —— 「用户明确选的字母」必须压过任何顺手的自动分配，
-  // 与插件在列表里的先后无关。
   // 第一遍只登记显式指定 —— 「用户明确选的字母」必须压过任何顺手的自动分配，
   // 与插件在列表里的先后无关。
   for (const e of entries) {
@@ -62,15 +86,15 @@ export function computePluginShortcutMap(entries, customs = {}) {
       map.set(e.pluginId, { letter: "", viewId: e.viewId });
     }
   }
-  // 第二遍给剩下的按插件 ID 首字母自动分配，先到先得。
+  // 第二遍给剩下的按候选优先级自动分配，先到先得：中文名首字母拿不到就试插件 ID 首字母。
   for (const e of entries) {
     const info = map.get(e.pluginId);
     if (info.letter) continue;
-    const m = /^[a-z]/i.exec(String(e.pluginId || ""));
-    const letter = m ? m[0].toUpperCase() : "";
-    if (letter && !claimed.has(letter)) {
+    for (const letter of autoShortcutCandidates(e)) {
+      if (claimed.has(letter)) continue;
       claimed.add(letter);
       info.letter = letter;
+      break;
     }
   }
   return map;

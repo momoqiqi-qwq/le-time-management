@@ -2,9 +2,9 @@
 import { api } from "../api.js";
 import * as S from "../store.js";
 import { el, toast } from "../ui.js";
-import { getRegistry, onNavChanged, pluginViews } from "../pluginHost.js";
+import { onNavChanged } from "../pluginHost.js";
 import { computePluginShortcutMap, getPluginShortcutCustoms, setPluginShortcut } from "../pluginShortcuts.js";
-import { pluginDisplayName } from "../pluginAppearance.js";
+import { pluginShortcutEntries } from "../pluginShortcutEntries.js";
 import { DEFAULT_REMINDER_SETTINGS, PRESET_OFFSETS, normalizeOffsets, playReminderSound, reminderLabel } from "../taskReminder.js";
 import { BUILTIN_SOUNDS, CUSTOM_SOUND_ID, DEFAULT_SOUND_ID, resolveSound } from "../sound.js";
 import { createAboutCard } from "./aboutCard.js";
@@ -227,22 +227,26 @@ export function renderSettings(container, opts = {}) {
     paintShortcutStatus();
 
     /* 插件快捷键：Alt + 字母直达插件视图。分配规则与侧栏徽标 / 按键命中同源
-       （computePluginShortcutMap）：显式指定优先，没设的按插件 ID 首字母自动分配，
-       字母先到先得。插件视图是异步注册的 —— 每次重渲染现取 pluginViews。 */
+       （computePluginShortcutMap）：显式指定优先，没设的按**插件中文名首字母（拼音）**
+       自动分配、撞车退回插件 ID 首字母，字母先到先得。
+       插件视图是异步注册的 —— 每次重渲染现取（pluginShortcutEntries 是统一取数口径）。 */
     const pluginShortcutBox = el("div", {});
     const paintPluginShortcuts = () => {
       pluginShortcutBox.replaceChildren();
-      const entries = pluginViews.map((v) => ({ pluginId: v.pluginId, viewId: v.id }));
+      const entries = pluginShortcutEntries();
       if (!entries.length) {
         pluginShortcutBox.append(el("p", { class: "shortcut-hint" }, "暂无已启用且有界面的插件；启用插件后可在这里给它分配 Alt + 字母快捷键。"));
         return;
       }
+      // 名字取自 entries 本身，别再各自查一遍显示名 —— 两处取数一旦不同源，
+      // 「设置页显示的字母」和「侧栏徽标 / 实际按键」就会对不上。
+      const nameOf = new Map(entries.map((e) => [e.pluginId, e.name]));
       const map = computePluginShortcutMap(entries, getPluginShortcutCustoms());
       pluginShortcutBox.append(
-        el("p", { class: "shortcut-hint" }, "按 Alt + 字母直接打开对应插件（桌面键盘生效）。输入框留空 = 按插件 ID 首字母自动分配；字母先到先得，重复时先设置的生效。"),
+        el("p", { class: "shortcut-hint" }, "按 Alt + 字母直接打开对应插件（桌面键盘生效）。输入框留空 = 按插件中文名首字母（拼音）自动分配，撞车时退回插件 ID 首字母；字母先到先得，重复时先设置的生效。"),
         el("div", { class: "shortcut-grid" },
           ...[...map.entries()].flatMap(([pluginId, info]) => {
-            const name = pluginDisplayName(pluginId, getRegistry().find((r) => r.id === pluginId)?.manifest?.name || pluginId);
+            const name = nameOf.get(pluginId) || pluginId;
             const input = el("input", {
               type: "text", maxlength: "1", spellcheck: "false",
               value: getPluginShortcutCustoms()[pluginId] || "",

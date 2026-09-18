@@ -156,7 +156,7 @@
       <div>
         <p class="eyebrow">Plugin development manual / implementation-aligned</p>
         <h1>让时间<br>长出<em>新能力</em></h1>
-        <p class="lede">Le时间管理插件开发完整手册：运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
+        <p class="lede">Le时间管理插件开发完整手册：一个可跑的示例插件、运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
       </div>
       <aside class="hero-meta" aria-label="文档摘要">
         <div><b>RUNTIME</b><p>Tauri 2 · 原生 JavaScript · Rust 网络桥</p></div>
@@ -200,7 +200,7 @@
         <h2>插件如何进入Le时间管理</h2>
         <p class="intro">宿主发现插件目录，读取清单与入口文件，把受控的 <code>tide</code> 对象传给入口代码；插件在顶层调用注册 API 挂载视图、任务动作或事件监听。整个过程不需要 npm、打包器或构建步骤。</p>
         <div class="flow" aria-label="插件加载流程">
-          <div><b>DISCOVER</b><span>先加载 10 个内置 ID，再扫描外部插件目录（仅桌面端）</span></div>
+          <div><b>DISCOVER</b><span>先加载内置插件目录（由 <code>tools/sync-plugins.js</code> 从各 manifest 生成），再扫描外部插件目录（仅桌面端）</span></div>
           <div><b>MANIFEST</b><span>读取 manifest.json；<code>id</code> 缺省时取目录名</span></div>
           <div><b>ENABLE</b><span>首次发现写入插件状态；<code>enabled: false</code> 则跳过执行</span></div>
           <div><b>EXECUTE</b><span>严格模式下以 <code>new Function("tide", …)</code> 执行入口</span></div>
@@ -208,17 +208,17 @@
         </div>
         <h3>启动时发生了什么</h3>
         <ul class="plain">
-          <li><strong>顺序固定</strong>：内置插件按 <code>BUILTIN_IDS</code> 声明顺序加载，然后才是外部插件；<strong>ID 相同时内置优先</strong>，外部目录不会被加载。</li>
+          <li><strong>顺序固定</strong>：内置插件清单由 <code>tools/sync-plugins.js</code> 从 <code>public/plugins/*/manifest.json</code> 生成到 <code>src/pluginCatalog.js</code>，按 manifest 里的 <code>order</code> 升序加载，然后才是外部插件；<strong>ID 相同时内置优先</strong>，外部目录不会被加载。</li>
           <li><strong>失败不阻断</strong>：某个插件 manifest 解析失败或执行抛错，只会记录到该插件自己的状态里（设置页可见），其余插件照常加载。</li>
           <li><strong>执行错误可恢复</strong>：再次启用或「重新扫描」会重新执行入口代码，上次注册的视图、动作、监听会先被摘除，不会重复叠加。</li>
         </ul>
-        <div class="callout"><strong>信任边界</strong><p>入口由 <code>new Function</code> 执行，不是安全隔离；代码仍可访问 <code>document</code>、<code>window</code> 等页面全局对象。当前 <code>permissions</code> 只是声明与展示信息，宿主并未按权限裁剪 API。只安装已审查、可信来源的插件。</p></div>
+        <div class="callout"><strong>信任边界</strong><p>入口由 <code>new Function</code> 执行，不是安全隔离；代码仍可访问 <code>document</code>、<code>window</code> 等页面全局对象。<code>permissions</code> 是<strong>运行时权限闸门</strong>：插件调用未声明的能力时，宿主的 <code>requirePermission</code> 直接抛错（提示「插件 xx 没有 yy 权限」），调用失败但不崩宿主。声明要真实——多写是撒谎，少写是自断 API。只安装已审查、可信来源的插件。</p></div>
       </section>
 
       <section id="quickstart">
         <p class="section-kicker">最短路径 / Two-file start</p>
         <h2>十分钟做出第一页</h2>
-        <p class="intro">文件夹名建议与插件 ID 一致。插件不需要 npm，也不需要打包；把两个文件放进数据目录下的 <code>plugins/hello-tide/</code>，然后在设置页点「重新扫描」。</p>
+        <p class="intro">文件夹名建议与插件 ID 一致。插件不需要 npm，也不需要打包；把两个文件放进数据目录下的 <code>plugins/hello-tide/</code>，然后在设置页点「重新扫描」。想看每个 API 真调用起来是什么样，直接读内置的<strong>示例插件</strong> <code>le-time-management/public/plugins/example-plugin/</code>——两个文件、六张演示卡片，见<a href="#recipes">实战范例</a>第 0 节。</p>
         <pre><code class="tree">plugins/
 └─ hello-tide/
    ├─ manifest.json
@@ -254,7 +254,7 @@ tide.notify("插件已加载");</code></pre>
         <h3>两条开发路径</h3>
         <div class="cards">
           <article class="card"><span class="tag">EXTERNAL 外部插件</span><h3>放数据目录，随时热改</h3><p>桌面端在「设置 → 数据」查看数据目录，把插件放进其中的 <code>plugins/</code>。改完 main.js 点「重新扫描」即生效，不需要重新构建应用。</p></article>
-          <article class="card"><span class="tag">BUILTIN 内置插件</span><h3>放进 public/plugins，随包分发</h3><p>把目录放入 <code>le-time-management/public/plugins/</code>，并同步把 ID 加进 <code>pluginHost.js</code> 的 <code>BUILTIN_IDS</code>。Android 端只能用这种方式。</p></article>
+          <article class="card"><span class="tag">BUILTIN 内置插件</span><h3>放进 public/plugins，随包分发</h3><p>把目录放入 <code>le-time-management/public/plugins/</code>（manifest 写好 <code>order</code> 与 <code>platforms</code>），然后跑 <code>node tools/sync-plugins.js</code> 重新生成插件目录——它会校验清单并同步桌面与小程序两端。Android 端只能用这种方式。</p></article>
         </div>
         <div class="callout cool"><strong>建议用 IIFE 包住入口</strong><p>内置插件的通行写法是 <code>(function () { … })();</code> 把状态与函数封在闭包里，只把注册调用暴露在顶层。这样重新执行入口不会和上一轮的闭包互相串状态。写好后可到<a href="upload.html">插件工坊</a>上传校验、一键打包成合规 zip。</p></div>
       </section>
@@ -270,82 +270,72 @@ tide.notify("插件已加载");</code></pre>
             <tr><td>name</td><td>面向用户的名称；通知会自动加前缀显示为「插件名：消息」。</td></tr>
             <tr><td>version</td><td>推荐语义化版本，例如 <code>1.2.0</code>。设置页据此判断是否需要重扫。</td></tr>
             <tr><td>author</td><td>作者或组织名称。</td></tr>
-            <tr><td>icon</td><td>侧栏短标识；建议使用单个汉字或稳定的单字符图标（1–2 字符）。<strong>它只决定字形图标</strong>，方块图标走随包 PNG——见 <a href="#icons">图标</a>。</td></tr>
+            <tr><td>icon</td><td>图标的「门控键」：内置插件带此字段时，<code>appIcon()</code> 才会去读随包 PNG <code>public/icons/plugins/&lt;id&gt;.png</code>（生成管线见 <a href="#icons">图标</a>）；建议写 1–2 个汉字作为加载失败时的字形兜底。</td></tr>
             <tr><td>description</td><td>说明用途、远端数据源、登录要求与敏感配置。用户决定是否信任这个插件的依据。</td></tr>
-            <tr><td>permissions</td><td>声明使用的能力；当前用于说明与展示，<strong>不是运行时权限闸门</strong>。</td></tr>
+            <tr><td>order</td><td>内置插件专用：侧栏与加载顺序（升序），由 <code>tools/sync-plugins.js</code> 校验必填。外部插件不需要。</td></tr>
+            <tr><td>platforms</td><td>内置插件专用：声明 <code>windows / android / miniprogram</code> 三端的可用级别（<code>full / native / conditional / unavailable</code>），同样由 sync-plugins.js 校验。</td></tr>
+            <tr><td>permissions</td><td>声明使用的能力。<strong>运行时权限闸门</strong>：插件调用未在此列出的能力，宿主 <code>requirePermission</code> 直接抛错（例如网络桥调了但没声明 <code>http</code>，运行时必炸）。只写实际用到的。</td></tr>
             <tr><td>entry</td><td>入口脚本相对路径；省略时默认 <code>main.js</code>。</td></tr>
           </tbody>
         </table></div>
         <h3>可声明的能力</h3>
         <div class="chips" aria-label="插件权限">
-          <span class="chip">ui</span><span class="chip">tasks</span><span class="chip">blocks</span><span class="chip">storage</span><span class="chip">notify</span><span class="chip">events</span><span class="chip">http</span><span class="chip">openUrl</span><span class="chip">timeParse</span>
+          <span class="chip">ui</span><span class="chip">tasks</span><span class="chip">blocks</span><span class="chip">storage</span><span class="chip">notify</span><span class="chip">events</span><span class="chip">http</span><span class="chip">openUrl</span><span class="chip">timeParse</span><span class="chip">sound</span><span class="chip">schoolImport</span><span class="chip">vault</span>
         </div>
         <div class="callout"><strong>ID 一旦发布就不要改</strong><p>插件私有存储挂在 <code>state.plugins[id].storage</code> 下，启用状态也按 ID 记忆。改 ID 等于换了一个新插件：旧存储失联、用户需要重新启用。</p></div>
       </section>
 
       <section id="icons">
         <p class="section-kicker">视觉 / Icons</p>
-        <h2>图标：Icons8 iOS Filled</h2>
-        <p class="intro">v0.11.6 起图标体系统一为 <strong>Icons8 / iGoutu iOS Filled</strong>：导航与插件图标全部由 <code>src/icons.js</code> 的 <code>ICONS8</code> 映射解析成 CDN 地址，不再有本地 PNG 白名单、也不再有汉字字形。侧栏、顶栏、插件市场卡片、设置页插件列表共用同一条解析链路。</p>
+        <h2>图标：随包 Color PNG 管线</h2>
+        <p class="intro">v0.42.0 起图标全部<strong>随包</strong>：81×81 透明 PNG 由 <code>tools/gen-plugin-icons.py</code>（Pillow）一次生成到桌面与小程序两端，风格统一为 <strong>Icons8 / iGoutu Color 彩色</strong>（品牌类走 3D）；没有合适图形素材的插件用<strong>印章式文字图标</strong>（代码绘制，如示例插件的「示例」）。离线可用——CDN 直链只是加载失败时的回落，不再是唯一来源。来源与 sha256 台账在 <code>public/icons/{plugins,nav}/ATTRIBUTION.md</code>。</p>
 
         <div class="table-wrap"><table>
           <thead><tr><th>用途</th><th>来源</th><th>位置</th><th>说明</th></tr></thead>
           <tbody>
-            <tr><td>导航与插件图标</td><td><code>src/icons.js</code> 的 <code>ICONS8[key]</code> → Icons8 CDN</td><td>侧栏方块、顶栏标题、插件卡片、设置列表</td><td>候选 slug 数组，逐级回退</td></tr>
-            <tr><td>插件元数据 <code>icon</code></td><td><code>manifest.icon</code> / <code>pluginCatalog.js</code></td><td>—</td><td><strong>当前不参与渲染</strong>，仅作元数据保留</td></tr>
-            <tr><td>小程序 tabBar</td><td><code>miniprogram/images/tab/&lt;name&gt;.png</code></td><td>小程序底部导航</td><td>81×81（内含 70×70 图形），由 <code>public/icons/</code> 派生</td></tr>
-            <tr><td>兜底</td><td><code>appIcon()</code> 候选链</td><td>未知 key</td><td>回落 <code>market</code>（拼图），最终隐藏，不裂图、不报错</td></tr>
+            <tr><td>内置插件图标</td><td><code>public/icons/plugins/&lt;插件ID&gt;.png</code></td><td>侧栏插件视图、插件市场卡片、设置页、四象限来源角标</td><td>事实源在 <code>miniprogram/images/plugins/&lt;id&gt;.png</code>，生成器复制成两端字节一致</td></tr>
+            <tr><td>主导航图标</td><td><code>public/icons/nav/&lt;key&gt;.png</code></td><td>侧栏导航、快速捕获</td><td>与插件同一套 Color 风格（v0.42.0 前走 CDN iOS Filled 直链，离线即裂）</td></tr>
+            <tr><td>印章式文字图标</td><td>生成器 <code>TEXT_ICONS</code> 代码绘制</td><td>同随包 PNG</td><td>圆角渐变朱红底 + 白字竖排堆叠，确定性输出，非 Icons8 素材、无需署名</td></tr>
+            <tr><td>小程序 tabBar</td><td><code>miniprogram/images/tab/&lt;name&gt;.png</code></td><td>小程序底部导航</td><td>由 <code>miniprogram/tools/sync-tab-icons.py</code> 管，与插件图标管线独立</td></tr>
+            <tr><td>回落链</td><td>Icons8 Color CDN</td><td>仅随包 PNG 加载失败时</td><td>候选 slug 逐级试 → 回落拼图 → 隐藏，不裂图、不报错</td></tr>
           </tbody>
         </table></div>
 
-        <h3>解析规则（<code>src/icons.js</code> 核心）</h3>
-        <pre><button class="copy" type="button">复制</button><code>const ICONS8 = {
-  quadrant: ["four-squares", "grid-2"],
-  timeblock: ["clock"],
-  market: ["puzzle", "puzzle-piece"],
-  // ...
-  "weekly-report": ["bar-chart", "combo-chart--v1"],
-};
-
-function iconUrl(name) {
-  return `https://img.icons8.com/ios-filled/50/000000/${name}.png`;
-}
-
-export function appIcon(key, title = "") {
-  const candidates = ICONS8[key] || ICONS8.market;
-  let index = 0;
-  const img = el("img", { class: "app-icon icons8-app-icon", src: iconUrl(candidates[index]), /* ... */ });
-  img.addEventListener("error", () => { /* 试下一个 slug → 回落 market → 隐藏 */ });
-  return img;
-}</code></pre>
+        <h3>解析规则（<code>src/icons.js</code> 的 <code>appIcon()</code>）</h3>
+        <div class="flow" aria-label="图标解析链">
+          <div><b>1</b><span>内置插件且 manifest 带 <code>icon</code> 字段 → 直读随包 <code>/icons/plugins/&lt;id&gt;.png</code></span></div>
+          <div><b>2</b><span>主导航 key → 直读随包 <code>/icons/nav/&lt;key&gt;.png</code></span></div>
+          <div><b>3</b><span>加载失败 → 按 <code>PLUGIN_ICONS8 / NAV_ICONS8</code> 候选 slug 试 Color CDN 直链</span></div>
+          <div><b>4</b><span>候选耗尽 → 回落拼图（market）→ 仍失败则隐藏；未知 key（外部插件）从第 3 步起</span></div>
+        </div>
         <ul class="plain">
-          <li><strong>候选数组</strong>：<code>ICONS8[key]</code> 是候选 slug 数组，同一个语义可以准备 1–2 个 Icons8 名称。</li>
-          <li><strong>逐级回退</strong>：首选 slug 加载失败自动试备选；候选耗尽回落 <code>market</code>（拼图）；再失败则 <code>visibility: hidden</code>。</li>
-          <li><strong>未知即拼图</strong>：<em>key 不在 <code>ICONS8</code> 里，图标一律显示拼图</em>——外部插件也必须把 key 写进映射。</li>
+          <li><strong>新内置插件默认有图标</strong>：manifest 写了 <code>icon</code> 字段、生成器里落了 PNG 即可，<strong>不需要改 <code>src/icons.js</code></strong>——那里的 slug 表只是 CDN 回落链。</li>
+          <li><strong>没有合适的图形素材？走文字图标</strong>：把插件 ID 加进生成器的 <code>TEXT_ICONS</code>（至多 2 个汉字），重跑 <code>python tools/gen-plugin-icons.py</code> 即得印章式 PNG，全程离线。</li>
         </ul>
 
-        <h3>加一个图标</h3>
-        <div class="flow" aria-label="图标落地流程">
-          <div><b>FIND</b><span>在 <code>igoutu.cn/icons/ios-filled</code> 挑一个 iOS Filled 图标，从 CDN 地址取 slug</span></div>
-          <div><b>REGISTER</b><span>把 key 与候选 slug 数组加进 <code>src/icons.js</code> 的 <code>ICONS8</code></span></div>
-          <div><b>VERIFY</b><span>确认 CDN 上 slug 返回 200，必要时补备选 slug</span></div>
-          <div><b>PREVIEW</b><span><code>npm run tauri dev</code> 看侧栏、插件市场、设置页三处</span></div>
-        </div>
-
-        <h3>渲染尺寸</h3>
+        <h3>渲染尺寸（<code>styles.css</code> 实测）</h3>
         <div class="table-wrap"><table>
           <thead><tr><th>位置</th><th>显示尺寸</th><th>容器</th></tr></thead>
           <tbody>
             <tr><td>默认 <code>.app-icon</code></td><td>30 × 30</td><td>行内，<code>object-fit: contain</code></td></tr>
-            <tr><td>顶栏标题</td><td>22 × 22</td><td>标题左侧</td></tr>
-            <tr><td>侧栏导航</td><td>38 × 38</td><td>圆角方块底（选中变暖黄）</td></tr>
-            <tr><td>插件市场卡片 / 设置页列表</td><td>40 × 40</td><td>浅蓝方块 / 深蓝渐变底</td></tr>
-            <tr><td>窄屏（≤760px）侧栏</td><td>22 × 22</td><td>图标方块同步缩小</td></tr>
+            <tr><td>侧栏导航（桌面）</td><td>30 × 30</td><td>38 × 38 圆角方块底</td></tr>
+            <tr><td>侧栏导航（窄屏）</td><td>22 × 22</td><td>图标方块同步缩小</td></tr>
+            <tr><td>插件市场卡片 / 设置页列表</td><td>40 × 40</td><td>方块底</td></tr>
+            <tr><td>顶栏标题</td><td>15 × 15（窄屏 13）</td><td>标题左侧</td></tr>
+            <tr><td>四象限任务来源角标</td><td>15 × 15</td><td>时间块卡片内</td></tr>
           </tbody>
         </table></div>
 
-        <div class="callout"><strong>按 22px 设计，而不是 50px</strong><p>图标最坏情况会缩到 22px（窄屏侧栏）。选图标时优先挑轮廓粗、负空间大的 iOS Filled 图形；细笔画在这一档会糊成一团。CSS 里 <code>.icons8-app-icon</code> 用 <code>opacity: .9</code> 给黑色剪影做视觉配平。</p></div>
-        <div class="callout cool"><strong>署名是硬性要求</strong><p>主导航与插件中心图标来自 <strong>Icons8 / iGoutu iOS Filled</strong>（Icons8 License，免费使用需署名），署名在设置 → 关于页展示。<code>public/icons/*.png</code> 为小程序 tab 素材，来源 Magnific（原 Freepik）Lineal Color，台账见 <code>credits.json</code> 与 <code>ATTRIBUTION.md</code>。<strong>素材不得作为独立图标库转售。</strong></p></div>
+        <h3>加一个图标（内置插件）</h3>
+        <div class="flow" aria-label="图标落地流程">
+          <div><b>FIND</b><span>在 <code>igoutu.cn/icons/set/标志--style-color</code> 挑 Color 图标，从 CDN 地址取 slug</span></div>
+          <div><b>REGISTER</b><span>把「插件 ID → (风格, slug, 说明)」加进 <code>tools/gen-plugin-icons.py</code> 的 <code>ICONS</code>（没有合适素材就写 <code>TEXT_ICONS</code>）</span></div>
+          <div><b>GENERATE</b><span>跑 <code>python tools/gen-plugin-icons.py</code>：写双端 PNG + 重写 ATTRIBUTION.md（Icons8 素材须署名）</span></div>
+          <div><b>PREVIEW</b><span>看侧栏、插件市场、设置页、四象限角标四处——最坏缩到 22px，优先轮廓粗、负空间大的图形</span></div>
+        </div>
+
+        <div class="callout"><strong>不要手工替换 PNG</strong><p>插件与导航 PNG 都是生成物——手改会被下次生成覆盖，且与台账里的 sha256 对不上。要换素材，改生成器里的 slug（或 <code>TEXT_ICONS</code> 的文字）后重新生成。</p></div>
+        <div class="callout cool"><strong>署名是硬性要求</strong><p>Icons8 素材按 Icons8 License 免费使用需在产品内署名（设置 → 关于页与 <code>public/OPEN_SOURCE_NOTICES.md</code>）；印章式文字图标为本项目代码绘制，非第三方素材。<strong>素材不得作为独立图标库转售或再分发。</strong></p></div>
 
         <p class="intro">完整规范（尺寸/位深/命名/别名/小程序 tabBar/应用图标/授权/自检清单/已知缺口）见仓库文档：
           <a href="https://github.com/momoqiqi-qwq/le-time-management/blob/main/le-time-management/docs/plugin-icons.md" target="_blank" rel="noreferrer">le-time-management/docs/plugin-icons.md ↗</a>
@@ -525,8 +515,23 @@ if (date) {
 
       <section id="recipes">
         <p class="section-kicker">实战 / Recipes from builtin plugins</p>
-        <h2>四个取自真实插件的范例</h2>
-        <p class="intro">下面的模式都来自当前随包分发的内置插件，按「要做什么」对号入座。完整源码在仓库 <code>le-time-management/public/plugins/</code> 里。</p>
+        <h2>从可跑示例到四个进阶范例</h2>
+        <p class="intro">先看第 0 个：<strong>示例插件</strong>是随包分发的完整参考实现，每张卡片对应一类宿主能力且全部真调用；后面四个模式取自当前内置插件，按「要做什么」对号入座。完整源码在仓库 <code>le-time-management/public/plugins/</code> 里。</p>
+
+        <h3>0 · 可跑的完整示例 —— example-plugin</h3>
+        <p>位置 <code>le-time-management/public/plugins/example-plugin/</code>，两个文件（manifest.json + main.js），没有框架、没有构建步骤。六张演示卡片覆盖最高频的宿主能力，源码里每个 API 都带注释说明宿主侧行为：</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>卡片</th><th>演示的 API</th><th>看点</th></tr></thead>
+          <tbody>
+            <tr><td>① 私有存储</td><td><code>tide.storage.get / set</code></td><td>await 异步；按插件 ID 隔离，改 ID 等于丢数据</td></tr>
+            <tr><td>② 创建任务</td><td><code>tide.tasks.create</code></td><td>宿主强制盖上 <code>sourcePlugin</code> 印章，四象限可见来源图标</td></tr>
+            <tr><td>③ 一句话变日程</td><td><code>tide.util.parseWhen</code> + <code>tide.blocks.createSmart</code></td><td>自然语言解析 + 冲突感知排程，有碰撞自动挪空档</td></tr>
+            <tr><td>④ 应用内通知</td><td><code>tide.notify(msg, { actionLabel, action })</code></td><td>自动加「插件名：」前缀；动作按钮回调执行于宿主侧</td></tr>
+            <tr><td>⑤ 事件总线</td><td><code>tide.events.on / emit</code></td><td>订阅真实事件 <code>pomodoro:finished</code>；事件名带插件 ID 前缀是惯例</td></tr>
+            <tr><td>⑥ 子页面栈</td><td><code>ui.registerView</code> + 自维护页面栈</td><td>「← 返回」按钮契约（上架检查项）的参考实现</td></tr>
+          </tbody>
+        </table></div>
+        <p>把它复制改名、改掉 manifest 里的 <code>id</code>，就是一个新插件的起点。图标是印章式文字图标「示例」（<a href="#icons">见图标章节</a>的 <code>TEXT_ICONS</code>）。</p>
 
         <h3>1 · 计时器视图 —— 学 pomodoro</h3>
         <p>适合番茄钟、专注计时这类交互视图。三个关键动作：<strong>IIFE 封闭状态</strong>、<strong>render 先清空再重建</strong>、<strong>interval 存进闭包变量</strong>以便随时停。</p>
@@ -673,11 +678,11 @@ const feed = await tide.http.fetch(sid, "GET", "https://example.com/api/feed");<
         <h2>先决定插件运行在哪</h2>
         <div class="cards">
           <article class="card"><span class="tag">WINDOWS / LINUX DESKTOP</span><h3>完整路径</h3><p>外部插件扫描与文件读取、Rust 网络桥（绕 CORS）、Cookie 会话、DES 工具、系统浏览器、关怀频道全部可用。插件开发的默认目标平台。</p></article>
-          <article class="card"><span class="tag">ANDROID</span><h3>随应用内置</h3><p>不扫描外部目录。插件必须放进 <code>public/plugins/</code> 并加入 <code>BUILTIN_IDS</code>，随 APK 构建。网络桥与 DES 在移动端同样走 Rust，行为一致。</p></article>
+          <article class="card"><span class="tag">ANDROID</span><h3>随应用内置</h3><p>不扫描外部目录。插件必须放进 <code>public/plugins/</code> 并经 <code>node tools/sync-plugins.js</code> 写进插件目录（platforms 声明 <code>android</code> 级别），随 APK 构建。网络桥与 DES 在移动端同样走 Rust，行为一致。</p></article>
           <article class="card"><span class="tag">BROWSER DEV</span><h3>有限降级</h3><p>数据落 localStorage；<code>listPlugins</code> 返回空（外部插件不可用）；HTTP 走浏览器 fetch，受 CORS 约束；<code>desEncryptHex</code> 直接抛错；会话 ID 是本地随机串，无真实 Cookie Jar。</p></article>
           <article class="card"><span class="tag">WECHAT MINIPROGRAM</span><h3>不可直接复用</h3><p>小程序版共享数据格式与时间解析思路，但没有插件宿主。要把能力带过去，只能改写成小程序页面，或让它连接桌面端的局域网服务。</p></article>
         </div>
-        <div class="callout"><strong>面向 Android 开发的额外纪律</strong><p>内置插件一旦加入 <code>BUILTIN_IDS</code>，Android 用户无法删除只能停用。插件要经得起「长期驻留」：轮询频率克制、失败静默降级、不要在 render 里做重活。</p></div>
+        <div class="callout"><strong>面向 Android 开发的额外纪律</strong><p>进入插件目录的内置插件，Android 用户无法删除只能停用。插件要经得起「长期驻留」：轮询频率克制、失败静默降级、不要在 render 里做重活。</p></div>
       </section>
 
       <section id="debug">
@@ -693,7 +698,8 @@ const feed = await tide.http.fetch(sid, "GET", "https://example.com/api/feed");<
         <div class="table-wrap"><table>
           <thead><tr><th>报错</th><th>原因与处理</th></tr></thead>
           <tbody>
-            <tr><td>manifest 拉取失败 (404)</td><td>内置插件：目录没进 <code>public/plugins/</code>，或 ID 没加进 <code>BUILTIN_IDS</code>。</td></tr>
+            <tr><td>manifest 拉取失败 (404)</td><td>内置插件：目录没进 <code>public/plugins/</code>，或改完没跑 <code>node tools/sync-plugins.js</code> 重新生成目录。</td></tr>
+            <tr><td>插件「xx」没有「yy」权限</td><td>运行时权限闸门生效：调用了 manifest <code>permissions</code> 未声明的能力。补声明，或删掉该调用。</td></tr>
             <tr><td>JSON.parse 异常</td><td>manifest 里有注释或尾逗号——必须是严格 JSON。</td></tr>
             <tr><td>插件 xxx 加载失败: SyntaxError</td><td>main.js 语法错误，看 console 堆栈定位行号。</td></tr>
             <tr><td>会话不存在或已过期，请重新创建</td><td>旧的 <code>http.session()</code> ID 失效（重扫或重启后）。重新建会话再登录。</td></tr>
@@ -721,7 +727,8 @@ const feed = await tide.http.fetch(sid, "GET", "https://example.com/api/feed");<
         <h3>内置发布改动清单</h3>
         <pre><code>le-time-management/public/plugins/&lt;plugin-id&gt;/manifest.json
 le-time-management/public/plugins/&lt;plugin-id&gt;/main.js
-le-time-management/src/pluginHost.js  <span class="cmt">// BUILTIN_IDS 加入 plugin-id</span></code></pre>
+le-time-management/public/icons/plugins/&lt;plugin-id&gt;.png  <span class="cmt">// gen-plugin-icons.py 生成（TEXT_ICONS 或 ICONS）</span>
+<span class="cmt">// 改完跑：node tools/sync-plugins.js  （重生成两端 pluginCatalog.js + 复制图标）</span></code></pre>
         <p>实现依据：<a href="https://github.com/momoqiqi-qwq/le-time-management/blob/main/le-time-management/src/pluginHost.js" target="_blank" rel="noreferrer">pluginHost.js</a>、<a href="https://github.com/momoqiqi-qwq/le-time-management/blob/main/le-time-management/src/store.js" target="_blank" rel="noreferrer">store.js</a>、<a href="https://github.com/momoqiqi-qwq/le-time-management/blob/main/le-time-management/src/timeParser.js" target="_blank" rel="noreferrer">timeParser.js</a>、<a href="https://github.com/momoqiqi-qwq/le-time-management/tree/main/le-time-management/public/plugins" target="_blank" rel="noreferrer">内置插件示例</a>。</p>
       </section>
     </main>

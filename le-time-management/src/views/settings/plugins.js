@@ -4,6 +4,7 @@ import { el, toast } from "../../ui.js";
 import { getRegistry, setEnabled, rescan, removeExternalPlugin, pluginViews } from "../../pluginHost.js";
 import { PROJECT_LINKS } from "../../projectLinks.js";
 import { pluginAccent, pluginDisplayIcon, pluginDisplayName } from "../../pluginAppearance.js";
+import { reducedMotion } from "../../motion.js";
 
 const selectedPlugins = new Set();
 let pluginManageQuery = "";
@@ -154,9 +155,32 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
     class: "btn ghost sm",
     onclick: () => {
       // v0.48.0：全选范围 = 全部插件（内置 + 用户），因为批量启停对两者都有效。
+      // v0.52.0 批量勾选错落动画：不再整页 rerender —— 就地翻勾选框，
+      // 状态变化的可见卡片按 --bi 错落延迟逐个弹起，工具栏计数照旧 paintToolbar()。
       const allOn = regs.length > 0 && regs.every((r) => selectedPlugins.has(r.id));
-      for (const r of regs) allOn ? selectedPlugins.delete(r.id) : selectedPlugins.add(r.id);
-      rerender();
+      const reduced = reducedMotion();
+      let bi = 0;
+      for (const card of pluginList.children) {
+        const pid = card.dataset.pid;
+        if (!pid) continue;
+        const now = !allOn;
+        const changed = selectedPlugins.has(pid) !== now;
+        if (changed) {
+          now ? selectedPlugins.add(pid) : selectedPlugins.delete(pid);
+          const input = card.querySelector(".plugin-select input");
+          if (input) input.checked = now;
+        }
+        if (changed && !reduced && !card.hidden) {
+          card.style.setProperty("--bi", `${bi * 45}ms`);
+          bi++;
+          card.classList.remove("bulk-pop");
+          void card.offsetWidth; // 重启动画（连续点击全选也从头弹）
+          card.classList.add("bulk-pop");
+          card.addEventListener("animationend", () => card.classList.remove("bulk-pop"), { once: true });
+          setTimeout(() => card.classList.remove("bulk-pop"), 1200); // animationend 兜底
+        }
+      }
+      paintToolbar();
     },
   }, "全选");
   const deleteSelBtn = el("button", {
@@ -288,6 +312,7 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
     const enabledNow = S.pluginState(rec.id).enabled !== false;
     const card = el("div", {
       class: "plug-card",
+      "data-pid": rec.id,
       "data-source": rec.source,
       "data-enabled": String(enabledNow),
       "data-search": `${pluginName} ${rec.id} ${man.description || ""} ${man.author || ""}`.toLowerCase(),

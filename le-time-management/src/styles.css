@@ -273,8 +273,12 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
   display: flex; align-items: center; gap: 10px;
   padding: 9px 12px; border-radius: 9px; font-size: 13.5px; color: #9DB4B0;
   text-align: left; width: 100%;
+  position: relative; /* v0.52.2：.nav-kbd 改绝对定位悬浮需要定位上下文 */
   transition: background .1s ease, color .1s ease, transform .08s ease;
 }
+/* v0.52.2 修复「两个字就折行 / 插件徽标竖排」：flex 行里 CJK 文本的 min-content
+   只有 1 个字宽，空间一紧就逐字断行。标签必须单行省略，徽标不许被压缩折行。 */
+.nav button .lb { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nav button:active { transform: translateY(1px); }
 .nav button .ic {
   width: 22px; height: 22px; border-radius: 7px; flex: none;
@@ -285,12 +289,18 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .nav button:hover { background: rgba(255, 255, 255, .06); color: #fff; }
 .nav button.on { background: rgba(255, 255, 255, .12); color: #fff; font-weight: 600; }
 .nav button.on .ic { background: var(--sun); color: #17323A; }
-.nav .pv-count { margin-left: auto; font-size: 10px; background: rgba(255,255,255,.1); padding: 1px 7px; border-radius: 8px; }
+.nav .pv-count { margin-left: auto; flex: none; white-space: nowrap; font-size: 10px; background: rgba(255,255,255,.1); padding: 1px 7px; border-radius: 8px; }
 /* 插件快捷键徽标（深色侧栏基线；≥901px 浅色栏在下方覆盖）。平时 opacity:0，
-   悬停 / 选中 / 键盘聚焦才现形 —— 不给常驻导航添噪，又不丢可发现性。 */
-.nav .nav-kbd { margin-left: 4px; flex: none; font-size: 10px; font-weight: 600; color: #B9CCC8;
-  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; padding: 1px 5px;
-  opacity: 0; transition: opacity .12s ease; }
+   悬停 / 选中 / 键盘聚焦才现形。
+   v0.52.2 修复：徽标此前只是 opacity:0，**仍然占 ~45px 布局宽度** —— 凡分到
+   快捷键字母的插件行都被隐形挤紧，标签逐字断行、「插件」徽标竖排（没分到
+   字母的行正常，所以看起来「有的行好有的行坏」）。现改为绝对定位悬浮在行尾
+   （悬停时盖住「插件」徽标的位置），完全不参与 flex 布局；背景用不透明色，
+   避免透出底下被盖住的徽标。 */
+.nav .nav-kbd { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 10px; font-weight: 600; color: #B9CCC8;
+  background: color-mix(in srgb, #ffffff 14%, var(--deep-2)); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; padding: 1px 5px;
+  opacity: 0; pointer-events: none; transition: opacity .12s ease; }
 .nav button:hover .nav-kbd, .nav button.on .nav-kbd, .nav button:focus-visible .nav-kbd { opacity: 1; }
 
 /* ── 主区 ── */
@@ -375,6 +385,14 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 .tkc .sch { font-size: 10px; color: var(--deep); background: #E1EEF3; border-radius: 6px; padding: 2px 7px; flex: none; }
 /* 右侧徽标（已排 / 时长）随卡片变高时与首行对齐，不要被 align-items 拉到中间 */
 .tkc > .est, .tkc > .sch { align-self: flex-start; margin-top: 1px; }
+
+/* v0.52.0 四象限卡片拖拽排序：幽灵卡跟随指针（translate/scale 由 JS 内联设置），
+   其余卡片让位走 WAAPI FLIP（JS animate），这里只放状态类；只动 transform，深浅主题通用 */
+.tkc.dragging { opacity: .3; cursor: grabbing; }
+.tkc.drag-ghost { position: fixed; left: 0; top: 0; z-index: 900; margin: 0; pointer-events: none;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .24); opacity: .96; cursor: grabbing; }
+.tks.drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.tks.drag-live .tkc { cursor: grabbing; }
 
 .q .addq { margin-top: 8px; border: 1.5px dashed rgba(34,48,58,.18); border-radius: 9px; padding: 7px;
   font-size: 12px; color: var(--ink-2); text-align: center; width: 100%; }
@@ -507,6 +525,25 @@ input, select, textarea { font-family: inherit; font-size: 13px; color: var(--in
 /* 色块颜色由 themeProfiles.js 内联注入，避免与主题元数据重复维护 */
 .plug-card { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px dashed var(--line-soft); }
 .plug-card:last-child { border-bottom: none; }
+
+/* v0.52.0 批量勾选错落动画：全选/取消全选就地翻勾，状态变化的卡片按 --bi 延迟逐个弹起
+   （只用 transform，深浅主题通用；reducedMotion 时 JS 不加 bulk-pop 类） */
+@keyframes plug-bulk-pop {
+  0% { transform: none; }
+  38% { transform: translateX(4px) scale(1.012); }
+  72% { transform: translateX(-2px); }
+  100% { transform: none; }
+}
+.plug-card.bulk-pop { animation: plug-bulk-pop .42s cubic-bezier(.22, .8, .22, 1) both; animation-delay: var(--bi, 0ms); }
+.plug-card.bulk-pop .plugin-select input { animation: plug-bulk-check .3s cubic-bezier(.34, 1.56, .64, 1) both; animation-delay: var(--bi, 0ms); }
+@keyframes plug-bulk-check {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plug-card.bulk-pop, .plug-card.bulk-pop .plugin-select input { animation: none; }
+}
 
 /* ── 插件市场 ── */
 .market { padding: 18px 22px 26px; }
@@ -3301,6 +3338,9 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   border-radius: 9px;
 }
 .rail-bottom > .settings-icon-button .ic .app-icon { width: 18px; height: 18px; }
+/* v0.52.2：左下角深浅色切换按钮，与设置图标按钮共享 .settings-icon-button 尺寸，
+   但图标用 Font Awesome SVG（.fa-ic）而非 .app-icon（PNG <img>），需要单独给尺寸。 */
+.rail-bottom > .theme-toggle-btn .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
 
 /* ── 应用内对话框（appPrompt / appConfirm，替代原生 window.prompt/confirm）── */
 .app-dialog-mask { z-index: 2400; display: grid; place-items: center; padding: 20px; }
@@ -3382,6 +3422,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .rail-bottom > .settings-icon-button { width: 100%; margin: 0; }
   .rail-bottom > .settings-icon-button .ic { width: var(--nav-ic, 22px); height: var(--nav-ic, 22px); }
   .rail-bottom > .settings-icon-button .ic .app-icon { width: 15px; height: 15px; }
+  .rail-bottom > .theme-toggle-btn .ic .fa-ic { width: 15px; height: 15px; }
 }
 
 /* v0.38.0 应用内自动更新：左下角提示条 + 「设置 › 关于 › 软件更新」面板。

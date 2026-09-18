@@ -207,10 +207,39 @@ export function poolOf(dateStr) {
 export function taskById(id) { return state.tasks.find((t) => t.id === id); }
 
 /* ── 象限取任务 ── */
+// v0.52.0 拖拽排序：显式 order 优先（无 order 兜底 Infinity → 落回原 due 规则），
+// done 仍是最外层分组键（完成的永远沉底），order 只在「同象限 + 同完成态」内生效。
 export function tasksOfQuad(q) {
   return state.tasks
     .filter((t) => t.quad === q)
-    .sort((a, b) => Number(a.done) - Number(b.done) || (a.due || "9999").localeCompare(b.due || "9999"));
+    .sort((a, b) => Number(a.done) - Number(b.done) ||
+      ((a.order ?? Infinity) - (b.order ?? Infinity)) ||
+      (a.due || "9999").localeCompare(b.due || "9999"));
+}
+
+// 拖拽落点：把 dragId 的任务移到 overId 的前/后。
+// 懒回填：本象限同完成态首次拖拽时才给整组写 order（0..n-1），老数据无感、无迁移。
+// 只允许同象限 + 同完成态之间换位，跨组调用是 no-op（完成沉底语义不破坏）。
+export function moveTaskRelative(dragId, overId, before = true) {
+  if (!dragId || dragId === overId) return;
+  const drag = state.tasks.find((t) => t.id === dragId);
+  const over = overId ? state.tasks.find((t) => t.id === overId) : null;
+  if (!drag || (overId && !over)) return;
+  if (over && (over.quad !== drag.quad || over.done !== drag.done)) return;
+  const group = state.tasks.filter((t) => t.quad === drag.quad && t.done === drag.done);
+  // seq 排序键必须与 tasksOfQuad 完全一致（done→order→due，无尾键、稳定排序保持数组序）：
+  // 首次回填 order 的基准 = 渲染序，否则「插到相邻卡前面」在 DOM 序与 store 序里落点不同
+  // （实测探针抓到：createdAt 尾键让回填基准与 DOM 错位，拖拽落点跳位）
+  const seq = group.sort((a, b) => Number(a.done) - Number(b.done) ||
+    ((a.order ?? Infinity) - (b.order ?? Infinity)) ||
+    (a.due || "9999").localeCompare(b.due || "9999"));
+  seq.forEach((t, i) => { t.order = i; });
+  const rest = seq.filter((t) => t.id !== dragId);
+  const at = over ? rest.findIndex((t) => t.id === overId) : rest.length;
+  if (at < 0) return;
+  rest.splice(before ? at : at + 1, 0, drag);
+  rest.forEach((t, i) => { t.order = i; });
+  changed();
 }
 
 /* ── 插件状态 ── */

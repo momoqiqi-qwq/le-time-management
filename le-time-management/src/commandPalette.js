@@ -3,6 +3,7 @@ import * as S from "./store.js";
 import { el } from "./ui.js";
 import { getRegistry, pluginViews } from "./pluginHost.js";
 import { computePluginShortcutMap, getPluginShortcutCustoms } from "./pluginShortcuts.js";
+import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { openTaskDrawer } from "./views/drawer.js";
 import { openQuickCapture } from "./capture.js";
 import { closeLayer } from "./motion.js";
@@ -96,10 +97,7 @@ function entries() {
 
   const regs = getRegistry();
   // 生效的 Alt 字母（与侧栏徽标同一套分配规则），有就亮在副标题里
-  const shortcutMap = computePluginShortcutMap(
-    pluginViews.map((v) => ({ pluginId: v.pluginId, viewId: v.id })),
-    getPluginShortcutCustoms(),
-  );
+  const shortcutMap = computePluginShortcutMap(pluginShortcutEntries(), getPluginShortcutCustoms());
   const plugins = regs.map((rec) => {
     const man = rec.manifest || {};
     const pv = pluginViews.find((v) => v.pluginId === rec.id);
