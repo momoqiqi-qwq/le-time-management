@@ -346,6 +346,23 @@ assert.match(navigatorSrc, /^\s*let expanded = new Set\(Array\.isArray\(state\.e
 assert.match(read("../src/views/settings.js"), /settingsNavState\.expanded = \[\];/,
   "每次打开设置页要清空展开集合：重新进来仍是目录态，不记住上次展开");
 
+/* ───────────── 窄屏回归：分区末尾的「收起」按钮 ─────────────
+   展开的分区（如「主题」的十几张色板卡）比一屏长得多，标题行早就滚出屏幕外，
+   手机上想收起只能一路往上翻。所以每个分区内容末尾给一颗就地收起的按钮。 */
+assert.match(navigatorSrc, /class:\s*"settings-acc-collapse"/,
+  "每个分区都要在内容末尾挂一颗「收起」按钮，否则手机上收不起长分区");
+assert.match(navigatorSrc, /class:\s*"settings-acc-body"[^)]*entry\.node,\s*collapseBtn/,
+  "「收起」必须挂在 .settings-acc-body 里：分区收起时按钮要跟着内容一起消失");
+assert.match(navigatorSrc, /onclick:\s*\(\)\s*=>\s*collapseSection\(entry\.id\)/,
+  "按钮要点名收自己所在的分区，不能收错");
+assert.match(navigatorSrc, /function collapseSection[\s\S]{0,200}scrollIntoView/,
+  "收起后要把标题行滚回视口顶部，否则视线会停在别的分区中间");
+assert.match(css, /\.settings-acc-collapse\s*\{\s*display:\s*none/,
+  "桌面（左栏分类，无收放概念）必须隐藏这颗按钮");
+assert.match(accordion, /\.settings-acc-collapse\s*\{[^}]*display:\s*flex/, "窄屏要显示分区末尾的收起按钮");
+assert.match(accordion, /\.settings-acc-collapse\s*\{[^}]*min-height:\s*(4[4-9]|[5-9]\d)px/,
+  "收起按钮触控区要 ≥44px，拇指才点得住");
+
 /* ───────────── v0.51.0 回归：任务抽屉「提前预警」布局 ─────────────
    旧版把 7 个 chip + 自定义输入框 + 「添加」按钮**一起**丢进 `.reminder-picks` 的
    flex-wrap 流里，再加 `justify-content:flex-end; max-width:245px` ⇒

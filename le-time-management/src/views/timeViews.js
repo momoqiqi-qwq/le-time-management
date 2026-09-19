@@ -1,9 +1,9 @@
 import * as S from "../store.js";
-import { bottomInsetPx, el, toast } from "../ui.js";
+import { bottomInsetPx, el } from "../ui.js";
 
 const VIEW_META = [
   ["day", "日时间轴", "当前可拖拽编辑的日程"],
-  ["wakeup", "课程表", "七日课程表式周视图"],
+  ["wakeup", "课时格", "把本周时间块按小时铺成节次网格"],
   ["milestone", "里程碑", "彩色箭头式阶段时间轴"],
   ["chronicle", "横向时间轴", "高密度事件年表"],
   ["cards", "卡片时间轴", "左右交错的叙事时间线"],
@@ -33,7 +33,7 @@ function catTone(e) {
   if (e.kind === "截止") return GOAL_TONE;
   return CAT_COLOR[e.cat] ? { c: CAT_COLOR[e.cat], fg: CAT_FG[e.cat] } : GOAL_TONE;
 }
-/* 仅供课程表视图：那里的颜色来自课程表插件的数据，不是任务分类。 */
+/* 时间块分类缺失/未知时的兜底色，只在课时格用得上（其它视图一律走 CAT_COLOR）。 */
 const PALETTE = ["#2397e5", "#62b2ea", "#7bc886", "#ffbb52", "#e86d70", "#ff3d35", "#9061bd", "#42b6a2"];
 
 /* ═══════════════════ 视图切换栏 ═══════════════════
@@ -113,7 +113,7 @@ export function createTimeViewSwitcher({ current = "day", onChange }) {
   return bar;
 }
 
-export function renderTimeView(host, mode, anchorDate) {
+export function renderTimeView(host, mode, anchorDate, zoom) {
   host.replaceChildren();
   host.dataset.view = mode;
   const data = collectTimelineData(anchorDate);
@@ -124,6 +124,9 @@ export function renderTimeView(host, mode, anchorDate) {
         : mode === "gantt" ? ganttView(data)
           : swimlaneView(data, anchorDate);
   host.append(view);
+  // 手势面 = 该视图自己的滚动容器（建模时打上 data-zoom-surface）。
+  // 空数据时视图里没有滚动容器，退回面板根节点：捏合依然只是改那个共用系数，不会算错东西。
+  if (zoom) attachViewZoomGestures(view.querySelector("[data-zoom-surface]") ?? view, zoom);
 }
 
 function parseDate(s) { const [y, m, d] = String(s || "").slice(0, 10).split("-").map(Number); return new Date(y || 1970, (m || 1) - 1, d || 1); }
@@ -152,8 +155,7 @@ function collectTimelineData(anchorDate) {
     if (!projectMap.has(key)) projectMap.set(key, []);
     projectMap.get(key).push(row);
   }
-  const courseTable = st.plugins?.["shiguang-schedule"]?.storage?.table || null;
-  return { events, projects: [...projectMap.entries()], blocks, anchorDate, courseTable };
+  return { events, projects: [...projectMap.entries()], blocks, anchorDate };
 }
 
 function taskCat(t) {
@@ -193,26 +195,99 @@ function mondayOf(dateStr) {
 function addDate(dateStr, n) { const d = parseDate(dateStr); d.setDate(d.getDate() + n); return dateKey(d); }
 function minutes(hhmm) { const [h, m] = String(hhmm || "0:0").split(":").map(Number); return h * 60 + m; }
 
-/* ── 课表手势：捏合缩放 + 平移 ──
+/* ═══════════════ 时间块页的统一缩放（v0.71.0）═══════════════
+   七种视图共用**一个**系数：JS 把它写成 `--tv-zoom` 挂在视图根节点（`.tb-root`）上，
+   各视图在 CSS / JS 里各取所需 ——
+   ① 课时格：沿用原有的「尺寸 × --wk-zoom」写法，CSS 把 `--wk-zoom` 别名到 `--tv-zoom`
+      （那张网格是 height:100% + 1fr 铺满容器的，换成 zoom 属性会反向，见下方长注）；
+   ② 日时间轴：分钟→像素的换算本来就写在 JS 里，所以由 JS 乘系数后重算块几何；
+   ③ 里程碑 / 年表 / 年度甘特 / 阶段甘特 / 卡片时间轴：画布内部全是 px 或 % 定位，
+      直接吃 CSS `zoom`，一条规则整体等比放大。
+   比例存 settings.timeViewZoom（沿用课时格的原字段），切视图、重启都保持。
+
    触控板与触控屏的捏合在 Chromium 里走两条不同的路，必须都接：
    ① 触控板捏合 = **带 ctrlKey 的 wheel**（和鼠标 Ctrl+滚轮同一条路，顺便白送键盘用户）；
    ② 触控屏捏合 = 双指 touchmove 的距离变化。
-   平移不自己实现：`.wakeup-scroll` 是 overflow:auto，原生触摸 / 触控板滚动已经够顺，
+   平移不自己实现：各视图的滚动容器都是 overflow:auto，原生触摸 / 触控板滚动已经够顺，
    自己写反而丢掉惯性；`touch-action:pan-x pan-y`（见 styles.css）保证双指平移交给原生。
    这里只负责「别让浏览器把捏合拿去缩放整个页面」。
    缩放锚点取手势中心：缩放前后该点对应的内容坐标必须一致，否则捏合时内容会从手指底下
    跑掉（用起来像「越捏越偏」）。 */
-const ZOOM_MIN = 0.6, ZOOM_MAX = 2;
+const ZOOM_MIN = 0.6, ZOOM_MAX = 2, ZOOM_STEP = 0.1;
 const clampZoom = (z) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Number(z) || 1));
 
-function attachWakeupGestures(scroll, zoomHost, onZoomSettle) {
-  let cur = clampZoom(zoomHost.style.getPropertyValue("--wk-zoom"));
+/**
+ * 缩放控制器：写 `--tv-zoom` + 右上角那三颗键（＋ / 当前比例 / －）。
+ *
+ * 中间那颗既是读数也是「默认」：点一下回 100%，与原有的双击复位同一条回头路。
+ * 三键按需求给的顺序排：放大、默认、缩小。
+ *
+ * @param {HTMLElement} root 挂变量的节点（时间块视图的容器，七种视图都是它的后代）
+ * @param {{onApply?:(z:number)=>void}} [options] onApply = CSS 变量之外的联动
+ *   （日时间轴要按新系数重算块的 top/height，光靠 CSS 变不了 JS 写的内联值）
+ */
+export function createTimeViewZoom(root, { onApply } = {}) {
+  let cur = clampZoom(S.getState().settings.timeViewZoom);
+  let settle = null;
+  const value = el("b", { class: "tv-zoom-value" });
+  const btnIn = el("button", { class: "tv-zoom-btn", type: "button", title: "放大一档", "aria-label": "放大" }, "＋");
+  const btnDefault = el("button", { class: "tv-zoom-btn tv-zoom-default", type: "button", title: "恢复默认大小（100%）" }, value);
+  const btnOut = el("button", { class: "tv-zoom-btn", type: "button", title: "缩小一档", "aria-label": "缩小" }, "－");
+  const bar = el("div", { class: "tv-zoombar", role: "group", "aria-label": "视图缩放" }, btnIn, btnDefault, btnOut);
+  btnIn.addEventListener("click", () => set(stepBy(1)));
+  btnOut.addEventListener("click", () => set(stepBy(-1)));
+  btnDefault.addEventListener("click", () => set(1));
+
+  // 按键走离散档位：0.7 − 0.1 在浮点里是 0.5999999999999999，
+  // 于是「已到下限 − 键不置灰」「持久化里存进一串小数尾巴」两处一起错（实测）。
+  const stepBy = (dir) => Math.round((cur + dir * ZOOM_STEP) * 100) / 100;
+
+  function paint() {
+    value.textContent = `${Math.round(cur * 100)}%`;
+    btnIn.disabled = cur >= ZOOM_MAX;
+    btnOut.disabled = cur <= ZOOM_MIN;
+    // 非 100% 时给中间那颗上色：一眼看出「现在是缩放态，点它能回去」
+    btnDefault.classList.toggle("is-active", Math.abs(cur - 1) >= 0.005);
+  }
+
+  function persist(z) {
+    S.getState().settings.timeViewZoom = z;
+    S.persistSoon();
+  }
+
+  function set(next) {
+    const z = clampZoom(next);
+    // 已到上下限时再往外捏不动：返回原值，让手势那边知道「没变」，不要白动滚动位置
+    if (Math.abs(z - cur) < 0.005) return cur;
+    cur = z;
+    root.style.setProperty("--tv-zoom", String(z));
+    paint();
+    onApply?.(z);
+    // 落盘延后：捏合一次能产生上百个 wheel，逐帧请求写盘没意义（停手 600ms 写一次）
+    clearTimeout(settle);
+    settle = setTimeout(() => { settle = null; persist(z); }, 600);
+    return cur;
+  }
+
+  root.style.setProperty("--tv-zoom", String(cur));
+  paint();
+  return {
+    get: () => cur,
+    set,
+    bar,
+    // 离开视图时把待写的那一笔结掉，别让 600ms 定时器跨视图存活
+    flush: () => { if (settle) { clearTimeout(settle); settle = null; persist(cur); } },
+  };
+}
+
+/** 把「捏合 / Ctrl+滚轮 / 双击复位」接到某个滚动容器上，系数本体归控制器管。
+ *  导出给日时间轴用（`.tl-scroll`），那边和这里共用同一套锚点保位逻辑。 */
+export function attachViewZoomGestures(scroll, zoom, { dblToReset = true } = {}) {
   let pinch = null;
   const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
 
   function setZoom(next, ax, ay) {
-    const z = clampZoom(next);
-    if (Math.abs(z - cur) < 0.005) return;
+    const before = zoom.get();
     const r = scroll.getBoundingClientRect();
     const px = ax == null ? scroll.clientWidth / 2 : ax - r.left;
     const py = ay == null ? scroll.clientHeight / 2 : ay - r.top;
@@ -222,8 +297,7 @@ function attachWakeupGestures(scroll, zoomHost, onZoomSettle) {
     //    按绝对坐标算会漂 60px+（内容从手指底下跑掉）。相对位置对非等比也成立。
     const relX = scroll.scrollWidth ? (scroll.scrollLeft + px) / scroll.scrollWidth : 0;
     const relY = scroll.scrollHeight ? (scroll.scrollTop + py) / scroll.scrollHeight : 0;
-    cur = z;
-    zoomHost.style.setProperty("--wk-zoom", String(z));
+    if (zoom.set(next) === before) return;   // 被上下限夹住 = 没变化，那就别动滚动位置
     // 先把布局刷出来再改滚动位置：scrollLeft 的合法范围由内容尺寸决定，
     // 尺寸刚改完时范围还是旧的 ⇒ 直接赋值会被 clamp 到旧范围。
     // 读一次 scrollWidth 触发同步 layout。
@@ -233,19 +307,18 @@ function attachWakeupGestures(scroll, zoomHost, onZoomSettle) {
   }
 
   // ① 触控板捏合 / Ctrl+滚轮。passive:false 才允许 preventDefault ——
-  //    否则 WebView2 会执行自己的页面缩放，整个界面跟着变大（而不是只缩课表）。
+  //    否则 WebView2 会执行自己的页面缩放，整个界面跟着变大（而不是只缩这块画布）。
   scroll.addEventListener("wheel", (e) => {
     if (!e.ctrlKey) return;              // 普通滚动放行，交给原生
     e.preventDefault();
-    setZoom(cur * Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
-    onZoomSettle?.(cur);
+    setZoom(zoom.get() * Math.exp(-e.deltaY * 0.0016), e.clientX, e.clientY);
   }, { passive: false });
 
   // ② 触控屏捏合
   scroll.addEventListener("touchstart", (e) => {
     pinch = e.touches.length === 2
       ? {
-        d: touchDist(e.touches), z: cur,
+        d: touchDist(e.touches), z: zoom.get(),
         x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
         y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
       }
@@ -256,71 +329,46 @@ function attachWakeupGestures(scroll, zoomHost, onZoomSettle) {
     e.preventDefault();
     setZoom(pinch.z * (touchDist(e.touches) / pinch.d), pinch.x, pinch.y);
   }, { passive: false });
-  const endPinch = () => { if (pinch) { pinch = null; onZoomSettle?.(cur); } };
+  const endPinch = () => { pinch = null; };
   scroll.addEventListener("touchend", endPinch, { passive: true });
   scroll.addEventListener("touchcancel", endPinch, { passive: true });
 
   // 双击复位：缩到很小或放得很大之后总得有条回头路，否则只能一点点捏回来。
-  scroll.addEventListener("dblclick", (e) => {
-    if (Math.abs(cur - 1) < 0.005) return;
+  // 日时间轴关掉这条（dblToReset:false）：那里双击会命中时间块并弹出块菜单，
+  // 一次双击同时「改比例 + 开菜单」是最坏的巧合 —— 三键里的默认键已经够用。
+  if (dblToReset) scroll.addEventListener("dblclick", (e) => {
+    if (Math.abs(zoom.get() - 1) < 0.005) return;
     setZoom(1, e.clientX, e.clientY);
-    onZoomSettle?.(1);
   });
-
-  return { get: () => cur };
 }
 
-/* ── 课程表（内部 id 仍叫 wakeup，改 id 会让用户已保存的视图选择失效）──
-   桌面仍是一屏 7 天的真课表；窄屏改成「按天分组的日程列表」：
-   7 列 × 10 节 = 70 个格子在 390px 宽里最小可读宽度约 700px，
+/* ── 课时格（内部 id 仍叫 wakeup，改 id 会让用户已保存的视图选择失效）──
+   它是「用课表的样子看时间线」，数据源恒为本周时间块，不读「课程表」插件的课表
+   storage —— 真实课表去插件里看，这里看自己的安排（v0.70.0 解耦）。
+   桌面是一屏 7 天的网格；窄屏改成「按天分组的日程列表」：
+   7 列 × 16 节 = 112 个格子在 390px 宽里最小可读宽度约 700px，
    横向滚动能滚但不实用 —— 直接换布局，一天一段更符合手机阅读。
+   节次按小时切（7:00 起 16 格）：时间块只有起止时刻，没有学校作息表，
+   按小时铺是不依赖任何外部数据的最近似课表形态。
    行高不写死：`--slot-count` 提到根节点上，CSS 用
-   `minmax(下限, 1fr)` 按剩余空间平分，让 1–10 节一屏看完（见 styles.css）。 */
+   `minmax(下限, 1fr)` 按剩余空间平分，让全部节次一屏看完（见 styles.css）。 */
 function wakeupView(data, anchorDate) {
   const root = el("section", { class: "tv-panel wakeup-view" });
   const anchor = anchorDate || S.todayStr(); const monday = mondayOf(anchor); const today = S.todayStr();
-  const table = data.courseTable;
-  let slots = table?.timeSlots?.length ? [...table.timeSlots].sort((a, b) => Number(a.number) - Number(b.number)) : [];
-  let courses = []; let week = null;
-  if (table?.config?.semesterStartDate && table?.courses?.length) {
-    const semMonday = mondayOf(table.config.semesterStartDate);
-    week = Math.floor((parseDate(monday) - parseDate(semMonday)) / 604800000) + 1;
-    const map = new Map(slots.map((x, i) => [Number(x.number), i]));
-    if (week >= 1 && week <= Number(table.config.semesterTotalWeeks || 20)) {
-      courses = table.courses.filter(c => (c.weeks || []).map(Number).includes(week)).map((c, i) => {
-        let start = c.customStartTime, end = c.customEndTime, r1, r2;
-        if (!c.isCustomTime) { const a = map.get(Number(c.startSection)), b = map.get(Number(c.endSection)); r1 = a; r2 = b; start = slots[a]?.startTime; end = slots[b]?.endTime; }
-        else { r1 = slots.findIndex(x => minutes(x.endTime) > minutes(start)); r1 = Math.max(0, r1); r2 = slots.findLastIndex?.(x => minutes(x.startTime) < minutes(end)); if (r2 == null || r2 < r1) r2 = r1; }
-        return { ...c, start, end, r1, r2, color: PALETTE[(Number(c.color) || i) % PALETTE.length] };
-      });
-    }
-  }
-  if (!slots.length) {
-    slots = Array.from({ length: 16 }, (_, i) => { const m = 7 * 60 + i * 60; return { number: i + 1, startTime: S.hhmmOf(m), endTime: S.hhmmOf(m + 50) }; });
-    const mapDate = new Map(Array.from({ length: 7 }, (_, i) => [addDate(monday, i), i + 1]));
-    courses = data.blocks.filter(b => mapDate.has(b.date)).map((b, i) => { const sm = minutes(b.start), em = sm + Number(b.durMin || 30); const r1 = clamp(Math.floor((sm - 420) / 60), 0, 15), r2 = clamp(Math.floor((Math.max(sm + 1, em) - 421) / 60), r1, 15); return { name: b.title, day: mapDate.get(b.date), position: CAT_NAME[b.cat] || "时间块", start: b.start, end: S.hhmmOf(em), r1, r2, color: CAT_COLOR[b.cat] || PALETTE[i % PALETTE.length] }; });
-  }
+  const slots = Array.from({ length: 16 }, (_, i) => { const m = 7 * 60 + i * 60; return { number: i + 1, startTime: S.hhmmOf(m), endTime: S.hhmmOf(m + 50) }; });
+  const mapDate = new Map(Array.from({ length: 7 }, (_, i) => [addDate(monday, i), i + 1]));
+  const courses = data.blocks.filter(b => mapDate.has(b.date)).map((b, i) => { const sm = minutes(b.start), em = sm + Number(b.durMin || 30); const r1 = clamp(Math.floor((sm - 420) / 60), 0, 15), r2 = clamp(Math.floor((Math.max(sm + 1, em) - 421) / 60), r1, 15); return { name: b.title, day: mapDate.get(b.date), position: CAT_NAME[b.cat] || "时间块", start: b.start, end: S.hhmmOf(em), r1, r2, color: CAT_COLOR[b.cat] || PALETTE[i % PALETTE.length] }; });
   // `--slot-count` 挂在根节点上（而不是网格自己）：CSS 要用它算「自然高度上限」，
   // 那个 max-height 写在 .wakeup-scroll（网格的父级）上，变量只能向下继承。
   root.style.setProperty("--slot-count", String(slots.length));
-  root.append(head("课程表周视图", `${week ? `第 ${week} 周 · ` : ""}${monday} ～ ${addDate(monday, 6)} · 课程表式时间布局，窄屏自动改为按天分组。`));
+  root.append(head("课时格", `${monday} ～ ${addDate(monday, 6)} · 把这一周的时间块按小时铺进网格，窄屏自动改为按天分组。`));
 
   // 桌面：真 7 列网格（CSS 在 ≤760px 里隐藏）
-  const sc = el("div", { class: "wakeup-scroll" }); const grid = el("div", { class: "wakeup-grid" });
-  // 缩放比例从设置恢复（捏合后持久化），切走视图再回来、重启应用都保持。
-  // 挂在面板根节点上而不是网格自己：.wakeup-scroll 的 max-height 也要读它（变量只向下继承）。
-  root.style.setProperty("--wk-zoom", String(clampZoom(S.getState().settings.timeViewZoom)));
-  let zoomToast = null;
-  attachWakeupGestures(sc, root, (z) => {
-    // 手势过程中不弹提示（连续变化会刷屏），停手后再报一次当前比例
-    clearTimeout(zoomToast);
-    zoomToast = setTimeout(() => {
-      S.getState().settings.timeViewZoom = z;
-      S.persistSoon();
-      toast(`课表缩放 ${Math.round(z * 100)}%`);
-    }, 600);
-  });
-  grid.append(el("div", { class: "wk-corner" }, week ? `第${week}周` : "时间"));
+  // 缩放系数不再由这里写：`--tv-zoom` 挂在时间块视图的根容器上（createTimeViewZoom），
+  // CSS 里 `.wakeup-view { --wk-zoom: var(--tv-zoom, 1) }` 接过来。消费点必须在面板类上
+  // 而不是网格自己 —— 变量只向下继承，而外层 .wakeup-scroll 的 max-height 也要读它。
+  const sc = el("div", { class: "wakeup-scroll", "data-zoom-surface": "" }); const grid = el("div", { class: "wakeup-grid" });
+  grid.append(el("div", { class: "wk-corner" }, "时间"));
   const dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
   for (let i = 0; i < 7; i++) { const d = addDate(monday, i); grid.append(el("div", { class: `wk-day${d === today ? " today" : ""}`, style: `grid-column:${i + 2};grid-row:1` }, el("b", {}, dayNames[i]), el("span", {}, shortDate(d)))); }
   slots.forEach((sl, i) => grid.append(el("div", { class: "wk-slot", style: `grid-column:1;grid-row:${i + 2}` }, el("b", {}, String(sl.number)), el("span", {}, `${sl.startTime}\n${sl.endTime}`))));
@@ -331,7 +379,7 @@ function wakeupView(data, anchorDate) {
     const r2 = clamp(Number(c.r2 ?? c.r1) || 0, 0, slots.length - 1) + 3;
     grid.append(el("article", { class: "wk-course", style: `grid-column:${col};grid-row:${r1}/${r2};--wk:${c.color || PALETTE[i % PALETTE.length]}`, title: `${c.name || c.title} ${c.start || ""}-${c.end || ""}` },
       el("b", {}, c.name || c.title), c.position ? el("span", {}, c.position) : null,
-      el("small", {}, `${c.start || ""}${c.end ? `-${c.end}` : ""}${c.teacher ? ` · ${c.teacher}` : ""}`)));
+      el("small", {}, `${c.start || ""}${c.end ? `-${c.end}` : ""}`)));
   });
   sc.append(grid); root.append(sc);
 
@@ -347,13 +395,12 @@ function wakeupView(data, anchorDate) {
       ? sorted.map(c => el("article", { class: "wm-item", style: `--wk:${c.color}` },
         el("span", { class: "wm-time" }, `${c.start || ""}\n${c.end || ""}`),
         el("div", { class: "wm-copy" }, el("b", {}, c.name || c.title),
-          c.position ? el("span", {}, c.position) : null,
-          c.teacher ? el("span", {}, c.teacher) : null)))
-      : [el("p", { class: "wm-none" }, "这天没有课")]));
+          c.position ? el("span", {}, c.position) : null)))
+      : [el("p", { class: "wm-none" }, "这天没有时间块")]));
     mobile.append(fold.box);
   }
   root.append(mobile);
-  if (!courses.length) root.append(el("div", { class: "wk-tip" }, table ? "这一周没有课程。可切换日期查看其他教学周。" : "还没有课程表数据：当前会用本周时间块代替展示。导入“课程表”插件后会自动切换为真实节次和课程。"));
+  if (!courses.length) root.append(el("div", { class: "wk-tip" }, "这一周还没有时间块：在「日时间轴」里添加，或到「课程表」插件里把课程同步到时间块。"));
   return root;
 }
 
@@ -395,18 +442,19 @@ function milestoneView(data) {
     row.style.setProperty("--ms-joint", colors[colors.length - 1]);
     track.append(row);
   }
-  root.append(el("div", { class: "milestone-scroll" }, track));
+  root.append(el("div", { class: "milestone-scroll", "data-zoom-surface": "" }, track));
   return root;
 }
 
 /* ── 横向时间轴（年表）──
-   桌面是 1500px 画布上的绝对定位年表，靠左右交错区分事件。
-   窄屏无法靠滚动了事：1500px 画布里 150px 的卡片挤在同一水平线上，
-   文字直接叠成一团（用户截图证实）。窄屏换成纵向年表 ——
-   一条中轴 + 左右交错卡片，靠日期标签定位，不再有横向滚动。
+   桌面是绝对定位年表，靠上下交错区分事件；窄屏换成纵向年表（一条中轴 + 左右卡片），
+   不再有横向滚动 —— 1500px 画布塞进几十条事件时，卡片只能互相盖住（用户截图证实）。
    v0.50.0：修复时间堆积 —— 两个事件相隔太久（>60 天且占跨度 15%+）时，
    中轴用「省略号」截断长空档，省出的横向位置按天数比例还给密集段；
-   段内再做「前推 + 后收」两遍扫描，保证相邻卡片不叠。 */
+   段内再做「前推 + 后收」两遍扫描。
+   v0.70.0：画布宽度改为按事件数撑出来（见下面 SLOT_MIN 的推导），密度由横向滚动承担。
+   原来宽度写死 1500px、位置按百分比算，26 条事件只剩 53px 一槽，而卡片就要 150px ——
+   百分比预算再怎么调都救不回「槽宽 < 内容宽」，所以只能从画布宽度这一层解。 */
 function chronicleView(data) {
   const root = el("section", { class: "tv-panel chronicle-view" });
   root.append(head("横向时间轴", "参考机器人发展史年表：适合信息密度高、事件多的长期回顾。"));
@@ -431,18 +479,31 @@ function chronicleView(data) {
     segments.at(-1).push(events[i]);
   }
 
-  // 2) 横向预算：轴上可用 5.5%~94.5%（89 份）—— 收进 5.5/94.5 是为了让首末事件
-  //    的 150px 卡片完整落进 1500px 画布（原 3%~97% 时两端各被裁掉 30px，实测）。
-  //    省略号区固定占 GAP_UNIT 份；剩余按各段天数比例分，
-  //    且每段保底 (n-1)*MIN_STEP，保底放不下就整体压步长。
-  const MIN_STEP = 5.1;  // 相邻事件最小间距（%）：150px 卡片 / 1500px 画布 = 10%，
-                         // 上下交错布局下同侧相邻卡恰好 10.2%，不叠
-  const GAP_UNIT = Math.max(2, Math.min(6, Math.floor((89 * 0.45) / Math.max(1, gaps.length))));
-  const remaining = 89 - gaps.length * GAP_UNIT;
-  // 段尾余量：段尾事件若贴着省略号区落位，日期徽章（半宽约 38px）会压到省略号芯片上。
-  // 给「后面跟着省略号」的段留 4 份尾巴，让徽章与芯片之间保有 ≥14px 空隙；
-  // 空档太多预算放不下时（极端孤立事件场景）放弃尾巴 —— 那种密度本来就必然叠卡。
-  const TAIL_UNIT = remaining - gaps.length * 4 >= 12 ? 4 : 0;
+  // 2) 画布宽度由事件数撑出来 —— 不再写死 1500px。
+  //    写死时 26 条事件只能分到 53px 一槽，而一张卡片就要 150px：实测同侧相邻卡
+  //    互相压掉 43px、日期徽章压掉 17px（用户截图里那排「2026-0」就是徽章被后一张
+  //    盖掉后半截的结果）。密度交给 .chronicle-scroll 的横向滚动去承担，卡片才不必互盖。
+  //    一槽要同时喂饱两样东西，取大者：
+  //      · 卡片 150px —— 上下交错，同侧相邻卡隔【两】槽 ⇒ 槽 ≥ (150 + 18) / 2 = 84；
+  //      · 日期徽章 —— 上下两排的徽章都骑在同一条轴带上，相邻只隔【一】槽
+  //        ⇒ 槽 ≥ 徽章宽 + 12。徽章恒为 MM/DD（年份另起一行，见下面渲染），
+  //          最宽实测 57px，所以这一条永远让位给卡片那条。
+  //    槽宽因此是个常数，不随「文字大小」设置变 —— 这点是刻意的：改文字缩放不会
+  //    重渲染本视图，任何「渲染时读一次 CSS 变量」的算法都会在改完字号后留下旧画布。
+  //    轴上可用区间恒占画布 AXIS_BUDGET%（5.5%~94.5%），把「需要的像素」除以它就是画布宽；
+  //    这样下面那句 step 的兜底压缩永远命中不到 MIN_STEP 以下。
+  const AXIS_BUDGET = 89;
+  const CANVAS_MIN = 1500;
+  const CARD_W = 150;                 // 与 .chronicle-event 的 --tl-card-w 同源
+  const SLOT_MIN = (CARD_W + 18) / 2;
+  const GAP_MIN = 120;                // 一枚省略号芯片占的横向位置
+  const TAIL_MIN = 46;                // 段尾安静带：徽章半宽 + 与芯片的间隙
+  const canvasW = Math.max(CANVAS_MIN, ((events.length - 1) * SLOT_MIN + gaps.length * (GAP_MIN + TAIL_MIN)) * 100 / AXIS_BUDGET);
+  const pct = (px) => px * 100 / canvasW;
+  const MIN_STEP = pct(SLOT_MIN);
+  const GAP_UNIT = pct(GAP_MIN);
+  const TAIL_UNIT = pct(TAIL_MIN);
+  const remaining = AXIS_BUDGET - gaps.length * GAP_UNIT;
   const step = Math.min(MIN_STEP, Math.max(1.5, (remaining - gaps.length * TAIL_UNIT) / Math.max(1, events.length - segments.length)));
   const mins = segments.map((s, k) => (s.length - 1) * step + (gaps[k] ? TAIL_UNIT : 0));
   const spare = Math.max(0, remaining - mins.reduce((a, b) => a + b, 0));
@@ -474,8 +535,9 @@ function chronicleView(data) {
     }
   });
 
-  // 桌面：横向年表
-  const canvas = el("div", { class: "chronicle-canvas" });
+  // 桌面：横向年表。宽度按事件数撑出来（上面算的 canvasW），比容器宽就交给
+  // .chronicle-scroll 横滚 —— 用 min-width 而不是 width，事件少时仍能铺满面板。
+  const canvas = el("div", { class: "chronicle-canvas", style: `min-width:${Math.round(canvasW)}px;--tl-card-w:${CARD_W}px` });
   canvas.append(el("div", { class: "chronicle-axis" }));
   gaps.forEach((g, i) => {
     canvas.append(el("div", {
@@ -483,15 +545,26 @@ function chronicleView(data) {
       title: `此处省略 ${g.days} 天（${g.from} → ${g.to}）`,
     }, el("span", { class: "ce-gap-mark" }, "⋯⋯"), el("span", { class: "ce-gap-days" }, `省略 ${g.days} 天`)));
   });
+  // 徽章恒为 MM/DD：轴带里上下两排的徽章相邻只隔【一】槽，完整日期太宽必然互盖
+  // （推导见上面 SLOT_MIN）。完整日期在卡片第二行与悬浮 title 里都还在。
+  // 跨年时年份另起一行塞进同一枚徽章 —— 写成「2026/09/12」会把徽章拉宽一倍，
+  // 而槽位是按 MM/DD 定的；换行只让徽章长高几像素，轴带上下都有富余。
+  let prevYear = null;
   events.forEach((e, i) => {
     const upper = i % 2 === 0;
-    canvas.append(el("div", { class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${xs[i]}%;--ec:${catTone(e).c};--tone-fg:${catTone(e).fg}` },
+    const year = String(e.date || "").slice(0, 4);
+    const showYear = year !== prevYear;
+    prevYear = year;
+    canvas.append(el("div", {
+      class: `chronicle-event ${upper ? "up" : "down"}`, style: `left:${xs[i]}%;--ec:${catTone(e).c};--tone-fg:${catTone(e).fg}`,
+      title: e.date,
+    },
       el("div", { class: "ce-card" }, el("b", {}, e.title), el("span", {}, `${e.date} · ${e.subtitle || e.kind}`)),
       el("div", { class: "ce-stem" }), el("div", { class: "ce-dot" }),
-      el("div", { class: "ce-date" }, e.date),
+      el("div", { class: "ce-date" }, shortDate(e.date), showYear ? el("i", { class: "ce-year" }, year) : null),
     ));
   });
-  root.append(el("div", { class: "chronicle-scroll" }, canvas));
+  root.append(el("div", { class: "chronicle-scroll", "data-zoom-surface": "" }, canvas));
 
   // 窄屏：纵向年表（长间隔同样给省略提示，两端语义一致）
   const vertical = el("div", { class: "chronicle-vertical" });
@@ -513,15 +586,19 @@ function chronicleView(data) {
 /* ── 卡片时间轴 ──
    本来就有一版窄屏改写（单列 + 中轴挪到左边），但卡片固定 270px 且不换行，
    日期是 15px 的裸文本，一屏只能看到一张半。窄屏改成更紧凑的单列卡片 +
-   日期徽章，并保留中轴的视觉连接。 */
+   日期徽章，并保留中轴的视觉连接。
+   v0.71.0 缩放：轨道外面必须有一层自己的滚动容器（.card-scroll）—— 轨道被 --tv-zoom
+   放大后必然宽过面板，而 .tv-panel 是 overflow:hidden，没有这层就右半边直接被裁掉。 */
 function cardTimelineView(data) {
   const root = el("section", { class: "tv-panel card-timeline-view" });
   root.append(head("卡片时间轴", "参考中国近代史时间轴：左右交错卡片，适合展示阶段说明和备注。"));
   if (!data.events.length) { root.append(empty()); return root; }
   const lane = el("div", { class: "card-timeline" });
+  // 缩放层（v0.71.0）：zoom 只乘内容，轨道宽度另按系数算（见 styles.css .card-timeline 的推导）
+  const zoomLayer = el("div", { class: "ct-zoom" });
   data.events.slice(0, 16).forEach((e, i) => {
     const side = i % 2 ? "right" : "left";
-    lane.append(el("article", { class: `ct-item ${side}`, style: `--ct:${catTone(e).c}` },
+    zoomLayer.append(el("article", { class: `ct-item ${side}`, style: `--ct:${catTone(e).c}` },
       el("div", { class: "ct-card" },
         el("div", { class: "ct-date" }, e.date),
         el("h3", {}, e.title),
@@ -530,7 +607,9 @@ function cardTimelineView(data) {
       el("div", { class: "ct-link" }, el("i"), el("span")),
     ));
   });
-  root.append(lane); return root;
+  lane.append(zoomLayer);
+  root.append(el("div", { class: "card-scroll", "data-zoom-surface": "" }, lane));
+  return root;
 }
 
 /* ── 年度甘特 ──
@@ -562,7 +641,7 @@ function ganttView(data) {
       ),
     ));
   });
-  root.append(el("div", { class: "gantt-scroll" }, grid));
+  root.append(el("div", { class: "gantt-scroll", "data-zoom-surface": "" }, grid));
 
   // 窄屏：按月折叠
   // 只列出「有内容的月份」加上当前月：一年 12 个月若全列出来，空月份（实测 8 个）
@@ -629,7 +708,7 @@ function swimlaneView(data, anchorDate) {
     });
     row.append(cells); lane.append(row);
   }
-  root.append(el("div", { class: "swim-scroll" }, lane));
+  root.append(el("div", { class: "swim-scroll", "data-zoom-surface": "" }, lane));
 
   // 窄屏：分类折叠 + 占比条
   // 默认只展开前两个有内容的分类：5 个分类全展开实测 1670px 高，一屏（844px）看不完，

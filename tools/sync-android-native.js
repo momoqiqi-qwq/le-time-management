@@ -8,6 +8,8 @@
 //   · v0.37.15 MainActivity 安全区注入（WebView 不实现 env(safe-area-inset-*)）
 //   · v0.37.17 MainActivity 返回键 handleBackNavigation + 双指缩放
 //   · v0.38.0 ApkInstallerPlugin（应用内一键升级）
+//   · v0.73.0 NotificationPlugin + ReminderHub + 三个接收器（系统通知与后台闹钟），
+//     以及 MainActivity 长鸣期间不冻结 WebView 的 onPause 补丁
 // 只要有人 init 一次，上面全部静默消失，而且因为目录不进 git，**回滚都没得回**。
 //
 // ── 事实源与目标 ──
@@ -15,18 +17,19 @@
 //   目标：  le-time-management/src-tauri/gen/android/
 //
 // ── 三类处理（刻意分开，别合并成「整目录覆盖」）──
-//   ① Kotlin 源码：整份覆盖。这部分百分之百是我们写的，没有上游模板会被盖坏的问题。
-//   ② AndroidManifest.xml：**只加不删的补丁** —— 补 REQUEST_INSTALL_PACKAGES、注册
-//      .SchoolImportActivity（v0.37.12 手加，不是 Tauri 模板内容）、删 MainActivity 的 label。
+//   ① 我们拥有的文件（Kotlin 源码 + 通知小图标等资源）：整份覆盖。这部分百分之百是我们
+//      写的，没有上游模板会被盖坏的问题。清单见 SOURCES 与 RESOURCES。
+//   ② AndroidManifest.xml：**只加不删的补丁** —— 补 REQUEST_INSTALL_PACKAGES 与通知/闹钟
+//      四条权限、注册 .SchoolImportActivity 与三个提醒接收器、删 MainActivity 的 label。
 //      不做整份覆盖 —— 否则将来 Tauri 模板新增的 permission/provider 会被我们的旧副本吃掉。
 //      FileProvider 的 provider 块是 Tauri 模板自带的，**只校验不合成**（合成容易写错一整个块）。
 //   ③ res/xml/file_paths.xml：确保 `<cache-path>` 存在。Rust 侧把更新包暂存在
 //      `app_cache_dir()`（＝Android 的 `getCacheDir`，内部缓存），FileProvider 靠这条声明才肯共享。
 //
 // ── 用法 ──
-//   node tools/sync-android-native.js            应用（同步 Kotlin + 打补丁）
+//   node tools/sync-android-native.js            应用（同步我们拥有的文件 + 打补丁）
 //   node tools/sync-android-native.js --check    只校验，不写文件
-//   node tools/sync-android-native.js --capture  反向：把 gen 里的 Kotlin 现状采纳为镜像
+//   node tools/sync-android-native.js --capture  反向：把 gen 里的现状采纳为镜像
 //                                                （只在 `tauri android init` 重建过、需要重建基线时用）
 const fs = require("fs");
 const path = require("path");
@@ -44,11 +47,36 @@ const SOURCES = [
   "NativeSchedulePlugin.kt",
   "ApkInstallerPlugin.kt",
   "SystemBarPlugin.kt",
+  // v0.73.0 系统通知与闹钟：插件 + 中枢 + 三个广播接收器
+  "ReminderHub.kt",
+  "NotificationPlugin.kt",
+  "ReminderReceivers.kt",
 ];
+/**
+ * 我们拥有的资源文件（同样是镜像 → gen 整份覆盖）。
+ *
+ * 通知小图标必须我们自己给：系统会把通知的 small icon **整体染成单色剪影**，
+ * 只认 alpha，拿彩色实心的启动器图标去用就是一坨白块。
+ */
+const RESOURCES = ["app/src/main/res/drawable/ic_stat_letime.xml"];
 const MANIFEST = "app/src/main/AndroidManifest.xml";
 const FILE_PATHS = "app/src/main/res/xml/file_paths.xml";
 /** Android 8.0 起「安装未知来源应用」是按应用授权，没有它系统安装器会被静默拦掉。 */
 const INSTALL_PERMISSION = "android.permission.REQUEST_INSTALL_PACKAGES";
+/**
+ * v0.73.0 通知与闹钟所需的权限。清单合并只认声明过的权限，缺一个就是运行期才炸：
+ *   · POST_NOTIFICATIONS —— Android 13 起通知是运行时权限，没声明连弹窗都给不出来
+ *   · VIBRATE —— 渠道的 enableVibration
+ *   · SCHEDULE_EXACT_ALARM —— API 31 起精确闹钟变成用户可撤销授权（没批会退化成
+ *     非精确排期，Doze 下最坏晚几分钟，所以设置页还要给一个引导入口）
+ *   · RECEIVE_BOOT_COMPLETED —— 闹钟不跨重启，开机必须自己从持久化记录里重排
+ */
+const NOTIFICATION_PERMISSIONS = [
+  "android.permission.POST_NOTIFICATIONS",
+  "android.permission.VIBRATE",
+  "android.permission.SCHEDULE_EXACT_ALARM",
+  "android.permission.RECEIVE_BOOT_COMPLETED",
+];
 
 const CHECK = process.argv.includes("--check");
 const CAPTURE = process.argv.includes("--capture");
@@ -64,59 +92,62 @@ if (!fs.existsSync(GEN)) {
   process.exit(0);
 }
 
-/* ─────────────── ① Kotlin 源码 ─────────────── */
+/* ─────────────── ① Kotlin 源码与自有资源 ─────────────── */
 
-function captureKotlin() {
-  const genDir = path.join(GEN, KOTLIN_DIR);
-  const mirrorDir = path.join(MIRROR, KOTLIN_DIR);
-  fs.mkdirSync(mirrorDir, { recursive: true });
-  let captured = 0;
-  const present = new Set(fs.existsSync(genDir) ? fs.readdirSync(genDir).filter((f) => f.endsWith(".kt")) : []);
-  for (const name of SOURCES) {
-    const from = path.join(genDir, name);
-    const to = path.join(mirrorDir, name);
-    const text = read(from);
-    if (text === null) {
-      console.log(`  [gen 缺] ${name}`);
-      continue;
-    }
-    present.delete(name);
-    if (read(to) === text) {
-      console.log(`  [已一致] ${name}`);
-      continue;
-    }
-    write(to, text);
-    console.log(`  [已采纳] ${name} → android/gradle/${KOTLIN_DIR}/${name}`);
-    captured++;
-  }
-  if (present.size) {
-    console.log(`  ⚠ gen 里还有未纳入镜像的 Kotlin：${[...present].join(", ")}`);
-    console.log("    如果是我们写的，请加进 tools/sync-android-native.js 的 SOURCES 后重跑 --capture。");
-  }
-  console.log(`✓ 已从 gen 采纳 ${captured} 个 Kotlin 文件到版本化镜像`);
+/** 镜像里我们完整拥有的文件（相对 gen/android 与 android/gradle 两边的路径 1:1）。 */
+function ownedFiles() {
+  return [...SOURCES.map((name) => `${KOTLIN_DIR}/${name}`), ...RESOURCES];
 }
 
-function syncKotlin() {
-  for (const name of SOURCES) {
-    const from = path.join(MIRROR, KOTLIN_DIR, name);
-    const to = path.join(GEN, KOTLIN_DIR, name);
+function captureKotlin() {
+  let captured = 0;
+  const owned = new Set(ownedFiles());
+  for (const rel of ownedFiles()) {
+    const from = path.join(GEN, rel);
+    const to = path.join(MIRROR, rel);
     const text = read(from);
     if (text === null) {
-      failures.push(`镜像缺源文件：android/gradle/${KOTLIN_DIR}/${name}`);
+      console.log(`  [gen 缺] ${rel}`);
       continue;
     }
     if (read(to) === text) {
-      console.log(`  [已一致] ${name}`);
+      console.log(`  [已一致] ${rel}`);
+      continue;
+    }
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    write(to, text);
+    console.log(`  [已采纳] ${rel} → android/gradle/${rel}`);
+    captured++;
+  }
+  // gen 里多出、又没进清单的 .kt：多半是刚写还没登记，提醒一句而不是静默丢。
+  const genDir = path.join(GEN, KOTLIN_DIR);
+  for (const name of fs.existsSync(genDir) ? fs.readdirSync(genDir).filter((f) => f.endsWith(".kt")) : []) {
+    if (!owned.has(`${KOTLIN_DIR}/${name}`)) console.log(`  ⚠ gen 里还有未纳入镜像的 Kotlin：${name}（加进 SOURCES 后重跑 --capture）`);
+  }
+  console.log(`✓ 已从 gen 采纳 ${captured} 个文件到版本化镜像`);
+}
+
+function syncOwned() {
+  for (const rel of ownedFiles()) {
+    const from = path.join(MIRROR, rel);
+    const to = path.join(GEN, rel);
+    const text = read(from);
+    if (text === null) {
+      failures.push(`镜像缺源文件：android/gradle/${rel}`);
+      continue;
+    }
+    if (read(to) === text) {
+      console.log(`  [已一致] ${rel}`);
       continue;
     }
     if (CHECK) {
-      failures.push(`${name}：gen/android 里的副本与版本化镜像不一致`);
-      console.log(`  [不一致] ${name}`);
+      failures.push(`${rel}：gen/android 里的副本与版本化镜像不一致`);
+      console.log(`  [不一致] ${rel}`);
     } else {
       fs.mkdirSync(path.dirname(to), { recursive: true });
       write(to, text);
-      changes.push(name);
-      console.log(`  [已同步] ${name}`);
+      changes.push(rel);
+      console.log(`  [已同步] ${rel}`);
     }
   }
 }
@@ -187,6 +218,48 @@ function ensureSchoolImportActivity(xml) {
 }
 
 /**
+ * 任务提醒的三个广播接收器（v0.73.0）。
+ *
+ * 闹钟到点、通知按钮、开机重排都靠它们，而它们**必须在清单里注册**：
+ * 没注册的话 `PendingIntent.getBroadcast` 照样能构造成功，直到闹钟真的响起来
+ * 才由系统投递失败 —— 也就是「应用内提醒正常、被杀之后一条都不弹」，
+ * 是最难查的那种坏法。
+ *
+ * 前两个只被我们自己的 PendingIntent 显式点名 ⇒ exported=false；
+ * 开机广播由系统投递，API 31 起必须显式 exported="true" 才收得到。
+ */
+const REMINDER_RECEIVERS_BLOCK = `
+        <!-- 任务提醒（v0.73.0）：闹钟到点 / 通知按钮 / 开机重排三个接收器 -->
+        <receiver
+            android:name=".ReminderAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderActionReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>`;
+
+function ensureReminderReceivers(xml) {
+  if (xml.includes('android:name=".ReminderAlarmReceiver"')) return { xml, changed: false };
+  const provider = /^[ \t]*<provider\b/m;
+  if (provider.test(xml)) {
+    return { xml: xml.replace(provider, (m) => `${REMINDER_RECEIVERS_BLOCK}\n\n${m}`), changed: true };
+  }
+  const anchor = "</application>";
+  if (xml.includes(anchor)) {
+    return { xml: xml.replace(anchor, `${REMINDER_RECEIVERS_BLOCK}\n    ${anchor}`), changed: true };
+  }
+  return { xml, changed: false, anchorMissing: true };
+}
+
+/**
  * FileProvider 的 provider 块由 Tauri 模板自带，**这里只校验不合成** ——
  * 合成整个 provider 块要把 authority / meta-data 写全，写错一个字母就是运行期才炸的
  * "Failed to find configured root"，不值得。丢了说明模板变了，该由人来看。
@@ -213,20 +286,31 @@ function patchManifest() {
   let xml = src;
   const perm = ensurePermission(xml, INSTALL_PERMISSION);
   xml = perm.xml;
+  // 通知与闹钟的四条权限逐条幂等补齐（ensurePermission 已存在就原样返回）。
+  const extraPerms = [];
+  for (const permission of NOTIFICATION_PERMISSIONS) {
+    const r = ensurePermission(xml, permission);
+    xml = r.xml;
+    if (r.changed) extraPerms.push(permission.split(".").pop().toLowerCase().replace(/_/g, "-"));
+  }
   const activity = ensureSchoolImportActivity(xml);
   xml = activity.xml;
+  const receivers = ensureReminderReceivers(xml);
+  xml = receivers.xml;
   const label = stripMainActivityLabel(xml);
   xml = label.xml;
 
   if (!checkFileProvider(xml)) console.log("  [缺失] AndroidManifest.xml 的 FileProvider 声明");
 
   if (xml === src) {
-    console.log(`  [已一致] AndroidManifest.xml（权限 / 教务窗口 / label 都已就位）`);
+    console.log(`  [已一致] AndroidManifest.xml（权限 / 教务窗口 / 提醒接收器 / label 都已就位）`);
     return;
   }
   const detail = [
     perm.changed && "补安装权限",
+    extraPerms.length && `补通知权限（${extraPerms.join("、")}）`,
     activity.changed && "注册 SchoolImportActivity",
+    receivers.changed && "注册提醒接收器",
     label.changed && "去 MainActivity label",
   ]
     .filter(Boolean)
@@ -278,7 +362,7 @@ if (CAPTURE) {
   process.exit(0);
 }
 
-syncKotlin();
+syncOwned();
 patchManifest();
 patchFilePaths();
 
@@ -292,7 +376,7 @@ if (failures.length) {
 }
 console.log(
   CHECK
-    ? "✓ Android 原生代码与版本化镜像一致（Kotlin / 清单权限与教务窗口 / FileProvider 路径）"
+    ? "✓ Android 原生代码与版本化镜像一致（Kotlin 与自有资源 / 清单权限与教务窗口与提醒接收器 / FileProvider 路径）"
     : changes.length
       ? `✓ 已同步 Android 原生代码：${changes.join("、")}`
       : "✓ Android 原生代码已是最新，无需改动",

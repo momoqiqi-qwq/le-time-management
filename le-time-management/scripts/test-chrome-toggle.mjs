@@ -107,7 +107,7 @@ assert.match(shell, /appFrame\.classList\.toggle\("chrome-shown", show\)/,
 assert.ok(!/chromeHide/.test(shell),
   "不允许出现「切视图自动收回底栏」的定时器（v0.59.0 起呼出态常驻，只有打开设置才收起）");
 assert.match(shell,
-  /function openSettingsModal\(section = ""\) \{[\s\S]{0,200}setChromeShown\(false\)/,
+  /function openSettingsModal\(section = ""\) \{[\s\S]{0,400}setChromeShown\(false\)/,
   "打开设置必须收回呼出的底栏（窄屏门槛照旧，桌面 .chrome-shown 无视觉效果）");
 // 悬浮返回键与顶栏返回键同一份状态
 assert.match(shell,
@@ -173,4 +173,20 @@ assert.match(shell,
   "setChromeShown 开头必须清收起定时器并摘 rail-hiding（呼出/快速连点不许残留收起态）");
 assert.match(shell, /const RAIL_HIDE_ANIM_MS = \d+;/, "收起动画超时兜底时长必须显式声明");
 
-console.log("PASS: immersive chrome shell (default-hidden bars, ⋮ toggle with ✕ swap, persistent bottom dock after navigation that only collapses when settings open, floating back button synced with canGoBack, status-bar safe distances on collapsed state, desktop always hides the floating keys, dock slide in/out animation with rail-hiding orchestration)");
+// ── ⑦ 关掉设置要按「进入设置前」的样子把底栏恢复回去 ──
+// 需求（用户原话）：「点击设置前已点击三个点展开下栏，点击设置界面后隐藏下栏，出来时再
+// 恢复下栏」。v0.59.0 那次收起是单程的 —— 退出设置后底栏必定不显示，还得再点一次 ⋮。
+// 层数计数器不是多余的：设置页里能再开一次设置页（views/settings/sync.js 派发
+// tide:open-settings），只有最外层记录快照、只有最后一层关闭才恢复。
+assert.match(shell, /if \(settingsLayers === 0\) railShownBeforeSettings = chromeShown;/,
+  "只有最外层打开设置才记录进入前的呼出态");
+assert.match(shell, /settingsLayers = Math\.max\(0, settingsLayers - 1\);/,
+  "设置弹窗关闭要把层数减回去（被新弹窗顶掉的那一层不许恢复底栏）");
+assert.match(shell,
+  /if \(settingsLayers === 0 && railShownBeforeSettings[\s\S]{0,140}setChromeShown\(true\)/,
+  "最后一层设置弹窗关掉时，进入前是呼出态就恢复呼出");
+// 同一个面板可能被关两次（点遮罩后再被 _close 调一次），减回去两次会把记账打乱。
+assert.match(shell, /let dismissed = false;[\s\S]{0,120}if \(dismissed\) return;[\s\S]{0,80}dismissed = true;/,
+  "close() 必须幂等（同一层只记一次账）");
+
+console.log("PASS: immersive chrome shell (default-hidden bars, ⋮ toggle with ✕ swap, persistent bottom dock after navigation that only collapses when settings open and comes back with the same expansion state after closing them, floating back button synced with canGoBack, status-bar safe distances on collapsed state, desktop always hides the floating keys, dock slide in/out animation with rail-hiding orchestration)");

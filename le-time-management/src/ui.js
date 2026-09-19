@@ -16,14 +16,31 @@ export function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+/**
+ * 应用内横幅。
+ * @param {object} opts
+ *   action / actionLabel 带一个动作按钮（默认文案「撤销」）
+ *   ms 停留时长；**0 = 常驻不自动消失**（长鸣那种必须用户明确处置的横幅），默认 4200
+ *   class 额外类名（如 "alarm"）
+ * @returns {{close:Function,node:HTMLElement}} 调用方可以提前收掉它；旧调用方忽略返回值即可。
+ *   close 幂等：按钮自身与调用方都会收，重复调用不会把动效跑两遍。
+ */
 export function toast(msg, opts = {}) {
   const box = document.getElementById("toasts");
-  const t = el("div", { class: "toast" }, el("span", {}, msg));
+  const t = el("div", { class: `toast${opts.class ? ` ${opts.class}` : ""}` }, el("span", {}, msg));
+  let removed = false;
+  const close = () => {
+    if (removed) return;
+    removed = true;
+    removeWithMotion(t);
+  };
   if (opts.action) {
-    t.append(el("button", { onclick: () => { opts.action(); removeWithMotion(t); } }, opts.actionLabel || "撤销"));
+    t.append(el("button", { onclick: () => { opts.action(); close(); } }, opts.actionLabel || "撤销"));
   }
   box.append(t);
-  setTimeout(() => removeWithMotion(t), opts.ms || 4200);
+  let timer = null;
+  if (opts.ms !== 0) timer = setTimeout(close, opts.ms || 4200);
+  return { close: () => { if (timer) clearTimeout(timer); close(); }, node: t };
 }
 
 /* ── 应用内对话框：替代 window.prompt / window.confirm（Tauri 里原生弹窗样式突兀）── */

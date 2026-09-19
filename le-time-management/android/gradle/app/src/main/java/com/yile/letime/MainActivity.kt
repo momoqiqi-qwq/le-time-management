@@ -102,6 +102,25 @@ class MainActivity : TauriActivity() {
     ViewCompat.requestApplyInsets(window.decorView)
   }
 
+  /**
+   * 长鸣进行中不能把 WebView 冻住（v0.73.0）。
+   *
+   * `WryActivity.onPause()` 会调 `mWebView.onPause()` 挂起页面定时器，而持续提醒的
+   * 循环调度与「最长响铃」自动停 watchdog 全跑在这些定时器上 —— 用户一退到后台或
+   * 按灭屏幕，铃声就响到一半静掉，「持续提醒」直接退化成一响即停。
+   * 所以这里在长鸣期间立刻把 WebView 拉回 running；只补这一句，其余生命周期行为不动
+   * （Activity 该暂停照常暂停，只是网页不被冻）。
+   */
+  override fun onPause() {
+    super.onPause()
+    if (ReminderHub.ringActive) {
+      try {
+        webView?.onResume()
+      } catch (_: Throwable) {
+      }
+    }
+  }
+
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     this.webView = webView

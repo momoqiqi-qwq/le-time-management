@@ -239,8 +239,11 @@ fn truncate_chars(text: &str, max: usize) -> String {
 
 /* ───────────────────────── 命令 ───────────────────────── */
 
+/// 字段名**必须**保持 snake_case 原样输出：`src/updateChecker.js` 读的就是
+/// `has_update` / `asset_url` / `asset_name` / `asset_size`。加 `rename_all = "camelCase"`
+/// 不会报错，只会让这四个字段全变 `undefined` —— 于是永远判「已是最新版本」，
+/// 而单单词的 `current` / `latest` 照常显示，看起来一切正常（v0.38.0 起踩过，别再踩）。
 #[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
     current: String,
     latest: String,

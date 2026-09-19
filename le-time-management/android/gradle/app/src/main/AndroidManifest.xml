@@ -15,12 +15,22 @@
        label，留着会变成「Le时间管理 · 时间块与四象限」被手机桌面截断。
        教务窗口（.SchoolImportActivity）的 label 是有意保留的应用内标题。
     ④ 确保 res/xml/file_paths.xml 里有 cache-path（更新包暂存在 app_cache_dir，即内部
-       getCacheDir；要交给 FileProvider 共享就得声明这个根）。
+       getCacheDir；要交给 FileProvider 共享就得声明这条根）。
+    ⑤ v0.73.0 通知与闹钟：补 POST_NOTIFICATIONS / VIBRATE / SCHEDULE_EXACT_ALARM /
+       RECEIVE_BOOT_COMPLETED 四条权限，并注册 .ReminderAlarmReceiver（闹钟到点弹通知）、
+       .ReminderActionReceiver（通知上的「停止响铃 / 标记完成」按钮）、
+       .ReminderBootReceiver（开机把不跨重启的闹钟按持久化记录重排）。
+       接收器漏注册的症状最难查：PendingIntent 构造照样成功，直到闹钟响起来才发现没人收。
 
   改本文件不影响构建；要改行为请改上面那个脚本里的补丁函数。
 -->
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- AndroidTV support -->
@@ -43,7 +53,8 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity>
+
 
         <!-- 教务导入窗口（school_import_open 在 Android 上指定 activity_name）：
              仅应用内启动，不 exported；singleTop 避免重复实例堆栈 -->
@@ -53,6 +64,24 @@
             android:launchMode="singleTop"
             android:name=".SchoolImportActivity"
             android:exported="false" />
+
+
+        <!-- 任务提醒（v0.73.0）：闹钟到点 / 通知按钮 / 开机重排三个接收器 -->
+        <receiver
+            android:name=".ReminderAlarmReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderActionReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".ReminderBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <provider
           android:name="androidx.core.content.FileProvider"

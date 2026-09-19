@@ -21,6 +21,14 @@ export const CUSTOM_SIZE_LIMITS = Object.freeze({
   minWidth: 900, maxWidth: 3840, minHeight: 600, maxHeight: 2400,
 });
 
+/**
+ * 左下角「缩放视图」按钮的目标尺寸（逻辑像素，指内容区）。
+ *
+ * 取 1600 × 1100 是为了让四象限每个象限的卡片基本一屏看完 —— 这是从需求截图量出来的：
+ * 截图 1762 × 1213 物理像素，在 110% 缩放下去掉无边框窗口的隐藏投影边距，正好是 1600 × 1100。
+ */
+export const FOCUS_WINDOW_SIZE = Object.freeze({ width: 1600, height: 1100 });
+
 /** 「跟随屏幕」时占显示器可用区域的比例，以及拿不到显示器信息时的兜底尺寸。 */
 const AUTO_RATIO = 0.86;
 const AUTO_FALLBACK = Object.freeze({ width: 1440, height: 900 });
@@ -85,6 +93,19 @@ export function isDesktopRuntime() {
 }
 
 /**
+ * 当前显示器尺寸（逻辑像素）；拿不到显示器信息返回 null，调用方按兜底尺寸走。
+ * monitor.size 是**物理**像素，必须除以 scaleFactor 才能和 LogicalSize 对齐。
+ */
+async function readMonitorArea(currentMonitor) {
+  try {
+    const monitor = await currentMonitor();
+    const scale = monitor?.scaleFactor || 1;
+    if (monitor?.size?.width) return { width: monitor.size.width / scale, height: monitor.size.height / scale };
+  } catch { /* 拿不到显示器信息就按兜底尺寸走 */ }
+  return null;
+}
+
+/**
  * 套用启动窗口大小。设置页的「立即应用」也走这里，保证只有一条实现。
  * 失败一律吞掉：调不动窗口不该拦住应用启动。
  * @returns {Promise<{applied: boolean, reason?: string, mode?: string, width?: number, height?: number}>}
@@ -94,12 +115,7 @@ export async function applyWindowSize(pref = {}) {
   try {
     const { getCurrentWindow, LogicalSize, currentMonitor } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
-    let area = null;
-    try {
-      const monitor = await currentMonitor();
-      const scale = monitor?.scaleFactor || 1;
-      if (monitor?.size?.width) area = { width: monitor.size.width / scale, height: monitor.size.height / scale };
-    } catch { /* 拿不到显示器信息就按兜底尺寸走 */ }
+    const area = await readMonitorArea(currentMonitor);
 
     const target = resolveWindowSize(pref, area);
     if (target.mode === "full") {
@@ -126,4 +142,78 @@ export function windowSizeHint(mode, pref = {}) {
   const preset = WINDOW_SIZE_PRESETS[mode];
   if (preset) return `启动时为 ${preset.width} × ${preset.height}；比屏幕还大时会自动缩到可用区域内。`;
   return "按当前显示器可用区域的约 86% 打开，通常比原来的 1280 × 820 更大；小屏上会自动收窄。";
+}
+
+/* ── 左下角「缩放视图」按钮 ──
+ *
+ * 一键把窗口收成固定尺寸并居中，再按一次回到按之前的尺寸和位置。
+ * 与上面的「启动窗口大小」是两件事：那个管每次打开长什么样，这个管**当前这一次**看着顺不顺眼。
+ *
+ * 快照只存在模块内存里、不落 store：重启后窗口该多大由启动设置说了算，
+ * 存下来反而会让「上次退出时停在缩放视图」这件事污染下一次启动。
+ */
+
+/** 进入缩放视图前的窗口几何；null ⇒ 当前不在缩放视图。 */
+let focusSnapshot = null;
+
+export function isFocusWindowActive() {
+  return focusSnapshot !== null;
+}
+
+/** 缩放视图的目标内容尺寸：屏幕装得下就用 FOCUS_WINDOW_SIZE，装不下退到「可用区域 − 余量」。 */
+export function focusWindowSize(area = null) {
+  const target = resolveWindowSize({
+    startupWindowMode: "custom",
+    startupWindowWidth: FOCUS_WINDOW_SIZE.width,
+    startupWindowHeight: FOCUS_WINDOW_SIZE.height,
+  }, area);
+  return { width: target.width, height: target.height };
+}
+
+/**
+ * 切换缩放视图。
+ *
+ * 取快照用 innerSize + outerPosition，还原用 setSize + setPosition —— 必须成对：
+ * Tauri 的 setSize 落到 tao 的 set_inner_size，而无边框带投影的窗口外框比内容大一圈
+ * （隐藏投影边距），拿 outerSize 去喂 setSize 会每次还原得比原来小一圈。
+ *
+ * @returns {Promise<{applied: boolean, mode?: "focus" | "restore", reason?: string, width?: number, height?: number}>}
+ */
+export async function toggleFocusWindow() {
+  if (!isDesktopRuntime()) return { applied: false, reason: "not-desktop" };
+  try {
+    const {
+      getCurrentWindow, LogicalSize, PhysicalSize, PhysicalPosition, currentMonitor,
+    } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+
+    const saved = focusSnapshot;
+    if (saved) {
+      if (saved.maximized) {
+        await win.maximize();
+      } else {
+        // 缩放视图期间被手动最大化过的话，不先解掉 setSize/setPosition 会被系统忽略。
+        await win.unmaximize().catch(() => {});
+        await win.setSize(new PhysicalSize(saved.inner.width, saved.inner.height));
+        await win.setPosition(new PhysicalPosition(saved.outer.x, saved.outer.y));
+      }
+      focusSnapshot = null;
+      return { applied: true, mode: "restore" };
+    }
+
+    const area = await readMonitorArea(currentMonitor);
+    const target = focusWindowSize(area);
+    const inner = await win.innerSize();
+    const outer = await win.outerPosition();
+    const maximized = await win.isMaximized().catch(() => false);
+
+    await win.unmaximize().catch(() => {});
+    await win.setSize(new LogicalSize(target.width, target.height));
+    await win.center().catch(() => {});
+    // 全部成功才认快照：中途抛异常时按钮不该停在「已缩放」态。
+    focusSnapshot = { inner: { width: inner.width, height: inner.height }, outer: { x: outer.x, y: outer.y }, maximized };
+    return { applied: true, mode: "focus", width: target.width, height: target.height };
+  } catch (error) {
+    return { applied: false, reason: String(error?.message || error) };
+  }
 }

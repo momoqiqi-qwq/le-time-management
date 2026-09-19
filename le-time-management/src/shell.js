@@ -16,7 +16,7 @@ import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
 import { listRailActions, moveRailAction, normalizeRailActionOrder, registerRailAction, slotIndexFor } from "./railActions.js";
 import { closeLayer, observePluginMotion, reducedMotion, removeWithMotion } from "./motion.js";
-import { isDesktopRuntime } from "./windowSize.js";
+import { FOCUS_WINDOW_SIZE, isDesktopRuntime, isFocusWindowActive, toggleFocusWindow } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
 import { RAIL_WIDTH_LIMITS, RAIL_WIDTH_STEP, applyRailWidth, clampRailWidth, normalizeRailWidth, steppedRailWidth } from "./railWidth.js";
@@ -187,7 +187,8 @@ export function renderShell(root) {
   //    再点收回（图标随之变 ✕）。
   //    v0.59.0：顶栏整条移除（用户需求「APK 上面那栏删除」），⋮ 只剩呼出底栏一个职责。
   //    v0.59.0：呼出后底栏常驻，切视图不再自动收回（用户需求「点击显示菜单按钮后，
-  //    除非打开设置否则不[收起]菜单」）—— 只有 openSettingsModal 会收掉它。
+  //    除非打开设置否则不[收起]菜单」）—— 只有 openSettingsModal 会收掉它，
+  //    而设置关掉时按进入前的样子放回来（见 openSettingsModal 的 railShownBeforeSettings）。
   // ② 左上角小返回键（.mobile-back）：与顶栏返回键共用一份 canGoBack() 状态 ——
   //    上下栏收起时它是唯一的返回入口，行为与 Android 返回键完全一致（复用 goBack()）。
   //    两颗都要 data-motion="off"：interactions.css 的
@@ -231,6 +232,11 @@ export function renderShell(root) {
   const mobileQuery = typeof window !== "undefined" && window.matchMedia
     ? window.matchMedia("(max-width: 900px)")
     : { matches: false };
+  // 设置弹窗会收掉呼出的底栏（弹窗要占满屏），关掉后再按进入前的样子放回来。
+  // 层数是必要的：设置页里还能再开一次设置页（views/settings/sync.js 派发
+  // tide:open-settings），只有最外层记录快照、只有最后一层关闭才恢复。
+  let settingsLayers = 0;
+  let railShownBeforeSettings = false;
 
   // ── v0.53.0：左下角快捷操作条 ──
   // 竖排两颗按钮 → 横排一条，按住任一按钮可拖动重排（其余按钮实时让位，落点由指针
@@ -273,10 +279,17 @@ export function renderShell(root) {
   const topSearch = el("button", { class: "top-search", title: "全局搜索 / 命令面板（Ctrl+K）· 拖动可调整位置", "aria-label": "全局搜索 / 命令", type: "button", onclick: () => window.dispatchEvent(new CustomEvent("tide:command-palette")) },
     el("span", { class: "top-search-glyph", "aria-hidden": "true" }, faIcon("magnifying-glass")));
 
+  /* 深浅色键的字形按**当前生效亮度**取：浅色 = 太阳、深色 = 月亮（2026-09-19 用户指定）。
+     顶栏与左下角两颗键共用，别各写一份 ternary。
+     旧逻辑反着来（浅色显月亮 = 「点下去会去哪」），而 FA 的 sun 在 15~18px 下就是
+     「圆盘 + 8 道短射线」，与隔壁设置键的真齿轮几乎同形 —— 深色模式里再叠上
+     「深字压深底」，用户看到的就是「一个深色齿轮」。 */
+  const themeModeGlyph = () => (resolveThemeMode() === "dark" ? "moon" : "sun");
+
   // v0.58.0：顶栏深浅色切换键（用户需求「添加深色和浅色切换按钮」）。与左下角操作条 /
   // 设置页同一条动画路径（setThemeMode → View Transitions 圆形揭示，圆心取点击位置 ——
-  // theme.js 的全局 pointerdown 监听自动记录 lastPointer）。图标随**实际生效**亮暗翻转
-  //（深色显太阳 = 点了去浅色），「跟随系统」时系统亮暗翻转也由 MutationObserver 驱动刷新，
+  // theme.js 的全局 pointerdown 监听自动记录 lastPointer）。图标随**实际生效**亮度翻转
+  //（浅色显太阳 = 现在就是浅色），「跟随系统」时系统亮暗翻转也由 MutationObserver 驱动刷新，
   // 逻辑照抄 railDock 的 theme-toggle 注册（shell.js 下方 registerRailAction("theme-toggle")）。
   const topTheme = el("button", {
     class: "top-mini-btn top-theme-toggle",
@@ -292,7 +305,7 @@ export function renderShell(root) {
   });
   const paintTopTheme = () => {
     const dark = resolveThemeMode() === "dark";
-    topTheme.replaceChildren(el("span", { class: "top-theme-glyph", "aria-hidden": "true" }, faIcon(dark ? "sun" : "moon")));
+    topTheme.replaceChildren(el("span", { class: "top-theme-glyph", "aria-hidden": "true" }, faIcon(themeModeGlyph())));
     topTheme.title = dark ? "切换到浅色模式 · 拖动可调整位置" : "切换到深色模式 · 拖动可调整位置";
   };
   paintTopTheme();
@@ -717,16 +730,17 @@ export function renderShell(root) {
   //（setThemeMode → applyTheme → runThemeMutation → View Transitions 圆形揭示）。
   // 点击位置由 theme.js 的全局 pointerdown 监听自动记录为 lastPointer，
   // 所以圆形从按钮位置向外扩散 —— 与设置页点按钮的动画完全一致。
-  // 图标用 MutationObserver 驱 data-theme-mode 刷新，覆盖「跟随系统」时系统亮暗翻转。
+  // 字形走上方 themeModeGlyph()（浅色=太阳、深色=月亮），用 MutationObserver 驱
+  // data-theme-mode 刷新，覆盖「跟随系统」时系统亮暗翻转。
   registerRailAction({
     id: "theme-toggle",
     label: "切换深浅模式",
     className: "theme-toggle-btn",
-    icon: () => faIcon(resolveThemeMode() === "dark" ? "sun" : "moon"),
+    icon: () => faIcon(themeModeGlyph()),
     onMount: (btn) => {
       const update = () => {
         const dark = resolveThemeMode() === "dark";
-        btn.replaceChildren(el("span", { class: "ic" }, faIcon(dark ? "sun" : "moon")));
+        btn.replaceChildren(el("span", { class: "ic" }, faIcon(themeModeGlyph())));
         btn.title = dark ? "切换到浅色模式" : "切换到深色模式";
       };
       update(); // 首次同步（icon() 已给过图标，这里顺手把 title 也写对）
@@ -746,6 +760,37 @@ export function renderShell(root) {
     icon: () => appIcon("settings"),
     onClick: () => openSettingsModal(),
   });
+
+  // v0.69.0：缩放视图 —— 按下后窗口收成 FOCUS_WINDOW_SIZE 并居中，再按回到按之前的
+  // 尺寸和位置（实现与「为什么只存内存」的说明见 windowSize.js::toggleFocusWindow）。
+  // 只在桌面端注册：Android / 浏览器里调窗口尺寸没有意义。
+  if (desktopWindow) {
+    const paintWindowFocus = (btn) => {
+      const active = isFocusWindowActive();
+      btn.replaceChildren(el("span", { class: "ic" }, faIcon(active ? "expand" : "compress")));
+      btn.title = active ? "还原窗口的大小和位置" : `窗口居中并收成 ${FOCUS_WINDOW_SIZE.width} × ${FOCUS_WINDOW_SIZE.height}`;
+      btn.classList.toggle("on", active);
+      btn.setAttribute("aria-pressed", String(active));
+    };
+    registerRailAction({
+      id: "window-focus",
+      label: "缩放视图",
+      className: "window-focus-btn",
+      icon: () => faIcon(isFocusWindowActive() ? "expand" : "compress"),
+      onMount: paintWindowFocus,
+      onClick: async (event, btn) => {
+        const result = await toggleFocusWindow();
+        if (!result.applied) {
+          toast(`窗口大小调整失败（${result.reason}）`);
+          return;
+        }
+        paintWindowFocus(btn);
+        toast(result.mode === "focus"
+          ? `窗口已收成 ${result.width} × ${result.height} 并居中，再按一次还原`
+          : "已还原到之前的窗口大小和位置");
+      },
+    });
+  }
 
   // 顺序状态：settings.railActionOrder（与 settings.topbarOrder 同构）。
   // 归一化只保留仍注册着的 id，未记录的按注册顺序补到尾部 ⇒ 新增按钮自动出现在末尾。
@@ -848,6 +893,10 @@ export function renderShell(root) {
   function openSettingsModal(section = "") {
     // v0.59.0：设置是底栏呼出态唯一的「让位」出口 —— 弹窗要占满屏，菜单先收回去。
     // 桌面宽屏下 .chrome-shown 无视觉效果，仍然门槛一下，免得 ⋮ 的 title 被无关路径改掉。
+    // 这一让不是单程的：close() 里按 railShownBeforeSettings 恢复（点 ⋮ 呼出后再进设置，
+    // 退出设置就该还是呼出态，不该逼用户再点一次 ⋮）。
+    if (settingsLayers === 0) railShownBeforeSettings = chromeShown;
+    settingsLayers += 1;
     if (chromeShown && mobileQuery.matches) setChromeShown(false);
     document.querySelector(".settings-modal")?._close?.();
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
@@ -859,7 +908,18 @@ export function renderShell(root) {
       el("div", { class: "settings-modal-body" }),
     );
     function onKey(event) { if (event.key === "Escape") close(); }
-    function close() { closeLayer(panel, mask, () => document.removeEventListener("keydown", onKey)); }
+    // 幂等：点遮罩关掉后，重开设置那句 `._close?.()` 还会再敲一次同一个面板。
+    let dismissed = false;
+    function close() {
+      if (dismissed) return;
+      dismissed = true;
+      closeLayer(panel, mask, () => document.removeEventListener("keydown", onKey));
+      settingsLayers = Math.max(0, settingsLayers - 1);
+      if (settingsLayers === 0 && railShownBeforeSettings && mobileQuery.matches) {
+        railShownBeforeSettings = false;
+        setChromeShown(true);
+      }
+    }
     panel._close = close;
     document.addEventListener("keydown", onKey);
     document.body.append(mask, panel);
@@ -1058,7 +1118,7 @@ export function renderShell(root) {
 
   // v0.52.0：沉浸式外壳开关。只切 .app 上的 .chrome-shown 类，CSS 在 ≤900px 媒体块里
   // 消费它（桌面宽屏下类挂着也没任何视觉效果）。v0.59.0 起它只控制底栏显隐（顶栏已移除），
-  // 且只有两处调用者：⋮ 自己切换、openSettingsModal 收回。
+  // 且只有三处调用者：⋮ 自己切换、openSettingsModal 收回、设置关掉时按进入前的状态恢复。
   // v0.58.2 追加：底栏呼出/收起动画。收起态是 display:none，过渡跟不上 ⇒ 真正摘
   // .chrome-shown 之前先挂 .rail-hiding 顶住显示、播 CSS 的 rail-dock-out 滑出动画
   //（forwards 停在屏下），超时兜底摘类；呼出/快速连点都先摘 rail-hiding 再挂呼出态。

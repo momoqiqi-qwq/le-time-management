@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBu
 use tauri_plugin_opener::OpenerExt as _;
 
 mod lan;
+mod notification;
 mod system_bar;
 mod update;
 
@@ -1719,6 +1720,9 @@ pub fn run() {
         // 状态栏 / 导航栏图标明暗：edge-to-edge 下系统栏图标压在网页上，
         // 必须由网页把真实亮度同步过来（否则「系统深色 + 网页浅色」时图标看不见）
         builder = builder.plugin(system_bar::init());
+        // 系统通知与后台闹钟：WebView 没有 Notification API，且网页定时器不跨进程存活，
+        // 提醒要能进下拉栏、应用被杀也要到点响，只能交给原生（见 src/notification.rs）
+        builder = builder.plugin(notification::init());
     }
     builder
         .plugin(tauri_plugin_opener::init())
@@ -1731,6 +1735,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             native_schedule::native_schedule,
             system_bar::system_bar,
+            notification::notification,
             load_data,
             save_data,
             quit_ack,

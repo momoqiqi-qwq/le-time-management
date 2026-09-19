@@ -45,7 +45,19 @@ export function createSettingsNavigator(entries, state = {}) {
   const heads = new Map();             // entry.id -> { wrap, head, body }
 
   const panels = entries.map((entry) => {
-    const body = el("div", { class: "settings-acc-body" }, entry.node);
+    /* 分区末尾的「收起」：展开后的分区比一屏长得多（「主题」有十几张色板卡），
+       只能滚回顶部点标题行才收得掉，手机上够不着，就在内容末尾给一个就地入口。
+       桌面不显示（.settings-acc-collapse 基础规则 display:none）。 */
+    const collapseBtn = el("button", {
+      class: "settings-acc-collapse",
+      type: "button",
+      "aria-label": `收起「${entry.label || entry.id}」`,
+      onclick: () => collapseSection(entry.id),
+    },
+      el("span", { class: "settings-acc-collapse-ico", "aria-hidden": "true" }),
+      "收起",
+    );
+    const body = el("div", { class: "settings-acc-body" }, entry.node, collapseBtn);
     const head = el("button", {
       class: "settings-acc-head",
       type: "button",
@@ -71,6 +83,13 @@ export function createSettingsNavigator(entries, state = {}) {
     else expanded.add(id);
     syncExpanded();
     paintPage({ animate: expanded.has(id) });
+  }
+
+  /** 分区末尾的「收起」：收掉内容后把标题行滚回视口顶部。
+      不滚的话，下面那块内容一抽走，滚动条位置会让视线停在别的分区中间。 */
+  function collapseSection(id) {
+    toggleSection(id);
+    heads.get(id)?.wrap?.scrollIntoView?.({ block: "start", behavior: "smooth" });
   }
 
   const paintPage = ({ animate = false } = {}) => {

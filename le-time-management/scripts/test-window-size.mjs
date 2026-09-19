@@ -1,17 +1,22 @@
 // 启动窗口大小：默认开得更大 + 可在「总设置 → 界面与交互」里选。
+// 外加左下角「缩放视图」按钮（一键收成固定尺寸并居中 / 再按还原）。
 //
-// 这里只测纯逻辑（resolveWindowSize / 夹取 / 偏好归一），Tauri 的 setSize 调用靠
+// 这里只测纯逻辑（resolveWindowSize / focusWindowSize / 夹取 / 偏好归一），Tauri 的 setSize 调用靠
 // 「非桌面环境直接返回 applied:false 且不抛异常」来守住 —— 真正的窗口行为只能在装好的桌面版里看。
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
   WINDOW_SIZE_PRESETS,
   CUSTOM_SIZE_LIMITS,
+  FOCUS_WINDOW_SIZE,
   clampWindowSize,
   resolveWindowSize,
   isDesktopRuntime,
   applyWindowSize,
   windowSizeHint,
+  focusWindowSize,
+  isFocusWindowActive,
+  toggleFocusWindow,
 } from "../src/windowSize.js";
 import {
   DEFAULT_UI_PREFERENCES,
@@ -114,4 +119,39 @@ assert.equal(win.minWidth, 400);
 assert.equal(win.minHeight, 560);
 assert.ok(win.center === true, "放大后必须居中，否则会溢出屏幕右下");
 
-console.log("PASS: startup window size presets, screen fitting, preference normalization and boot wiring");
+/* ── 十二、缩放视图（左下角那颗按钮）── */
+assert.deepEqual({ ...FOCUS_WINDOW_SIZE }, { width: 1600, height: 1100 }, "目标尺寸是量着需求截图定的，改它要先确认");
+assert.ok(FOCUS_WINDOW_SIZE.width >= CUSTOM_SIZE_LIMITS.minWidth && FOCUS_WINDOW_SIZE.width <= CUSTOM_SIZE_LIMITS.maxWidth);
+assert.ok(FOCUS_WINDOW_SIZE.height >= CUSTOM_SIZE_LIMITS.minHeight && FOCUS_WINDOW_SIZE.height <= CUSTOM_SIZE_LIMITS.maxHeight,
+  "预设尺寸越出自定义范围会被 clampWindowSize 悄悄改掉，按钮上写的数字就成了假的");
+
+// 装得下就用请求值；拿不到显示器信息（area=null）也用请求值，不能退成 86% 的 auto 算法
+assert.deepEqual(focusWindowSize(null), { width: 1600, height: 1100 });
+assert.deepEqual(focusWindowSize({ width: 2560, height: 1440 }), { width: 1600, height: 1100 });
+// 装不下要退到「可用区域 − 余量」，否则窗口右下一角跑到屏幕外
+assert.deepEqual(focusWindowSize({ width: 1366, height: 768 }), { width: 1342, height: 744 });
+// 小屏下限由 CUSTOM_SIZE_LIMITS 兜住，但绝不能超过可用区域
+const tiny = focusWindowSize({ width: 1000, height: 700 });
+assert.ok(tiny.width <= 1000 - 24 && tiny.height <= 700 - 24, `小屏上必须收进可用区域内，实际 ${tiny.width}×${tiny.height}`);
+
+assert.equal(isFocusWindowActive(), false, "Node 里没有窗口，不该一上来就是缩放态");
+const focusNotDesktop = await toggleFocusWindow();
+assert.equal(focusNotDesktop.applied, false);
+assert.equal(focusNotDesktop.reason, "not-desktop");
+assert.equal(isFocusWindowActive(), false, "非桌面端调用后状态不能翻转，否则按钮会卡在激活态");
+
+// 接线：按钮走注册表、只在桌面端注册、点击真的调 toggleFocusWindow
+const shellSrc = read("../src/shell.js");
+assert.match(shellSrc, /registerRailAction\(\{\s*\n\s*id: "window-focus"/, "缩放视图必须走 rail 注册表");
+assert.match(shellSrc, /if \(desktopWindow\) \{[\s\S]{0,900}id: "window-focus"/, "缩放视图按钮必须只在桌面端注册");
+assert.match(shellSrc, /await toggleFocusWindow\(\)/, "按钮点击必须调 toggleFocusWindow，尺寸逻辑只留一处实现");
+// 图标名必须在打包内的 sprite 里，否则按钮会渲染成空白
+const sprite = read("../public/icons/fontawesome/solid.svg");
+for (const name of ["compress", "expand"]) {
+  assert.ok(sprite.includes(`id="${name}"`), `solid.svg 缺少图标 ${name}，缩放视图按钮会是空白`);
+}
+// 激活态样式要压过老 rails 的 `.rail-bottom > button.on .ic`（3 类 1 元素），靠的是带上按钮自己的类
+const stylesCss = read("../src/styles.css");
+assert.match(stylesCss, /\.rail-dock > \.rail-dock-btn\.window-focus-btn\.on \.ic/, "缩放视图激活态选择器缺了 .window-focus-btn，会被老的太阳黄盖掉");
+
+console.log("PASS: startup window size presets, screen fitting, preference normalization, focus-window toggle and boot wiring");

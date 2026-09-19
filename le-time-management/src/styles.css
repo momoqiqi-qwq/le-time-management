@@ -22,10 +22,10 @@
   --mint: #2EC4B6;
 
   /* 四象限 */
-  --q1: #D64545; --q1-bg: #F3CBC8;
-  --q2: #D9A13B; --q2-bg: #F2E0BC;
-  --q3: #5B6BE8; --q3-bg: #CCD3F7;
-  --q4: #5B8F7B; --q4-bg: #CCDED6;
+  --q1: #D64545; --q1-bg: #FFB8B3;
+  --q2: #D9A13B; --q2-bg: #F6D48F;
+  --q3: #5B6BE8; --q3-bg: #BEC8FF;
+  --q4: #5B8F7B; --q4-bg: #B7D9CB;
 
   /* 危险 / 错误文字色。浅色下就是原来的 #B03535；深色下由
      tools/gen-theme-dark.js 按各主题的深色面板反解亮度写进 theme-derived.css
@@ -141,31 +141,31 @@
 :root[data-theme="ocean"] {
   --bg:#EAF1F8;--paper:#F3F7FB;--panel:#FFFFFF;--ink:#172B3A;--ink-2:#607487;--ink-3:#91A1AF;
   --line:#D7E1EA;--line-soft:#E8EEF4;--deep:#174C72;--deep-2:#102C43;--sea:#277DA1;--coral:#F07167;--sun:#D99A28;--grape:#7367C9;--mint:#2E9D8F;
-  --q1:#D45151;--q1-bg:#F2CCCC;--q2:#C58A2D;--q2-bg:#EDDBBD;--q3:#5368CF;--q3-bg:#CDD4F2;--q4:#3E7E70;--q4-bg:#C8DDD6;
+  --q1:#D45151;--q1-bg:#FEB9BA;--q2:#C58A2D;--q2-bg:#F1CF96;--q3:#5368CF;--q3-bg:#BDC9FF;--q4:#3E7E70;--q4-bg:#B1D9CC;
   --shadow:0 1px 9px rgba(23,76,114,.08);--shadow-lg:0 14px 36px rgba(23,76,114,.18);
 }
 :root[data-theme="sakura"] {
   --bg:#FBF0F3;--paper:#FFF7F8;--panel:#FFFFFF;--ink:#3B2930;--ink-2:#7D6870;--ink-3:#AD969E;
   --line:#ECD8DE;--line-soft:#F5E7EB;--deep:#8A4E65;--deep-2:#4D2D3B;--sea:#7A86B8;--coral:#E66F89;--sun:#C8943D;--grape:#8E68B1;--mint:#5E9A89;
-  --q1:#CB506B;--q1-bg:#F1C8D2;--q2:#C08B38;--q2-bg:#EDDCBF;--q3:#7568C5;--q3-bg:#D7D1EF;--q4:#568A79;--q4-bg:#CDDFD8;
+  --q1:#CB506B;--q1-bg:#FDB3C7;--q2:#C08B38;--q2-bg:#F0D09A;--q3:#7568C5;--q3-bg:#CFC3FA;--q4:#568A79;--q4-bg:#B8DACD;
   --shadow:0 1px 9px rgba(116,66,86,.075);--shadow-lg:0 14px 34px rgba(116,66,86,.16);
 }
 :root[data-theme="forest"] {
   --bg:#EDF3EE;--paper:#F5F8F3;--panel:#FFFFFF;--ink:#24352B;--ink-2:#66766B;--ink-3:#96A399;
   --line:#D8E1D8;--line-soft:#E9EFE8;--deep:#355E4A;--deep-2:#223D31;--sea:#4A7D7A;--coral:#D56C62;--sun:#BE923A;--grape:#76699B;--mint:#4C9272;
-  --q1:#C95854;--q1-bg:#EDCCC9;--q2:#B48736;--q2-bg:#E9D9BC;--q3:#6671B8;--q3-bg:#D0D4EA;--q4:#4F8167;--q4-bg:#C8DBD0;
+  --q1:#C95854;--q1-bg:#F6BBB6;--q2:#B48736;--q2-bg:#EBCE97;--q3:#6671B8;--q3-bg:#C3CAF2;--q4:#4F8167;--q4-bg:#B3D6C2;
   --shadow:0 1px 9px rgba(53,94,74,.08);--shadow-lg:0 14px 34px rgba(53,94,74,.17);
 }
 :root[data-theme="lavender"] {
   --bg:#F1EFF8;--paper:#F8F7FC;--panel:#FFFFFF;--ink:#302E42;--ink-2:#747086;--ink-3:#A29DB1;
   --line:#DFDBEA;--line-soft:#ECE9F3;--deep:#58507B;--deep-2:#34304D;--sea:#6687B8;--coral:#D96E87;--sun:#C79A3D;--grape:#8066B2;--mint:#5D958C;
-  --q1:#C95B70;--q1-bg:#EECCD4;--q2:#B98A37;--q2-bg:#EBDBBD;--q3:#6872C4;--q3-bg:#D2D4EE;--q4:#56877C;--q4-bg:#CCDEDA;
+  --q1:#C95B70;--q1-bg:#F7BAC9;--q2:#B98A37;--q2-bg:#EED097;--q3:#6872C4;--q3-bg:#C6C9F8;--q4:#56877C;--q4-bg:#B7D9D2;
   --shadow:0 1px 9px rgba(72,65,104,.08);--shadow-lg:0 14px 34px rgba(72,65,104,.18);
 }
 :root[data-theme="mono"] {
   --bg:#EFEFEE;--paper:#F7F7F5;--panel:#FFFFFF;--ink:#25282A;--ink-2:#6C7377;--ink-3:#9CA2A5;
   --line:#DCDDDC;--line-soft:#ECEDEC;--deep:#40484C;--deep-2:#282E31;--sea:#607D8B;--coral:#B85E5E;--sun:#A9853B;--grape:#716B83;--mint:#5F8378;
-  --q1:#A84D4D;--q1-bg:#E4C9C9;--q2:#9A7937;--q2-bg:#E1D6BF;--q3:#626C9B;--q3-bg:#CFD2E1;--q4:#5E786E;--q4-bg:#CDD7D3;
+  --q1:#A84D4D;--q1-bg:#EAB9BA;--q2:#9A7937;--q2-bg:#E0CCA1;--q3:#626C9B;--q3-bg:#C3C8E4;--q4:#5E786E;--q4-bg:#BED0C9;
   --shadow:0 1px 7px rgba(0,0,0,.055);--shadow-lg:0 12px 30px rgba(0,0,0,.14);
 }
 
@@ -180,7 +180,7 @@ html, body { height: 100%; }
 
    写新样式时必须遵守的两条（都是 zoom 的布局语义决定的，不是风格问题）：
 
-   1. 🔴 **`position: fixed` 的浮层：边距一律写 `calc(Npx / var(--ui-scale, 1))`。**
+   1. 🔴 **`position: fixed` 的浮层：边距一律写 `calc(Npx)`。**
       zoom 是布局级缩放 —— 布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N ÷ 系数。
       `--ui-vw` / `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**
       （`calc(var(--ui-vh) * .11)` = 视口的 11%），**不能拿来减边距**。
@@ -478,8 +478,14 @@ body.rail-resizing iframe { pointer-events: none !important; }
 .tl-head .dnav button:hover { color: var(--ink); }
 .tl-head .sum { margin-left: auto; font-size: calc(12px * var(--ui-text-scale)); color: var(--ink-2); }
 .tl-head .sum b { color: var(--ink); }
-.tl-scroll { flex: 1; overflow-y: auto; position: relative; }
-.tl-canvas { position: relative; padding: 10px 20px 10px 56px; }
+.tl-scroll { flex: 1; overflow-y: auto; position: relative; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+/* v0.71.0 缩放：整张画布用 CSS `zoom` 等比放大（块的内联 top/height、行高、字号一起走，
+   JS 侧一个系数都不乘 —— 乘了就是二次放大，实测 62px 行在 1.5 倍下会变成 139.5px）。
+   min-width 那句是给放大留余地的：zoom 元素的**内部可用宽会被除以 zoom**（实测），
+   不补这一条，画布物理宽度恒定、块里能放下的字数随缩放变少（越放大越截字）。
+   补上后画布物理宽 = 容器宽 × 系数，超出部分交给 .tl-scroll 横向滚动，与浏览器整页缩放同手感。
+   ⚠️ 指针落点要反过来除系数，见 timeblock.js 的 minFromY()。 */
+.tl-canvas { position: relative; padding: 10px 20px 10px 56px; zoom: var(--tv-zoom, 1); min-width: calc(100% * var(--tv-zoom, 1)); }
 .hour-row { position: relative; height: 62px; border-bottom: 1px solid #F1ECE3; }
 .hour-row .h { position: absolute; left: -44px; top: -7px; font-size: calc(11px * var(--ui-text-scale)); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .block { position: absolute; left: 0; right: 34px; border-radius: 11px; padding: 7px 12px; overflow: hidden;
@@ -658,7 +664,7 @@ body.rail-resizing iframe { pointer-events: none !important; }
 /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处）。
    ⚠️ 别再写 `calc(var(--ui-vh) - 22px)`：那等价于「距屏幕顶 22px」，提示条会跑到屏幕顶部去
    （v0.48.0 ~ v0.49.1 就是这个状态，实测 top=22）。 */
-#toasts { position: fixed; right: 22px; bottom: calc(22px / var(--ui-scale, 1)); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
+#toasts { position: fixed; right: 22px; bottom: calc(22px); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
 .toast { background: #1E2A31; color: #F2F5F4; border-radius: 12px; padding: 12px 17px; font-size: calc(13px * var(--ui-text-scale));
   box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px; animation: slidein .18s ease-out; max-width: 380px; }
 .toast button { color: #7FE8B2; font-weight: 700; font-size: calc(12.5px * var(--ui-text-scale)); flex: none; }
@@ -896,7 +902,7 @@ button, .nav { touch-action: manipulation; }
   .toast { max-width: calc(var(--ui-vw, 100vw) - 24px); }
   /* toast 抬到底部导航上方（86px = 导航 62 + 间距），避免被底栏挡住。
      边距 ÷ --ui-scale；--sab 按项目约定不补偿（安全区被 zoom 缩小属已知项）。 */
-  #toasts { right: 12px; bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  #toasts { right: 12px; bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   /* ── v0.52.0：沉浸式外壳（需求：APK 默认上下栏都藏，点 ⋮ 菜单键才呼出）──
      结构：.app 挂 .chrome-shown ⇔ 底栏显示（shell.js 的 setChromeShown）。
      v0.59.0：顶栏已整条移除，这个状态类只剩控制底栏一个职责。
@@ -1110,6 +1116,22 @@ button, .nav { touch-action: manipulation; }
 .volume-row input { width:180px; }
 .audio-name { color:var(--ink-2); max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .reminder-note { margin-top:10px; }
+/* ── v0.73.0 · 系统通知与到点长鸣 ── */
+/* 设置页的成段说明（与 .shortcut-hint / .win-size-hint 同一档视觉重量） */
+.set-hint { margin:8px 0 0; color:var(--ink-3); font-size:calc(11px * var(--ui-text-scale)); line-height:1.6; }
+.notify-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.notify-state { font-weight:600; color:var(--danger); }
+.notify-state[data-on="1"] { color:var(--sea); }
+/* 长鸣横幅：常驻不自动消失，所以必须比普通 toast 抢眼。
+   底色刻意自己给死（不跟主题）—— 与 .toast 一样是「系统级提示」的黑底语义，
+   跟主题走会在浅色主题下变成浅底浅字，反而看不清。 */
+.toast.alarm { max-width:420px; background:#3A1D1D; color:#FFEDE9; border:1px solid var(--danger);
+  animation: slidein .18s ease-out, alarm-pulse 1.6s ease-in-out .18s infinite; }
+.toast.alarm button { color:#FFC9C2; }
+@keyframes alarm-pulse {
+  0%, 100% { box-shadow: var(--shadow-lg); }
+  50% { box-shadow: var(--shadow-lg), 0 0 0 4px color-mix(in srgb, var(--danger) 45%, transparent); }
+}
 @media (max-width: 760px) {
   .rail-bottom { border-top:0; padding-top:0; order:-1; width:20%; display:flex; }
   .rail-bottom > button { display:flex; flex:1; min-width:0; flex-direction:column; align-items:center; justify-content:center; gap:2px; min-height:var(--nav-btn-h, 46px); padding:3px 2px; border-radius:10px; font-size:calc(10px * var(--ui-text-scale)); line-height:1.1; }
@@ -1511,6 +1533,23 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   background: transparent;
 }
 .time-viewlead { font-size: calc(11px * var(--ui-text-scale)); font-weight: 700; letter-spacing: .08em; color: var(--ink-3); }
+/* ── 右上角三键：放大 / 默认 / 缩小（v0.71.0）──
+   触控板捏合是「隐藏手势」，看不见也不知道上下限，所以给一排明面上的键：
+   中间那颗既是当前比例也是「默认」，点一下回 100%（与画布双击复位同一条回头路）。
+   margin-left:auto 把它推到视图切换栏的最右端 —— 七种视图共用同一颗，不各做一套。
+   字号一律乘 --ui-text-scale（守卫：scripts/test-text-scale.mjs）。 */
+.tv-zoombar { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+.tv-zoom-btn {
+  min-width: 30px; height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--ink-2); font-size: calc(14px * var(--ui-text-scale));
+  line-height: 1; box-shadow: var(--shadow); transition: .16s ease;
+}
+.tv-zoom-btn:hover:not(:disabled) { color: var(--ink); border-color: color-mix(in srgb, var(--deep) 34%, var(--line)); }
+.tv-zoom-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
+/* 当前比例按钮 = 「恢复默认」。非 100% 时点上深色，一眼看出处在缩放态。 */
+.tv-zoom-default { font-variant-numeric: tabular-nums; }
+.tv-zoom-default.is-active { color: var(--deep); border-color: var(--deep); background: color-mix(in srgb, var(--deep) 8%, var(--panel)); }
+.tv-zoom-value { font-size: calc(11.5px * var(--ui-text-scale)); font-weight: 700; }
 /* 视图切换收进「当前样式名 + 展开」按钮：7 个 chips 平铺会横向溢出，
    手机上末尾几个永远看不见。菜单挂 body，此处只管触发器外观。 */
 .time-viewtoggle {
@@ -1567,12 +1606,13 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
    一行排满就掉头：奇数行左→右、偶数行右→左，行间用竖直段把两端接起来，
    跑道线穿过每个节点的图钉。DOM 顺序恒为时间顺序，方向只由 .ms-row[data-dir] 控制 ——
    窄屏把每行拆成单列时不必重排（见 ≤760px 段）。 */
-.milestone-scroll { overflow-x: auto; padding: 30px 18px 28px; }
+.milestone-scroll { overflow-x: auto; padding: 30px 18px 28px; overscroll-behavior: contain; touch-action: pan-x pan-y; }
 .milestone-track {
   --ms-gap: 26px;        /* 行间距，同时也是行间竖直段要补的长度 */
   --ms-rail-y: 164px;    /* 跑道线纵向位置 = 图钉中心（stage 42 + 28 + arrow 48 + pin 上边距 26 + 20） */
   display: flex; flex-direction: column; gap: var(--ms-gap);
   min-width: 660px;      /* 4 列 × 165px；再窄交给 .milestone-scroll 横向滚动 */
+  zoom: var(--tv-zoom, 1);   /* v0.71.0：整条跑道等比缩放，min-width 与字号一起乘（见 .tl-canvas 那条注释） */
 }
 .ms-row { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 /* 反向行：grid 自动放置从右往左，天然就是「靠右对齐 + 倒序」；
@@ -1612,23 +1652,37 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ms-copy b { font-size:calc(12.5px * var(--ui-text-scale)); line-height:1.35; }
 .ms-copy span { font-size:calc(10.5px * var(--ui-text-scale)); color:var(--ink-2); line-height:1.45; }
 
-/* 2. 高密度横向时间轴：对应参考图 2 */
-.chronicle-scroll { overflow: auto; padding: 28px 16px 34px; }
-.chronicle-canvas { position:relative; min-width:1500px; height:620px; }
+/* 2. 高密度横向时间轴：对应参考图 2
+   画布宽度不在这里写死：它由 chronicleView 按事件数算出来后挂在 .chronicle-canvas
+   的内联 min-width 上（推导见该函数里的 SLOT_MIN 注释）。--tl-card-w 是同一个函数
+   发下来的，槽位算的就是它，改这里必须一起改那边。 */
+.chronicle-scroll { overflow: auto; padding: 28px 16px 34px; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+.chronicle-canvas { position:relative; height:620px; zoom: var(--tv-zoom, 1); }   /* 宽由 JS 按事件数写在行内 min-width，zoom 一并乘 */
 .chronicle-axis { position:absolute; left:2%; right:2%; top:50%; height:10px; transform:translateY(-50%); background:linear-gradient(90deg,#b70e2b,#e64f8d,#d346b0,#5944ca,#2465da,#19a45e); opacity:.95; }
-.chronicle-event { --ec:#d0447d; position:absolute; top:50%; width:150px; transform:translateX(-50%); }
+/* flex 列是必需的，不是美化：下排要「连线在上、卡片在下」（.down .ce-stem 的 order），
+   块级布局下 order 是死规则，连线会掉到卡片下面、指向远离中轴的方向。 */
+.chronicle-event { --ec:#d0447d; position:absolute; top:50%; width:var(--tl-card-w, 150px); display:flex; flex-direction:column; transform:translateX(-50%); }
 .chronicle-event.up { margin-top:-215px; }
 .chronicle-event.down { margin-top:26px; }
 .ce-card { min-height:108px; display:flex; flex-direction:column; gap:5px; font-size:calc(10px * var(--ui-text-scale)); line-height:1.45; padding:8px 8px 10px 14px; position:relative; }
 .ce-card::before { content:""; position:absolute; left:0; top:7px; border-top:7px solid transparent; border-bottom:7px solid transparent; border-left:9px solid var(--ec); }
+/* 标题与副文案各限两行。不封顶时卡片高度随文字规模长（实测「文字大小」150% 下
+   单条标题就能把卡片撑到 144px），而卡片下方的连线、圆点、日期徽章全按固定偏移排，
+   卡片一长就顺着把连线推进徽章带里 —— 竖向重叠就是这么来的。
+   overflow-wrap 一起给：卡片只有 150px，一条不沾空格的长链接能横着穿出邻卡。 */
+.ce-card b, .ce-card span { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
 .ce-card b { font-size:calc(11px * var(--ui-text-scale)); color:var(--ink); }
 .ce-card span { color:var(--ink-2); }
-.ce-stem { width:1px; height:70px; background:color-mix(in srgb, var(--ec) 55%, white); margin:auto; }
+.ce-stem { width:1px; height:70px; background:color-mix(in srgb, var(--ec) 55%, white); margin:auto; flex:0 0 auto; }
 .chronicle-event.down .ce-stem { order:-1; }
 .ce-dot { position:absolute; left:50%; width:8px; height:8px; border-radius:50%; background:var(--ec); transform:translate(-50%,-50%); }
 .chronicle-event.up .ce-dot { top:211px; }
 .chronicle-event.down .ce-dot { top:-31px; }
-.ce-date { position:absolute; left:50%; transform:translateX(-50%); background:var(--ec); color:var(--tone-fg, var(--on-accent)); font-size:calc(10px * var(--ui-text-scale)); font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; }
+/* 徽章恒为 MM/DD，跨年时年份另起一行（.ce-year）—— 横向宽度只由 5 个字符决定，
+   与 chronicleView 里「槽位按 MM/DD 宽算」的推导对得上；年份写成前缀会把徽章拉宽一倍，
+   轴带就又开始互盖了。tabular-nums 让数字等宽，徽章宽度不随日期内容抖。 */
+.ce-date { position:absolute; left:50%; transform:translateX(-50%); background:var(--ec); color:var(--tone-fg, var(--on-accent)); font-size:calc(10px * var(--ui-text-scale)); font-weight:700; padding:3px 8px; border-radius:2px; white-space:nowrap; font-variant-numeric:tabular-nums; display:flex; flex-direction:column; align-items:center; line-height:1.15; }
+.ce-year { font-size:calc(7.5px * var(--ui-text-scale)); font-weight:800; opacity:.82; letter-spacing:.02em; }
 .chronicle-event.up .ce-date { top:207px; transform:translate(-50%, -50%); }
 .chronicle-event.down .ce-date { top:-35px; transform:translate(-50%, -50%); }
 /* 长空档省略号（v0.50.0）：两个事件相隔太久时把中轴「剪断」，位置让给密集段。
@@ -1643,8 +1697,15 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 }
 .ce-gap-days { display:block; margin-top:2px; font-size:calc(9.5px * var(--ui-text-scale)); font-weight:600; color:var(--ink-2); white-space:nowrap; }
 
-/* 3. 左右交错卡片时间轴：对应参考图 3 */
-.card-timeline { width:min(840px, 94%); margin:34px auto 48px; position:relative; padding:4px 0; }
+/* 3. 左右交错卡片时间轴：对应参考图 3
+   v0.71.0 缩放：`zoom` 挂在内容层 .ct-zoom 上，而不是轨道自己 ——
+   轨道宽度里那一项 94% 是「物理不变量」（实测 zoom 元素的百分比宽度不随自己的 zoom 变长），
+   轨道被 zoom 时它封顶在 0.94×面板宽，卡片却按 270px×系数一直长，
+   1.7 倍以上两列卡片就压到中轴上了。所以：轨道宽度自己按系数线性变宽（下面 max 的第二项），
+   内容层再整体 zoom，两列永远装得下。700px = 2×(卡片 270 + 连线 70) + 20 缝。 */
+.card-scroll { overflow-x:auto; overscroll-behavior:contain; touch-action:pan-x pan-y; }
+.card-timeline { width:max(min(840px, 94%), calc(700px * var(--tv-zoom, 1))); margin:34px auto 48px; position:relative; padding:4px 0; }
+.ct-zoom { zoom: var(--tv-zoom, 1); }
 .card-timeline::before { content:""; position:absolute; left:50%; top:0; bottom:0; border-left:2px dashed #a99bd2; transform:translateX(-50%); }
 .ct-item { --ct:#9aa9d7; position:relative; width:50%; min-height:170px; display:flex; align-items:flex-start; }
 .ct-item.left { padding-right:70px; justify-content:flex-end; }
@@ -1661,8 +1722,8 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .ct-item.right .ct-link i { right:-3px; } .ct-item.right .ct-link span { left:-5px; }
 
 /* 4. 年度甘特：对应参考图 4 */
-.gantt-scroll { overflow:auto; padding:22px 20px 34px; }
-.gantt-grid { min-width:1120px; border-left:1px solid var(--line); border-top:1px solid var(--line); }
+.gantt-scroll { overflow:auto; padding:22px 20px 34px; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+.gantt-grid { min-width:1120px; border-left:1px solid var(--line); border-top:1px solid var(--line); zoom: var(--tv-zoom, 1); }
 .gantt-headrow, .gantt-row { display:grid; grid-template-columns: 220px 1fr; min-height:48px; border-bottom:1px solid var(--line); }
 .gantt-headrow { min-height:44px; }
 .gantt-label { border-right:1px solid var(--line); padding:8px 12px; display:flex; flex-direction:column; justify-content:center; min-width:0; background:color-mix(in srgb, var(--panel) 88%, var(--paper)); }
@@ -1680,8 +1741,8 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .wakeup-mobile, .chronicle-vertical, .gantt-monthly, .swim-mobile { display: none; }
 
 /* 5. 分类泳道甘特：对应参考图 5 */
-.swim-scroll { overflow:auto; padding:22px 20px 36px; }
-.swim-grid { min-width:1250px; border:1px solid #d9e1e2; }
+.swim-scroll { overflow:auto; padding:22px 20px 36px; overscroll-behavior: contain; touch-action: pan-x pan-y; }
+.swim-grid { min-width:1250px; border:1px solid #d9e1e2; zoom: var(--tv-zoom, 1); }
 .swim-head { display:grid; grid-template-columns:160px repeat(var(--days,31), minmax(34px,1fr)); min-height:46px; background:#0b6f6a; color:white; }
 .swim-year { background:#075f5b !important; color:white; font-weight:800; }
 .swim-day { display:flex; align-items:center; justify-content:center; border-left:1px solid rgba(255,255,255,.24); font-size:calc(10px * var(--ui-text-scale)); }
@@ -1706,8 +1767,12 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
    所有规则都只在这里生效，桌面端外观完全不变。 */
 @media (max-width: 760px) {
   .time-viewbar { padding:10px 10px 0; }
-  .time-viewtoggle { width:100%; justify-content:space-between; }
+  /* 切换器原来写 width:100% 独占一行；右上角三键进来后改成 flex:1 ——
+     一行里两边都装得下，窄屏 360px 实测不留白也不溢出。 */
+  .time-viewtoggle { flex:1; min-width:0; justify-content:space-between; }
   .time-viewlead { display:none; }
+  .tv-zoom-btn { min-width:44px; height:44px; }   /* 触控目标下限 44px（与 .time-viewitem 同一档）；
+                                                    中间那颗是宽度自适应的读数，写死 44 会把「100%」裁掉 */
   .time-alt-host { padding:10px 10px calc(10px + var(--sab, env(safe-area-inset-bottom, 0px))); }
   .tv-head { padding:12px 16px; }
   .tv-head h2 { font-size:calc(15px * var(--ui-text-scale)); }
@@ -1736,7 +1801,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   /* 分类色当文字用时一律混向 --ink（同 .tlv-time 的理由：黄当背景没问题，当文字只有 2.26:1）。 */
   .tv-fold-cat .tv-fold-title { color:color-mix(in srgb, var(--cat, var(--ink)) 55%, var(--ink)); }
 
-  /* ── WakeUp 课表：网格 → 按天分组 ── */
+  /* ── 课时格（wakeup）：网格 → 按天分组 ── */
   .wakeup-scroll { display:none; }
   .wakeup-mobile { display:block; padding:10px 12px 16px; }
   .wm-item {
@@ -1746,8 +1811,8 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
   .wm-item:first-child { border-top:0; }
   .wm-time {
     flex:none; width:52px; white-space:pre-line; font-size:calc(10.5px * var(--ui-text-scale)); font-weight:700;
-    /* --wk 可能是课程表插件的课程色，也可能是没有课表数据时兜底用的分类色 —— 后者含黄色，
-       直接当文字压在白底上只有 2.26:1。混向 --ink 后两种来源都够清楚（左边框仍用纯色）。 */
+    /* --wk 是时间块的分类色，分类缺失时退到 PALETTE —— 两者都含黄 / 浅蓝这类亮色，
+       直接当文字压在白底上只有 2.26:1。混向 --ink 后才够清楚（左边框仍用纯色）。 */
     color:color-mix(in srgb, var(--wk, var(--deep)) 55%, var(--ink)); font-variant-numeric:tabular-nums; line-height:1.35;
     border-left:3px solid var(--wk, var(--deep)); padding-left:7px;
   }
@@ -1917,7 +1982,7 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
    字号统一走网格根的 font-size + 子元素 em，改一处即整体缩放。
    `--wk-zoom` 定义在 `.wakeup-view` 上：`.wakeup-scroll` 的 max-height 也要读它，
    而 CSS 变量只能向下继承，挂在网格自己身上外层就读不到。 */
-.wakeup-view { --wk-zoom:1; }
+.wakeup-view { --wk-zoom: var(--tv-zoom, 1); }
 .wakeup-scroll { flex:1 1 0; min-height:0; max-height:calc(48px + (64px + var(--slot-count, 10) * 72px) * var(--wk-zoom)); overflow:auto; padding:18px 18px 30px; overscroll-behavior:contain; touch-action:pan-x pan-y; }
 .wakeup-grid { --wk-row-min:52px; height:100%; min-height:calc((64px + var(--slot-count, 10) * var(--wk-row-min)) * var(--wk-zoom)); min-width:calc(900px * var(--wk-zoom)); display:grid; grid-template-columns:calc(72px * var(--wk-zoom)) repeat(7,minmax(calc(110px * var(--wk-zoom)),1fr)); grid-template-rows:calc(64px * var(--wk-zoom)) repeat(var(--slot-count, 10),minmax(calc(var(--wk-row-min) * var(--wk-zoom)),1fr)); font-size:calc(13px * var(--wk-zoom) * var(--ui-text-scale)); position:relative; border:1px solid color-mix(in srgb,var(--line) 80%,transparent); border-radius:18px; overflow:hidden; background:color-mix(in srgb,var(--panel) 82%,transparent); }
 .wk-corner,.wk-day,.wk-slot,.wk-cell { border-right:1px solid color-mix(in srgb,var(--line) 72%,transparent); border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent); }
@@ -2865,6 +2930,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .settings-acc[hidden] { display: none !important; }
 .settings-acc-head { display: none; }
 .settings-acc-body { min-width: 0; }
+/* 桌面是「左栏分类 + 右侧单页」，没有收放概念，分区末尾的收起按钮只在窄屏出现。 */
+.settings-acc-collapse { display: none; }
 
 @media (max-width: 980px) {
   /* 窄屏的分类切换已由标题行承担，横向 chip 行是重复入口，收掉它腾出首屏。 */
@@ -2946,6 +3013,35 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 
   /* 展开的内容跟标题行贴成一张卡：上圆角收掉，露出下面那块内容。 */
   .settings-acc-body { padding-top: 10px; }
+
+  /* 分区末尾的「收起」（navigator.js 给每个分区都塞了一颗）。
+     展开的分区比一屏长得多，标题行早滚出屏幕外，只能靠这颗就地收起。 */
+  .settings-acc-collapse {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 46px;                /* ≥44px 触控区，与标题行同级 */
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--deep) 20%, var(--line));
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--deep) 5%, var(--panel));
+    color: var(--deep);
+    font-size: calc(12.5px * var(--ui-text-scale));
+    cursor: pointer;
+  }
+  .settings-acc-collapse:active { background: color-mix(in srgb, var(--deep) 13%, var(--panel)); }
+  /* 朝上的 V 形：与标题行的箭头同一画法，指回收起目标（标题行）。 */
+  .settings-acc-collapse-ico {
+    flex: 0 0 auto;
+    width: 7px;
+    height: 7px;
+    border-left: 2px solid currentColor;
+    border-top: 2px solid currentColor;
+    transform: rotate(45deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3002,7 +3098,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#F7F7F5;--paper:#FCFCFA;--panel:#FFFFFF;--ink:#202123;--ink-2:#67676B;--ink-3:#9B9B9F;
   --line:#E3E3DF;--line-soft:#EEEEEB;--deep:#0D8C6D;--deep-2:#171717;--sea:#10A37F;--coral:#D65A5A;
   --sun:#C58A24;--grape:#7865B2;--mint:#10A37F;
-  --q1:#C94F4F;--q1-bg:#F0CFCD;--q2:#B68126;--q2-bg:#EDDCBC;--q3:#5968C4;--q3-bg:#D1D5F0;--q4:#397B68;--q4-bg:#C8DDD6;
+  --q1:#C94F4F;--q1-bg:#F9BEBB;--q2:#B68126;--q2-bg:#F0D194;--q3:#5968C4;--q3-bg:#C3CAFB;--q4:#397B68;--q4-bg:#B1D9CC;
   --radius:12px;--shadow:0 1px 2px rgba(0,0,0,.045),0 3px 12px rgba(0,0,0,.035);--shadow-lg:0 18px 48px rgba(0,0,0,.14);
 }
 
@@ -3010,7 +3106,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#F4F0E8;--paper:#F9F6F0;--panel:#FFFDF9;--ink:#2D2926;--ink-2:#746C65;--ink-3:#A49B92;
   --line:#DED7CC;--line-soft:#ECE6DC;--deep:#B65334;--deep-2:#2D2926;--sea:#527A76;--coral:#C15F3C;
   --sun:#B68235;--grape:#766A91;--mint:#5B8376;
-  --q1:#B85343;--q1-bg:#EACBC4;--q2:#A9792D;--q2-bg:#E6D6B8;--q3:#68729B;--q3-bg:#D3D4E2;--q4:#567665;--q4-bg:#CCD8D0;
+  --q1:#B85343;--q1-bg:#F3BBAE;--q2:#A9792D;--q2-bg:#E8CB94;--q3:#68729B;--q3-bg:#C8CAE3;--q4:#567665;--q4-bg:#BCD2C3;
   --radius:10px;--shadow:0 1px 2px rgba(72,55,39,.05),0 5px 16px rgba(72,55,39,.04);--shadow-lg:0 20px 50px rgba(72,55,39,.16);
 }
 
@@ -3019,7 +3115,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#FAFAFA;--paper:#FCFCFC;--panel:#FFFFFF;--ink:#09090B;--ink-2:#71717A;--ink-3:#A1A1AA;
   --line:#E4E4E7;--line-soft:#F4F4F5;--deep:#18181B;--deep-2:#09090B;--sea:#3B82F6;--coral:#EF4444;
   --sun:#F59E0B;--grape:#8B5CF6;--mint:#10B981;
-  --q1:#DC2626;--q1-bg:#F9D1D1;--q2:#D97706;--q2-bg:#F9E6C6;--q3:#4F46E5;--q3-bg:#D5D6FB;--q4:#059669;--q4-bg:#C7EDDF;
+  --q1:#DC2626;--q1-bg:#FFC1C1;--q2:#D97706;--q2-bg:#FDDA9D;--q3:#4F46E5;--q3-bg:#CACBFF;--q4:#059669;--q4-bg:#A2ECD3;
   --radius:10px;--shadow:0 1px 2px rgba(0,0,0,.05);--shadow-lg:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -4px rgba(0,0,0,.05);
 }
 
@@ -3028,7 +3124,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#EDF2EE;--paper:#F5F8F5;--panel:#FFFFFF;--ink:#22332C;--ink-2:#6B7F76;--ink-3:#9AACA2;
   --line:#D8E2DA;--line-soft:#E8EFE9;--deep:#3D6B5B;--deep-2:#24352E;--sea:#5B8A8F;--coral:#C96A5E;
   --sun:#C09838;--grape:#7A6FA0;--mint:#58A387;
-  --q1:#C05B52;--q1-bg:#EECECA;--q2:#B89034;--q2-bg:#EBDEBE;--q3:#5E6FB8;--q3-bg:#D0D5EC;--q4:#4E8A6E;--q4-bg:#C9DED2;
+  --q1:#C05B52;--q1-bg:#F7BDB6;--q2:#B89034;--q2-bg:#ECD497;--q3:#5E6FB8;--q3-bg:#C2CBF5;--q4:#4E8A6E;--q4-bg:#B2DAC4;
   --radius:12px;--shadow:0 1px 3px rgba(36,53,46,.06),0 4px 14px rgba(36,53,46,.05);--shadow-lg:0 14px 38px rgba(36,53,46,.16);
 }
 
@@ -3037,7 +3133,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#F4E8D5;--paper:#F9F1E1;--panel:#FFFDF6;--ink:#3B2F26;--ink-2:#85715E;--ink-3:#B3A28D;
   --line:#E2D4BF;--line-soft:#EFE5D4;--deep:#2F5D68;--deep-2:#2B211A;--sea:#4E8A96;--coral:#C0452E;
   --sun:#D19A2B;--grape:#8A5B7C;--mint:#5E9271;
-  --q1:#B94433;--q1-bg:#ECC9C1;--q2:#BC8B2C;--q2-bg:#EBDCB8;--q3:#4C6FA8;--q3-bg:#CBD5E8;--q4:#568B68;--q4-bg:#CCDECF;
+  --q1:#B94433;--q1-bg:#F7B8A9;--q2:#BC8B2C;--q2-bg:#ECD190;--q3:#4C6FA8;--q3-bg:#BACCEF;--q4:#568B68;--q4-bg:#B8DABE;
   --radius:10px;--shadow:0 1px 3px rgba(59,47,38,.08),0 4px 14px rgba(59,47,38,.06);--shadow-lg:0 14px 38px rgba(59,47,38,.18);
 }
 
@@ -3046,7 +3142,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#EEF3F9;--paper:#F6F9FC;--panel:#FFFFFF;--ink:#17293E;--ink-2:#5E7288;--ink-3:#90A2B4;
   --line:#D3DEEA;--line-soft:#E5ECF4;--deep:#1D4E89;--deep-2:#122840;--sea:#2B7CB8;--coral:#E15A33;
   --sun:#D69A2D;--grape:#6E5FA8;--mint:#2E8C7A;
-  --q1:#CE4A2F;--q1-bg:#F3CBC0;--q2:#C08A26;--q2-bg:#EDDDBA;--q3:#3E63C0;--q3-bg:#C9D4EF;--q4:#2E8577;--q4-bg:#C3DED9;
+  --q1:#CE4A2F;--q1-bg:#FFB9A5;--q2:#C08A26;--q2-bg:#F0D28F;--q3:#3E63C0;--q3-bg:#B7CAFC;--q4:#2E8577;--q4-bg:#A7DAD2;
   --radius:8px;--shadow:0 1px 2px rgba(23,41,62,.07);--shadow-lg:0 12px 32px rgba(23,41,62,.16);
 }
 
@@ -3055,7 +3151,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#FFF6E9;--paper:#FFFBF2;--panel:#FFFFFF;--ink:#33261A;--ink-2:#8A7460;--ink-3:#BCA88F;
   --line:#F0DFC8;--line-soft:#F9EEDD;--deep:#CE5F05;--deep-2:#402A16;--sea:#2B8AC4;--coral:#D94F45;
   --sun:#E8A013;--grape:#9A5BC4;--mint:#3FAE7E;
-  --q1:#D95444;--q1-bg:#F6CEC7;--q2:#D99226;--q2-bg:#F6E1BC;--q3:#7A5BD0;--q3-bg:#DBD1F3;--q4:#2FA377;--q4-bg:#C3E7D7;
+  --q1:#D95444;--q1-bg:#FFBDB2;--q2:#D99226;--q2-bg:#FCD58D;--q3:#7A5BD0;--q3-bg:#D5C2FF;--q4:#2FA377;--q4-bg:#A0E6C9;
   --radius:14px;--shadow:0 1px 4px rgba(64,42,22,.07),0 5px 16px rgba(64,42,22,.05);--shadow-lg:0 16px 40px rgba(64,42,22,.16);
 }
 
@@ -3064,7 +3160,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   --bg:#ECEFF4;--paper:#F3F5F9;--panel:#FFFFFF;--ink:#2E3440;--ink-2:#5C6A79;--ink-3:#98A5B3;
   --line:#D5DDE7;--line-soft:#E5EAF1;--deep:#5E81AC;--deep-2:#2E3440;--sea:#6E93BE;--coral:#BF6069;
   --sun:#D08770;--grape:#A17BA0;--mint:#5E9C74;
-  --q1:#C5726D;--q1-bg:#EAD1D0;--q2:#C08E5A;--q2-bg:#EADDC9;--q3:#6A79B4;--q3-bg:#D2D7E8;--q4:#6FA075;--q4-bg:#D0E2D3;
+  --q1:#C5726D;--q1-bg:#EFC2C0;--q2:#C08E5A;--q2-bg:#EAD2AD;--q3:#6A79B4;--q3-bg:#C4CDEC;--q4:#6FA075;--q4-bg:#BCDDC2;
   --radius:10px;--shadow:0 1px 3px rgba(46,52,64,.07);--shadow-lg:0 12px 34px rgba(46,52,64,.16);
 }
 
@@ -3113,8 +3209,17 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   animation: theme-reveal 340ms cubic-bezier(.22, .8, .22, 1) both;
 }
 @keyframes theme-reveal {
-  from { clip-path: circle(0px at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)); }
-  to { clip-path: circle(var(--theme-reveal-r, 150vmax) at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)); }
+  /* 🔴 这里的三个量必须除以 --ui-scale 换算坐标系，别当冗余删掉。
+     theme.js 按屏幕 CSS px（pointerdown 的 clientX/Y）写入 --theme-reveal-*，
+     但 uiScale.js 把「用户缩放 × 窄屏自适应」写在 documentElement.style.zoom 上，
+     ::view-transition 伪元素活在 zoom 之后的坐标系里：它的盒 = 视口 ÷ zoom
+     （无头 Chrome 实测 zoom=0.64、视口 503×642 时伪元素盒 785×1003）。
+     不换算，圆就画在真实位置的 1/zoom 处 —— 手机上圆心从左下角的按钮漂到「左中间」、
+     半径也够不到右下角（2026-09-19 用户报的「深浅切换不是从按钮扩散」）。
+     写法沿用 uiScale.js 的既有契约：恒定物理长度一律 calc(Npx / var(--ui-scale))。
+     兜底 1 不能省：--ui-scale 尚未写入时 calc 非法会让整条 clip-path 被丢掉。 */
+  from { clip-path: circle(0px at calc(var(--theme-reveal-x, 50%)) calc(var(--theme-reveal-y, 50%))); }
+  to { clip-path: circle(calc(var(--theme-reveal-r, 150vmax)) at calc(var(--theme-reveal-x, 50%)) calc(var(--theme-reveal-y, 50%))); }
 }
 /* 动效偏好「减少动效」（应用内设置 data-ui-motion=reduced，或系统 prefers-reduced-motion）
    时不做揭示 —— theme.js 的 themeMotionAllowed() 已经直接跳过 startViewTransition，
@@ -3272,7 +3377,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      道理：zoom 元素里布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N / zoom。
      `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**（`calc(--ui-vh * .11)`），
      不能用来**减边距** —— 减出来的东西离屏幕底还有一整个视口那么远。 */
-  inset: calc(36px / var(--ui-scale, 1)) calc(20px / var(--ui-scale, 1));
+  inset: calc(36px) calc(20px);
   /* v0.50.0：用户反馈「左右太宽」。全宽铺开是 v0.48.x 为让内容吃满横向空间改的，
      但设置页多数分区内容偏窄（如「可选同步」右侧大片空白），反而显空。
      限宽 + margin auto 水平居中：inset 上下仍定死（高度行为不变），
@@ -3379,6 +3484,16 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      改前「设置」top=15.9、「关闭」top=14.2 双双被压；改后标题 top≈48.5，让开。 */
   .settings-modal-head {
     padding-top: calc(12px + var(--sat, env(safe-area-inset-top, 0px)));
+  }
+  /* 让开状态栏之后用户仍觉得顶栏那一行贴得太紧 ⇒ 「设置」与「关闭」再各自下移 8px。
+     走子元素而不是加大 padding-top：顶栏总高度一分不变，滚动区不被挤掉 8px。
+     margin-bottom 的 -8px 用来抵掉 margin-top 撑出的外框高度 —— flex 行的交叉轴尺寸
+     按 margin box 算，去掉它标题行就会把顶栏顶高。选择器必须打在 flex item 上
+     （「设置」那层是 shell.js 的 div > h2，给 h2 加外边距同样会把行撑高）。 */
+  .settings-modal-head > div,
+  .settings-modal-head > .btn {
+    margin-top: 8px;
+    margin-bottom: -8px;
   }
   /* 桌面端为了压缩留白把 .set-wrap 左右收到 20px；窄屏必须放回 14px ——
      那条规则是 .settings-modal-body .set-wrap（特异度 0-2-0），会压过上面
@@ -3530,8 +3645,27 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .rail-bottom > .settings-icon-button .ic .app-icon { width: 18px; height: 18px; }
 /* v0.52.2：左下角深浅色切换按钮，与设置图标按钮共享 .settings-icon-button 尺寸，
-   但图标用 Font Awesome SVG（.fa-ic）而非 .app-icon（PNG <img>），需要单独给尺寸。 */
-.rail-bottom > .theme-toggle-btn .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
+   但图标用 Font Awesome SVG（.fa-ic）而非 .app-icon（PNG <img>），需要单独给尺寸。
+   v0.69.0：缩放视图按钮同理（compress / expand 也是 .fa-ic）。 */
+.rail-bottom > .theme-toggle-btn .ic .fa-ic,
+.rail-bottom > .window-focus-btn .ic .fa-ic { width: 18px; height: 18px; fill: currentColor; display: block; }
+/* v0.73.0：深浅色键的图标色必须跟着主题反色。磁贴底色早就走 `color-mix(var(--panel) 86%)`
+   （上方 .rail-bottom > button .ic 与 2853 行那条），但图标色仍继承 1074 行写死的 #17323A
+   ⇒ 深色模式 --panel:#2D2922 上压深字，实测对比 **1.07:1**（改走 --ink 后 11.08:1），
+   几乎看不见、只剩个轮廓 —— 而 FA 的 sun 轮廓与隔壁设置键的真齿轮几乎同形，
+   用户看到的就是「一个深色齿轮」。 */
+.rail-bottom > .theme-toggle-btn .ic { color: var(--ink); }
+/* 缩放视图处于「已收成固定尺寸」态时给个按下去的底色，与快捷入口面板的 .on 同一套配色。
+   选择器必须带上 .window-focus-btn：老 rails 上挂着一条 `.rail-bottom > button.on .ic { background: var(--sun) }`
+   （3 类 1 元素），只写 .rail-dock-btn.on 压不过它，激活态会被染成太阳黄。 */
+.rail-dock > .rail-dock-btn.window-focus-btn.on {
+  color: var(--deep);
+  background: color-mix(in srgb, var(--deep) 12%, transparent);
+}
+.rail-dock > .rail-dock-btn.window-focus-btn.on .ic {
+  background: var(--deep);
+  color: var(--paper);
+}
 
 /* ── 应用内对话框（appPrompt / appConfirm，替代原生 window.prompt/confirm）── */
 .app-dialog-mask { z-index: 2400; display: grid; place-items: center;
@@ -3631,8 +3765,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      v0.58.1：再叠安全区 —— 22px 的物理边距在手机上小于导航栏 / 手势条 inset，
      提示条会被系统栏压掉一截（与 #toasts 同理，那边早就在窄屏补了 --sab）。
      桌面 / iOS 走 env() 兜底，Android 走 MainActivity 注入值（铁律四）。 */
-  left: calc(22px / var(--ui-scale, 1) + var(--sal, env(safe-area-inset-left, 0px)));
-  bottom: calc(22px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
+  left: calc(22px + var(--sal, env(safe-area-inset-left, 0px)));
+  bottom: calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));
   z-index: 1890;
   width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
   padding: 13px 15px;
@@ -3693,7 +3827,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      等于把那会儿的导航整条挡住（390px 截图实测）。sab 用双路写法：WebView 不实现 env()。 */
   .update-toast {
     left: 12px; right: 12px;
-    bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
+    bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px)));
     width: auto;
     padding: 12px 13px;
   }

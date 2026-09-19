@@ -244,4 +244,23 @@ export const api = {
     if (!isTauri) return { applied: false };
     return invoke("system_bar", { darkIcons });
   },
+
+  /**
+   * Android 系统通知与后台闹钟（Rust 侧 src-tauri/src/notification.rs → NotificationPlugin.kt）。
+   *
+   * 为什么非走原生不可：Android WebView **不实现 Web Notifications API**，
+   * `window.Notification` 压根不存在；而且网页定时器不跨进程存活，应用被系统划掉之后
+   * 到点不会有任何动静。要让提醒进下拉栏、要被杀了也响，只能交给原生通知 + AlarmManager。
+   *
+   * `action` 是原生命令名（status / askPermission / openSettings / openExactAlarmSettings /
+   * post / cancel / setRing / syncAlarms / clearAlarms / takeActions），
+   * `payload` 的字段原样透传给 Kotlin，字段名必须与 NotificationPlugin.kt 里读的键名一致。
+   *
+   * 非 Tauri 与桌面端都安全无副作用：Rust 侧对非 Android 平台直接返回 `{applied:false}`，
+   * 不报错，所以调用方不必到处写平台判断（真正的门禁在 src/androidNotify.js）。
+   */
+  async notification(action, payload) {
+    if (!isTauri) return { applied: false };
+    return invoke("notification", { action, payload: payload || null });
+  },
 };

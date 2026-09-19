@@ -608,6 +608,11 @@ assert.deepEqual(badAnchors, [],
 //       Android WebView 不实现 env(safe-area-inset-*)，只有 --sat 是真的 ⇒ 双路写法。
 assert.match(styles, /\.settings-modal-head\s*\{\s*padding-top:\s*calc\(12px \+ var\(--sat/,
   "窄屏设置弹窗顶栏要让开状态栏（padding-top 消费 --sat，双路写法）");
+// 顶栏那一行还要再往下挪 8px（用户反馈让开状态栏后仍贴得太紧）。
+// 必须是子元素外边距、且 margin-bottom 用负值抵消：改成加大 padding-top 会把顶栏
+// 连滚动区一起挤高，只留 margin-top 也会撑高 flex 行（flex 交叉轴按 margin box 算）。
+assert.match(styles, /\.settings-modal-head\s*>\s*div,\s*\.settings-modal-head\s*>\s*\.btn\s*\{\s*margin-top:\s*8px;\s*margin-bottom:\s*-8px/,
+  "窄屏设置弹窗的「设置」与「关闭」要各自下移 8px，且用负 margin 抵掉撑高（顶栏总高不变）");
 
 // 3d. 🔴 反向守卫：**不许**再把断点写成 em。
 //     实测 em 媒体查询恒定按浏览器默认 16px 求值，zoom 与 html font-size 都影响不了它，

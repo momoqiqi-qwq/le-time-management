@@ -157,4 +157,27 @@ assert.ok(narrowBlock.length > 0, "没找到文件末尾的窄屏媒体查询");
 assert.match(narrowBlock, /\.rail-bottom\.rail-dock > \.rail-dock-btn \{ width: auto; flex: 1; min-width: 0; \}/,
   "窄屏必须把 flex 还回 1，否则底栏布局被压坏");
 
-console.log("✓ rail dock：注册表 / 归一化 / 落点边界 / 拖拽源码不变量 全部通过");
+/* ── ④ 深浅色键的图标（2026-09-19 用户指定）──
+   字形按**当前生效亮度**取：浅色 = 太阳、深色 = 月亮。
+   旧逻辑是反的（浅色显月亮 = 「点下去会去哪」），而 Font Awesome 的 sun 在 15~18px 下
+   就是「圆盘 + 8 道短射线」，与隔壁设置键的真齿轮几乎同形 —— 深色模式里再压上
+   「深字压深底」（见下条 color 断言）就成了用户口中的「深色的齿轮」。
+   两颗键（顶栏 + 左下角）共用一个 helper，别各写一份 ternary。 */
+assert.match(shellJs, /const themeModeGlyph = \(\) => \(resolveThemeMode\(\) === "dark" \? "moon" : "sun"\)/,
+  "字形必须由单一 helper 给出：浅色=sun、深色=moon");
+const glyphCalls = (shellJs.match(/faIcon\(themeModeGlyph\(\)\)/g) ?? []).length;
+assert.ok(glyphCalls >= 3,
+  `顶栏 1 处 + 左下角建图标 1 处 + MutationObserver 刷新 1 处都要走 helper，实测 ${glyphCalls} 处`);
+assert.equal((shellJs.match(/"sun"|"moon"/g) ?? []).length, 2,
+  "shell.js 里 sun / moon 字面量只许出现在 helper 内各一次（多出来就是又分叉了一份映射）");
+// 磁贴底色早就跟主题走了（.rail-bottom > button .ic 的 color-mix），图标色却还写死 #17323A
+// ⇒ 深色模式 --panel:#2D2922 上压深字，实测对比 1.07:1（走 --ink 后 11.08:1）。
+const toggleIcAt = styles.indexOf(".rail-bottom > .theme-toggle-btn .ic {");
+assert.ok(toggleIcAt >= 0, "没找到 .rail-bottom > .theme-toggle-btn .ic 规则");
+const toggleIcRule = styles.slice(toggleIcAt, toggleIcAt + 160);
+assert.match(toggleIcRule, /color:\s*var\(--ink\)/,
+  "深浅色键的图标色必须走 --ink 随主题反色（浅色磁贴深字、深色磁贴白字）");
+assert.ok(!/color:\s*#17323A/i.test(toggleIcRule),
+  "反面：不许在这条规则里写死深色（那正是深色模式下「看不见」的根因）");
+
+console.log("✓ rail dock：注册表 / 归一化 / 落点边界 / 拖拽源码不变量 / 深浅色键图标 全部通过");

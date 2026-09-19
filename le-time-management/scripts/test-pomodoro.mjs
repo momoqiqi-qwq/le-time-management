@@ -13,8 +13,15 @@ assert.equal(DEFAULT_SOUND_ID, 'beep', '默认音 id 必须保持 beep —— �
 assert.equal(new Set(BUILTIN_SOUNDS.map((s) => s.id)).size, BUILTIN_SOUNDS.length, '音效 id 不能重复');
 for (const preset of BUILTIN_SOUNDS) {
   assert.ok(preset.label && preset.note, `音效 ${preset.id} 缺少 label / note`);
-  assert.ok(Array.isArray(preset.tones) && preset.tones.length, `音效 ${preset.id} 没有音调`);
-  for (const tone of preset.tones) {
+  // v0.73.0 起预设有两种形状：一次性（tones）与可循环长鸣（loop.tones）。两者必须有一个。
+  const tones = preset.tones || preset.loop?.tones;
+  assert.ok(Array.isArray(tones) && tones.length, `音效 ${preset.id} 没有音调`);
+  if (preset.loop) {
+    assert.ok(Number(preset.loop.period) > 0, `长鸣音效 ${preset.id} 缺 period`);
+    const end = tones.reduce((acc, t) => Math.max(acc, (Number(t.t) || 0) + (Number(t.d) || 0.18)), 0);
+    assert.ok(end < preset.loop.period, `长鸣音效 ${preset.id} 的最后一个音压到 period 末尾，循环接缝会咔哒`);
+  }
+  for (const tone of tones) {
     assert.ok(Number(tone.f) > 0, `音效 ${preset.id} 的频率非法：${tone.f}`);
     assert.ok(Number(tone.d) > 0, `音效 ${preset.id} 的时长非法：${tone.d}`);
     assert.ok(tone.t === undefined || Number(tone.t) >= 0, `音效 ${preset.id} 的起始偏移非法：${tone.t}`);
@@ -33,7 +40,7 @@ assert.equal(await playSound({ sound: 'chime', volume: 2 }), 'silent');
 /* ── 二、应用侧接线 ── */
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const taskReminder = read('../src/taskReminder.js');
-assert.match(taskReminder, /import \{ playSound \} from "\.\/sound\.js"/, '任务提醒必须复用共享音效模块');
+assert.match(taskReminder, /import \{[^}]*\bplaySound\b[^}]*\} from "\.\/sound\.js"/, '任务提醒必须复用共享音效模块');
 assert.ok(!/AudioContext/.test(taskReminder), '任务提醒不该再自己维护一份 AudioContext');
 assert.match(taskReminder, /return playSound\(\{ sound: c\.sound, volume: level, customAudio: c\.customAudio \}\)/);
 

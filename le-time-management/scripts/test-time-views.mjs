@@ -148,23 +148,24 @@ assert.ok(!/^\.wakeup-view\s*\{[^}]*height:\s*100%/m.test(css),
   "基础态不能给 .wakeup-view 写 height:100% —— 手机上面板被限高后，超出一屏的内容会被 " +
   ".tv-panel 的 overflow:hidden 裁掉");
 
-/* 🔴 回归 7：课程表的触控板 / 触控屏手势（v0.43.0）。
+/* 🔴 回归 7：课时格的触控板 / 触控屏手势（v0.43.0，v0.71.0 起系数由全页统一供）。
    这几条都**不会**在普通单测里自然暴露（要真手势才看得见），但少一条用户就明显感到不对：
    ① `.wakeup-scroll` 必须 `touch-action:pan-x pan-y` —— 不写就回浏览器默认，
       双指在触控板上会被 WebView2 拿去做「页面缩放 / 前进后退」，课表纹丝不动。
-   ② 缩放的写点必须是面板根 `.wakeup-view`，不能是网格自己 ——
-      `.wakeup-scroll` 的 max-height 要读 `--wk-zoom`，而 CSS 变量只向下继承。
+   ② 课时格的 `--wk-zoom` 现在只是全页 `--tv-zoom` 的别名，且必须留在面板根 `.wakeup-view`
+      这一层（JS 不再逐视图写系数）—— `.wakeup-scroll` 的 max-height 要读它，而 CSS 变量只向下继承。
    ③ wheel 监听必须 `{passive:false}` —— passive 下 preventDefault 是空操作，
       触控板捏合会去缩放整个 WebView（整个界面跟着变大），而不是只缩课表。
-   ④ 缩放**不能用 `zoom` 属性**（试过，是错的）：zoom 元素的内部可用宽高会被除以 zoom，
+   ④ 课时格缩放**不能用 `zoom` 属性**（试过，是错的）：zoom 元素的内部可用宽高会被除以 zoom，
       而网格是 `height:100%` + `1fr` 铺满容器的 ⇒ 缩小时行高反而被拉大
       （实测 zoom=0.6 视觉行高 60.7px > zoom=1 的 58.1px，与直觉完全相反）。
       正确做法是「尺寸 × --wk-zoom」+ 子元素字号全走 em。
+      （其余画布型视图相反：内部全是 px/% 定位，直接吃 CSS zoom 才对，见回归 8。）
    ⑤ 锚点必须用「滚动内容里的相对位置」，不能用绝对内容坐标 ——
       网格宽受 min-width、高受 height:100% / min-height 三重约束，缩放并非纯等比
       （实测 zoom 1 → 1.377 时网格宽只放大 1.11 倍），绝对坐标会漂 60px+。 */
-assert.match(css, /\.wakeup-view\s*\{\s*--wk-zoom\s*:\s*1\s*;?\s*\}/,
-  "--wk-zoom 必须在基础态给默认值 1：.wakeup-scroll 的 max-height 直接引用它，没兜底会整条失效");
+assert.match(css, /\.wakeup-view\s*\{\s*--wk-zoom:\s*var\(--tv-zoom,\s*1\)\s*;?\s*\}/,
+  "--wk-zoom 必须是 --tv-zoom 的别名并带 1 兜底：.wakeup-scroll 的 max-height 直接引用它，没兜底会整条失效");
 assert.match(wkScroll, /touch-action:\s*pan-x pan-y/,
   "课程表滚动容器必须 touch-action:pan-x pan-y，否则双指平移会被浏览器抢去做页面缩放/前进后退");
 assert.doesNotMatch(wkGrid, /(?:^|[;{\s])zoom\s*:/,
@@ -181,10 +182,11 @@ for (const sel of [".wk-corner", ".wk-day", ".wk-slot b", ".wk-slot span", ".wk-
   assert.match(val, /em$/,
     `${sel} 的字号必须用 em（当前 ${val}）—— 用 px 就不会跟着 --wk-zoom 缩放`);
 }
-assert.match(timeViews, /root\.style\.setProperty\("--wk-zoom"/,
-  "--wk-zoom 必须写在面板根节点上：max-height 在外层 .wakeup-scroll，变量只能向下继承");
-assert.doesNotMatch(timeViews, /grid\.style\.setProperty\("--wk-zoom"/,
-  "--wk-zoom 不能写在网格自己身上，外层 .wakeup-scroll 读不到");
+assert.match(timeViews, /root\.style\.setProperty\("--tv-zoom"/,
+  "系数必须写在控制器拿到的那个 root（时间块视图容器）上：七种视图都是它的后代，" +
+  "一处写七处生效");
+assert.doesNotMatch(timeViewsCode, /setProperty\("--wk-zoom"/,
+  "JS 不再逐视图写 --wk-zoom —— 它现在只是 CSS 里 --tv-zoom 的别名，两处写会打架");
 assert.match(timeViews, /addEventListener\("wheel"[\s\S]{0,240}?\{ passive: false \}/,
   "wheel 监听必须 passive:false，否则 preventDefault 无效，触控板捏合会缩放整个 WebView");
 assert.match(timeViews, /if \(!e\.ctrlKey\) return/,
@@ -209,6 +211,83 @@ assert.match(timeViews, /settings\.timeViewZoom\s*=\s*z/,
   "缩放比例必须写进 settings 持久化，否则切走视图/重启就丢");
 assert.match(timeViews, /clampZoom\(S\.getState\(\)\.settings\.timeViewZoom\)/,
   "恢复持久化缩放时也必须过 clampZoom：旧值或手改过的配置可能越界");
+
+/* 🔴 回归 8：v0.71.0 七种视图共用一个缩放系数（`--tv-zoom`）+ 右上角三键。
+   原来只有课时格能吃触控板捏合，另外六种视图捏上去是 WebView 自己整页放大。
+   现在系数只有一处（时间块视图容器），CSS / JS 各自消费：
+   ① 画布型视图（里程碑 / 年表 / 年度甘特 / 阶段甘特 / 卡片时间轴）内部全是 px 或 % 定位，
+      直接吃 CSS `zoom` —— 一条规则整体等比放大，JS 一个系数都不乘。
+      反过来若再乘一次就是二次放大（实测 62px 行在 1.5 倍下变 139.5px）。
+   ② 日时间轴同理走 CSS zoom，但必须补 `min-width: calc(100% * var(--tv-zoom))`：
+      zoom 元素的内部可用宽会被除以 zoom（实测），不补就越放大越截字。
+      代价是指针落点要反过来除系数 —— timeblock.js 的 minFromY() 里那一次除法
+      同时补上了「界面缩放」漏掉的那半截（root zoom 也是布局级的，rect 是物理像素）。
+   ③ 卡片时间轴的轨道宽度带 94% 上限，而上限是物理不变量 ⇒ 轨道必须自己按系数线性变宽，
+      外层还要有一层自己的滚动容器（.tv-panel 是 overflow:hidden，没处滚就直接裁掉右半边）。
+   ④ 手势面靠 data-zoom-surface 声明：漏一个视图就是那块区域捏不动。 */
+assert.equal([...timeViews.matchAll(/"data-zoom-surface":/g)].length, 6,
+  "六种非日视图各要有一处手势面标记（日时间轴由 timeblock.js 直接挂 .tl-scroll）");
+assert.match(timeblock, /renderTimeView\(altHost, viewMode, curDate, zoom\)/,
+  "控制器必须传到 renderTimeView —— 不传就没有手势面，其余六种视图捏不动");
+assert.match(timeblock, /attachViewZoomGestures\(scroll, zoom, \{ dblToReset: false \}\)/,
+  "日时间轴要接手势，但双击不复位（双击会命中时间块弹菜单）");
+assert.match(timeblock, /zoom\.flush\(\)/,
+  "离开视图要把待落盘那一笔结掉：600ms 定时器不该跨视图存活");
+for (const sel of [".tl-canvas", ".milestone-track", ".chronicle-canvas", ".gantt-grid", ".swim-grid", ".ct-zoom"]) {
+  // 前面补一个反斜杠就是 `\.tl-canvas` —— 与上面 .wk-* 那段同一套写法
+  const rule = css.match(new RegExp(`\\${sel}\\s*\\{[^}]*\\}`))?.[0] ?? "";
+  assert.match(rule, /zoom:\s*var\(--tv-zoom,\s*1\)/, `${sel} 必须吃 --tv-zoom（漏了就这一种视图捏不动）`);
+}
+assert.match(css, /\.tl-canvas\s*\{[^}]*min-width:\s*calc\(100%\s*\*\s*var\(--tv-zoom,\s*1\)\)/,
+  ".tl-canvas 必须补 min-width: calc(100% * var(--tv-zoom)) —— zoom 元素内部可用宽被除以 zoom，" +
+  "不补则越放大每行能放的字数越少（截字），放大反而看不清");
+assert.doesNotMatch(timeblock, /PX_PER_MIN\s*\*\s*zoom/,
+  "日时间轴的块几何不能再自己乘系数 —— CSS zoom 已经乘过一遍了（二次放大）");
+assert.match(timeblock, /Math\.round\(\(\(y - rect\.top\) \/ viewScale\(\) - 10\)/,
+  "指针落点必须先除以生效系数再换算分钟：rect 是物理像素，内联 top 是未缩放空间");
+assert.match(timeblock, /getPropertyValue\("--ui-scale"\)/,
+  "除的系数要含「界面缩放」的 root zoom，否则 150% 界面缩放下落点偏 1.5 倍");
+assert.match(css, /\.card-timeline\s*\{\s*width:\s*max\(min\(840px,\s*94%\),\s*calc\((\d+)px\s*\*\s*var\(--tv-zoom,\s*1\)\)\)/,
+  ".card-timeline 宽度必须 max(min(840px,94%), calc(Npx * 系数))：94% 上限不随 zoom 变长，" +
+  "光靠原式两列卡片会压到中轴上");
+{
+  const laneMin = Number(css.match(/\.card-timeline\s*\{\s*width:\s*max\(min\(840px,\s*94%\),\s*calc\((\d+)px/)?.[1] ?? 0);
+  assert.ok(laneMin >= 680,
+    `轨道保底宽度要装得下两列（卡片 270 + 连线 70）×2 = 680px，当前 ${laneMin}`);
+}
+assert.match(timeViews, /class: "card-scroll"/, "卡片时间轴必须有横向滚动容器：放大后轨道必然宽过面板");
+assert.match(css, /\.card-scroll\s*\{[^}]*overflow-x:\s*auto/, ".card-scroll 得真能横滚（.tv-panel 是 overflow:hidden）");
+// 右上角三键：放大 / 默认 / 缩小，顺序即需求给的顺序
+assert.match(timeViews, /class: "tv-zoombar"/, "必须有右上角缩放三键");
+{
+  const bar = timeViews.match(/const bar = el\("div", \{ class: "tv-zoombar"[\s\S]*?\);/)?.[0] ?? "";
+  assert.match(bar, /btnIn, btnDefault, btnOut/, "三键顺序必须是「放大 / 默认 / 缩小」（需求原话的顺序）");
+}
+assert.match(timeViews, /btnIn\.disabled = cur >= ZOOM_MAX/, "顶到上限时 + 键要禁用：否则按下去没反应，像坏了一个键");
+assert.match(timeViews, /btnOut\.disabled = cur <= ZOOM_MIN/, "顶到下限时 − 键同理");
+assert.match(timeViews, /btnDefault\.addEventListener\("click", \(\) => set\(1\)\)/,
+  "中间那颗就是「默认」：点一下回 100%");
+const narrow8 = css.split("@media (max-width: 760px)").slice(1)
+  .find((b) => b.includes(".time-viewlead { display:none")) ?? "";
+assert.match(narrow8, /\.tv-zoom-btn\s*\{\s*min-width:\s*4[4-9]px;\s*height:\s*4[4-9]px/,
+  "窄屏三键要长到 44px 以上（触控目标下限），与 .time-viewitem 同一档；" +
+  "必须是 min-width —— 中间那颗是自适应宽度的读数，写死 width 会把「100%」裁掉");
+assert.doesNotMatch(narrow8, /\.time-viewtoggle\s*\{\s*width:\s*100%/,
+  "切换器不能再独占整行宽度 —— 右上角三键与它同一行，width:100% 会把三键挤出去");
+
+/* 🔴 v0.70.0：课时格与「课程表」插件解耦。
+   它只是「把时间线摆成课表样子」的一种视图样式，数据源恒为本周时间块；
+   真实课表（学期/周次/节次/教师/教室）归「课程表」插件自己渲染。
+   历史上这里直接读插件 storage 的 table，于是插件一改名/换 id 这个视图就空掉，
+   而且用户分不清侧栏的「课程表」和这里的「课程表」是不是同一个东西。 */
+assert.doesNotMatch(timeViews, /shiguang-schedule/,
+  "课时格不许读「课程表」插件的课表 storage —— 数据源只能是时间块");
+assert.doesNotMatch(timeViews, /storage\?*\.table/,
+  "同上：课时格里不该出现课表 table 的读取路径");
+assert.match(timeViews, /\["wakeup", "课时格"/,
+  "视图名必须是「课时格」（内部 id 保持 wakeup，改 id 会让用户已存的视图选择失效）");
+assert.match(timeViews, /const slots = Array\.from\(\{ length: 16 \}/,
+  "节次行必须由时间块按小时生成（7:00 起 16 格），不能依赖外部节次表");
 
 /* ───────────── v0.50.0：里程碑改成蛇形折返跑道 ─────────────
    原来是一条横向轨道排到底（12 个节点要滑很久），现在一行排满就掉头、
@@ -272,6 +351,44 @@ assert.match(css, /\.ce-gap-mark\s*\{[^}]*background:\s*var\(--panel\)/,
   "芯片要垫 panel 底色盖住轴线 —— 否则渐变轴线从「⋯⋯」字缝里穿出来，不像断口");
 assert.match(css, /\.cv-gap\s*\{/, "窄屏省略提示必须有样式");
 
+/* ───────────── v0.70.0：年表画布宽度按事件数撑出来（修重叠） ─────────────
+   用户截图：横向时间轴上卡片互相压住、一排日期徽章只看得见「2026-0」。
+   无头实测（26 条事件）：画布写死 1500px ⇒ 一槽只有 53.4px，而卡片就要 150px，
+   同侧相邻卡叠 43.2px；上下两排的日期徽章都骑在同一条轴带上、相邻只隔一槽，
+   70.2px 的徽章叠 16.8px —— 被后一张盖掉后半截就剩下「2026-0」。共 49 对重叠。
+   这不是某条 CSS 写错，是「画布宽度写死 + 位置按百分比算」的必然：
+   百分比预算再怎么调都救不回「槽宽 < 内容宽」。所以画布宽度改成按事件数算。 */
+assert.doesNotMatch(css, /\.chronicle-canvas\s*\{[^}]*min-width/,
+  "画布宽度不许再写死在 CSS 里 —— 写死 1500px 时事件一多，槽宽就小于卡片宽度，卡片必然互叠");
+assert.match(timeViews, /const SLOT_MIN = \(CARD_W \+ 18\) \/ 2;/,
+  "一槽的下限必须由卡片宽度算出来：上下交错下同侧相邻卡隔【两】槽，"
+  + "所以槽 ≥ (卡片宽 + 18) / 2。写成常量就会和卡片宽度脱节");
+assert.match(timeViews, /const canvasW = Math\.max\(CANVAS_MIN, \(\(events\.length - 1\) \* SLOT_MIN/,
+  "画布宽度必须随事件数增长 —— 密度交给 .chronicle-scroll 横向滚动承担，而不是让卡片互盖");
+assert.match(timeViews, /class: "chronicle-canvas", style: `min-width:\$\{Math\.round\(canvasW\)\}px;--tl-card-w:\$\{CARD_W\}px`/,
+  "算出来的宽度要挂到画布内联 min-width 上，并把卡片宽一起发给 CSS（--tl-card-w）—— "
+  + "槽位算的就是这个宽，两边必须同源");
+assert.match(css, /\.chronicle-event\s*\{[^}]*width:var\(--tl-card-w, 150px\)/,
+  "卡片宽度必须吃 JS 发下来的 --tl-card-w，否则 JS 按 150px 算槽、CSS 用别的宽，又会叠");
+
+// 日期徽章：横向宽度只由 MM/DD 五个字符决定，年份另起一行
+assert.match(timeViews, /class: "ce-date" \}, shortDate\(e\.date\), showYear \? el\("i", \{ class: "ce-year" \}, year\)/,
+  "徽章恒写 MM/DD、跨年时年份用 .ce-year 换行 —— 写成「2026/09/12」前缀会把徽章拉宽一倍，"
+  + "而槽位是按 MM/DD 算的，轴带就又开始互盖");
+assert.match(css, /\.ce-date\s*\{[^}]*white-space:nowrap/, "徽章不能换行折字");
+
+// 卡片高度必须有上限：连线 / 圆点 / 徽章全按固定偏移排
+assert.match(css, /\.ce-card b, \.ce-card span\s*\{[^}]*-webkit-line-clamp:2/,
+  "标题与副文案各限两行。实测「文字大小」150% 下不封顶的卡片会长到 143.6px，"
+  + "顺着把连线推进日期徽章带 —— 竖向重叠的来源");
+assert.match(css, /\.ce-card b, \.ce-card span\s*\{[^}]*overflow-wrap:anywhere/,
+  "卡片只有 150px，一条不沾空格的长链接能横着穿出邻卡");
+
+// order 只在 flex 里生效：父级不开 flex，下排的连线就会掉到卡片下面、指向远离中轴的方向
+assert.match(css, /\.chronicle-event\s*\{[^}]*display:flex;[^}]*flex-direction:column/,
+  ".chronicle-event 必须是 flex 列 —— .down .ce-stem{order:-1} 靠它才生效，"
+  + "块级布局下那条是死规则");
+
 /* ───────────── v0.55.0：一种类型一种颜色 ─────────────
    用户截图指出：里程碑轴上同一个「工作」会变出蓝 / 绿 / 黄 / 紫四种颜色。
    根因是它按序号取 PALETTE。顺带查出全仓库有 4 套互不一致的分类映射
@@ -292,7 +409,7 @@ assert.doesNotMatch(timeViews, /PALETTE\[\(start \+ k\) % PALETTE\.length\]/,
   "按序号取彩虹色正是「同一种类型出现多种颜色」的来源（用户截图指出的就是这条）");
 
 // 3) 其余视图里「有分类的元素」也不许按序号上色。
-//    注意不能一刀切禁用 PALETTE：课程表视图的颜色来自课表插件的数据，与任务分类无关。
+//    注意不能一刀切禁用 PALETTE：课时格里分类缺失的时间块要按序号兜底取色。
 for (const [pattern, why] of [
   [/--ec:\$\{PALETTE\[i % PALETTE\.length\]\}/, "横向年表要按分类取色"],
   [/--ct:\$\{PALETTE\[i % PALETTE\.length\]\}/, "卡片时间轴要按分类取色"],
@@ -345,5 +462,6 @@ assert.match(css, /\.wm-time\s*\{[^}]*color:\s*color-mix\(in srgb,\s*var\(--wk,\
   "窄屏课表的时段文字可能吃到兜底的分类色，同样要混向 --ink");
 
 console.log("PASS: 时间视图切换收进展开菜单（关闭语义 / 卸载清理）+ 7 个视图窄屏真适配（无横向溢出）"
-  + " + 课程表手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）"
+  + " + 课时格手势（touch-action / 变量挂点 / passive:false / 非 zoom 缩放 / 相对锚点）"
+  + " + 七视图共用 --tv-zoom 与右上角三键（CSS zoom 消费端 / 落点除系数 / 卡片轨道保底宽）"
   + " + 分类配色唯一事实源（一种类型一种颜色，按分类取色而非按序号）");

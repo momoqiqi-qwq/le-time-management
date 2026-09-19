@@ -22,11 +22,11 @@ page {
   --grape: #9B5DE5;
   --mint: #2EC4B6;
 
-  /* 四象限 */
-  --q1: #D64545; --q1-bg: #F3CBC8;
-  --q2: #D9A13B; --q2-bg: #F2E0BC;
-  --q3: #5B6BE8; --q3-bg: #CCD3F7;
-  --q4: #5B8F7B; --q4-bg: #CCDED6;
+  /* 四象限（底色与桌面 styles.css 默认主题同步） */
+  --q1: #D64545; --q1-bg: #FFB8B3;
+  --q2: #D9A13B; --q2-bg: #F6D48F;
+  --q3: #5B6BE8; --q3-bg: #BEC8FF;
+  --q4: #5B8F7B; --q4-bg: #B7D9CB;
 
   /* 功能色 */
   --accent-soft: #DCEAEF;   /* 节奏图「今天」柱底 */

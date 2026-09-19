@@ -255,6 +255,20 @@ function loadTheme() {
   assert.match(css, /@keyframes theme-reveal\s*\{/, "圆形揭示 keyframes 必须存在");
   assert.match(css, /--theme-reveal-x/, "揭示起点必须可由 JS 注入");
   assert.match(css, /:root\[data-ui-motion="reduced"\]::view-transition-new\(root\)/, "应用内「减少动效」必须豁免揭示动画");
+
+  /* 🔴 坐标系换算（v0.71.1）：`--theme-reveal-*` 由 theme.js 按**屏幕 CSS px** 写入
+     （pointerdown 的 clientX/Y），但 `::view-transition` 伪元素活在 **zoom 之后的坐标系**里 ——
+     uiScale.js 把「用户缩放 × 窄屏自适应」写在 `documentElement.style.zoom` 上，伪元素盒
+     于是变成 `视口 / zoom`（无头 Chrome 实测 zoom=0.64：视口 503×642，伪元素盒 785×1003）。
+     不除以 `--ui-scale`，圆就画在真实位置的 1/zoom 处：手机上圆心从左下角的按钮
+     漂到「左中间」，半径也扫不到右下角（2026-09-19 用户报的正是这个）。
+     换算写法沿用 uiScale.js 的既有契约：恒定物理长度一律 `calc(Npx / var(--ui-scale))`。 */
+  const reveal = css.match(/@keyframes theme-reveal\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+  assert.ok(reveal, "必须存在 @keyframes theme-reveal 块");
+  assert.match(reveal, /--theme-reveal-x\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 x 必须除以生效缩放系数换算进 VT 坐标系");
+  assert.match(reveal, /--theme-reveal-y\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 y 必须除以生效缩放系数换算进 VT 坐标系");
+  assert.match(reveal, /--theme-reveal-r\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示半径必须同样换算，否则圆收不到最远角");
+  assert.match(reveal, /var\(--ui-scale,\s*1\)/, "--ui-scale 必须带 1 兜底：没初始化缩放时 calc 不能非法，整条 clip-path 会被丢掉");
 }
 
 /* ── 变异测试：证明上面的断言承重 ──
@@ -262,41 +276,54 @@ function loadTheme() {
    只跑断言），变异后必须失败才算断言承重。 */
 if (!process.env.THEME_TRANSITION_NO_MUTATE) {
   const { spawnSync } = await import("node:child_process");
-  const themePath = path.join(__dirname, "..", "src", "theme.js");
-  const orig = fs.readFileSync(themePath, "utf8");
+  const THEME_FILE = "src/theme.js";
+  const CSS_FILE = "src/styles.css";
+  const files = {};
+  const readOf = (rel) => (files[rel] ??= fs.readFileSync(path.join(__dirname, "..", rel), "utf8"));
   const mutations = [
     // M1 = 旧 bug 复活：模式变化不再计入「变了」→ 深浅切换零动画
-    ["模式变化不计入 changed（旧 bug）",
+    ["模式变化不计入 changed（旧 bug）", THEME_FILE,
       /const changed = root\.dataset\.theme !== resolved\.id \|\| root\.dataset\.themeMode !== resolved\.mode;/,
       "const changed = root.dataset.theme !== resolved.id;"],
     // M2 = 主路径被砍：永远走降级
-    ["View Transitions 主路径被砍",
+    ["View Transitions 主路径被砍", THEME_FILE,
       /if \(typeof doc\.startViewTransition === "function"\) \{/,
       "if (false) {"],
     // M3 = 减少动效豁免失效
-    ["reduced 豁免失效",
+    ["reduced 豁免失效", THEME_FILE,
       /if \(!themeMotionAllowed\(\)\) \{\s*\n\s*mutate\(\);\s*\n\s*return;\s*\n\s*\}/,
       "if (false) { mutate(); return; }"],
     // M4 = 状态栏同步被砍（原生写好了但没人调，症状与没修一样）
-    ["状态栏图标同步被砍",
+    ["状态栏图标同步被砍", THEME_FILE,
       /  syncSystemBarIcons\(resolved\.mode\);\n/,
       ""],
     // M5 = 同步值传反（浅背景配浅色图标 ⇒ 看不见）
-    ["状态栏图标明暗传反",
+    ["状态栏图标明暗传反", THEME_FILE,
       /api\.systemBar\(mode === "light"\)/,
       'api.systemBar(mode === "dark")'],
+    // M6 = v0.71.1 修复被回退：揭示几何不再换算进 zoom 坐标系
+    //      （桌面 zoom=1 看不出问题，手机上圆心漂到「左中间」—— 用户报的原样）
+    ["揭示几何未换算 zoom 坐标系", CSS_FILE,
+      / \/ var\(--ui-scale, 1\)/g,
+      ""],
+    // M7 = 兜底被去掉：uiScale 尚未写入 --ui-scale 时 calc 非法，整条 clip-path 被丢
+    ["--ui-scale 兜底被去掉", CSS_FILE,
+      /var\(--ui-scale, 1\)/g,
+      "var(--ui-scale, 0.8)"],
   ];
   let allBlocked = true;
-  for (const [name, re, rep] of mutations) {
+  for (const [name, rel, re, rep] of mutations) {
+    const orig = readOf(rel);
     const mutated = orig.replace(re, rep);
     if (mutated === orig) { console.log(`✗ 变异未命中源码：${name}`); allBlocked = false; continue; }
-    fs.writeFileSync(themePath, mutated);
+    const target = path.join(__dirname, "..", rel);
+    fs.writeFileSync(target, mutated);
     const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
       encoding: "utf8",
       env: { ...process.env, THEME_TRANSITION_NO_MUTATE: "1" },
       timeout: 30000,
     });
-    fs.writeFileSync(themePath, orig);
+    fs.writeFileSync(target, orig);
     const blocked = r.status !== 0;
     console.log(`${blocked ? "✓ 被拦下" : "✗ 漏过了"} ${name}`);
     if (!blocked) allBlocked = false;

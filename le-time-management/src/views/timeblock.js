@@ -4,7 +4,7 @@ import { el, popmenu, toast, pointerDrag } from "../ui.js";
 import { openTaskDrawer } from "./drawer.js";
 import { previewSchedule } from "../scheduleConflict.js";
 import { closeLayer } from "../motion.js";
-import { createTimeViewSwitcher, renderTimeView } from "./timeViews.js";
+import { createTimeViewSwitcher, createTimeViewZoom, attachViewZoomGestures, renderTimeView } from "./timeViews.js";
 
 const DAY_START = 7 * 60;    // 07:00
 const DAY_END = 24 * 60;     // 24:00
@@ -33,6 +33,11 @@ export function renderTimeblock(container) {
     switcher.setCurrent(mode);
     syncView();
   } });
+  /* 缩放控制器（v0.71.0）：系数写在视图根容器上 —— 日时间轴与其余六种视图都是它的后代，
+     七种视图共用同一个比例，也共用右上角那三颗键。挂在容器而不是 documentElement 上：
+     离开视图时节点一起消失，不会污染别的页面（CSS 侧一律写 var(--tv-zoom, 1) 兜底）。 */
+  const zoom = createTimeViewZoom(container);
+  switcher.append(zoom.bar);
   shell.append(switcher, wrap, altHost);
   container.append(shell);
 
@@ -99,10 +104,20 @@ export function renderTimeblock(container) {
 
   const hint = el("div", { class: "drop-hint", style: "display:none" });
   let hintTimer = null;
+
+  /* 指针坐标 → 画布内的分钟数。🔴 必须先除以生效缩放系数再换算。
+     CSS `zoom` 是布局级的：clientY 与 getBoundingClientRect 给的都是物理像素，
+     而块的内联 top/height 写在未缩放的空间里（zoom 由 CSS 统一乘）。不除的话
+     150% 下会把 1 分钟当成 1.5 分钟 —— 落点偏一半，实测（探针量过 rect 随 zoom 放大）。
+     两个系数都要算进来：本视图的 --tv-zoom（捏合 / 三键）与「界面缩放」的 root zoom，
+     后者是这次顺手补上的同一类漏算。 */
+  const viewScale = () => zoom.get() * (Number(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")) || 1);
+  const minFromY = (y, rect) => Math.round(((y - rect.top) / viewScale() - 10) / PX_PER_MIN / 15) * 15 + DAY_START;
+
   function showHint(ev, durMin) {
     const rect = canvas.getBoundingClientRect();
     if (ev.clientY < rect.top - 30 || ev.clientY > rect.bottom + 30) { hint.style.display = "none"; return; }
-    const min = Math.round((ev.clientY - rect.top - 10) / PX_PER_MIN / 15) * 15 + DAY_START;
+    const min = minFromY(ev.clientY, rect);
     hint.style.display = "";
     hint.style.top = `${(min - DAY_START) * PX_PER_MIN + 10}px`;
     hint.dataset.label = `${S.hhmmOf(min)} – ${S.hhmmOf(min + durMin)}`;
@@ -114,7 +129,7 @@ export function renderTimeblock(container) {
   function dropTask({ x, y }, t) {
     const rect = canvas.getBoundingClientRect();
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return;
-    const min = Math.max(DAY_START, Math.round((y - rect.top - 10) / PX_PER_MIN / 15) * 15 + DAY_START);
+    const min = Math.max(DAY_START, minFromY(y, rect));
     try { S.placeTask(t, curDate, min, t.__cat || catOf(t)); }
     catch (e) {
       const preview = previewSchedule(S.blocksOf(curDate), { startMin: min, durMin: Math.max(15, Number(t.estMin) || 30) }, { dayStart: DAY_START, dayEnd: DAY_END });
@@ -203,7 +218,7 @@ export function renderTimeblock(container) {
           hideHint();
           const rect = canvas.getBoundingClientRect();
           if (d.x < rect.left || d.x > rect.right || d.y < rect.top || d.y > rect.bottom) return;
-          const min = Math.min(DAY_END - b.durMin, Math.max(DAY_START, Math.round((d.y - rect.top - 10) / PX_PER_MIN / 15) * 15 + DAY_START));
+          const min = Math.min(DAY_END - b.durMin, Math.max(DAY_START, minFromY(d.y, rect)));
           const preview = previewSchedule(S.blocksOf(curDate), { startMin: min, durMin: b.durMin }, { ignoreId: b.id, dayStart: DAY_START, dayEnd: DAY_END });
           if (!preview.ok) {
             const alt = preview.alternatives[0];
@@ -319,14 +334,20 @@ export function renderTimeblock(container) {
     wrap.style.display = day ? "flex" : "none";
     altHost.style.display = day ? "none" : "block";
     if (day) { renderPool(); renderCanvas(); renderAside(); }
-    else renderTimeView(altHost, viewMode, curDate);
+    else renderTimeView(altHost, viewMode, curDate, zoom);
   }
   function renderAll() { syncView(); }
   wrap.append(pool, timeline, aside);
+  // 日时间轴的手势面 = 它自己的滚动容器。双击不复位：这里双击会命中时间块弹出块菜单，
+  // 一次双击同时「改比例 + 开菜单」是最坏的巧合，回头路交给右上角那颗默认键。
+  attachViewZoomGestures(scroll, zoom, { dblToReset: false });
   renderAll();
   const un = S.subscribe(renderAll);
   container._unsub = () => {
     un(); clearTimeout(hintTimer); container.classList.remove("tb-root");
+    // 缩放系数挂在 container 上，节点一起消失就干净了；但待落盘的那一笔要结掉，
+    // 否则 600ms 定时器跨视图存活、写盘的时机跟着漂。
+    zoom.flush();
     // 视图菜单挂在 body 上，离开视图必须收走，否则会残留在其他页面上（实测）。
     switcher._closeMenu?.();
     document.querySelectorAll(".time-viewmenu").forEach((m) => m.remove());
