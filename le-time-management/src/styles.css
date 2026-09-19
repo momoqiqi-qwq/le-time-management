@@ -180,7 +180,7 @@ html, body { height: 100%; }
 
    写新样式时必须遵守的两条（都是 zoom 的布局语义决定的，不是风格问题）：
 
-   1. 🔴 **`position: fixed` 的浮层：边距一律写 `calc(Npx)`。**
+   1. 🔴 **`position: fixed` 的浮层：边距一律写 `calc(Npx / var(--ui-scale, 1))`。**
       zoom 是布局级缩放 —— 布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N ÷ 系数。
       `--ui-vw` / `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**
       （`calc(var(--ui-vh) * .11)` = 视口的 11%），**不能拿来减边距**。
@@ -664,7 +664,7 @@ body.rail-resizing iframe { pointer-events: none !important; }
 /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处）。
    ⚠️ 别再写 `calc(var(--ui-vh) - 22px)`：那等价于「距屏幕顶 22px」，提示条会跑到屏幕顶部去
    （v0.48.0 ~ v0.49.1 就是这个状态，实测 top=22）。 */
-#toasts { position: fixed; right: 22px; bottom: calc(22px); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
+#toasts { position: fixed; right: 22px; bottom: calc(22px / var(--ui-scale, 1)); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
 .toast { background: #1E2A31; color: #F2F5F4; border-radius: 12px; padding: 12px 17px; font-size: calc(13px * var(--ui-text-scale));
   box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px; animation: slidein .18s ease-out; max-width: 380px; }
 .toast button { color: #7FE8B2; font-weight: 700; font-size: calc(12.5px * var(--ui-text-scale)); flex: none; }
@@ -902,7 +902,7 @@ button, .nav { touch-action: manipulation; }
   .toast { max-width: calc(var(--ui-vw, 100vw) - 24px); }
   /* toast 抬到底部导航上方（86px = 导航 62 + 间距），避免被底栏挡住。
      边距 ÷ --ui-scale；--sab 按项目约定不补偿（安全区被 zoom 缩小属已知项）。 */
-  #toasts { right: 12px; bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px))); }
+  #toasts { right: 12px; bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px))); }
   /* ── v0.52.0：沉浸式外壳（需求：APK 默认上下栏都藏，点 ⋮ 菜单键才呼出）──
      结构：.app 挂 .chrome-shown ⇔ 底栏显示（shell.js 的 setChromeShown）。
      v0.59.0：顶栏已整条移除，这个状态类只剩控制底栏一个职责。
@@ -3218,8 +3218,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      半径也够不到右下角（2026-09-19 用户报的「深浅切换不是从按钮扩散」）。
      写法沿用 uiScale.js 的既有契约：恒定物理长度一律 calc(Npx / var(--ui-scale))。
      兜底 1 不能省：--ui-scale 尚未写入时 calc 非法会让整条 clip-path 被丢掉。 */
-  from { clip-path: circle(0px at calc(var(--theme-reveal-x, 50%)) calc(var(--theme-reveal-y, 50%))); }
-  to { clip-path: circle(calc(var(--theme-reveal-r, 150vmax)) at calc(var(--theme-reveal-x, 50%)) calc(var(--theme-reveal-y, 50%))); }
+  from { clip-path: circle(0px at calc(var(--theme-reveal-x, 50%) / var(--ui-scale, 1)) calc(var(--theme-reveal-y, 50%) / var(--ui-scale, 1))); }
+  to { clip-path: circle(calc(var(--theme-reveal-r, 150vmax) / var(--ui-scale, 1)) at calc(var(--theme-reveal-x, 50%) / var(--ui-scale, 1)) calc(var(--theme-reveal-y, 50%) / var(--ui-scale, 1))); }
 }
 /* 动效偏好「减少动效」（应用内设置 data-ui-motion=reduced，或系统 prefers-reduced-motion）
    时不做揭示 —— theme.js 的 themeMotionAllowed() 已经直接跳过 startViewTransition，
@@ -3377,7 +3377,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      道理：zoom 元素里布局长度 × zoom = 物理长度，所以「恒定的物理边距 N」要写 N / zoom。
      `--ui-vh` 是「视口长 ÷ 系数」（布局长度），只能用来**乘比例**（`calc(--ui-vh * .11)`），
      不能用来**减边距** —— 减出来的东西离屏幕底还有一整个视口那么远。 */
-  inset: calc(36px) calc(20px);
+  inset: calc(36px / var(--ui-scale, 1)) calc(20px / var(--ui-scale, 1));
   /* v0.50.0：用户反馈「左右太宽」。全宽铺开是 v0.48.x 为让内容吃满横向空间改的，
      但设置页多数分区内容偏窄（如「可选同步」右侧大片空白），反而显空。
      限宽 + margin auto 水平居中：inset 上下仍定死（高度行为不变），
@@ -3765,8 +3765,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      v0.58.1：再叠安全区 —— 22px 的物理边距在手机上小于导航栏 / 手势条 inset，
      提示条会被系统栏压掉一截（与 #toasts 同理，那边早就在窄屏补了 --sab）。
      桌面 / iOS 走 env() 兜底，Android 走 MainActivity 注入值（铁律四）。 */
-  left: calc(22px + var(--sal, env(safe-area-inset-left, 0px)));
-  bottom: calc(22px + var(--sab, env(safe-area-inset-bottom, 0px)));
+  left: calc(22px / var(--ui-scale, 1) + var(--sal, env(safe-area-inset-left, 0px)));
+  bottom: calc(22px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
   z-index: 1890;
   width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
   padding: 13px 15px;
@@ -3827,7 +3827,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
      等于把那会儿的导航整条挡住（390px 截图实测）。sab 用双路写法：WebView 不实现 env()。 */
   .update-toast {
     left: 12px; right: 12px;
-    bottom: calc(86px + var(--sab, env(safe-area-inset-bottom, 0px)));
+    bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
     width: auto;
     padding: 12px 13px;
   }
