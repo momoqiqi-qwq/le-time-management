@@ -304,7 +304,12 @@ export async function startUpdate() {
     message: "",
   });
   try {
-    const path = await api.updateDownload(info.asset_url, info.asset_name, Number(info.asset_size) || 0);
+    const path = await api.updateDownload(
+      info.asset_url,
+      info.asset_name,
+      Number(info.asset_size) || 0,
+      info.asset_digest || "",
+    );
     patchState({ phase: "ready", downloadedPath: path, message: "" });
     // Android 要单独问一次「授权开了没」：没开的话点「安装」只会看到安装界面一闪而过。
     if (typeof api.updateReady === "function") {

@@ -156,6 +156,7 @@ const RELEASE = {
   asset_name: "LeTime-0.38.1-x64-setup.exe",
   asset_url: "https://github.com/momoqiqi-qwq/le-time-management/releases/download/v0.38.1/LeTime-0.38.1-x64-setup.exe",
   asset_size: 21 * 1024 * 1024,
+  asset_digest: "sha256:" + "ab".repeat(32),
 };
 
 /* ─────────────── 加载被测模块 ─────────────── */
@@ -332,7 +333,8 @@ assert.deepEqual(downloadCall.args, {
   url: RELEASE.asset_url,
   name: RELEASE.asset_name,
   size: RELEASE.asset_size,
-}, "参数名必须与 Rust 侧 update_download(url, name, size) 一致（Tauri 只透传 camelCase）");
+  digest: RELEASE.asset_digest,
+}, "参数名必须与 Rust 侧 update_download(url, name, size, digest) 一致（Tauri 只透传 camelCase）");
 
 const readyCall = lastCallTo("update_ready");
 assert.ok(readyCall, "下载完必须探一次安装就绪状态");

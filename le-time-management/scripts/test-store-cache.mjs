@@ -33,4 +33,27 @@ assert.ok(!("background" in S.getState().settings),
   "导入带 settings.background 的旧备份后，该键必须被剥掉（自定义背景已移除）");
 assert.equal(S.getState().settings.theme, "classic", "剥掉 background 不能连带弄丢 settings 里的其他字段");
 
-console.log("PASS: blocksOf 日期缓存、副本保护、更新/删除/整体替换失效 + 旧数据里的 settings.background 被剥掉");
+// 改动某一天时，只应让这一天的派生缓存失效。周视图会连续查询多天；若每次拖动一个
+// 时间块都清空整张索引，其余 6 天会在同一轮渲染里重复扫描完整 blocks 数组。
+let filterCalls = 0;
+const trackedBlocks = new Proxy([
+  { id: "day-a", date: "2026-09-10", start: "09:00" },
+  { id: "day-b", date: "2026-09-11", start: "10:00" },
+], {
+  get(target, prop, receiver) {
+    if (prop === "filter") filterCalls++;
+    return Reflect.get(target, prop, receiver);
+  },
+});
+await S.initStore({ tasks: [], blocks: [], settings: {}, plugins: {} });
+S.getState().blocks = trackedBlocks;
+S.blocksOf("2026-09-10");
+S.blocksOf("2026-09-11");
+assert.equal(filterCalls, 2, "首次查询两天时各扫描一次");
+S.updateBlock("day-b", { start: "08:00" });
+S.blocksOf("2026-09-10");
+assert.equal(filterCalls, 2, "更新另一天后，未受影响日期应继续命中缓存");
+assert.deepEqual(S.blocksOf("2026-09-11").map((b) => b.id), ["day-b"]);
+assert.equal(filterCalls, 3, "受影响日期应重新扫描并排序");
+
+console.log("PASS: blocksOf 按日期缓存、副本保护、精准失效/整体替换失效 + 旧数据里的 settings.background 被剥掉");

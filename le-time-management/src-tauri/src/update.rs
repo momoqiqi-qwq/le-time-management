@@ -10,7 +10,7 @@
 //! ## 三段式，互相不耦合
 //!
 //! 1. [`update_check`]    —— 查 `releases/latest`，比版本号，挑出本平台该装哪个产物。
-//! 2. [`update_download`] —— 流式下到应用缓存目录，边下边发 `update:progress`，下完校验大小。
+//! 2. [`update_download`] —— 流式下到应用缓存目录，边下边发 `update:progress`，下完校验大小与 SHA-256。
 //! 3. [`update_install`]  —— 交给系统安装：Windows 静默重装（NSIS `/S /R`，装完自启）；
 //!    Android 经 [`ApkInstallerPlugin`] 用 FileProvider 发 `content://` 给系统安装器。
 //!
@@ -32,7 +32,8 @@ use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// 发布源：公开仓库的 latest release。
-const RELEASES_API: &str = "https://api.github.com/repos/momoqiqi-qwq/le-time-management/releases/latest";
+const RELEASES_API: &str =
+    "https://api.github.com/repos/momoqiqi-qwq/le-time-management/releases/latest";
 
 /// 下载体积上限。APK 约 21MB、安装包约 4MB，512MB 足够宽松，
 /// 又能在「上游填错 asset.size / 被中间人塞了超大文件」时保住磁盘。
@@ -108,16 +109,20 @@ fn asset_kind() -> AssetKind {
 /// 而 portable 与 msi 都没法做「静默原地升级」。
 ///
 /// 分值构成：
-/// - 基础 +3：精确后缀 + 首选关键词（Windows `setup` / Android `universal`）
-/// - 基础 +1：仅后缀匹配（Windows 退而求其次的 msi / Android 的普通 apk）
-/// - 额外 +4：文件名里带了**目标版本号** —— 防止某个 release 误挂了旧版本的产物，
-///   那会导致「装完还是旧版，于是每次启动都提示更新」的无限循环。
+/// - 前置条件：文件名必须带**目标版本号**，否则拒绝自动安装；
+/// - 基础 +3：精确后缀 + 首选关键词（Windows `setup` / Android `universal`）；
+/// - 基础 +1：仅后缀匹配（Windows 退而求其次的 msi / Android 的普通 apk）；
+/// - 版本号满足前置条件后额外 +4。
 ///
-/// 版本判断用的是子串匹配（`0.38.0` 出现在名字里）。刻意的宽松启发式：
-/// 判错了顶多退化成「只按基础分挑」，不会挑到不该挑的产物；
-/// 若换成严格边界匹配，遇到上游改个命名风格（`LeTime_v0.38.0_x64_setup.exe`）就静默失效。
+/// 版本判断用子串匹配（`0.38.0` 出现在名字里），不限制品牌前缀或分隔符，
+/// 所以 `UTime-0.38.0-...` 与 `LeTime_v0.38.0_...` 都能匹配。
 fn asset_score(name: &str, kind: AssetKind, latest: &str) -> Option<u32> {
     let lower = name.to_ascii_lowercase();
+    // Release 若误挂了旧版本产物，宁可禁用自动安装，也不能让用户装完仍是旧版、
+    // 每次启动继续提示同一个更新。品牌前缀和分隔符仍不限制，只要求版本号出现。
+    if !latest.is_empty() && !lower.contains(&latest.to_ascii_lowercase()) {
+        return None;
+    }
     let base = match kind {
         AssetKind::SetupExe => {
             if lower.ends_with(".exe") && lower.contains("setup") {
@@ -139,12 +144,7 @@ fn asset_score(name: &str, kind: AssetKind, latest: &str) -> Option<u32> {
         }
         AssetKind::Unsupported => return None,
     };
-    let version_bonus = if !latest.is_empty() && lower.contains(&latest.to_ascii_lowercase()) {
-        4
-    } else {
-        0
-    };
-    Some(base + version_bonus)
+    Some(base + if latest.is_empty() { 0 } else { 4 })
 }
 
 /// 从 release 的 assets 里挑出唯一要用的那个：**最高分，同分取先出现的**。
@@ -218,6 +218,18 @@ fn validate_release_url(url: &str) -> Result<(), String> {
     }
 }
 
+/// 接受 GitHub API 的 `sha256:<64 hex>`，也容忍调用方只传 64 位十六进制。
+/// 返回统一的小写 hex；空值代表旧 API 没提供摘要，由体积校验兜底。
+fn normalize_sha256_digest(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let hex = trimmed.strip_prefix("sha256:").unwrap_or(trimmed);
+    if hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Some(hex.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
 /// 文件必须在给定目录之内（防「让宿主执行任意路径」）。
 fn ensure_inside(dir: &Path, file: &Path) -> Result<(), String> {
     let root = std::fs::canonicalize(dir).map_err(|e| format!("缓存目录不可用：{e}"))?;
@@ -260,6 +272,7 @@ pub struct UpdateInfo {
     asset_name: String,
     asset_url: String,
     asset_size: u64,
+    asset_digest: String,
 }
 
 /// 查最新发布并和当前版本比。
@@ -309,8 +322,8 @@ pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> Result<UpdateInfo, S
         return Err("版本信息里没有 tag_name".into());
     }
     let latest = tag.trim_start_matches(['v', 'V']).to_string();
-    let latest_version = parse_version(&latest)
-        .ok_or_else(|| format!("无法解析远端版本号：{tag}"))?;
+    let latest_version =
+        parse_version(&latest).ok_or_else(|| format!("无法解析远端版本号：{tag}"))?;
     let current_version = parse_version(&current);
     let has_update = current_version.is_some_and(|cur| latest_version > cur);
 
@@ -340,13 +353,31 @@ pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> Result<UpdateInfo, S
     let (asset_name, asset_url, asset_size) = picked
         .map(|(name, url, size)| (name.clone(), url.clone(), *size))
         .unwrap_or_default();
+    let asset_digest = if asset_name.is_empty() {
+        String::new()
+    } else {
+        json["assets"]
+            .as_array()
+            .and_then(|list| {
+                list.iter()
+                    .find(|asset| asset["name"].as_str() == Some(&asset_name))
+            })
+            .and_then(|asset| asset["digest"].as_str())
+            .and_then(normalize_sha256_digest)
+            .map(|hex| format!("sha256:{hex}"))
+            .unwrap_or_default()
+    };
 
     Ok(UpdateInfo {
         current,
         latest,
         has_update,
         supported,
-        message: if supported { String::new() } else { unsupported_message },
+        message: if supported {
+            String::new()
+        } else {
+            unsupported_message
+        },
         notes: truncate_chars(json["body"].as_str().unwrap_or(""), MAX_NOTES_CHARS),
         published_at: json["published_at"].as_str().unwrap_or("").to_string(),
         release_name: json["name"].as_str().unwrap_or("").to_string(),
@@ -354,6 +385,7 @@ pub async fn update_check<R: Runtime>(app: AppHandle<R>) -> Result<UpdateInfo, S
         asset_name,
         asset_url,
         asset_size,
+        asset_digest,
     })
 }
 
@@ -398,15 +430,15 @@ struct UpdateProgress {
 ///
 /// - 先写 `*.part` 再改名：中途失败 / 被取消时不会留下一个「看起来能用」的半截文件
 ///   被安装器捡走。
-/// - `expected_size` 来自 GitHub API（`asset.size`）。它只能证明「下全了」，
-///   证明不了「没被换过」—— 要防篡改得靠签名，而本项目刻意不引入签名密钥（见模块头）。
-///   这里如实校验大小，能拦住截断与代理插广告这类最常见的损坏。
+/// - `size` 与 `digest` 都来自同一次 GitHub API 响应。体积拦截断，SHA-256 拦内容损坏；
+///   摘要不是独立签名，不能替代完整的发布签名体系，但至少不会执行下载途中损坏的安装包。
 #[tauri::command]
 pub async fn update_download<R: Runtime>(
     app: AppHandle<R>,
     url: String,
     name: String,
     size: u64,
+    digest: String,
 ) -> Result<String, String> {
     if asset_kind() == AssetKind::Unsupported {
         return Err("当前平台不支持应用内更新，请到项目仓库下载".into());
@@ -416,6 +448,11 @@ pub async fn update_download<R: Runtime>(
     if size > MAX_UPDATE_BYTES {
         return Err("更新包体积异常，已中止下载".into());
     }
+    let expected_digest = if digest.trim().is_empty() {
+        None
+    } else {
+        Some(normalize_sha256_digest(&digest).ok_or("更新包 SHA-256 格式不合法")?)
+    };
 
     let dir = app
         .path()
@@ -440,21 +477,29 @@ pub async fn update_download<R: Runtime>(
         return Err("更新包体积异常，已中止下载".into());
     }
 
-    let mut file = std::fs::File::create(&part_path).map_err(|e| format!("无法写入缓存文件：{e}"))?;
+    let mut file =
+        std::fs::File::create(&part_path).map_err(|e| format!("无法写入缓存文件：{e}"))?;
     // 进度节流：按总量切成约 200 份（下限 256KB），最多发 200 次事件，别把 IPC 打满。
     let step = (total / 200).max(256 * 1024);
     let mut last_sent: u64 = 0;
+    let mut digest_context = ring::digest::Context::new(&ring::digest::SHA256);
 
     // 收尾（校验体积 → 改名，或清理 .part）都在 await 结束、文件句柄释放之后做：
     // Windows 上句柄没关就 rename 会报占用。
     let downloaded: Result<u64, String> = async {
         let mut received: u64 = 0;
-        while let Some(chunk) = response.chunk().await.map_err(|e| format!("下载中断：{e}"))? {
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| format!("下载中断：{e}"))?
+        {
             received += chunk.len() as u64;
             if received > MAX_UPDATE_BYTES {
                 return Err("更新包体积异常，已中止下载".to_string());
             }
-            file.write_all(&chunk).map_err(|e| format!("写入失败：{e}"))?;
+            file.write_all(&chunk)
+                .map_err(|e| format!("写入失败：{e}"))?;
+            digest_context.update(&chunk);
             if received - last_sent >= step || received == total {
                 last_sent = received;
                 let _ = app.emit("update:progress", UpdateProgress { received, total });
@@ -468,11 +513,28 @@ pub async fn update_download<R: Runtime>(
 
     match downloaded {
         Ok(received) => {
-            // size 只能证明「下全了」，证明不了「没被换过」—— 防篡改要靠签名，
-            // 而本项目刻意不引入签名密钥（见模块头）。这里拦住截断与代理插广告这类损坏。
             if total > 0 && received != total {
                 let _ = std::fs::remove_file(&part_path);
                 return Err(format!("更新包不完整（{received}/{total} 字节），请重试"));
+            }
+            if size > 0 && received != size {
+                let _ = std::fs::remove_file(&part_path);
+                return Err(format!(
+                    "更新包大小与发布信息不一致（{received}/{size} 字节），请重试"
+                ));
+            }
+            if let Some(expected) = expected_digest {
+                let actual = hex::encode(digest_context.finish().as_ref());
+                if actual != expected {
+                    let _ = std::fs::remove_file(&part_path);
+                    return Err("更新包 SHA-256 校验失败，请重新下载".into());
+                }
+            }
+            // Windows 的 rename 不覆盖已有文件；应用重启后重试同一版本时先删旧缓存，
+            // 否则下载完整却在最后一步报 AlreadyExists。
+            if final_path.exists() {
+                std::fs::remove_file(&final_path)
+                    .map_err(|e| format!("旧更新缓存清理失败：{e}"))?;
             }
             std::fs::rename(&part_path, &final_path).map_err(|e| format!("更新包落盘失败：{e}"))?;
             Ok(final_path.to_string_lossy().into_owned())
@@ -633,7 +695,14 @@ mod tests {
         let picked = pick_asset(&assets, AssetKind::SetupExe, "0.38.0").unwrap();
         assert_eq!(picked.0, "LeTime-0.38.0-x64-setup.exe");
         // portable 不是「.exe 且含 setup」，压根不该被选中
-        assert_eq!(asset_score("LeTime-0.38.0-x64-portable.exe", AssetKind::SetupExe, "0.38.0"), None);
+        assert_eq!(
+            asset_score(
+                "LeTime-0.38.0-x64-portable.exe",
+                AssetKind::SetupExe,
+                "0.38.0"
+            ),
+            None
+        );
     }
 
     #[test]
@@ -657,11 +726,15 @@ mod tests {
         let picked = pick_asset(&assets, AssetKind::SetupExe, "0.38.0").unwrap();
         assert_eq!(picked.0, "LeTime-0.38.0-x64-setup.exe");
 
-        // 只有旧版本产物时仍要能用（宁可装到旧版也不能让更新彻底不可用），
-        // 但分数必须比版本命中的低。
-        let older = asset_score("LeTime-0.37.18-x64-setup.exe", AssetKind::SetupExe, "0.38.0");
+        // 只有旧版本产物时必须拒绝自动安装，否则装完仍是旧版，启动后会无限提示更新。
+        let older = asset_score(
+            "LeTime-0.37.18-x64-setup.exe",
+            AssetKind::SetupExe,
+            "0.38.0",
+        );
         let exact = asset_score("LeTime-0.38.0-x64-setup.exe", AssetKind::SetupExe, "0.38.0");
-        assert!(older.unwrap() < exact.unwrap());
+        assert_eq!(older, None);
+        assert!(exact.is_some());
     }
 
     #[test]
@@ -672,7 +745,10 @@ mod tests {
 
     #[test]
     fn asset_name_is_sanitised_against_path_traversal() {
-        assert_eq!(safe_file_name("LeTime-0.38.0-x64-setup.exe", ".exe").unwrap(), "LeTime-0.38.0-x64-setup.exe");
+        assert_eq!(
+            safe_file_name("LeTime-0.38.0-x64-setup.exe", ".exe").unwrap(),
+            "LeTime-0.38.0-x64-setup.exe"
+        );
         // 目录穿越 / 路径分隔符 / 隐藏文件一律拒绝
         assert!(safe_file_name("../../evil.exe", ".exe").is_err());
         assert!(safe_file_name("sub/dir/evil.exe", ".exe").is_err());
@@ -692,6 +768,22 @@ mod tests {
         assert!(validate_release_url("https://evil.com/github.com/x.exe").is_err());
         assert!(validate_release_url("https://github.com.evil.com/x.exe").is_err());
         assert!(validate_release_url("file:///C:/x.exe").is_err());
+    }
+
+    #[test]
+    fn github_sha256_digest_is_validated() {
+        let hex = "ab".repeat(32);
+        assert_eq!(normalize_sha256_digest(&format!("sha256:{hex}")), Some(hex));
+        assert_eq!(
+            normalize_sha256_digest(&"AB".repeat(32)),
+            Some("ab".repeat(32))
+        );
+        assert_eq!(normalize_sha256_digest("sha256:1234"), None);
+        assert_eq!(
+            normalize_sha256_digest(&format!("sha1:{}", "ab".repeat(32))),
+            None
+        );
+        assert_eq!(normalize_sha256_digest(&"zz".repeat(32)), None);
     }
 
     #[test]

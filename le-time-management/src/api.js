@@ -81,10 +81,10 @@ export const api = {
     if (!isTauri) return null;
     return invoke("update_check");
   },
-  // 返回下载后落盘的绝对路径；size 传给 Rust 当进度分母与完整性校验基准。
-  async updateDownload(url, name, size) {
+  // 返回下载后落盘的绝对路径；size + digest 交给 Rust 做完整性校验。
+  async updateDownload(url, name, size, digest) {
     if (!isTauri) return null;
-    return invoke("update_download", { url, name, size });
+    return invoke("update_download", { url, name, size, digest: digest || "" });
   },
   // Windows 上 Rust 会启动安装器后立刻 app.exit(0)，这个 Promise 可能等不到 resolve。
   async updateInstall(path) {
