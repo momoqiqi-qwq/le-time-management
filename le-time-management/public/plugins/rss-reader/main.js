@@ -747,6 +747,10 @@
 /* 顶栏的「＋ 添加源」：虚线描边，与实心边框的源 chip 区分开 —— 读起来是「这里能加」，不是「又一个源」 */
 .rss-add-src{flex:none;display:inline-flex;align-items:center;gap:3px;height:30px;padding:0 12px;border:1px dashed var(--line,#E4DFD6);border-radius:999px;background:none;color:var(--ink-2,#7E8B94);font-size:calc(12px * var(--ui-text-scale));cursor:pointer;transition:border-color .2s ease,color .2s ease}
 .rss-add-src:hover{border-color:var(--deep,#0F4C5C);border-style:solid;color:var(--deep,#0F4C5C)}
+/* 展开箭头：窄屏下「添加源」三个字要为 chips 让位收掉（见下面的媒体查询），只剩一个 ＋ 读不出
+   「这是把手、点它会摊开一块面板」。箭头是订阅管理展开态的镜像，时长与曲线照抄 .rss-expand::after。 */
+.rss-add-src::after{content:"⌄";display:inline-block;font-size:calc(13px * var(--ui-text-scale));line-height:1;transform:translateY(-1px);transition:transform .36s cubic-bezier(.22,.8,.22,1)}
+.rss-add-src[aria-expanded="true"]::after{transform:translateY(1px) rotate(180deg)}
 .rss-status{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2,#7E8B94);margin-top:9px;line-height:1.7}
 .rss-status .err{color:var(--danger,#B03535)}
 .rss-status b{color:var(--ink,#22303A)}
@@ -1301,7 +1305,7 @@
           <span class="rss-seg" data-seg role="group" aria-label="条目显示样式"></span>
           <span class="rss-toggle" data-cover-toggle title="卡片档是否显示封面图"><i></i>封面图</span>
         </div>
-        <div class="rss-toolbar"><span class="rss-lab">来源</span><div class="rss-chips" data-chips></div><button class="rss-add-src" data-add-src type="button" title="添加订阅源（展开「订阅管理」并把光标放到地址框）">＋<span>添加源</span></button></div>
+        <div class="rss-toolbar"><span class="rss-lab">来源</span><div class="rss-chips" data-chips></div><button class="rss-add-src" data-add-src type="button" aria-expanded="false" title="添加订阅源（展开「订阅管理」并把光标放到地址框）">＋<span>添加源</span></button></div>
         <div class="rss-status" data-status></div>
       </div>
       <details class="rss-manage" data-manage>
@@ -1432,6 +1436,14 @@
       + (bad ? "（" + bad + " 个抓取异常）" : "");
   }
 
+  /* 箭头的展开态只在这里同步：`<details>` 的 toggle 事件在**程序化**改 open 时同样会发
+     （点 summary、点顶栏「＋ 添加源」两条路都走得到这里），所以不放在 focusAddBox 里 ——
+     放那边就得为「用户直接点 summary」再补一条路径。 */
+  function onManageToggle() {
+    paintManageSummary();
+    if (ui) ui.addSrcBtn.setAttribute("aria-expanded", ui.manage.open ? "true" : "false");
+  }
+
   function render(el) {
     ensureStyle();
     el.innerHTML = "<div style=\"padding:28px;text-align:center;color:var(--ink-3,#A9B2BA);font-size:calc(12.5px * var(--ui-text-scale))\">正在读取订阅…</div>";
@@ -1440,8 +1452,8 @@
       .then(() => {
         buildUI(el);
         paintAll();
-        // 摘要里的「已停用 / 抓取异常」计数会随刷新变化，展开收起时顺带对齐一次
-        ui.manage.addEventListener("toggle", paintManageSummary);
+        // 摘要里的「已停用 / 抓取异常」计数与顶栏箭头的展开态都随开合变化，一起对齐
+        ui.manage.addEventListener("toggle", onManageToggle);
         setAuto(state.prefs.autoMin);
         const stale = !state.fetchedAt || Date.now() - state.fetchedAt > STALE_MS;
         if (stale && state.feeds.some((f) => f.enabled !== false)) refreshAll();

@@ -174,9 +174,9 @@ for (const rule of titleCardRules) {
   assert.equal(long("left"), long("right"), `标题卡内边距要左右对称，实际 left=${long("left")} right=${long("right")}`);
 }
 
-// v0.37.15 回归 3：APK 桌面图标名必须是「Le时间管理」。
+// v0.37.15 回归 3：APK 桌面图标名必须是「U-Time」。
 // MainActivity 上的 activity 级 android:label 会覆盖 application 级 app_name，图标名变成
-// 「Le时间管理 · 时间块与四象限」，手机桌面放不下被截断。
+// 「U-Time · 时间块与四象限」，手机桌面放不下被截断。
 // gen/ 是 gitignored，手改会在下次 `tauri android init` 时丢 —— 所以这条清理逻辑
 // v0.38.0 起搬到了 tools/sync-android-native.js（幂等补丁），由构建脚本在打包前调用。
 // 断言因此落在「工具里有这条规则」+「构建脚本确实调了它」两点上。

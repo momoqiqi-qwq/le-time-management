@@ -44,10 +44,12 @@ export function toast(msg, opts = {}) {
 }
 
 /* ── 应用内对话框：替代 window.prompt / window.confirm（Tauri 里原生弹窗样式突兀）── */
-function appDialog({ title, message, label, value = "", placeholder = "", confirmText = "确定", cancelText = "取消", danger = false, input = false }) {
+function appDialog({ title, message, label, value = "", placeholder = "", confirmText = "确定", cancelText = "取消", danger = false, input = false, timeoutMs = 0, timeoutNote = "不操作" }) {
   return new Promise((resolve) => {
+    let tick = null;
     const close = (result) => {
       document.removeEventListener("keydown", onKey, true);
+      if (tick) clearInterval(tick);
       mask.remove();
       resolve(result);
     };
@@ -60,10 +62,16 @@ function appDialog({ title, message, label, value = "", placeholder = "", confir
     const field = input
       ? el("input", { class: "app-dialog-field", type: "text", value, placeholder, "aria-label": label || title })
       : null;
+    // 倒计时到点一律按「取消」处理：这类对话框存在的意义是「有人点头才算数」，
+    // 没人看就等于没人点，绝不能因为它挂着就让人觉得还是活的。
+    const countdown = timeoutMs > 0
+      ? el("p", { class: "app-dialog-countdown" })
+      : null;
     const submit = () => close(input ? field.value.trim() : true);
     const box = el("div", { class: "app-dialog", role: "dialog", "aria-modal": "true", "aria-label": title },
       el("h3", {}, title),
       message ? el("p", { class: "app-dialog-msg" }, message) : null,
+      countdown,
       field,
       el("div", { class: "app-dialog-actions" },
         el("button", { class: "app-dialog-btn", type: "button", onclick: () => close(input ? null : false) }, cancelText),
@@ -80,6 +88,16 @@ function appDialog({ title, message, label, value = "", placeholder = "", confir
     }
     document.addEventListener("keydown", onKey, true);
     document.body.append(mask);
+    if (countdown) {
+      const until = Date.now() + timeoutMs;
+      const paint = () => {
+        const left = Math.ceil((until - Date.now()) / 1000);
+        if (left <= 0) { close(input ? null : false); return; }
+        countdown.textContent = `${timeoutNote} ${left} 秒后自动取消`;
+      };
+      paint();
+      tick = setInterval(paint, 1000);
+    }
     if (field) { field.focus(); field.select(); }
     else box.querySelector(".app-dialog-btn.pri")?.focus();
   });

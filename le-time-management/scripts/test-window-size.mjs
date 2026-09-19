@@ -5,6 +5,8 @@
 // 「非桌面环境直接返回 applied:false 且不抛异常」来守住 —— 真正的窗口行为只能在装好的桌面版里看。
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   WINDOW_SIZE_PRESETS,
   CUSTOM_SIZE_LIMITS,
@@ -154,4 +156,53 @@ for (const name of ["compress", "expand"]) {
 const stylesCss = read("../src/styles.css");
 assert.match(stylesCss, /\.rail-dock > \.rail-dock-btn\.window-focus-btn\.on \.ic/, "缩放视图激活态选择器缺了 .window-focus-btn，会被老的太阳黄盖掉");
 
-console.log("PASS: startup window size presets, screen fitting, preference normalization, focus-window toggle and boot wiring");
+/* ── Tauri ACL：每个窗口写操作都必须显式授权 ─────────────────────────────────
+   v0.74.1 修的 bug：capabilities/default.json 只给了 toggle-maximize，而这里用的是
+   maximize / unmaximize / setSize / center / setPosition（toggle 不等于它们），
+   运行时就是「Command plugin:window|set_size not allowed by ACL」—— 左下角「缩放视图」
+   按下去没反应、设置页「立即应用」报失败、快捷坞「窗口置顶」也一起失效。
+   这类缺失编译期不报错，浏览器里更测不出来（非桌面端第一行就 applied:false 早退了），
+   所以把「代码里用到的」和「清单里给的」逐条对上，缺哪条就红在哪条。 */
+const capDefault = JSON.parse(read("../src-tauri/capabilities/default.json"));
+const granted = new Set(capDefault.permissions);
+// 会改窗口状态或位置的 API → 需要的 core:window:allow-*
+const WRITE_API = {
+  setSize: "set-size", setPosition: "set-position", setResizable: "set-resizable",
+  setMinSize: "set-min-size", setMaxSize: "set-max-size", setFullscreen: "set-fullscreen",
+  setDecorations: "set-decorations", setAlwaysOnTop: "set-always-on-top", setClosable: "set-closable",
+  maximize: "maximize", unmaximize: "unmaximize", minimize: "minimize", unminimize: "unminimize",
+  center: "center", show: "show", hide: "hide", close: "close", setFocus: "set-focus",
+  startDragging: "start-dragging", toggleMaximize: "toggle-maximize",
+};
+// 只读的由 core:default 带出的 core:window:default 覆盖；列出来是为了抓住「未登记的新调用」
+const READ_API = new Set(["innerSize", "outerSize", "innerPosition", "outerPosition", "isMaximized",
+  "isFullscreen", "isFocused", "isMinimized", "isDecorated", "isResizable", "isClosable", "isAlwaysOnTop",
+  "isMaximizable", "isMinimizable", "scaleFactor", "currentMonitor", "primaryMonitor", "availableMonitors",
+  "theme", "title", "label"]);
+
+const srcDir = fileURLToPath(new URL("../src", import.meta.url));
+const walkJs = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+  e.isDirectory() ? walkJs(path.join(dir, e.name)) : (e.name.endsWith(".js") ? [path.join(dir, e.name)] : []));
+const usedApis = new Map();
+for (const file of walkJs(srcDir)) {
+  for (const m of fs.readFileSync(file, "utf8").matchAll(/\bwin\.([A-Za-z]+)\(/g)) {
+    if (!usedApis.has(m[1])) usedApis.set(m[1], path.relative(srcDir, file).replace(/\\/g, "/"));
+  }
+}
+assert.ok(usedApis.size >= 10, `必须扫到窗口 API 调用，当前只找到 ${usedApis.size} 个（正则失效了？）`);
+for (const [api, where] of usedApis) {
+  if (WRITE_API[api]) {
+    assert.ok(granted.has(`core:window:allow-${WRITE_API[api]}`),
+      `🔴 ${where} 调用 win.${api}()，但 capabilities/default.json 缺 core:window:allow-${WRITE_API[api]} → 运行时报 not allowed by ACL`);
+  } else {
+    assert.ok(READ_API.has(api),
+      `未登记的窗口 API win.${api}()（${where}）：只读的加进 READ_API，会改状态的必须同时登记 WRITE_API 并补进 capabilities`);
+  }
+}
+// 本 bug 涉及的那几条单独钉死：清单里被删时给出指名道姓的原因
+for (const p of ["set-size", "set-position", "center", "maximize", "unmaximize", "set-always-on-top"]) {
+  assert.ok(granted.has(`core:window:allow-${p}`),
+    `🔴 缺 core:window:allow-${p}：缩放视图 / 启动窗口大小 / 窗口置顶会静默失败（v0.74.1 的回归）`);
+}
+
+console.log("PASS: startup window size presets, screen fitting, preference normalization, focus-window toggle, boot wiring and the Tauri window ACL grant list");

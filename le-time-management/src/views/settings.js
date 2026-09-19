@@ -181,18 +181,18 @@ export function renderSettings(container, opts = {}) {
     dataCard.append(
       el("div", { class: "data-section-title" }, "完整备份 / 恢复"),
       el("div", { class: "data-actions" },
-        el("button", { class: "btn pri", onclick: () => { downloadText(`Le时间管理-full-backup-${S.todayStr()}.json`, JSON.stringify(fullBackup(info?.version || ""), null, 2), "application/json"); toast("完整备份已导出"); } }, "导出 JSON 完整备份"),
+        el("button", { class: "btn pri", onclick: () => { downloadText(`U-Time-full-backup-${S.todayStr()}.json`, JSON.stringify(fullBackup(info?.version || ""), null, 2), "application/json"); toast("完整备份已导出"); } }, "导出 JSON 完整备份"),
         el("button", { class: "btn ghost", onclick: () => backupInput.click() }, "恢复 JSON 备份"),
         el("button", { class: "btn ghost", onclick: async () => { await S.saveNow(); toast("已立即保存"); } }, "立即保存"),
       ),
       el("div", { class: "data-section-title" }, "表格 / 日历交换"),
       el("div", { class: "data-actions" },
-        el("button", { class: "btn ghost sm", onclick: () => downloadText(`Le时间管理-任务-${S.todayStr()}.csv`, tasksToCsv(), "text/csv;charset=utf-8") }, "导出任务 CSV"),
-        el("button", { class: "btn ghost sm", onclick: () => downloadText(`Le时间管理-时间块-${S.todayStr()}.csv`, blocksToCsv(), "text/csv;charset=utf-8") }, "导出时间块 CSV"),
+        el("button", { class: "btn ghost sm", onclick: () => downloadText(`U-Time-任务-${S.todayStr()}.csv`, tasksToCsv(), "text/csv;charset=utf-8") }, "导出任务 CSV"),
+        el("button", { class: "btn ghost sm", onclick: () => downloadText(`U-Time-时间块-${S.todayStr()}.csv`, blocksToCsv(), "text/csv;charset=utf-8") }, "导出时间块 CSV"),
         el("button", { class: "btn ghost sm", onclick: () => csvInput.click() }, "导入任务 CSV"),
         el("button", { class: "btn ghost sm", onclick: async () => { try { await exportXlsx(); } catch (e) { toast(`Excel 导出失败：${e.message}`); } } }, "导出 Excel .xlsx"),
         el("button", { class: "btn ghost sm", onclick: () => xlsxInput.click() }, "导入 Excel .xlsx"),
-        el("button", { class: "btn ghost sm", onclick: () => downloadText(`Le时间管理-${S.todayStr()}.ics`, toIcs(), "text/calendar;charset=utf-8") }, "导出 ICS"),
+        el("button", { class: "btn ghost sm", onclick: () => downloadText(`U-Time-${S.todayStr()}.ics`, toIcs(), "text/calendar;charset=utf-8") }, "导出 ICS"),
         el("button", { class: "btn ghost sm", onclick: () => icsInput.click() }, "导入 ICS"),
       ),
       backupInput, csvInput, xlsxInput, icsInput,
@@ -327,6 +327,37 @@ export function renderSettings(container, opts = {}) {
 
     const renderLan = () => {
       lanBody.replaceChildren();
+      // 回传开关：allow_push 是启动时烘进服务线程的，改完必须重启一次服务才真的生效，
+      // 不然界面上开着、网络上其实还是关的 —— 那种「开关是装饰」的 bug 最难查。
+      const pushSwitch = toggleSwitch({ checked: Boolean(st.lanPush), ariaLabel: "允许手机推回本机" });
+      pushSwitch.addEventListener("change", async () => {
+        st.lanPush = pushSwitch.checked;
+        await S.saveNow();
+        if (!lanStatus.running) {
+          toast(st.lanPush ? "已允许回传（下次启动服务生效）" : "已关闭回传");
+          return;
+        }
+        try {
+          await api.lanStop();
+          lanStatus = { running: true, url: await api.lanStart(st.lanPort, st.lanToken, st.lanPush) };
+          toast(st.lanPush ? "已允许回传：手机每次推都要在这台电脑上点「接收」" : "已关闭回传");
+          renderLan();
+        } catch (e) {
+          lanStatus = { running: false };
+          renderLan();
+          toast(`联动服务重启失败：${e.message || e}`);
+        }
+      });
+      const pushRow = el("div", { class: "lan-push-row" },
+        el("label", { class: "lan-push-label" },
+          pushSwitch,
+          el("span", {}, "允许手机把数据推回本机")),
+        el("p", { class: "desc" },
+          "关着的时候，网络上不存在任何能改掉这台电脑数据的路径 —— 手机只能读、只能勾选任务和加一条待办。",
+          el("br"),
+          "开着也不是直接覆盖：手机推过来的数据先进内存等着，必须在电脑上弹出确认、点「接收」才算数，且覆盖前先存一个恢复点。人不在电脑前就没接收，手机上那份会自己作废。",
+        ),
+      );
       // 状态行：两种状态下都展示，填满卡片下方空间
       const statusRow = (running, port, host) =>
         el("div", { style: "margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)" },
@@ -375,6 +406,7 @@ export function renderSettings(container, opts = {}) {
               ),
             ),
           ),
+          pushRow,
           statusRow(true, lanPort, lanHost),
         );
       } else {

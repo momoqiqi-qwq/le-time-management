@@ -251,7 +251,7 @@ function renderDerivedCss(lightPalettes, { themeOrder = [] } = {}) {
   const themes = ids.filter((id) => id !== "night");
   const lines = [
     "/* ═══════════════════════════════════════════════════════════",
-    "   Le时间管理 · 派生调色板【自动生成，请勿手改】",
+    "   U-Time · 派生调色板【自动生成，请勿手改】",
     "",
     "   生成：node tools/gen-theme-dark.js        校验：node tools/gen-theme-dark.js --check",
     "   事实源：src/styles.css 各主题的浅色令牌 + tools/lib/theme-tokens.js 的派生规则。",

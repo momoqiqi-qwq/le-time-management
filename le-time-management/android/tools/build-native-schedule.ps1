@@ -24,7 +24,7 @@ if ($Installer) {
     Push-Location (Join-Path $repo 'le-time-management')
     try {
         & npm.cmd run tauri -- build --config src-tauri/tauri.shiguang.conf.json --bundles nsis
-        if ($LASTEXITCODE -ne 0) { throw 'Le时间管理 installer build failed.' }
+        if ($LASTEXITCODE -ne 0) { throw 'U-Time installer build failed.' }
     } finally { Pop-Location; $env:CARGO_TARGET_DIR = $previousTargetDirectory }
 }
 Write-Host "Original native course plugin staged at $target"

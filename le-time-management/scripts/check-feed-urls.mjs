@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const TIMEOUT_MS = 25000;
-const UA = 'Mozilla/5.0 (compatible; LeTime/feed-check)';
+const UA = 'Mozilla/5.0 (compatible; UTime/feed-check)';
 
 /* ── 用真源码取源清单（不写正则去啃数组字面量，改了格式也不会失效） ── */
 const src = fs.readFileSync(new URL('../public/plugins/rss-reader/main.js', import.meta.url), 'utf8');

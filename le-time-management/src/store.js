@@ -164,6 +164,31 @@ export function deleteTaskUndoable(id) {
   };
 }
 
+// 一键清理已完成任务。整批走 batchChanges：一次刷新 + 一次写盘，而不是 N 条任务各触发一遍。
+// 撤销按「任务 + 它自己的排程」成对放回，且只恢复已经不存在的条目，避免覆盖用户事后重建的任务。
+export function deleteDoneTasksUndoable() {
+  const done = state.tasks.filter((t) => t.done);
+  if (!done.length) return null;
+  const snapshot = JSON.parse(JSON.stringify(done.map((t) => ({
+    task: t,
+    blocks: state.blocks.filter((b) => b.taskId === t.id),
+  }))));
+  batchChanges(() => { done.forEach((t) => removeTask(t.id)); });
+  return () => {
+    const tasks = [], blocks = [];
+    for (const entry of snapshot) {
+      if (taskById(entry.task.id)) continue;
+      tasks.push(entry.task);
+      blocks.push(...entry.blocks.filter((b) => !state.blocks.some((x) => x.id === b.id)));
+    }
+    if (!tasks.length) return;
+    state.tasks.unshift(...tasks);
+    state.blocks.push(...blocks);
+    invalidateBlockIndex();
+    changed();
+  };
+}
+
 export function placeTask(t, date, startMin = null, cat = "work") {
   const dur = Math.max(15, Number(t.estMin) || 30);
   const busy = blocksOf(date).filter((b) => !t.id || b.taskId !== t.id);

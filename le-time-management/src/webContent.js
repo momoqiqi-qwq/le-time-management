@@ -286,6 +286,99 @@ export function extractNoticeLinks(html, baseUrl, options = {}) {
   return rows.slice(0, max);
 }
 
+// ── 分页器：列表页「第 N 页」的网址 ─────────────────────────────────────────
+// 高校 CMS 的分页链接写法很不统一，实测到三种：
+//   ① 页码写在文件名上 —— 北京大学本科招生网「通知公告」（2026-09-19 抓取）：
+//      `<a href="index.htm" class="paging-item paging-link cur">1</a>`
+//      `<a href="index1.htm" class="paging-item paging-link">2</a>` … 共 46 页，
+//      一页只有 8 条，其余 360 来条历史通知全压在后面的页里；
+//   ② 下划线后缀 `list_2.html`；③ 查询参数 `?page=2` / `&pageNum=3`。
+// 三种写法的链接文字都是页码本身，所以统一按文字取号，不认 class 名
+// （class 有 paging-/page-/pager-/next_min 等十几种写法，认不过来的）。
+// 只收与当前列表页同目录的同源链接，挡掉正文里恰好是数字的其他链接。
+
+/** 两条 URL 的最长公共前后缀，返回 `[前缀, 后缀]`（不重叠）。 */
+function commonWrap(a, b) {
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  let j = 0; while (j < a.length - i && j < b.length - i && a[a.length - 1 - j] === b[b.length - 1 - j]) j++;
+  return [a.slice(0, i), j ? a.slice(a.length - j) : ""];
+}
+
+/**
+ * 按通式拼出某页网址。`n === 0` 就是「第一页省掉数字」那种写法（`index.htm`
+ * 对应 `index1.htm`），连分隔符一起省（`list.htm` 对应 `list_1.htm`）；
+ * 拼错的话通式过不了下面那道回校，宁可退回字面链接。
+ */
+function templatePageUrl(tpl, page) {
+  const n = page - tpl.offset;
+  if (n < 0) return "";
+  if (n === 0) return `${tpl.prefix.replace(/[_-]$/, "")}${tpl.suffix}`;
+  return `${tpl.prefix}${n}${tpl.suffix}`;
+}
+
+/**
+ * 从已知页码链接里推出「页码 → 网址」通式 `{ prefix, offset, suffix }`，
+ * 含义是 `url(page) = prefix + (page - offset) + suffix`。
+ * 用**相邻两页**的 URL 差值定出数字段，再拿它回校所有已知链接：
+ * 有一对能解释全部样本才算成立，否则返回 `null`（哈希分页之类根本不适用通式）。
+ */
+function pagerTemplate(known) {
+  for (let i = 0; i + 1 < known.length; i++) {
+    const [pa, ua] = known[i];
+    const [pb, ub] = known[i + 1];
+    if (pb - pa !== 1) continue;
+    const [prefix, suffix] = commonWrap(ua, ub);
+    const da = ua.slice(prefix.length, ua.length - suffix.length);
+    const db = ub.slice(prefix.length, ub.length - suffix.length);
+    if (!/^\d{1,3}$/.test(da) || !/^\d{1,3}$/.test(db)) continue;
+    if (Number(db) - Number(da) !== 1) continue;
+    const tpl = { prefix, offset: pb - Number(db), suffix };
+    if (known.every(([p, u]) => { const url = templatePageUrl(tpl, p); return !url || url === u; })) return tpl;
+  }
+  return null;
+}
+
+/**
+ * 列表页的分页器：`{ total, pages }`，pages 是按页码升序、**已补全 1..total** 的
+ * `[{ page, url }]`。认不出分页器时返回 `{ total: 1, pages: [] }`。
+ *
+ * 补全这步不能省：分页器大多只给「窗口」（实测北大这站每页都只印 1…5 + 46，
+ * 第 6 页的链接在第 1 页上根本不出现），只抄字面链接的话读到第 5 页就断了。
+ */
+export function extractPager(html, baseUrl) {
+  let base; try { base = new URL(baseUrl); } catch { return { total: 1, pages: [] }; }
+  const dirOf = (u) => u.pathname.slice(0, u.pathname.lastIndexOf("/") + 1);
+  const source = String(html || "");
+  const byPage = new Map();
+  const byUrl = new Set();
+  const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  let m;
+  while ((m = re.exec(source))) {
+    const text = cleanText(m[2]);
+    if (!/^\d{1,3}$/.test(text)) continue;
+    const page = Number(text);
+    if (page < 1 || byPage.has(page)) continue;
+    const url = resolveWebUrl(attr(m[1], "href"), baseUrl);
+    if (!url) continue;
+    let u; try { u = new URL(url); } catch { continue; }
+    if (u.origin !== base.origin || dirOf(u) !== dirOf(base)) continue;
+    const key = u.pathname + u.search;
+    if (byUrl.has(key)) continue;
+    byUrl.add(key);
+    byPage.set(page, url);
+  }
+  const known = [...byPage].sort((a, b) => a[0] - b[0]);
+  if (!known.length) return { total: 1, pages: [] };
+  const total = known[known.length - 1][0];
+  const tpl = pagerTemplate(known);
+  const pages = [];
+  for (let page = 1; page <= total; page++) {
+    const url = byPage.get(page) || (tpl ? templatePageUrl(tpl, page) : "");
+    if (url) pages.push({ page, url });
+  }
+  return { total, pages };
+}
+
 // ── JSON 接口型站点：服务端只吐空壳，列表靠浏览器执行 JS 后调接口渲染 ────────
 // 实测（北京航空航天大学信息门户 `it.buaa.edu.cn`，2026-09-16）：页面返回 HTTP 200、
 // 11642 字节，**一个 `<a>` 标签都没有**（连 `<title>` 都是空的），body 里只有

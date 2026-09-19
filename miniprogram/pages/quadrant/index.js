@@ -233,11 +233,11 @@ Page({
 
   onShareAppMessage() {
     return {
-      title: "Le时间管理 · 任务表里定的事，排进一天的时间块",
+      title: "U-Time · 任务表里定的事，排进一天的时间块",
       path: "/pages/quadrant/index",
     };
   },
   onShareTimeline() {
-    return { title: "Le时间管理 · 任务表里定的事，排进一天的时间块" };
+    return { title: "U-Time · 任务表里定的事，排进一天的时间块" };
   },
 });

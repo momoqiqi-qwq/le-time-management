@@ -1,4 +1,4 @@
-# Le时间管理 · 微信小程序版
+# U-Time · 微信小程序版
 
 桌面端（Tauri）的微信小程序移植：**原生 WXML/WXSS/JS 开发**，无 npm 依赖、无构建步骤。
 与桌面端共用同一套数据结构（单 JSON：`tasks / blocks / settings / plugins`）和同一份中文时间解析引擎，备份可互相导入恢复。

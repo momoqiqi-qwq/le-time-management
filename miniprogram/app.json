@@ -12,7 +12,7 @@
   "window": {
     "navigationBarBackgroundColor": "@navBg",
     "navigationBarTextStyle": "@navTxt",
-    "navigationBarTitleText": "Le时间管理",
+    "navigationBarTitleText": "U-Time",
     "backgroundColor": "@bg",
     "backgroundTextStyle": "@bgTxt"
   },

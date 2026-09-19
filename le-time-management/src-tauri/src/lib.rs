@@ -1188,6 +1188,105 @@ async fn http_get(url: String) -> Result<HttpResp, String> {
     })
 }
 
+/// 图标抓取：把远程图标读成 data URL，供前端 `<img src>` 直接内联。
+///
+/// **为什么必须走原生侧**：Android 上 Tauri 用 `WebViewAssetLoader`（默认 scheme = https），
+/// 页面来源是 `https://tauri.localhost`；WebView 自 API 21 起默认
+/// `MIXED_CONTENT_NEVER_ALLOW`，release 版还叠了一道 `usesCleartextTraffic="false"`
+/// ⇒ 学校网站常见的 `http://…/favicon.ico` 用 `<img src>` 直接引用会被**静默拦掉**。
+/// 桌面端页面来源是 `http://tauri.localhost`（明文页面加载明文图片不算混合内容），
+/// 所以同一个站点在 Windows 上图标正常、在 APK 上消失 —— 只看桌面端永远复现不了。
+/// 走 reqwest 抓取完全不受 WebView 策略约束，顺带绕开防盗链，且转成 data URL 后
+/// 能随插件 storage 落盘，离线也显示得出来。
+///
+/// **不收 SVG**：SVG 是文档不是位图，内联等于把第三方文档塞进应用；学校站点用不到，直接拒。
+#[tauri::command]
+async fn http_get_icon(url: String) -> Result<String, String> {
+    /// 图标上限。正常 favicon 1~30 KB，给足余量但必须封顶 ——
+    /// 否则一个指向大文件的 URL 能把几十 MB 灌进 data.json。
+    const MAX_ICON_BYTES: usize = 256 * 1024;
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("仅支持 http/https 地址".into());
+    }
+    let client = shared_http_client()?;
+    let resp = client
+        .get(&url)
+        .header("Accept", "image/*,*/*;q=0.8")
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status().as_u16()));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    // 有 Content-Length 就先挡一道，省得白读一遍大文件
+    if let Some(len) = resp.content_length() {
+        if len as usize > MAX_ICON_BYTES {
+            return Err("图标文件过大".into());
+        }
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取响应失败: {e}"))?;
+    if bytes.len() > MAX_ICON_BYTES {
+        return Err("图标文件过大".into());
+    }
+    let mime =
+        icon_mime(&content_type, &bytes).ok_or_else(|| "响应不是可用的图标格式".to_string())?;
+    use base64::Engine as _;
+    Ok(format!(
+        "data:{};base64,{}",
+        mime,
+        base64::engine::general_purpose::STANDARD.encode(&bytes)
+    ))
+}
+
+/// 判定图标 MIME：**魔数优先，认不出才退到响应头**。
+///
+/// 为什么不只信响应头：高校站点的图标大量由 IIS / 老旧 CMS 提供，
+/// `Content-Type: text/plain`、`application/octet-stream` 甚至空值都常见 ——
+/// 只信头会把好图标判死。反过来只信魔数又认不出 webp 这类容器，所以两者结合。
+///
+/// 404 页面是这里最需要挡掉的东西：站点把 `/favicon.ico` 回落到首页 HTML，
+/// 魔数对不上、头又是 `text/html` ⇒ 返回 `None`，前端走首字母兜底而不是内联一段 HTML。
+fn icon_mime(content_type: &str, bytes: &[u8]) -> Option<String> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        return Some("image/png".into());
+    }
+    if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        return Some("image/jpeg".into());
+    }
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        return Some("image/gif".into());
+    }
+    if bytes.starts_with(b"BM") {
+        return Some("image/bmp".into());
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return Some("image/webp".into());
+    }
+    if bytes.starts_with(&[0x00, 0x00, 0x01, 0x00]) {
+        return Some("image/x-icon".into());
+    }
+    let ct = content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    // 魔数认不出时才信头，且只接受明确的位图 —— svg 是文档，一律拒。
+    if ct.starts_with("image/") && !ct.contains("svg") {
+        return Some(ct);
+    }
+    None
+}
+
 /// 用系统默认浏览器打开外部链接（插件点击消息详情用）
 #[tauri::command]
 fn open_external(app: AppHandle, url: String) -> Result<(), String> {
@@ -1209,17 +1308,37 @@ fn lan_start(
     handle: State<LanHandle>,
     port: u16,
     token: String,
+    allow_push: bool,
 ) -> Result<String, String> {
     let quit = Arc::new(AtomicBool::new(false));
     let data_path = data_dir(&app)?.join("data.json");
-    let url = lan::spawn_server(app, port, token.clone(), data_path, quit.clone())?;
+    let (url, push) = lan::spawn_server(app, port, token.clone(), data_path, quit.clone(), allow_push)?;
     *handle.0.lock().map_err(|_| "锁占用")? = Some(lan::LanInstance {
         quit,
         url: url.clone(),
         port,
         token,
+        push,
     });
     Ok(url)
+}
+
+/// 手机推过来的快照：桌面端确认之后取原文。
+/// 只认当前那条 pending，取不到就是「已经不作数了」—— 前端此时不该再覆盖本机。
+#[tauri::command]
+fn lan_push_take(handle: State<LanHandle>, id: String) -> Result<String, String> {
+    let guard = handle.0.lock().map_err(|_| "锁占用")?;
+    let inst = guard.as_ref().ok_or("联动服务没在运行")?;
+    inst.push.take(&id).ok_or_else(|| "这次推送已经过期或被更新的推送顶掉".to_string())
+}
+
+/// 把桌面端的决定回给手机（接收 / 拒绝），note 是给对方看的原因。
+/// 返回 false 同样是「这次不作数了」。
+#[tauri::command]
+fn lan_push_resolve(handle: State<LanHandle>, id: String, approve: bool, note: String) -> Result<bool, String> {
+    let guard = handle.0.lock().map_err(|_| "锁占用")?;
+    let inst = guard.as_ref().ok_or("联动服务没在运行")?;
+    Ok(inst.push.resolve(&id, approve, &note))
 }
 
 #[tauri::command]
@@ -1632,11 +1751,11 @@ fn setup_tray(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-    let quit_item = MenuItem::with_id(app, "quit", "退出 Le时间管理", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "退出 U-Time", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
     let mut builder = TrayIconBuilder::with_id("letime-tray")
-        .tooltip("Le时间管理")
+        .tooltip("U-Time")
         .menu(&menu)
         // 左键留给「显示/隐藏窗口」，右键才弹菜单
         .show_menu_on_left_click(false)
@@ -1747,6 +1866,7 @@ pub fn run() {
             save_download,
             app_info,
             http_get,
+            http_get_icon,
             open_external,
             des_ecb_encrypt_hex,
             http_session_new,
@@ -1764,6 +1884,8 @@ pub fn run() {
             lan_start,
             lan_stop,
             lan_status,
+            lan_push_take,
+            lan_push_resolve,
             update::update_check,
             update::update_download,
             update::update_install,

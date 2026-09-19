@@ -16,7 +16,7 @@ const profile = (id, name, note, colors, colorScheme = "light") => Object.freeze
  * 每套主题的深色变体在 styles/theme-derived.css（同样是生成的）。
  */
 export const THEMES = Object.freeze([
-  profile("classic", "经典 Le时间管理", "温暖纸面，适合日常任务管理", ["#F2EFEA", "#0F4C5C", "#FF6B6B"]),
+  profile("classic", "经典 U-Time", "温暖纸面，适合日常任务管理", ["#F2EFEA", "#0F4C5C", "#FF6B6B"]),
   profile("fresh", "清爽海盐", "更亮、更轻，长时间看也不累", ["#ECF7F5", "#106C72", "#28BFA9"]),
   profile("night", "夜间护眼", "低亮度深色界面；本身就是深色主题，不受显示模式影响", ["#111820", "#37A6A0", "#F0B84C"], "dark"),
   profile("ocean", "深海蓝", "冷静的蓝色系，适合学习与代码场景", ["#EAF1F8", "#174C72", "#277DA1"]),

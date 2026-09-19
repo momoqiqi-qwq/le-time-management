@@ -171,7 +171,7 @@ function ensurePermission(xml, permission) {
 
 /**
  * 删掉 MainActivity 的 `android:label`。launcher 图标显示的是 activity 级 label，
- * 留着会变成「Le时间管理 · 时间块与四象限」，手机桌面放不下被截断。
+ * 留着会变成「U-Time · 时间块与四象限」，手机桌面放不下被截断。
  * 教务窗口（SchoolImportActivity）的 label 是**有意保留**的应用内标题，只按 android:name 精确删。
  */
 function stripMainActivityLabel(xml) {
@@ -260,6 +260,31 @@ function ensureReminderReceivers(xml) {
 }
 
 /**
+ * 端内扫一扫（src/qrScan.js）要的两条相机声明，缺一不可：
+ *   · uses-permission CAMERA —— WebView 报 VIDEO_CAPTURE 时，wry 的 RustWebChromeClient
+ *     拿这条去问系统授权。清单里没声明的话 ActivityResult 会被系统直接判拒，
+ *     **连授权弹窗都不会出现**，用户侧只看到「点了扫码没反应」。
+ *   · uses-feature camera required=false —— 只声明权限的话，商店会把「带相机」当成安装门槛，
+ *     没相机的设备搜不到也装不上本程序。扫码只是可选入口，必须显式写成非必需。
+ */
+const CAMERA_PERMISSION = "android.permission.CAMERA";
+const CAMERA_FEATURE = "android.hardware.camera";
+
+function ensureCameraDeclarations(xml) {
+  let out = xml;
+  const insertAtTopLevel = (line) => {
+    const firstPerm = /^[ \t]*<uses-permission\b[^>]*\/>/m;
+    if (firstPerm.test(out)) out = out.replace(firstPerm, (m) => `${m}\n${line}`);
+    else out = out.replace(/<manifest\b[^>]*>/, (m) => `${m}\n${line}`);
+  };
+  if (!out.includes(CAMERA_PERMISSION)) insertAtTopLevel(`    <uses-permission android:name="${CAMERA_PERMISSION}" />`);
+  if (!new RegExp(`android:name="${CAMERA_FEATURE}"`).test(out)) {
+    insertAtTopLevel(`    <uses-feature android:name="${CAMERA_FEATURE}" android:required="false" />`);
+  }
+  return { xml: out, changed: out !== xml };
+}
+
+/**
  * FileProvider 的 provider 块由 Tauri 模板自带，**这里只校验不合成** ——
  * 合成整个 provider 块要把 authority / meta-data 写全，写错一个字母就是运行期才炸的
  * "Failed to find configured root"，不值得。丢了说明模板变了，该由人来看。
@@ -293,6 +318,8 @@ function patchManifest() {
     xml = r.xml;
     if (r.changed) extraPerms.push(permission.split(".").pop().toLowerCase().replace(/_/g, "-"));
   }
+  const camera = ensureCameraDeclarations(xml);
+  xml = camera.xml;
   const activity = ensureSchoolImportActivity(xml);
   xml = activity.xml;
   const receivers = ensureReminderReceivers(xml);
@@ -303,12 +330,13 @@ function patchManifest() {
   if (!checkFileProvider(xml)) console.log("  [缺失] AndroidManifest.xml 的 FileProvider 声明");
 
   if (xml === src) {
-    console.log(`  [已一致] AndroidManifest.xml（权限 / 教务窗口 / 提醒接收器 / label 都已就位）`);
+    console.log(`  [已一致] AndroidManifest.xml（权限 / 相机 / 教务窗口 / 提醒接收器 / label 都已就位）`);
     return;
   }
   const detail = [
     perm.changed && "补安装权限",
     extraPerms.length && `补通知权限（${extraPerms.join("、")}）`,
+    camera.changed && "补相机声明（权限 + 非必需 feature）",
     activity.changed && "注册 SchoolImportActivity",
     receivers.changed && "注册提醒接收器",
     label.changed && "去 MainActivity label",

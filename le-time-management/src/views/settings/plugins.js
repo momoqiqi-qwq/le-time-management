@@ -21,19 +21,19 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   githubIcon.innerHTML = '<svg viewBox="0 0 24 24" width="17" height="17"><path fill="currentColor" d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.2c-3.22.7-3.9-1.37-3.9-1.37-.53-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.38.96.1-.75.4-1.26.74-1.55-2.57-.3-5.27-1.29-5.27-5.72 0-1.26.45-2.3 1.19-3.1-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.16 1.18A10.97 10.97 0 0 1 12 6.09c.98 0 1.95.13 2.87.39 2.2-1.49 3.16-1.18 3.16-1.18.63 1.59.23 2.77.11 3.06.74.8 1.19 1.84 1.19 3.1 0 4.44-2.71 5.42-5.29 5.71.42.36.79 1.07.79 2.16v3.2c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>';
   const websiteLink = el("button", {
     class: "plugin-doc-link",
-    title: "打开 Le时间管理 官方网站",
+    title: "打开 U-Time 官方网站",
     onclick: () => PROJECT_LINKS.website ? api.openExternal(PROJECT_LINKS.website) : toast("请先在 src/projectLinks.js 填入你的真实官网地址"),
   }, el("span", { "aria-hidden": "true" }, "↗"), el("span", {}, "官方网站"));
   const docLink = el("button", {
     class: "plugin-doc-link",
-    title: "打开 Le时间管理 项目仓库 / 在线开发文档",
+    title: "打开 U-Time 项目仓库 / 在线开发文档",
     onclick: () => api.openExternal(PROJECT_LINKS.repository),
   }, githubIcon, el("span", {}, "在线开发文档"));
   const downloadDoc = el("button", {
     class: "plugin-doc-link",
     title: "下载离线插件开发文档",
     onclick: async () => {
-      const filename = "Le时间管理-插件开发文档.md";
+      const filename = "U-Time-插件开发文档.md";
       try {
         const res = await fetch(PROJECT_LINKS.pluginDevDocAsset, { cache: "no-store" });
         if (!res.ok) throw new Error(`文档读取失败 (${res.status})`);
@@ -229,7 +229,7 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
         if (!ids.length) return toast(skipped ? "内置插件不能导出，请勾选用户插件" : "请先勾选要导出的用户插件");
         try {
           const b64 = await api.exportPluginsZip(ids);
-          saveZipBase64(b64, `Le时间管理-plugins-${S.todayStr()}.zip`);
+          saveZipBase64(b64, `U-Time-plugins-${S.todayStr()}.zip`);
           toast(`已导出 ${ids.length} 个用户插件${skipped ? `（跳过 ${skipped} 个内置插件）` : ""}`);
         } catch (e) { toast(`导出失败：${e.message || e}`); }
       },

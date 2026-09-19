@@ -10,7 +10,7 @@ foreach ($match in [regex]::Matches($settings, 'project\('':([^'']+)''\)\.projec
 foreach ($name in @('tauri-android','tauri-plugin-opener')) {
     if (-not $sources[$name] -or -not (Test-Path $sources[$name])) { throw "Missing generated Tauri Android source: $name" }
 }
-if (-not (Test-Path "$generated/app/src/main/jniLibs/arm64-v8a/libletime_lib.so")) { throw 'Build the Le时间管理 arm64 Rust library first.' }
+if (-not (Test-Path "$generated/app/src/main/jniLibs/arm64-v8a/libletime_lib.so")) { throw 'Build the U-Time arm64 Rust library first.' }
 Push-Location (Join-Path $repo 'vendor/shiguangschedule')
 try {
     & ./gradlew.bat ":leAndroid:assemble$Configuration" '-PleAndroid=true' '-Pkotlin.incremental=false' '-Pandroid.overridePathCheck=true' "-PtauriAndroidSource=$($sources['tauri-android'])" "-PtauriOpenerSource=$($sources['tauri-plugin-opener'])" --console=plain

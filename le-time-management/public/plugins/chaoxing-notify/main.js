@@ -1,4 +1,4 @@
-// 学习通通知 v2 for Le时间管理
+// 学习通通知 v2 for U-Time
 // Based on the user-provided chaoxing-notify-skill v2 flow:
 // fanyalogin -> reusable Cookie session -> notice.chaoxing.com inbox (no IP allow-list)
 // -> courses -> full notification body -> todo extraction -> local reminders.

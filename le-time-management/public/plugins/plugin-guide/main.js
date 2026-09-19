@@ -42,7 +42,7 @@
   async function downloadDevDoc(){
     try{
       const text=await tide.assets.text("plugin-development.md");
-      const filename="Le时间管理-插件开发文档.md";
+      const filename="U-Time-插件开发文档.md";
       // 优先走宿主真正落盘（<a download> 在 Tauri WebView 里对 blob: 下载不可靠）
       try{
         const path=await tide.assets.saveText(filename,text);

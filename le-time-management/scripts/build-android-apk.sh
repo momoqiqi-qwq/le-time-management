@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Le时间管理 Android APK 构建流水线（绕开两个 Windows 中文路径坑）：
+# U-Time Android APK 构建流水线（绕开两个 Windows 中文路径坑）：
 #  1) tauri CLI 强制用 NDK 的 .cmd 链接器包装脚本，cmd.exe 有 8191 字符上限，
 #     依赖一多链接命令行超长即损坏 → 直接用 clang.exe + --target 参数；
 #  2) tauri CLI 会覆盖 CARGO_TARGET_*_LINKER/RUSTFLAGS 环境变量 → 不经过 tauri CLI，
@@ -51,7 +51,7 @@ esac
 #    宁可不出包也不要出一个缺原生桥的包）。同一个脚本还幂等处理三件事：
 #      · AndroidManifest 补 REQUEST_INSTALL_PACKAGES（应用内升级要拉起系统安装器）
 #      · 去掉 MainActivity 的 label（activity 级 label 会盖掉 app_name，桌面图标名变成
-#        「Le时间管理 · 时间块与四象限」被截断；教务窗口的 label 是有意保留的，只按 android:name 精确删）
+#        「U-Time · 时间块与四象限」被截断；教务窗口的 label 是有意保留的，只按 android:name 精确删）
 #      · res/xml/file_paths.xml 补 <cache-path>（更新包暂存在 app_cache_dir，要给 FileProvider 共享）
 #    细节与坑见 tools/sync-android-native.js 顶部注释。
 #    🔴 用相对路径，不要写 "$ROOT/../tools/..."：上面 `cd "$ROOT"` 之后就在仓库根，

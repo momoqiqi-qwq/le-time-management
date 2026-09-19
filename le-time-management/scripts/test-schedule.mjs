@@ -52,7 +52,7 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,styles,setStyle:(s)=>{style={...style,...s};}};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,styles,setStyle:(s)=>{style={...style,...s};},pickSchool:(s)=>{selectedSchool=s;},openSchoolAdapter:(a)=>openSchoolAdapter(a),adapterSources:()=>schoolAdapterSources};\n tide.ui.registerView({'),uiContext);
 /* styles() 真跑一遍（v0.59.0 加的守卫）。整份课表 CSS 是**模板字符串**，注释里出现反引号
    或 ${ 会把字符串截断 —— 反引号成对时语法照样合法、vm 加载与 --check 全过，
    只有真正执行 styles() 才炸（实测 main.js 里 .app.rail-hidden 被当成属性访问，
@@ -62,11 +62,54 @@ const injectedCss=[];
 uiContext.document={getElementById:()=>null,head:{append(){}},createElement:()=>({id:'',set textContent(v){injectedCss.push(v);},get textContent(){return injectedCss[0]||'';}})};
 uiContext.fixture.styles();
 assert.equal(injectedCss.length,1,'styles() 必须真的注入一段 CSS（长度 0 说明模板被截断或提前 return）');
-assert.match(injectedCss[0],/\.sg\.bleed\{padding:0 var\(--sar/, '注入的 CSS 里必须有 .sg.bleed 无边距规则');
+assert.match(injectedCss[0],/\.sg\.bleed\{padding:0\}/, '注入的 CSS 里必须有 .sg.bleed 无边距规则');
 assert.doesNotMatch(injectedCss[0],/```|\$\{/, 'CSS 模板里不许出现反引号或 ${（会截断模板字符串）');
 uiContext.fixture.set(table,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);await uiContext.fixture.blocks();assert.equal(savedBlocks.length,1);
 savedBlocks.length=0;savedBlocks.push({id:'existing',date:'2026-09-07',title:'existing',start:'08:30',durMin:30});await assert.rejects(uiContext.fixture.blocks(),/冲突/);assert.equal(savedBlocks.length,1);
 console.log('PASS: time-block idempotence and conflict leaves existing schedule unchanged');
+/* 在线教务导入的「取适配脚本」这一步。
+   背景（用户反馈）：选学校后点导入，报「学校适配脚本读取失败（HTTP 404）」，几乎所有学校都中。
+   根因（v0.74.2 查实）：脚本地址写死在 raw.githubusercontent.com/XingHeYuZhuan/shiguang_warehouse，
+   而该 GitHub 账号已注销 —— api/users/XingHeYuZhuan 与仓库页面全部 404，也没有改名重定向。
+   上游自己的 git_repos.json 里 Gitee 官方镜像（XingHeYuZhuan-gh）仍在更新，路径拼法一致。
+   所以这里守三件事：镜像清单不能退回单源、第一个源必须是活的、取不到时要往下一个源重试。 */
+const adapterHits=[];const imported=[];
+uiContext.tide.schoolImporter={open:(o)=>{imported.push(o);return Promise.resolve();},onMessage:()=>Promise.resolve()};
+const schoolAdapterFixture=()=>{uiContext.fixture.pickSchool({id:'BUPT',name:'北京邮电大学',resourceFolder:'BUPT'});
+  return uiContext.fixture.openSchoolAdapter({adapterId:'BUPT_01',adapterName:'北邮本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'bupt_01.js',importUrl:'https://jwgl.bupt.edu.cn/jsxsd/xskb/xskb_list.do'});};
+const sources=uiContext.fixture.adapterSources();
+assert.ok(Array.isArray(sources)&&sources.length>=2,'适配脚本取源必须是多镜像清单，不能退回写死的单一地址');
+assert.match(sources[0].base,/gitee\.com\/XingHeYuZhuan-gh\/shiguang_warehouse\/raw\/main$/,'第一个源必须是仍在更新的 Gitee 官方镜像（GitHub 原仓库已随账号注销一起 404）');
+assert.match(sources.at(-1).base,/githubusercontent\.com\/XingHeYuZhuan\/shiguang_warehouse\/main$/,'GitHub 原仓库留在备用位，账号恢复后无需改码');
+for(const s of sources)assert.ok(/^https:\/\//.test(s.base)&&!/\/$/.test(s.base),`镜像地址要写全且不带尾斜杠：${s.name}`);
+uiContext.tide.http={session:()=>Promise.resolve('sid'),fetch:(_sid,_m,url)=>{adapterHits.push(url);
+  return url===`${sources[0].base}/resources/BUPT/bupt_01.js`?Promise.resolve({status:404,body:''}):Promise.resolve({status:200,body:'// 适配脚本'});}};
+await schoolAdapterFixture();
+assert.equal(adapterHits.length,sources.length,'首选源 404 时必须逐个重试到成功为止');
+assert.deepEqual(adapterHits,[...sources.map(s=>`${s.base}/resources/BUPT/bupt_01.js`)],'按清单顺序取源，且路径是 resources/<resourceFolder>/<assetJsPath>');
+assert.equal(imported.length,1,'取到脚本后必须打开教务窗口');
+assert.equal(imported[0].url,'https://jwgl.bupt.edu.cn/jsxsd/xskb/xskb_list.do','窗口要落在适配器的 importUrl');
+adapterHits.length=0;imported.length=0;
+uiContext.tide.http.fetch=(_sid,_m,url)=>{adapterHits.push(url);return Promise.reject(new Error('连接中断'));};
+await assert.rejects(schoolAdapterFixture(),/学校适配脚本读取失败/);
+assert.equal(adapterHits.length,sources.length,'单个源网络异常也不能中止整条链，必须继续下一个');
+/* 每个学校独有的路径编码不能被镜像改动打回去：resourceFolder 与文件名都要转义，
+   但分隔符要留着，否则 encodeURIComponent(整串) 会把 `BUPT/x.js` 变成 `BUPT%2Fx.js` 而 404。 */
+adapterHits.length=0;imported.length=0;
+uiContext.tide.http.fetch=(_sid,_m,url)=>{adapterHits.push(url);return Promise.resolve({status:200,body:'// 适配脚本'});};
+uiContext.fixture.pickSchool({id:'X',name:'带空格的学校',resourceFolder:'A B&C'});
+await uiContext.fixture.openSchoolAdapter({adapterId:'D_01',adapterName:'d',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'d 01.js'});
+assert.equal(adapterHits[0],`${sources[0].base}/resources/A%20B%26C/d%2001.js`,'路径逐段转义、分隔符保留');
+/* 内置警大不走网络：上游一旦再抽风，至少自己学校还能导入。 */
+adapterHits.length=0;imported.length=0;
+const localHits=[];
+uiContext.fetch=(url)=>{localHits.push(url);return Promise.resolve({ok:true,status:200,text:()=>Promise.resolve('// 本地副本')});};
+uiContext.fixture.pickSchool({id:'CPPU',name:'中国人民警察大学',resourceFolder:'CPPU'});
+await uiContext.fixture.openSchoolAdapter({adapterId:'CPPU_01',adapterName:'警大本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'cppu.js',importUrl:'https://jw.cppu.edu.cn/index.html'});
+assert.equal(adapterHits.length,0,'CPPU 必须读本地副本，一次外网请求都不发');
+assert.deepEqual(localHits,['/plugins/shiguang-schedule/adapters/cppu.js'],'CPPU 的本地副本路径不能变（构建器按它复制）');
+assert.equal(imported.length,1,'CPPU 仍然要正常开窗口');
+console.log('PASS: school adapter script falls back across mirrors when the upstream source 404s');
 console.log('PASS: embedded Today/Week/My navigation, multi-table actions, personalization, all-table restore and swipe support');
 const eduBase=M.empty('2026-09-07');eduBase.config.semesterStartDate='2026-09-07';eduBase.config.semesterTotalWeeks=20;
 const eduTsv=[
@@ -295,8 +338,11 @@ console.log('PASS: 二级页返回走历史栈（课程管理→编辑→返回�
 /* ── v0.33.0 二、课表界面滚轮上下滑动 ── */
 // .schedule-frame 是横向滚动容器。整份 overscroll-behavior:contain 会把纵向滚轮也吃掉，
 // 鼠标停在课表上时外层 .plugview 一点都滚不动 —— 只能约束 x，纵向必须允许串联。
+// 钉选择器而不是钉整份源码：个性化抽屉的纵向滚动区 .sheet-body 用整份 contain 是对的
+// （它不是横向容器，且抽屉是模态的，滚到底不该把滚动串联到背后的课表上）。
 assert.ok(ui.includes('overscroll-behavior-x:contain'), '课表容器必须保留横向不串联');
-assert.ok(!ui.includes('overscroll-behavior:contain'), '不能再用整份 overscroll-behavior:contain：纵向滚轮会被吃掉，课表界面上滚不动');
+assert.ok(!/\.sg \.schedule-frame\{[^}]*overscroll-behavior:contain/.test(ui), '课表容器不能再用整份 overscroll-behavior:contain：纵向滚轮会被吃掉，课表界面上滚不动');
+assert.match(ui, /\.sg \.sheet-body\{[^}]*overscroll-behavior:contain/, '抽屉滚动区要切断串联，滚到底不带动背后的课表');
 console.log('PASS: schedule view no longer swallows the vertical wheel');
 
 /* ── v0.39.0 二、手机上课表不再被「剩余空间」压扁 ── */
@@ -313,14 +359,17 @@ assert.ok(!ui.includes('schedule-note'), '「左右滑动切换周次…」提�
 console.log('PASS: 手机课表按用户设定的格子高度拉长，操作提示行已移除');
 
 /* ── v0.59.0 周视图无边距（APK 端需求：填满除安全区之外的整屏）──
-   .sg.bleed 由 paint() 只在 mode==='week' 时挂上。两件事必须同时守住：
-   ① 无边距只能作用于周视图 —— 设置页 / 表单页若也贴屏幕边会难看；
-   ② 横向安全区（横屏挖孔在侧边）必须走 var(--sal/--sar, env(…)) 双路，
-      裸 env() 在 Android WebView 里恒为 0（AGENTS.md 铁律四）。 */
-assert.match(ui, /class="sg \$\{mode==='week'\?'bleed':''\}/,
-  'paint() 必须只在周视图给 .sg 挂 bleed 类（无边距不能泄漏到设置页与表单页）');
-assert.match(ui, /\.sg\.bleed\{padding:0 var\(--sar,env\(safe-area-inset-right,0px\)\) 0 var\(--sal,env\(safe-area-inset-left,0px\)\)\}/,
-  '.sg.bleed 必须清掉自身内边距、同时补回左右安全区（横屏挖孔）');
+   .sg.bleed 由 paint() 在 mode==='week' 与 mode==='style' 时挂上（后者背后画的就是周课表，
+   抽屉一开课表突然缩回左右内边距会闪一下）。两件事必须同时守住：
+   ① 无边距只能作用于周课表本体 —— 设置页 / 表单页若也贴屏幕边会难看；
+   ② 安全区四条边（含横屏挖孔）由宿主 .view 统一垫，插件侧一律不许再补 ——
+      补了就是双重计算（v0.38.2 同族 bug，另有 scripts/test-plugin-safe-area.mjs 拦）。 */
+assert.match(ui, /class="sg \$\{\(mode==='week'\|\|mode==='style'\)\?'bleed':''\}/,
+  'paint() 只能给周视图与「周视图 + 个性化抽屉」挂 bleed 类（无边距不能泄漏到设置页与表单页）');
+assert.match(ui, /\.sg\.bleed\{padding:0\}/,
+  '.sg.bleed 必须把自身内边距整条清零（课表贴到安全区内缘，左右不留白）');
+assert.ok(!/\.sg\.bleed\{[^}]*--s(?:at|ab|al|ar)/.test(ui),
+  '.sg.bleed 不能再补安全区，宿主 .view 已经垫过一遍了');
 assert.match(ui, /\.sg\.bleed \.schedule-top\{margin:0;padding:[^}]*border-width:0 0 1px;border-radius:0\}/,
   '无边距下顶栏要收成通栏条（去外边距、去圆角、只留底边）');
 assert.match(ui, /\.sg\.bleed \.schedule-frame\{border-width:0;border-radius:0;scrollbar-gutter:auto\}/,
@@ -454,6 +503,54 @@ assert.doesNotMatch(ui, /\.sg \.switch[^-]/, '样式里不得再有 .sg .switch 
 assert.match(ui, /\.sg \.sg-switch input:checked\+\.track\{background:var\(--sg-accent\)/,
   'sg-switch 的选中态仍要按插件自己的令牌上色');
 console.log('PASS: 个性化配置 —— 滑杆读 .value 且旧坏数据自愈、开关类名不与宿主 .switch 冲突');
+
+/* ── 个性化配置改为「从课表下方弹出」的抽屉（安卓端与 Windows 端同一套 Web UI）──
+   用户需求原文：「将安卓端和 Windows 端的课表个性化设置改为从课表下方弹出」。
+   原来它是「我的 → 个性化配置」整页：进页要跳走、退出再跳回，调滑杆时课表根本不在场上。
+   现在 mode==='style' 画的是「周课表 + 盖在下方的抽屉」，改一项即见一项。
+   钉住四件容易在后续改动里丢掉的事：
+   ① 背景必须是周课表本体（不是独立一页）；
+   ② 抽屉用 position:fixed 钉在内容区底部，其包含块是宿主的 .view
+      （styles.css 给 .view 写了 will-change:transform）⇒ 桌面端不会盖住左侧导航栏，
+      且 .plugview 纵向滚动时抽屉不动。2026-09-19 浏览器探针实测：1269×800 下遮罩与
+      .view 严丝合缝（221..1260），抽屉 920 宽居中于内容区、底边距 .view 底 18px，
+      导航栏（8..212）不被压；390×844 下贴满 0..390、底边贴屏，.plugview 滚动时 top 不动。
+   ③ 窄屏贴底 + 安全区双路（铁律四：Android WebView 里裸 env() 恒为 0）；
+   ④ 关闭三条路都走同一条 back（弹回进入抽屉前的那一页），不新增状态。 */
+assert.match(ui, /else if\(mode==='style'\)content=weekContent\(\)\+styleContent\(\);/,
+  'style 模式必须画「周课表 + 抽屉」，不能退回独立一页');
+assert.ok(!/subHead\('个性化配置'\)/.test(ui), '抽屉自带「完成」按钮，不再需要整页的「‹ 返回」顶栏');
+assert.match(ui, /<section class="style-sheet" role="dialog" aria-modal="true"/, '抽屉要是模态对话框语义');
+assert.match(ui, /<button class="style-mask" data-action="back"/,
+  '遮罩点空白关闭：用 button 承载才能走插件已有的 data-action 统一分发');
+assert.match(ui, /button\('完成','back','class="sheet-close"'\)/, '抽屉右上角要有「完成」，与遮罩、Esc 同为关闭入口');
+assert.match(ui, /\.sg \.style-sheet\{position:fixed;left:0;right:0;bottom:/,
+  '抽屉必须 fixed 贴内容区底部（absolute 会跟着 .plugview 滚走）');
+assert.match(ui, /\.sg \.style-sheet\{[^}]*max-height:calc\(var\(--ui-vh,100dvh\)/,
+  '抽屉高度要按 --ui-vh 给上限（裸 100vh 在自定义缩放下会溢出屏幕）');
+assert.match(ui, /@media\(max-width:900px\)\{[\s\S]*?\.sg \.style-sheet\{bottom:0[^}]*padding-bottom:var\(--sab,env\(safe-area-inset-bottom,0px\)\)/,
+  '窄屏抽屉要贴住底边并把安全区垫进面板自身，否则「恢复默认」被导航栏压住');
+for(const m of [...ui.matchAll(/env\(safe-area-inset-/g)])
+  assert.equal(/var\(--s(?:at|ab|al|ar),$/.test(ui.slice(m.index-13,m.index)), true,
+    `插件 CSS 里第 ${ui.slice(0,m.index).split('\n').length} 行的安全区裸用了 env()，Android WebView 恒为 0`);
+assert.match(ui, /\.sg \.style-mask\{position:fixed;inset:0;z-index:58/, '遮罩要盖住整块内容区且压在抽屉之下');
+assert.match(ui, /animation:sg-sheet-up/, '抽屉要有自下而上的入场动画');
+assert.match(ui, /function markStyleSheet\(\)/, '抽屉已开着时的重绘要掐掉入场动画（否则每次改值都重滑一次）');
+assert.match(ui, /\.sg \.style-sheet\.keep-open,\.sg \.style-mask\.keep-open\{animation:none\}/,
+  'keep-open 类必须真能把动画关掉');
+assert.match(ui, /if\(host\?\.isConnected&&mode==='style'\)action\('back'\)\.catch\(notice\)/,
+  'Esc 要能关抽屉（模态遮罩挡住了底下的按钮）');
+assert.match(injectedCss[0], /\.sg \.style-sheet\{position:fixed/, '抽屉样式必须真的进到注入的 CSS 里');
+assert.match(injectedCss[0], /\.sg \.sheet-body \.form\{max-width:none;border:0/,
+  '抽屉本身就是卡片，里面的表单不能再套一层底色与内边距');
+// 手机上四个滑杆排两列：一列排开要吃掉 250px，抽屉就顶到屏幕上沿、课表一点都看不见
+assert.match(ui, /\.sg \.sheet-body \.fields\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/,
+  '抽屉里的滑杆必须排两列（≤620px 那条 .sg .fields 单列规则靠更高特异度压住）');
+// 短横条基线必须写在窄屏那条 display:block 之前：媒体查询不加特异度，两边同为 0-2-0，
+// 写反了 display:none 会靠后盖掉它 —— 手机上 grabber 永远不显示（v0.73 实测踩过）。
+assert.ok(ui.indexOf('.sg .sheet-grabber{display:none') < ui.indexOf('.sg .sheet-grabber{display:block'),
+  'grabber 的 display:none 基线必须写在 @media(max-width:900px) 的 display:block 之前');
+console.log('PASS: 个性化配置从课表下方弹出 —— 周课表打底、fixed 抽屉、三处关闭入口与安全区双路');
 
 /* ── v0.56.0 AI 解析导入：宿主广播 ingest:courses → 课程表自己 merge + persist ──
    为什么必须由插件自己落盘：`tables` / `table` 在 ui.js 里是**内存副本**，

@@ -191,7 +191,7 @@ assert.match(shell, /attachPluginShortcutKeys\(\{/, 'shell 必须真正挂上 ke
 assert.match(shell, /navigate: \(viewId\) => switchTo\(`plug:\$\{viewId\}`\)/, '命中后必须以 plug: 前缀交给 switchTo');
 assert.match(shell, /const sc = isPlug && def\.pluginView\?\.pluginId \? effectiveShortcutLetter\(def\.pluginView\.pluginId\) : "";/, 'navBtn 必须先算出生效字母');
 assert.match(shell, /sc \? el\("kbd", \{ class: "nav-kbd"/, '侧栏插件入口必须带快捷键徽标（条件成立才渲染，而不是把字样留在死代码里）');
-assert.match(shell, /menuButton\(`快捷键 · /, '插件右键菜单必须提供「快捷键」设置项');
+assert.match(shell, /contextMenuItem\(`快捷键 · /, '插件右键菜单必须提供「快捷键」设置项');
 assert.match(shell, /setPluginShortcut\(pluginId, value\)/, '右键菜单必须真正落盘显式字母');
 
 const palette = read('../src/commandPalette.js');

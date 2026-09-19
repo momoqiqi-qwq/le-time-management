@@ -1,12 +1,15 @@
 /**
- * 局域网直连（v0.63.0）：**单向**从电脑拉一份数据到本机。
+ * 局域网直连（v0.63.0 起单向拉取；本版补上受确认门的回传）。
  *
- * 为什么只有拉、没有推：电脑端的联动服务对数据只读（见 src-tauri/src/lan.rs 顶部注释）。
- * 手机 → 电脑的推送一旦开出来，同网段里任何拿到配对码的人都能整台覆盖电脑的数据，
- * 而这个场景下电脑往往是唯一有完整备份的那一端。
+ * 拉：手机 → 电脑只是问两句话（/api/info、/api/state），电脑端一个字都不改。
+ * 推：手机 → 电脑的整份覆盖走 /api/push，但电脑端要过三道门才算数 ——
+ *     设置里「允许手机推回本机」默认关、每次弹确认、落盘前先存恢复点。
+ *     之所以能开这条路，就是因为这三道门；把任何一道拿掉，同网段拿到配对码的人
+ *     就能整台覆盖电脑数据，而电脑往往是唯一有完整备份的那一端。
  *
  * 为什么手机端不建服务：手机在 Wi-Fi 客户端模式下常被 AP 隔离挡住入站连接，
  * 且切后台就被系统冻结 —— 让手机当服务端会做成一个"时好时坏"的功能，比没有更糟。
+ * 所以两个方向都是「手机主动发请求、电脑应答」。
  */
 import { api } from "./api.js";
 import { parseSnapshot } from "./syncLayer.js";
@@ -49,13 +52,20 @@ export function parseLanTarget(raw, tokenExtra = "") {
   return { base, token };
 }
 
-function lanUrl({ base, token }, path) {
-  return `${base}${path}?token=${encodeURIComponent(token)}`;
+function lanUrl({ base, token }, path, params = {}) {
+  return `${base}${path}?${new URLSearchParams({ token, ...params })}`;
 }
 
-async function lanFetch(target, path) {
+async function lanRequest(target, path, { method = "GET", params = {}, body, headers } = {}) {
   const sid = await api.httpSessionNew();
-  const res = await api.httpFetch(sid, "GET", lanUrl(target, path), { headers: { Accept: "application/json" } });
+  return api.httpFetch(sid, method, lanUrl(target, path, params), {
+    headers: { Accept: "application/json", ...headers },
+    body,
+  });
+}
+
+async function lanFetch(target, path, params = {}) {
+  const res = await lanRequest(target, path, { params });
   if (res.status === 403) throw new Error("配对码不对。到电脑的设置 → 局域网联动 里重新「复制链接」再粘一次");
   if (res.status === 404) throw new Error("连上了但那台电脑没在跑本程序，或者端口写错了（默认 27123）");
   if (res.status < 200 || res.status >= 300) throw new Error(`电脑端返回 HTTP ${res.status}`);
@@ -66,7 +76,7 @@ async function lanFetch(target, path) {
 export async function lanInfo(target) {
   const body = await lanFetch(target, "/api/info");
   let info;
-  try { info = JSON.parse(body); } catch { throw new Error("对面不像是 Le时间管理（返回的不是 JSON）。确认电脑上开着本程序且已启动联动服务"); }
+  try { info = JSON.parse(body); } catch { throw new Error("对面不像是 U-Time（返回的不是 JSON）。确认电脑上开着本程序且已启动联动服务"); }
   if (!info?.ok) throw new Error("电脑端没应答，确认「局域网联动」服务是启动状态");
   if (info.dataOk === false) throw new Error("电脑上的数据文件读不出来，先在那台电脑上打开一次本程序再试");
   return {
@@ -85,4 +95,49 @@ export function describeLanInfo(info) {
   const when = info.savedAt ? new Date(info.savedAt).toLocaleString("zh-CN") : "时间未知";
   const ver = info.appVersion ? ` · 电脑上是 v${info.appVersion}` : "";
   return `电脑上有 ${info.tasks} 条任务、${info.blocks} 个时间块，存于 ${when}${ver}`;
+}
+
+/* ── 回传（手机 → 电脑）：两段式，必须等电脑端点「接收」 ── */
+
+/** 轮询节奏。电脑端是人在点，慢无所谓，1.2s 一次不吵到那条单线程服务。 */
+export const LAN_PUSH_POLL_MS = 1200;
+/** 电脑上没人确认就放弃。让手机永远转圈比说清「没确认」更糟。 */
+export const LAN_PUSH_WAIT_MS = 120 * 1000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 把本机整份快照推到电脑。
+ * POST 只换来一个 pending 编号，真正生效要等电脑端弹窗里点「接收」，所以这里轮询到终端态才返回。
+ * onStage 用来把「发过去了 / 等确认」回显到界面上，别让人以为按钮没反应。
+ */
+export async function lanPushSnapshot(target, snapshot, {
+  onStage, pollMs = LAN_PUSH_POLL_MS, waitMs = LAN_PUSH_WAIT_MS,
+} = {}) {
+  onStage?.("正在把本机数据发到电脑…");
+  const res = await lanRequest(target, "/api/push", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+    body: JSON.stringify(snapshot),
+  });
+  let ack = null; try { ack = JSON.parse(res.body); } catch { /* 对面不是本程序时拿到的是 HTML，按 HTTP 码报错 */ }
+  if (res.status === 403) throw new Error(ack?.error || "电脑端拒收：配对码不对，或者没开「允许手机推回本机」");
+  if (res.status === 404) throw new Error("电脑端不收回传（那边的本程序版本太旧）。先在电脑上升级再推");
+  if (res.status < 200 || res.status >= 300 || !ack?.ok) throw new Error(ack?.error || `电脑端返回 HTTP ${res.status}`);
+  if (ack.status !== "pending" || !ack.id) throw new Error("电脑端没给出待确认编号，这次推送没进去");
+
+  const until = Date.now() + waitMs;
+  let waiting = false;
+  while (Date.now() < until) {
+    await sleep(pollMs);
+    const body = await lanFetch(target, "/api/push-status", { id: ack.id });
+    let st = null; try { st = JSON.parse(body); } catch { throw new Error("电脑端没答上这次推送的状态，确认那边程序还开着再推一次"); }
+    if (st.status === "pending") {
+      if (!waiting) { waiting = true; onStage?.("已发到电脑，等电脑上点「接收」…"); }
+      continue;
+    }
+    if (st.status === "accepted") { onStage?.("电脑端已接收"); return { status: "accepted", id: ack.id }; }
+    throw new Error(st.note ? `电脑端没接收：${st.note}` : "电脑端点了「拒绝」，电脑上那份没动");
+  }
+  throw new Error(`等满 ${Math.round(waitMs / 1000)} 秒电脑上没人确认，这次推送作废（电脑上那份没动）`);
 }

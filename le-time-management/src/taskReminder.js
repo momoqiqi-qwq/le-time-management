@@ -292,7 +292,7 @@ function notifyEvent(ev) {
     if (isAndroidRuntime()) postNativeReminder(reminderRecord(ev));
     else if ("Notification" in window && Notification.permission === "granted") {
       // 桌面浏览器调试才走得到：Tauri（WebView2 与 Android WebView）都不实现 Notification API。
-      try { new Notification("Le时间管理 · 任务提醒", { body: text }); } catch {}
+      try { new Notification("U-Time · 任务提醒", { body: text }); } catch {}
     }
   }
 }

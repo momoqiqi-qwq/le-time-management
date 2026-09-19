@@ -131,7 +131,7 @@ CSS 里凡「深色才生效」的规则一律用 `[data-theme-mode="dark"]`，*
 
 ## 🔴 铁律三：这些标识符永远不许回退
 
-品牌已从「潮衡 / TideBalance」改名为「Le时间管理 / Le」。**外部交付包、历史快照、
+品牌已从「潮衡 / TideBalance」改名为「U-Time / Le」。**外部交付包、历史快照、
 旧插件里全是改名前的值，照抄就会砸构建。**
 
 | 项 | 必须是 | 不许变成 |
@@ -179,12 +179,26 @@ CSS 里凡「深色才生效」的规则一律用 `[data-theme-mode="dark"]`，*
 
 四个变量 `--sat / --sab / --sal / --sar` 由 `MainActivity` 读真实 `WindowInsets` 后注入
 （详见类注释）。改这一块时注意：**四方向都要取**（横屏挖孔在侧边）、
-底部要 `max(systemBars.bottom, ime.bottom)`、`onPageFinished` 得**补注入一次**
-（新文档会重置内联样式）。
+`--sab` **只能代表导航栏，绝不能掺 `ime`**（v0.49.0 黑屏根因，键盘避让走 WebView 的
+ime listener 压 `bottomMargin`）、`onPageFinished` 得**补注入一次**（新文档会重置内联样式）。
 
 > ⚠️ **`:root` 里绝不要给 `--sat` 等写"兜底默认值"。** 变量一旦在 `:root` 被定义为有效值，
 > `var()` 的**第二个参数永远不会生效** —— iOS / 桌面的原生 `env()` 会被彻底废掉。
 > 这条有回归断言守着（`scripts/test-android-layout.mjs`），别绕过它。
+
+### 插件界面的安全区：宿主负责四条边，插件不许再垫
+
+`src/styles.css` 的 `.view` 是**唯一负责人**（上下是 `--sat`/`--sab`，左右是 `--sal`/`--sar`）。
+插件页画在 `render(el)` 给的容器里就自动落在安全区内，**新插件零代码**；插件侧再对自己的
+容器加一次就是 v0.38.2「安全区被算了两遍」的同族 bug。
+
+**唯一的漏网点是 `position:fixed`**：它的包含块是 `.view` 的 **padding box**（`.view` 上有
+`will-change: transform`），padding 划不出它的新边界 —— 所以插件自建遮罩 / 弹层 / 菜单
+必须自己让开四边，JS 按视口坐标定位的那种还得读回计算值（`getPropertyValue("--sab")`）。
+
+这三条由 `scripts/test-plugin-safe-area.mjs` 拦（裸 `env()` / 非浮层规则重复垫 / 浮层完全不
+知道安全区存在，都会红），对外写法在 `public/plugins/plugin-guide/plugin-development.md` §4.2
+与 `docs/index.html`「安全区（APK 必读）」。新增插件若踩到，改插件而不是放宽测试。
 
 ---
 

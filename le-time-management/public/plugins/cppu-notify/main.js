@@ -1,4 +1,4 @@
-// 警大门户通知 —— 对齐 cppu-notify-skill v1.2.1（Python + tesseract OCR → Le时间管理插件）
+// 警大门户通知 —— 对齐 cppu-notify-skill v1.2.1（Python + tesseract OCR → U-Time插件）
 // 自动登录：登录成功一次后，密码与门户会话票据（Cookie）加密存入应用密钥库
 // （tide.vault，Rust 侧 AES-256-GCM，不进 data.json / 备份）；
 // 之后每次打开插件：先恢复票据静默续期直达消息页；票据过期则自动识别验证码
@@ -137,7 +137,7 @@
   function explainHttpError(e) {
     const msg = String(e && (e.message || e) || "");
     if (/Failed to fetch|Load failed|NetworkError/i.test(msg)) {
-      return "网络桥不可用：浏览器预览会被智慧警大跨域策略拦截，请在桌面版 Le时间管理 中打开本插件。";
+      return "网络桥不可用：浏览器预览会被智慧警大跨域策略拦截，请在桌面版 U-Time 中打开本插件。";
     }
     return msg || "网络请求失败";
   }

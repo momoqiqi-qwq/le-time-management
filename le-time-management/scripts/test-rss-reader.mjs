@@ -69,7 +69,7 @@ vm.runInContext(
     + '    parseFeed, decodeEntities, stripCdata, toText, esc, absolutize, normalizePath, normalizeFeedUrl, hashId,\n'
     + '    parseDateAny, discoverFeedUrls, looksLikeFeed, looksLikeHtml, itemAuthor, itemLink,\n'
     +     '    mergeItems, trimItems, filtered, groupOf, fmtWhen, makeFeed, state,\n'
-    + '    cardHtml, applyStyle, setStyle, STYLES, loadPrefs, focusAddBox, toggleBody,\n'
+    + '    cardHtml, applyStyle, setStyle, STYLES, loadPrefs, focusAddBox, toggleBody, onManageToggle,\n'
     + '    get UI() { return ui; }, set UI(v) { ui = v; },\n'
     + '    DEFAULT_FEEDS, SUGGESTED_FEEDS, PER_FEED_KEEP, CACHE_MAX,\n'
     + '  };\n'
@@ -872,6 +872,25 @@ const JUYA = `<?xml version='1.0' encoding='utf-8'?>
   assert.equal(calls[0][1].preventScroll, true, 'focus 要 preventScroll，别和 scrollIntoView 抢');
   /* 只是把手：不许在这里顺手加源，否则「按 Enter 添加 / 点添加添加」会多出一条路径 */
   assert.doesNotMatch(src, /function focusAddBox\(\)\s*\{[\s\S]{0,260}?(addFeed|removeFeed)\(/, '入口只负责展开与聚焦，不自己添加/删除源');
+  fx.UI = null;
+
+  /* ④ 展开箭头。窄屏（APK）上「添加源」三个字要为 chips 让位收掉，只剩一个 ＋ 读不出
+     「点它会摊开一块面板」⇒ 补一颗 ⌄，展开时翻转，与卡片上的「展开正文」同一个字符、同一条曲线。 */
+  assert.match(src, /\.rss-add-src::after\{content:"⌄"/, '顶栏入口要有展开箭头');
+  assert.match(src, /\.rss-add-src\[aria-expanded="true"\]::after\{transform:translateY\(1px\) rotate\(180deg\)/, '箭头翻转要由 aria-expanded 驱动（它同时是读屏的展开状态）');
+  assert.match(hero, /data-add-src type="button" aria-expanded="false"/, '初始态要写死 false，箭头才有翻转基准');
+  /* 状态一律从 <details> 的 toggle 事件镜像：用户直接点「订阅管理」那行时顶栏箭头也要跟着翻。
+     写在 focusAddBox 里只覆盖得到「点按钮」这一条路。 */
+  assert.match(src, /addEventListener\("toggle", onManageToggle\)/, 'toggle 要接到统一的镜像入口');
+  assert.doesNotMatch(src, /function focusAddBox\(\)\s*\{[\s\S]{0,260}?aria-expanded/, '镜像逻辑不写在 focusAddBox 里');
+  const attrs = [];
+  fx.UI = { manage, addUrl, manageSummary: {}, addSrcBtn: { setAttribute: (k, v) => attrs.push(k + '=' + v) } };
+  fx.onManageToggle();
+  assert.deepEqual(attrs, ['aria-expanded=true'], '展开时按钮要带 aria-expanded=true');
+  manage.open = false;
+  attrs.length = 0;
+  fx.onManageToggle();
+  assert.deepEqual(attrs, ['aria-expanded=false'], '收起时要翻回去，不能只单向');
   fx.UI = null;
 }
 

@@ -1,5 +1,5 @@
 // Copyright (C) 2025 XingHeYuZhuan. Apache-2.0; see LICENSE.
-// Extended for Le时间管理: validation, responsive schedule data and generic academic-system import.
+// Extended for U-Time: validation, responsive schedule data and generic academic-system import.
 (function(root) {
   const fail = message => { throw new Error(message); };
   const int = (v,min,max,label) => Number.isInteger(Number(v)) && Number(v)>=min && Number(v)<=max ? Number(v) : fail(label+'超出范围');
@@ -144,7 +144,7 @@
   }
   const protoText=value=>new TextDecoder().decode(value instanceof Uint8Array?value:new Uint8Array(value||[]));
   const protoFirst=(fields,number,wire=2)=>fields.find(x=>x.number===number&&x.wire===wire)?.value;
-  const builtInCppuSchool={id:'CPPU',name:'中国人民警察大学',initial:'Z',resourceFolder:'CPPU',adapters:[{adapterId:'CPPU_01',adapterName:'警大本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'cppu.js',importUrl:'https://jw.cppu.edu.cn/index.html',description:'登录警大教务后，自动打开课表明细并导入完整学期课程',maintainer:'Le时间管理'}]};
+  const builtInCppuSchool={id:'CPPU',name:'中国人民警察大学',initial:'Z',resourceFolder:'CPPU',adapters:[{adapterId:'CPPU_01',adapterName:'警大本科教务导入',category:'BACHELOR_AND_ASSOCIATE',assetJsPath:'cppu.js',importUrl:'https://jw.cppu.edu.cn/index.html',description:'登录警大教务后，自动打开课表明细并导入完整学期课程',maintainer:'U-Time'}]};
   function decodeSchoolIndex(input){
     const rootFields=protoFields(input),categoryNames={1:'GENERAL_TOOL',2:'BACHELOR_AND_ASSOCIATE',3:'POSTGRADUATE'};
     const schools=rootFields.filter(x=>x.number===3&&x.wire===2).map(item=>{const sf=protoFields(item.value);return {

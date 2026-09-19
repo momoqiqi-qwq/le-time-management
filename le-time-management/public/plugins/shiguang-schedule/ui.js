@@ -195,6 +195,61 @@
  /* 冲突角标本身是实色红底；彩色模式下压在红/橙色卡上会糊在一起，加一圈浅色描边拉开 */
  :is(.sg.colorful) :is(.course-block,.today-card).conflict::after{box-shadow:0 0 0 2px var(--course-on)}
  .sg .style-preview-note{margin:9px 0 0}
+/* ── 个性化配置：从课表下方弹出的抽屉 ──────────────────────────────────────
+   原来是「我的 → 个性化配置」整页跳转：调滑杆时课表被整页换掉，只能靠页内
+   那块「样式预览」当替身。改成底部抽屉后，抽屉上方就是真课表，改一项即见一项。
+   关闭有三条路：完成按钮、点遮罩、Esc —— 遮罩用 button 元素承载，
+   这样它走的是插件里已有的「closest button → data-action」那条统一分发，不必另加监听。
+
+   ⚠️ position:fixed 的包含块是宿主的 .view：styles.css 给 .view 写了
+   will-change:opacity,transform，按规范非 none 的 will-change:transform 会让该元素
+   成为 fixed 后代的包含块。两条结果都是我们要的：
+   ① 抽屉只在内容区里横向铺开，桌面端不会盖住左侧导航栏；
+   ② 滚动的是 .plugview（.view 的后代，不是包含块），所以课表纵向滚动时抽屉不动。
+   两条都在 2026-09-19 用浏览器探针实测过：1269×800 下 .view 为 221..1260、遮罩与之完全重合、
+   抽屉 280.5..1200.5（920 上限居中）底边 773 = 视口底 - 18，左侧导航栏 8..212 不被压住；
+   390×844 下抽屉 0..390、底边贴 844，.plugview 滚动 66px 抽屉 top 一分不动。
+
+   ⚠️ 安全区必须走 var(--sab, env(…)) / var(--sal/--sar, env(…)) 双路（铁律四：Android WebView
+   里 env() 恒为 0）。底部那条加在面板自身而不是滚动区：抽屉底部留白要一直存在，否则
+   「恢复默认」会被导航栏压住。左右两条加在基线规则（不是媒体块）里：横屏时挖孔与侧边
+   三键栏落在左/右，而 fixed 的包含块是 .view 的 padding box —— 宿主垫的左右边拦不住它。
+   竖屏与桌面这两个变量都取 0，实测过的 0..390 通栏尺寸不受影响。 */
+.sg .style-mask{position:fixed;inset:0;z-index:58;border:0;border-radius:0;padding:0;background:rgba(15,23,42,.34);cursor:default;animation:sg-mask-in .18s ease both}
+.sg .style-sheet{position:fixed;left:0;right:0;bottom:calc(18px / var(--ui-scale,1));z-index:59;display:flex;flex-direction:column;
+  width:100%;max-width:920px;margin-inline:auto;padding-inline:var(--sal,env(safe-area-inset-left,0px)) var(--sar,env(safe-area-inset-right,0px));max-height:calc(var(--ui-vh,100dvh) * .66);
+  background:var(--sg-card);border:1px solid var(--sg-line);border-radius:18px;box-shadow:0 22px 56px rgba(15,35,45,.26);overflow:hidden;
+  animation:sg-sheet-up .26s cubic-bezier(.22,.7,.3,1) both}
+@keyframes sg-sheet-up{from{transform:translateY(calc(100% + 26px))}to{transform:none}}
+@keyframes sg-mask-in{from{opacity:0}to{opacity:1}}
+/* 抽屉已开着时的重绘（恢复默认等）不再重放入场动画，见 markStyleSheet() */
+.sg .style-sheet.keep-open,.sg .style-mask.keep-open{animation:none}
+.sg .sheet-head{flex:none;position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 16px 12px;border-bottom:1px solid var(--sg-line-soft)}
+.sg .sheet-head h2{font-size:calc(16px * var(--ui-text-scale))}
+/* 抽屉顶部的短横条：只给手机看（桌面端有「完成」按钮，不需要拖拽暗示）。
+   ⚠️ 这条基线必须写在下面那个 @media(max-width:900px) 之前 —— 两边特异度同为 0-2-0，
+   媒体查询不加特异度，写反了 display:none 会靠后盖掉 display:block（实测踩过）。 */
+.sg .sheet-grabber{display:none;position:absolute;top:6px;left:50%;width:38px;height:4px;border-radius:999px;background:color-mix(in srgb,var(--sg-ink) 18%,var(--sg-card));transform:translateX(-50%)}
+.sg .sheet-close{flex:none;min-height:32px;padding:5px 14px;font-size:calc(12.5px * var(--ui-text-scale));border-color:var(--sg-accent);color:var(--sg-accent)}
+.sg .sheet-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:14px 16px 16px}
+/* 抽屉本身就是那张卡，里面的表单不再套一层底色与内边距（预览块保留底色） */
+.sg .sheet-body .form{max-width:none;border:0;background:transparent;padding:0}
+.sg .sheet-body .style-preview{max-width:none;padding:9px}
+/* 预览块在抽屉里只留四张迷你卡：「样式预览」标题与「即时生效」那句和抽屉顶栏重复，
+   而抽屉上方就是真课表，这里只需要一小条能看出圆角/间距/底色的样品。 */
+.sg .sheet-body .style-preview>:is(b,.style-preview-note){display:none}
+/* 手机上四个滑杆在抽屉里仍排两列（开关行本来就是 grid-column:1/-1 通栏）：
+   一列排开要吃 250px，抽屉只剩一半高度能看见课表。
+   特异度 0-3-0，压得住后面那条 @media(max-width:620px) 的 .sg .fields{grid-template-columns:1fr}。 */
+.sg .sheet-body .fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* 窄屏：贴住底边、只留上方两个圆角，并把安全区垫进面板自身。
+   高度上限比桌面端给得多一点（.72 vs .66）—— 手机上一列排开四个滑杆本来就高，
+   再压就全得靠滚；但也不能顶满，抽屉上方总要留出一截课表当实时预览。 */
+@media(max-width:900px){
+ .sg .style-sheet{bottom:0;border-width:1px 0 0;border-radius:18px 18px 0 0;max-height:calc(var(--ui-vh,100dvh) * .72);padding-bottom:var(--sab,env(safe-area-inset-bottom,0px))}
+ .sg .sheet-head{padding-top:16px}
+ .sg .sheet-grabber{display:block}
+}
  @media(max-width:900px){.sg{--sg-label-w:52px;--sg-head-h:46px;padding:8px 14px}.sg .schedule-frame{border-radius:13px}.sg .schedule-top{position:static}/* 手机上不再把 main-stage 压成 0：那样课表只能吃到「剩余空间」，行高被挤到
     55px 上下，远低于用户设定的 --sg-slot-height。改成按「表头 + 全部节次 × 格子高度」
     算出一个下限，课表就按用户设定真正拉长，放不下时由外层 .plugview 正常滚动。 */
@@ -216,11 +271,12 @@
     .sg.bleed 只在 mode==='week' 时由 paint() 挂上 —— 设置页 / 表单页继续吃 .sg 的
     左右内边距，正文贴着屏幕边会难看。
     宿主侧的配套改动在 src/styles.css 的 .app.rail-hidden .view 与 .plugview 两条：
-    那两处收掉了 46px 顶部让位与 14px 左右内边距，所以这里只剩安全区要补 ——
-    横向安全区（横屏挖孔在侧边）宿主不管，必须在这一层补回。
-    ⚠️ 一律 var(--sal/--sar, env(…)) 双路，不裸用 env()（铁律四：Android WebView 里 env() 恒为 0）。 */
+    那两处收掉了 46px 顶部让位与 14px 左右内边距。
+    ⚠️ 安全区四条边（含横屏挖孔的 --sal/--sar）现在全部由宿主的 .view 垫，这里一律
+    不许再补一遍 —— 补了就是双重计算（v0.38.2 同族 bug，scripts/test-plugin-safe-area.mjs 会红）。
+    只有 position:fixed 的浮层拦不住（包含块是 .view 的 padding box），那种才要自己让开。 */
  @media(max-width:900px){
-   .sg.bleed{padding:0 var(--sar,env(safe-area-inset-right,0px)) 0 var(--sal,env(safe-area-inset-left,0px))}
+   .sg.bleed{padding:0}
    .sg.bleed .schedule-top{margin:0;padding:6px 8px;border-width:0 0 1px;border-radius:0}
    .sg.bleed .schedule-frame{border-width:0;border-radius:0;scrollbar-gutter:auto}/* both-edges 会在左右各留一条滚动条槽（实测 7px），无边距模式下这就是两条新白边；
     窄屏 frame 本身不纵向滚动（.main-stage 已按节次数给足下限，滚动交给外层 .plugview），
@@ -282,8 +338,9 @@ let moreDismissBound=false;
 function bindMoreDismiss(){
   if(moreDismissBound)return;moreDismissBound=true;
   // 宿主元素每次切视图都会重建，所以关闭逻辑挂在 document 上、只绑一次（同 bindSchoolImporter 的写法）。
+  // Esc 同时收个性化配置抽屉：抽屉是模态的，遮罩挡住了底下的按钮，键盘必须有一条退路。
   document.addEventListener('pointerdown',event=>{if(event.target instanceof Element&&event.target.closest('.more-wrap'))return;closeMore();},true);
-  document.addEventListener('keydown',event=>{if(event.key==='Escape')closeMore();});
+  document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;closeMore();if(host?.isConnected&&mode==='style')action('back').catch(notice);});
 }
  function screenHead(title,sub,action=''){return `<div class="screen-head"><div><h2>${esc(title)}</h2>${sub?`<p class="muted">${esc(sub)}</p>`:''}</div>${action}</div>`;}
 /* 顶栏。三件事按优先级排：
@@ -444,7 +501,10 @@ function liveStyle(form,saveNow){
   if(saveNow)tide.storage.set('style',style).catch(()=>{});
   else styleSaveTimer=setTimeout(()=>tide.storage.set('style',style).catch(()=>{}),400);
 }
-function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<form class="form" data-form="style"><div class="fields">${field('课表格子高度','slotHeight',style.slotHeight,'range','min="52" max="120"')}${field('课程块圆角','cornerRadius',style.cornerRadius,'range','min="0" max="24"')}${field('课程块间距','gap',style.gap,'range','min="0" max="8"')}${field('课程块透明度','opacity',style.opacity,'range','min="35" max="100"')}${switchRow('彩色课程块','每门课一块实色卡片，未手动调色的课按课名自动配色，同一门课颜色稳定','colorful',!!style.colorful)}${switchRow('隐藏节次具体时间','收起每节课的上下课时间','hideTimes',!!style.hideTimes)}${switchRow('隐藏日期','日表头只留星期，不显示几月几日','hideDates',!!style.hideDates)}</div><div class="tools">${button('恢复默认','style-reset','type="button"')}</div></form>`;}
+/* 抽屉内容：遮罩 + 面板。paint() 把它接在 weekContent() 之后，
+   所以背后永远是周课表本体（从「我的」点进来也是）—— 抽屉里改滑杆，
+   上方课表立刻跟着变；关闭走 data-action="back"，弹回进入抽屉前的那一页。 */
+function styleContent(){return `<button class="style-mask" data-action="back" tabindex="-1" aria-label="关闭个性化配置"></button><section class="style-sheet" role="dialog" aria-modal="true" aria-label="个性化配置"><span class="sheet-grabber" aria-hidden="true"></span><header class="sheet-head"><h2>个性化配置</h2>${button('完成','back','class="sheet-close"')}</header><div class="sheet-body">${stylePreview()}<form class="form" data-form="style"><div class="fields">${field('课表格子高度','slotHeight',style.slotHeight,'range','min="52" max="120"')}${field('课程块圆角','cornerRadius',style.cornerRadius,'range','min="0" max="24"')}${field('课程块间距','gap',style.gap,'range','min="0" max="8"')}${field('课程块透明度','opacity',style.opacity,'range','min="35" max="100"')}${switchRow('彩色课程块','每门课一块实色卡片，未手动调色的课按课名自动配色，同一门课颜色稳定','colorful',!!style.colorful)}${switchRow('隐藏节次具体时间','收起每节课的上下课时间','hideTimes',!!style.hideTimes)}${switchRow('隐藏日期','日表头只留星期，不显示几月几日','hideDates',!!style.hideDates)}</div><div class="tools">${button('恢复默认','style-reset','type="button"')}</div></form></div></section>`;}
  function editContent(){const c=draft;return `${subHead(c.id?'编辑课程':'添加课程')}<form class="form" data-form="course"><div class="fields">${field('课程名称','name',c.name,'text','required maxlength="120"')}${field('教师','teacher',c.teacher)}${field('教室 / 地点','position',c.position)}<label><span>星期</span><select name="day">${days.map((d,i)=>`<option value="${i+1}" ${c.day===i+1?'selected':''}>${d}</option>`).join('')}</select></label>${field('上课周次，如 1-16 / 1-16单周','weeks',(c.weeks||[]).join(','))}<label><span>课程颜色</span><select name="color">${Array.from({length:8},(_,i)=>`<option value="${i}" ${Number(c.color||0)===i?'selected':''}>颜色 ${i+1}</option>`).join('')}</select></label><label><span>时间方式</span><select name="isCustomTime"><option value="false" ${!c.isCustomTime?'selected':''}>按节次</option><option value="true" ${c.isCustomTime?'selected':''}>自定义时间</option></select></label>${field('开始节次','startSection',c.startSection||1,'number','min="1" max="40"')}${field('结束节次','endSection',c.endSection||2,'number','min="1" max="40"')}${field('自定义开始时间','customStartTime',c.customStartTime||'08:00','time')}${field('自定义结束时间','customEndTime',c.customEndTime||'09:40','time')}</div><div class="tools">${button('填入单周','odd','type="button"')}${button('填入双周','even','type="button"')}</div>${textArea('备注','remark',c.remark)}<p class="muted">按节次时使用学期作息表；自定义时间时忽略节次。</p><div class="tools"><button type="submit" class="primary">保存课程</button>${button('取消','week','type="button"')}${c.id?button('删除课程','delete','type="button" class="danger"'):''}</div></form>`;}
  function configContent(){return `<form class="form" data-form="config"><div class="fields">${field('第一周内的开学日期','semesterStartDate',table.config.semesterStartDate,'date')}${field('学期总周数','semesterTotalWeeks',table.config.semesterTotalWeeks,'number','min="1" max="60"')}<label><span>每周显示起始日</span><select name="firstDayOfWeek"><option value="1" ${table.config.firstDayOfWeek===1?'selected':''}>周一</option><option value="7" ${table.config.firstDayOfWeek===7?'selected':''}>周日</option></select></label>${textArea('每行一个节次：编号 开始时间 结束时间','slots',table.timeSlots.map(s=>`${s.number} ${s.startTime} ${s.endTime}`).join('\n'))}</div><p class="muted">开学日期所在周为第一周。教务导入会沿用这里的节次表。</p><div class="tools"><button type="submit" class="primary">保存设置</button></div></form>`;}
  function eduContent(){return `<div class="school-hero"><div><h3>学校教务系统导入</h3><div class="muted">还原时光课程表原版流程：选择学校，登录教务系统，在课表页面一键导入课程与作息。</div></div>${button('选择学校','school-list','class="primary"')}</div><div class="panel"><h3>文件 / 表格导入</h3><p>也可以复制学校教务课表，或上传 XLSX / XLS / CSV / TSV / TXT / HTML 文件。会自动识别表头并先预览。</p><div class="fields">${field('第一周内的开学日期','eduStart',table.config.semesterStartDate,'date')}${field('学期总周数','eduWeeks',table.config.semesterTotalWeeks,'number','min="1" max="60"')}<label class="wide"><span>上传教务导出文件</span><input class="file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt,.html,.htm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,text/plain,text/html" data-edu-file></label>${textArea('或直接粘贴教务表格','eduText','', 'placeholder="建议保留表头，例如：课程名称\t教师\t上课地点\t星期\t周次\t节次"')}</div><div class="hint">支持表头：课程名称/课程名/课程、教师、地点/教室、星期/周几、周次、节次、开始时间、结束时间、上课时间。周次可写 1-16、1,3,5、1-16单周、1-16周(单)；节次可写 第1-2节。</div><div class="tools">${button('解析并预览','edu-preview','class="primary"')}</div><div data-edu-preview></div></div>`;}
@@ -453,7 +513,19 @@ function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<f
  function schoolListContent(){return `${subHead('选择学校','back',schoolIndex?`官方适配索引 · ${schoolIndex.schools.length} 所学校/工具`:'官方时光课程表适配仓库')}<div class="school-tabs">${Object.entries(categoryLabels).map(([id,label])=>button(label,'school-category',`data-category="${id}" class="${schoolCategory===id?'on':''}"`)).join('')}</div><input class="school-search" data-school-search aria-label="搜索学校" value="${esc(schoolQuery)}" placeholder="搜索学校名称或拼音首字母"><div class="school-list" data-school-results>${schoolRowsContent()}</div>`;}
  function adapterListContent(){const adapters=(selectedSchool?.adapters||[]).filter(a=>a.category===schoolCategory);return `${subHead(selectedSchool?.name||'选择导入方式','back',categoryLabels[schoolCategory],'‹ 返回学校列表')}<div class="school-list">${adapters.map(a=>`<button class="adapter-card" data-action="school-open-adapter" data-adapter-id="${esc(a.adapterId)}"><b>${esc(a.adapterName)}</b><span>${esc(a.description||'进入教务系统后执行适配脚本')}</span><span>维护者：${esc(a.maintainer||'未注明')}</span></button>`).join('')||'<div class="school-empty">该分类暂时没有可用适配器。</div>'}</div><p class="hint">教务系统会在独立窗口打开。完成登录并进入个人课表页面后，点击窗口右下角“导入当前课表”。</p>`;}
  function transferContent(){return `${subHead('备份与恢复')}<div class="transfer-grid"><section class="transfer-card"><h4>导出课表</h4><p class="muted">JSON 备份包含全部课表；ICS 导出当前课表。</p><div class="tools">${button('导出 JSON','json','class="primary"')}${button('导出 ICS','ics')}</div></section><section class="transfer-card"><h4>导入 JSON 备份</h4><p class="muted">兼容拾光课程表单课表和多课表备份。先预览，再确认导入。</p><label><span>选择 JSON 文件</span><input class="file" type="file" accept=".json,application/json" data-file></label>${textArea('或粘贴 JSON','jsonText','')}<div class="tools">${button('预览 JSON','preview')}</div><div data-preview></div></section></div>`;}
- function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${mode==='week'?'bleed':''} ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;animateWeek();}
+ /* paint() 一次重绘整棵 .sg。两个容易看漏的点：
+   ① mode==='style' 画的是「周课表 + 抽屉」，不是单独一页 —— 个性化配置要边改边看课表。
+   ② bleed（无边距铺满）跟着周课表本体走，所以 style 模式同样要挂，
+      否则抽屉一开、背后的课表会突然缩回左右内边距，闪一下。 */
+function paint(){if(!host?.isConnected)return;clearError();let content='';if(mode==='week')content=weekContent();else if(mode==='today')content=todayContent();else if(mode==='settings')content=settingsContent();else if(mode==='week-picker')content=weekPickerContent();else if(mode==='courses')content=coursesContent();else if(mode==='tables')content=tablesContent();else if(mode==='style')content=weekContent()+styleContent();else if(mode==='edit')content=editContent();else if(mode==='config')content=subHead('时间与学期')+configContent();else if(mode==='edu')content=subHead('教务导入')+eduContent();else if(mode==='schools')content=schoolListContent();else if(mode==='adapters')content=adapterListContent();else if(mode==='transfer')content=transferContent();const vars=`--sg-slot-height:${style.slotHeight}px;--sg-course-radius:${style.cornerRadius}px;--sg-course-gap:${style.gap}px;--sg-course-opacity:${style.opacity/100}`;host.innerHTML=`<div class="sg ${(mode==='week'||mode==='style')?'bleed':''} ${style.hideTimes?'hide-times':''} ${style.hideDates?'hide-dates':''} ${style.colorful?'colorful':''}" style="${vars}"><div class="main-stage">${content}</div><p class="error" role="alert" data-error></p><footer>拾光课程表 · XingHeYuZhuan（Apache-2.0）· 已嵌入 Le 时间管理 · <a href="/plugins/shiguang-schedule/LICENSE">License</a></footer></div>`;animateWeek();markStyleSheet();}
+/* 抽屉已经开着时再重绘（点「恢复默认」、外部导入课程后 paint()），不能重放入场动画 ——
+   整块面板会再滑一次，看着像闪了一下。上一次就开着 ⇒ 补 keep-open 把动画掐掉。 */
+let styleSheetOpen=false;
+function markStyleSheet(){
+  const open=mode==='style';
+  if(open&&styleSheetOpen)for(const el of host.querySelectorAll('.style-sheet,.style-mask'))el.classList.add('keep-open');
+  styleSheetOpen=open;
+}
  /* 切周滑入动画。
     做法是整棵重绘后，在 .week-anim 上补一个一次性动画类 —— 而不是用 Transition/FLIP
     去挪动旧节点：课表是 7×N 的 CSS Grid，逐块做 FLIP 要量几十个 rect，
@@ -474,8 +546,21 @@ function styleContent(){return `${subHead('个性化配置')}${stylePreview()}<f
  async function loadSchoolIndex(){
    if(schoolIndex)return;schoolBusy=true;paint();try{const res=await fetch('/plugins/shiguang-schedule/school_index.pb');if(!res.ok)throw new Error(`内置学校索引读取失败（HTTP ${res.status}）`);const parsed=M.decodeSchoolIndex(new Uint8Array(await res.arrayBuffer()));if(parsed.protocolVersion<1||parsed.protocolVersion>2||!parsed.schools.length)throw new Error('学校索引格式不兼容');schoolIndex=parsed;}finally{schoolBusy=false;}
  }
+ /* 第三方适配脚本的取源清单，按顺序试到第一个拿得到内容的为止。
+    两处都是 <base>/resources/<resourceFolder>/<assetJsPath>，拼法完全一致，只是宿主不同。
+    GitHub 原仓库留到最后而不是删掉：XingHeYuZhuan 账号注销后 api 与页面全 404、也没有改名
+    重定向（v0.74.2 查实，这就是「学校适配脚本读取失败（HTTP 404）」的根因），但账号一旦
+    回来无需改码。Gitee 的 XingHeYuZhuan-gh 是上游 git_repos.json 里挂在「官方镜像站(CN)」
+    名下的那一个，仍在更新。内置警大不在此列 —— 它读随包的本地副本，一个请求都不发。 */
+ const schoolAdapterSources=[
+   {name:'Gitee 官方镜像',base:'https://gitee.com/XingHeYuZhuan-gh/shiguang_warehouse/raw/main'},
+   {name:'GitHub 原仓库',base:'https://raw.githubusercontent.com/XingHeYuZhuan/shiguang_warehouse/main'},
+ ];
  async function openSchoolAdapter(adapter){
-   if(!adapter)return;let script;if(selectedSchool?.id==='CPPU'){const local=await fetch('/plugins/shiguang-schedule/adapters/cppu.js');if(!local.ok)throw new Error(`警大适配脚本读取失败（HTTP ${local.status}）`);script=await local.text();}else{const folder=selectedSchool.resourceFolder,path=[folder,...String(adapter.assetJsPath||`${adapter.adapterId}.js`).split('/')].map(encodeURIComponent).join('/');const url=`https://raw.githubusercontent.com/XingHeYuZhuan/shiguang_warehouse/main/resources/${path}`;const sid=await tide.http.session(),res=await tide.http.fetch(sid,'GET',url,{});if(res.status>=400||!res.body.trim())throw new Error(`学校适配脚本读取失败（HTTP ${res.status}）`);script=res.body;}if(!script.trim())throw new Error('学校适配脚本为空');await tide.schoolImporter.open({url:adapter.importUrl||'about:blank',script,title:adapter.adapterName||selectedSchool.name});tide.notify(selectedSchool?.id==='CPPU'?'警大教务已打开：完成统一身份认证后，点击右下角“导入当前课表”':'教务窗口已打开：登录并进入个人课表后，点击右下角“导入当前课表”');
+   if(!adapter)return;let script;if(selectedSchool?.id==='CPPU'){const local=await fetch('/plugins/shiguang-schedule/adapters/cppu.js');if(!local.ok)throw new Error(`警大适配脚本读取失败（HTTP ${local.status}）`);script=await local.text();}else{const folder=selectedSchool.resourceFolder,path=[folder,...String(adapter.assetJsPath||`${adapter.adapterId}.js`).split('/')].map(encodeURIComponent).join('/');const sid=await tide.http.session(),failed=[];
+   /* 单个源失败不许中断整条链：404 只代表那个镜像没有这个文件，抛错只代表这次没连上。 */
+   for(const src of schoolAdapterSources){const url=`${src.base}/resources/${path}`;try{const res=await tide.http.fetch(sid,'GET',url,{});if(res.status<400&&res.body.trim()){script=res.body;break;}failed.push(`${src.name} HTTP ${res.status}`);}catch(error){failed.push(`${src.name} ${error?.message||'请求失败'}`);}}
+   if(!script)throw new Error(`学校适配脚本读取失败（${failed.join('；')}）`);}if(!script.trim())throw new Error('学校适配脚本为空');await tide.schoolImporter.open({url:adapter.importUrl||'about:blank',script,title:adapter.adapterName||selectedSchool.name});tide.notify(selectedSchool?.id==='CPPU'?'警大教务已打开：完成统一身份认证后，点击右下角“导入当前课表”':'教务窗口已打开：登录并进入个人课表后，点击右下角“导入当前课表”');
  }
  async function handleSchoolMessage(raw){
    const message=typeof raw==='string'?JSON.parse(raw):raw,payload=typeof message.payload==='string'?JSON.parse(message.payload||'{}'):(message.payload||{});
@@ -509,7 +594,7 @@ case 'school-category':schoolCategory=source?.dataset.category||schoolCategory;s
 case 'school-open':selectedSchool=schoolIndex?.schools.find(s=>s.id===source?.dataset.schoolId)||null;if(!selectedSchool)throw new Error('没有找到所选学校');enterMode('adapters');break;
  case 'school-open-adapter':{const adapter=selectedSchool?.adapters.find(a=>a.adapterId===source?.dataset.adapterId&&a.category===schoolCategory);await openSchoolAdapter(adapter);return;}
  case 'json':saveFile('拾光课程表-全部备份.json',JSON.stringify({backupTimestamp:Date.now(),appVersionCode:1,currentCourseTableId:currentTableId,allTables:tables.map(p=>({tableId:p.id,tableName:p.name,createdAt:p.createdAt||Date.now(),tableData:p.id===currentTableId?table:p.data}))},null,2),'application/json');return;
- case 'ics':saveFile('Le时间管理-课程表.ics',M.ics(table),'text/calendar;charset=utf-8');return;
+ case 'ics':saveFile('U-Time-课程表.ics',M.ics(table),'text/calendar;charset=utf-8');return;
  case 'blocks':await blocks();return;
  case 'switch-table':await switchTable(source?.dataset.tableId);mode='week';break;
  case 'rename-table':{const p=tables.find(x=>x.id===source?.dataset.tableId);if(!p)return;const next=typeof prompt==='function'?prompt('课表名称',p.name):null;if(next&&next.trim()){p.name=next.trim().slice(0,40);await saveTables();}break;}

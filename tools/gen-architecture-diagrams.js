@@ -165,7 +165,7 @@ function layersDiagram() {
     { k: "plat", n: "⑧ 容器 / 构建层", d: "一套代码三端产物", c: ["Tauri 2：WebView2 / WKWebView / Android WebView", "tray-icon · opener · single-instance · global-shortcut", "Vite 6 bundle → dist/ 编进二进制", "MainActivity.kt edge-to-edge + WindowInsets 注入", "build-windows.sh / scripts/build-android-apk.sh"] },
   ];
   let y = 108, body = title(
-    "Le时间管理 · 软件层次总图",
+    "U-Time · 软件层次总图",
     "依赖方向严格向下：上层可调下层，下层绝不 import 上层。v0.70.0 · 前端 13.6k 行 JS / Rust 2.9k 行 / 15 个内置插件",
     W
   );
@@ -523,7 +523,7 @@ function sourcesDiagram() {
 
     { g: "D 组 · 跨设备的两条通道（⑬）＋ 一个出口", k: "ipc" },
     { c: [["⑬ WebDAV 快照"], ["syncLayer.js:84,157"]],
-      u: ["预置坚果云 dav.jianguoyun.com/dav，目录「Le时间管理」", "Nextcloud 与自定义服务器地址由用户填（只放通 http/https）", "快照文件名 le-time-data.json"],
+      u: ["预置坚果云 dav.jianguoyun.com/dav，目录「U-Time」", "Nextcloud 与自定义服务器地址由用户填（只放通 http/https）", "快照文件名 le-time-data.json"],
       d: ["设置页手动推送 / 拉取整份状态", "!显式操作，没有后台自动上传", "WebDAV 密码存 vault，不进快照"] },
     { c: [["⑬ 局域网联动"], ["lanSync.js:14 · lan.rs:79"]],
       u: ["桌面端自己起服务：http://本机IP:27123（绑定 0.0.0.0）", "路由 /api/state · /api/info · /api/command"],
@@ -542,7 +542,7 @@ function sourcesDiagram() {
   ];
   const txt = (x, y, s, fs, fill, weight) =>
     `<text x="${x}" y="${y}" font-size="${fs}" fill="${fill}"${weight ? ` font-weight="${weight}"` : ""}>${esc(s)}</text>`;
-  let y = 104, body = title("Le时间管理 · 多源数据融合：信息源对照表",
+  let y = 104, body = title("U-Time · 多源数据融合：信息源对照表",
     "配套《多源数据融合说明》第 1 节 · 网址均为代码里写死的字面量（用户自填的已注明）· v0.72.0 · 2026-09-19", W);
   y += 8;
   body += `<rect x="${COL[0].x}" y="${y}" width="${R - COL[0].x}" height="28" fill="#0f172a"/>`;

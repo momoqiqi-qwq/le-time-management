@@ -26,7 +26,7 @@ export function fullBackup(appVersion='') {
 export function parseFullBackup(raw) {
   const obj = typeof raw === 'string' ? JSON.parse(raw) : raw;
   const data = obj?.format === 'le-time-backup' ? obj.data : obj;
-  if (!data || !Array.isArray(data.tasks) || !Array.isArray(data.blocks)) throw new Error('不是有效的 Le时间管理备份');
+  if (!data || !Array.isArray(data.tasks) || !Array.isArray(data.blocks)) throw new Error('不是有效的 U-Time备份');
   return data;
 }
 
@@ -102,7 +102,7 @@ export async function exportXlsx() {
   const tasks=S.getState().tasks.map(t=>({标题:t.title,备注:t.note||'',象限:t.quad,完成:t.done?'是':'否',预计分钟:t.estMin,标签:(t.tags||[]).join('、'),项目:t.project||'',截止日期:t.due||'',截止时间:t.dueTime||''}));
   const blocks=S.getState().blocks.map(b=>({日期:b.date,开始:b.start,时长分钟:b.durMin,标题:b.title,分类:b.cat||'work',关联任务:b.taskId||''}));
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(tasks),'任务'); XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(blocks),'时间块');
-  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'}); downloadBlob(`Le时间管理-${S.todayStr()}.xlsx`,new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  const buf=XLSX.write(wb,{bookType:'xlsx',type:'array'}); downloadBlob(`U-Time-${S.todayStr()}.xlsx`,new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
 }
 export async function importXlsx(file) {
   const XLSX=await import('xlsx'); const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}); const tasks=[],blocks=[];

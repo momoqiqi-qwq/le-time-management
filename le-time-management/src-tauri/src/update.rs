@@ -18,8 +18,9 @@
 //!
 //! ## 两条容易踩空的约束
 //!
-//! - **平台产物命名**：GitHub Release 里必须同时有 `LeTime-<版本>-x64-setup.exe` 与
-//!   `LeTime-<版本>-universal.apk`，否则对应端会退化成「只能去仓库手动下载」。
+//! - **平台产物命名**：GitHub Release 里必须同时有 `UTime-<版本>-x64-setup.exe` 与
+//!   `UTime-<版本>-universal.apk`（历史版本仍是 `LeTime-` 前缀，
+//!   匹配逻辑只看扩展名 + 关键词 + 版本子串，不依赖品牌前缀），否则对应端会退化成「只能去仓库手动下载」。
 //!   匹配规则见 [`asset_score`]，两个平台各按「精确后缀 + 关键词」打分。
 //! - **Android 落盘位置**：必须用 `app_cache_dir()`（＝`Context.getCacheDir()`，内部缓存），
 //!   因为 `res/xml/file_paths.xml` 只声明了 `<cache-path>`。用 `cache_dir()` 会落到
@@ -487,7 +488,7 @@ pub async fn update_download<R: Runtime>(
 ///
 /// - **Windows**：`installer.exe /S /R`。NSIS 脚本在静默模式下会先结束正在运行的实例
 ///   （`CheckIfAppIsRunning`），装完按 `/R` 自动重启；所以这里启动安装器之后必须立刻退出，
-///   否则旧进程会一直占着 `Le时间管理.exe`。
+///   否则旧进程会一直占着 `U-Time.exe`。
 /// - **Android**：经原生插件用 `content://` + 读权限交给系统安装器。返回成功只代表
 ///   「安装界面已拉起」，用户在系统界面点取消我们也收不到信号 —— 文案要说「已交给系统安装」。
 #[tauri::command]

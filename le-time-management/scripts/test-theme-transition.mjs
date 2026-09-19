@@ -263,12 +263,18 @@ function loadTheme() {
      不除以 `--ui-scale`，圆就画在真实位置的 1/zoom 处：手机上圆心从左下角的按钮
      漂到「左中间」，半径也扫不到右下角（2026-09-19 用户报的正是这个）。
      换算写法沿用 uiScale.js 的既有契约：恒定物理长度一律 `calc(Npx / var(--ui-scale))`。 */
+  /* ⚠️ 下面三条报错时先别急着查代码：共享工作区里 `src/styles.css` 随时可能被**并行会话**
+     改写 —— 实测 2026-09-19：并行会话跑它自己的变异测试时会把 ` / var(--ui-scale, 1)`
+     整批抽掉（正则与本文件变异 M6 同款，它同样按全文件替换），本脚本恰好读到那一瞬间，
+     就报出「源码缺 ÷ var(--ui-scale)」的**假失败**，重跑即过。
+     判据：源码里明明有 ÷ var(--ui-scale) 却报缺 —— 那就是瞬时改写，不是真缺口。 */
+  const MAYBE_CONCURRENT = "（若源码里确有 ÷ var(--ui-scale)，多半是并行会话正在改 styles.css，重跑一次）";
   const reveal = css.match(/@keyframes theme-reveal\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
   assert.ok(reveal, "必须存在 @keyframes theme-reveal 块");
-  assert.match(reveal, /--theme-reveal-x\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 x 必须除以生效缩放系数换算进 VT 坐标系");
-  assert.match(reveal, /--theme-reveal-y\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 y 必须除以生效缩放系数换算进 VT 坐标系");
-  assert.match(reveal, /--theme-reveal-r\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示半径必须同样换算，否则圆收不到最远角");
-  assert.match(reveal, /var\(--ui-scale,\s*1\)/, "--ui-scale 必须带 1 兜底：没初始化缩放时 calc 不能非法，整条 clip-path 会被丢掉");
+  assert.match(reveal, /--theme-reveal-x\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 x 必须除以生效缩放系数换算进 VT 坐标系" + MAYBE_CONCURRENT);
+  assert.match(reveal, /--theme-reveal-y\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示起点 y 必须除以生效缩放系数换算进 VT 坐标系" + MAYBE_CONCURRENT);
+  assert.match(reveal, /--theme-reveal-r\s*[^)]*\)\s*\/\s*var\(--ui-scale/, "揭示半径必须同样换算，否则圆收不到最远角" + MAYBE_CONCURRENT);
+  assert.match(reveal, /var\(--ui-scale,\s*1\)/, "--ui-scale 必须带 1 兜底：没初始化缩放时 calc 不能非法，整条 clip-path 会被丢掉" + MAYBE_CONCURRENT);
 }
 
 /* ── 变异测试：证明上面的断言承重 ──
@@ -294,8 +300,10 @@ if (!process.env.THEME_TRANSITION_NO_MUTATE) {
       /if \(!themeMotionAllowed\(\)\) \{\s*\n\s*mutate\(\);\s*\n\s*return;\s*\n\s*\}/,
       "if (false) { mutate(); return; }"],
     // M4 = 状态栏同步被砍（原生写好了但没人调，症状与没修一样）
+    //      ⚠️ 行尾写 `\r?\n`：工作树是 CRLF（git autocrlf 的常态），只写 `\n` 会失配 ——
+    //      实测这条变异因此一直「未命中源码」，等于这个洞从来没被测到。
     ["状态栏图标同步被砍", THEME_FILE,
-      /  syncSystemBarIcons\(resolved\.mode\);\n/,
+      /  syncSystemBarIcons\(resolved\.mode\);\r?\n/,
       ""],
     // M5 = 同步值传反（浅背景配浅色图标 ⇒ 看不见）
     ["状态栏图标明暗传反", THEME_FILE,
@@ -317,19 +325,57 @@ if (!process.env.THEME_TRANSITION_NO_MUTATE) {
     const mutated = orig.replace(re, rep);
     if (mutated === orig) { console.log(`✗ 变异未命中源码：${name}`); allBlocked = false; continue; }
     const target = path.join(__dirname, "..", rel);
-    fs.writeFileSync(target, mutated);
-    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
-      encoding: "utf8",
-      env: { ...process.env, THEME_TRANSITION_NO_MUTATE: "1" },
-      timeout: 30000,
-    });
-    fs.writeFileSync(target, orig);
-    const blocked = r.status !== 0;
+    let blocked = false;
+    // 变异写入也要重试 —— Windows 上偶发文件占用（errno -4094），全量跑时 styles.css
+    // 刚被前面的环节写过更容易撞上。原来只有还原路径有重试，写入这边一抛
+    // `UNKNOWN` 就把整个测试脚本炸成 FAIL，而单跑又稳定复现不出来。
+    let prepared = false;
+    for (let i = 0; i < 6 && !prepared; i += 1) {
+      try {
+        fs.writeFileSync(target, mutated);
+        // 回读确认变异真落盘了：Windows 上写入偶发失败（文件被占用，errno -4094），
+        // 不确认就会拿「没变异的源码」去跑，报出来的「漏过」是假的。
+        // ⚠️ 必须直接读磁盘 —— readOf() 带缓存（files[rel] ??= ...），拿它回读会永远
+        // 读到变异前的内容，这个检查就变成了摆设。
+        prepared = fs.readFileSync(target, "utf8") === mutated;
+      } catch { /* 文件被占用，等一下重试 */ }
+      if (!prepared) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+    }
+    if (!prepared) { console.log(`✗ 变异写入持续失败（文件被占用）：${name}`); allBlocked = false; continue; }
+    try {
+      const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
+        encoding: "utf8",
+        env: { ...process.env, THEME_TRANSITION_NO_MUTATE: "1" },
+        timeout: 30000,
+      });
+      blocked = r.status !== 0;
+    } finally {
+      // 🔴 还原必须在 finally 里，而且要**回读 + 重试** —— 实测发生过一次：M4（删掉
+      //    `syncSystemBarIcons(resolved.mode)` 那行调用）的变异被留在了 src/theme.js 里。
+      //    原因是原来的代码把还原写在 try 外面，还原写入又碰上 Windows 的文件占用
+      //    （errno -4094）直接抛了，于是变异留在仓库里，后续 `npm test` 报出一堆
+      //    莫名其妙的状态栏失败，排查方向全错。
+      let restored = false;
+      for (let i = 0; i < 6 && !restored; i += 1) {
+        try {
+          fs.writeFileSync(target, orig);
+          restored = fs.readFileSync(target, "utf8") === orig;
+        } catch { /* 文件被占用，等一下重试 */ }
+        if (!restored) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
+      }
+      if (!restored) {
+        console.error(`🔴 变异还原失败，仓库里留下了变异：${rel} —— 请手动执行 git checkout -- ${rel}`);
+        process.exit(1);
+      }
+    }
     console.log(`${blocked ? "✓ 被拦下" : "✗ 漏过了"} ${name}`);
     if (!blocked) allBlocked = false;
   }
   if (!allBlocked) process.exitCode = 1;
 }
 
+// 失败时不要打印 PASS —— 实测被这条刷过去过：变异「未命中源码」把 exitCode 置了 1，
+// 但末尾无条件打印 PASS，看日志的人以为通过了。
+if (process.exitCode) process.exit(process.exitCode);
 console.log("PASS: 主题/深浅模式切换动画（VT 圆形揭示主路径 + 降级过渡 + 减少动效豁免 + 守卫与变异）");
-process.exit(process.exitCode || 0);
+process.exit(0);

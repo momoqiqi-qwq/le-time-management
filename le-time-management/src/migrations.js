@@ -15,7 +15,7 @@ export function migrateState(raw = {}) {
   let state = cloneSnapshot(raw);
   let version = Number.isInteger(state.dataSchemaVersion) ? state.dataSchemaVersion : 0;
   if (version > CURRENT_SCHEMA_VERSION) {
-    throw new Error("数据来自更新版本，请升级 Le时间管理 后再打开");
+    throw new Error("数据来自更新版本，请升级 U-Time 后再打开");
   }
   while (version < CURRENT_SCHEMA_VERSION) {
     const migrate = MIGRATIONS.get(version);

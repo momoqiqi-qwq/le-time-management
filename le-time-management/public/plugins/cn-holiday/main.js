@@ -1,4 +1,4 @@
-// 中国节假日 —— 由 cn-holiday Skill 的查询逻辑移植为Le时间管理内置插件。
+// 中国节假日 —— 由 cn-holiday Skill 的查询逻辑移植为U-Time内置插件。
 // 数据源: NateScarlet/holiday-cn（基于国务院办公厅放假通知整理）
 (function () {
   const REMOTE = "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master";
@@ -309,7 +309,7 @@
         </div>
         <div class="ch-grid">
           <section class="ch-card"><div class="ch-title">查某一天</div><div class="ch-check"><button class="ch-in ch-datebtn" data-datebtn type="button">选择日期</button><button class="ch-btn pri" data-check>查询</button></div><div class="ch-cal" data-cal><div class="ch-cal-in"></div></div><div class="ch-result" data-result>点日期框展开日历：法定假休日标红、「班」为调休上班日；选中即可判断。</div></section>
-          <section class="ch-card"><div class="ch-title">规则说明</div><div class="ch-muted">调休上班日会覆盖普通周末，不会误算成休息日。缺少年份时才联网读取；已获取的数据会缓存到Le时间管理本地数据中。</div><div class="ch-source">数据源：NateScarlet/holiday-cn · 原始依据为国务院办公厅放假通知</div></section>
+          <section class="ch-card"><div class="ch-title">规则说明</div><div class="ch-muted">调休上班日会覆盖普通周末，不会误算成休息日。缺少年份时才联网读取；已获取的数据会缓存到U-Time本地数据中。</div><div class="ch-source">数据源：NateScarlet/holiday-cn · 原始依据为国务院办公厅放假通知</div></section>
         </div>
         <div class="ch-toolbar"><div><div class="ch-kicker">全年安排</div><div class="ch-year-nav"><button class="ch-btn" data-prev>‹</button><span class="ch-year" data-year>${currentYear}</span><button class="ch-btn" data-next>›</button></div></div><div class="ch-muted" data-year-source></div></div>
         <div class="ch-list" data-list><div class="ch-row"><span></span><span class="ch-muted">正在读取…</span><span></span></div></div>

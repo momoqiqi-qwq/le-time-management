@@ -155,7 +155,7 @@
         const key = `block|${b.id}|${eventAt}`;
         if (delta >= 0 && delta <= state.lead && !state.pushed.includes(key)) {
           state.pushed.push(key); dirty = true;
-          await push(`⏰ ${b.start} ${b.title}`, `${b.start} – ${tide.util.hhmmOf(tide.util.mmOf(b.start) + b.durMin)} · ${b.durMin} 分钟\n\n来自 Le时间管理 · 时间块提醒`);
+          await push(`⏰ ${b.start} ${b.title}`, `${b.start} – ${tide.util.hhmmOf(tide.util.mmOf(b.start) + b.durMin)} · ${b.durMin} 分钟\n\n来自 U-Time · 时间块提醒`);
         }
       }
     }
@@ -172,7 +172,7 @@
           const key = `task|${task.id}|${offset}|${at}`;
           if (nowMs >= at && nowMs - at <= 90000 && !state.pushed.includes(key)) {
             state.pushed.push(key); dirty = true;
-            await push(`📌 ${task.title}`, `${offsetLabel(offset)}\n截止：${task.due} ${task.dueTime || "23:59"}\n\n来自 Le时间管理 · 任务提醒`);
+            await push(`📌 ${task.title}`, `${offsetLabel(offset)}\n截止：${task.due} ${task.dueTime || "23:59"}\n\n来自 U-Time · 任务提醒`);
           }
         }
       }
@@ -237,7 +237,7 @@
     const title = `🔔 插件新消息 ${batch.length} 条（${now}）${from ? ` · ${from}` : ""}`;
     let body = batch.map((x) => `· [${x.source}${x.sender ? `·${x.sender}` : ""}] ${x.title}${x.time ? `（${x.time}）` : ""}`).join("\n");
     if (body.length > PLUGIN_CONTENT_LIMIT) body = `${body.slice(0, PLUGIN_CONTENT_LIMIT)}\n…（内容过长已截断）`;
-    const ok = await push(title, `${body}\n\n来自 Le时间管理 · 插件消息推送`);
+    const ok = await push(title, `${body}\n\n来自 U-Time · 插件消息推送`);
     if (ok) { state.pluginQueue.splice(0, batch.length); paintQueue(); }
   }
 
@@ -357,9 +357,14 @@
       /* 面板按按钮左缘往右下展开，而窄屏下那一行会换行、按钮被挤到右侧：
          实测 390px 宽时面板从 x=236 展开到 538，右半边 148px 掉到视口外（勾格看不见也点不到）。
          左、右哪个方向锚定都各有裁掉的时候，所以开的时候量一次、把整块推回视口内。
-         面板宽是 min(78vw,430px)，推回来后的左缘 = vw-12-面板宽 ≥ 12px，不会再顶穿左边。 */
-      const over = msBtn.getBoundingClientRect().left + msPanel.offsetWidth - (innerWidth - 12);
-      msPanel.style.left = over > 0 ? `-${Math.ceil(over)}px` : "";
+         面板宽是 min(78vw,430px)，推回来后的左缘 = vw-12-面板宽 ≥ 12px，不会再顶穿左边。
+         ⚠️ 可视区的左右边不是视口的左右边：横屏时挖孔与侧边三键栏各占一段（fixed 与绝对
+         定位的后代都以宿主 .view 的 padding box 为包含块，宿主的 padding 拦不住它们），
+         所以夹取必须减掉原生注入的 --sar / --sal，变量取不到时 parseFloat 出 NaN → 0，桌面不变。 */
+      const px = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0;
+      const [sal, sar] = [px("--sal"), px("--sar")];
+      const over = msBtn.getBoundingClientRect().left + msPanel.offsetWidth - (innerWidth - sar - 12);
+      msPanel.style.left = over > 0 ? `-${Math.min(Math.ceil(over), msBtn.getBoundingClientRect().left - sal - 12)}px` : "";
     }
     msBtn.addEventListener("click", () => { setMsOpen(!msPanel.classList.contains("on")); });
     msBoxes.forEach((b) => b.addEventListener("change", async () => { readFields(); await save(); paintScope(); paintSources(); pruneQueue(); }));
@@ -411,7 +416,7 @@
       if (Date.now() - lastTestAt < 65000) { tide.notify("1 分钟内刚发过测试推送（PushPlus 每分钟限 5 次、相同内容每小时限 3 条），稍后再试"); return; }
       lastTestAt = Date.now();
       const at = new Date().toTimeString().slice(0, 5);
-      await push(`Le时间管理测试推送 ${at}`, `如果你在微信里看到这条消息，说明推送通道正常 ✓（${at} 发出）`);
+      await push(`U-Time测试推送 ${at}`, `如果你在微信里看到这条消息，说明推送通道正常 ✓（${at} 发出）`);
     });
   }
 

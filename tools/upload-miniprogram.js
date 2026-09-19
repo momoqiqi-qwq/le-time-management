@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Le时间管理 · 小程序代码上传（miniprogram-ci）
+// U-Time · 小程序代码上传（miniprogram-ci）
 //
 // 前置条件（缺一不可）：
 //   1. 正式小程序 appid（wx 开头 18 位）——测试号 touristappid 无法上传
@@ -96,8 +96,8 @@ function main() {
     try {
       desc = require("child_process")
         .execSync("git log -1 --pretty=%s", { cwd: ROOT, stdio: ["ignore", "pipe", "ignore"] })
-        .toString().trim() || "Le时间管理 提交";
-    } catch (e) { desc = "Le时间管理 提交"; }
+        .toString().trim() || "U-Time 提交";
+    } catch (e) { desc = "U-Time 提交"; }
   }
   desc = desc.slice(0, 100); // 微信限制备注长度
 

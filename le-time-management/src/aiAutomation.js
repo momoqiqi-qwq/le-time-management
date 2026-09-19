@@ -177,7 +177,7 @@ function compactContext() {
 }
 
 function opSystemPrompt(rule) {
-  return `你是 Le时间管理 的 AI 自动任务执行器。请根据用户自动任务和当前应用数据，生成允许的操作。
+  return `你是 U-Time 的 AI 自动任务执行器。请根据用户自动任务和当前应用数据，生成允许的操作。
 你没有、也绝不能请求任何本地文件权限；不能读取、写入、删除本地文件；不能执行 shell/系统命令；不能打开插件文件；不能自行访问其他网络资源。你唯一能做的是返回下面白名单中的 JSON 操作，由应用审核后执行。
 只返回 JSON：{"summary":"一句话结果","operations":[...]}
 允许 operations：

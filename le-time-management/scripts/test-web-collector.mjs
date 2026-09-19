@@ -12,8 +12,11 @@ import assert from 'node:assert/strict';
 const src = fs.readFileSync(new URL('../public/plugins/web-collector/main.js', import.meta.url), 'utf8');
 
 const storage = new Map();
-const ctx = vm.createContext({
+const makeCtx = (protocol) => vm.createContext({
   console,
+  // 插件用 location.protocol 判「页面来源是不是 https」（决定 http 的 iframe 会不会被
+  // 当混合内容拦掉），所以 fixture 必须给一个真的 location。
+  location: { protocol },
   tide: {
     storage: {
       async get(key, fallback) { return storage.has(key) ? storage.get(key) : fallback; },
@@ -24,16 +27,41 @@ const ctx = vm.createContext({
   },
 });
 
-vm.runInContext(
-  src.replace(
-    'tide.ui.registerView({',
-    '  globalThis.__fx = { migrateNotes, ensureDefaults, DEFAULT_ITEMS, LEGACY_NOTE_PREFIX, DEFAULT_OPEN_MODE,\n'
-    + '    get items() { return items; }, set items(v) { items = v; } };\n'
-    + '  tide.ui.registerView({',
-  ),
-  ctx,
-);
-const fx = ctx.__fx;
+/* 跑两遍（页面来源 http: / https:）—— 桌面端是前者、APK 是后者。
+   只做字符串断言的话，「条件少写一个」也能骗过去，所以这里直接跑真源码验真值表。 */
+function loadPlugin(protocol) {
+  const ctx = makeCtx(protocol);
+  vm.runInContext(
+    src.replace(
+      'tide.ui.registerView({',
+      '  globalThis.__fx = { migrateNotes, ensureDefaults, DEFAULT_ITEMS, LEGACY_NOTE_PREFIX, DEFAULT_OPEN_MODE, cleartextBlocked,\n'
+      + '    get items() { return items; }, set items(v) { items = v; } };\n'
+      + '  tide.ui.registerView({',
+    ),
+    ctx,
+  );
+  return ctx.__fx;
+}
+const fx = loadPlugin("http:");
+
+/* ── 〇、cleartextBlocked 真值表（v1.2.4）──
+   同一个混合内容根因的第三个受害者：APK 上页面来源是 https，http 的 iframe 被静默拦掉
+   ⇒ 「应用内显示」一片空白。判据必须**同时**要求「页面是 https」且「地址是 http」：
+   少写前者，桌面端也被误伤（桌面端页面来源是 http，http 地址本来嵌得出来）；
+   少写后者，https 地址会被无辜降级。 */
+{
+  const onHttp = loadPlugin("http:");    // 桌面端：http://tauri.localhost
+  const onHttps = loadPlugin("https:");  // Android：https://tauri.localhost
+  assert.equal(onHttp.cleartextBlocked("http://daxue.qiyemulu.cn/"), false,
+    '桌面端页面来源是 http，http 地址嵌得出来，不许降级');
+  assert.equal(onHttp.cleartextBlocked("https://a.edu.cn/"), false, '桌面端 https 地址当然也行');
+  assert.equal(onHttps.cleartextBlocked("http://daxue.qiyemulu.cn/"), true,
+    'https 页面里的 http 地址 = 混合内容，必被 WebView 拦掉');
+  assert.equal(onHttps.cleartextBlocked("https://a.edu.cn/"), false, 'https 页面里的 https 地址不受影响');
+  assert.equal(onHttps.cleartextBlocked(""), false, '空地址不能判成被拦');
+  assert.equal(onHttps.cleartextBlocked(undefined), false, 'undefined 不能抛也不能判成被拦');
+  assert.equal(onHttps.cleartextBlocked("HTTP://A.EDU.CN/"), true, '大小写不敏感，别被大写绕过');
+}
 
 /* ── 一、默认条目的文案 ── */
 assert.equal(fx.DEFAULT_ITEMS.length, 2, '默认条目应仍是两条');
@@ -94,9 +122,38 @@ assert.match(src, /await ensureDefaults\(\);\s*await migrateNotes\(\);/, 'render
 const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-collector/manifest.json', import.meta.url), 'utf8'));
 // 1.1.2 → 编辑框字号自适应；1.2.0 → 拆出「自动获取网站图标」与「换图标」两个入口；
 // 1.2.1 → manifest 补 notify 权限（此前 tide.notify 每次都抛权限错，收藏/失败提示全被吞掉）；
-// 1.2.2 → 打开方式默认由「浏览器打开」改为「应用内显示」。
+// 1.2.2 → 打开方式默认由「浏览器打开」改为「应用内显示」；
+// 1.2.3 → 图标改走原生侧抓成 data URL（APK 上页面来源是 https，WebView 禁混合内容，
+//          内置预置条目的 http 图标直连会被静默拦掉）；
+// 1.2.4 → 「应用内显示」碰到 http 明文站点不再挂一个注定空白的 iframe，改成给原因 + 出口
+//          （同一个混合内容根因的第三个受害者，见下面第七之二节）。
 // 这条断言的作用是「改了行为就必须动版本号」，所以每加一批行为就往上抬一格，别删。
-assert.equal(manifest.version, '1.2.2', '打开方式默认值变更后必须升插件版本');
+assert.equal(manifest.version, '1.2.4', '改了插件行为就必须升版本号');
+
+/* ── 七之二、明文 http 站点在「应用内显示」里不许挂空 iframe（v1.2.4）──
+   APK 上页面来源是 https（WebViewAssetLoader 默认 scheme），http 的 iframe 会被当
+   **混合内容**静默拦掉 ⇒ 面板一片空白，看起来就是「插件坏了」。桌面端页面来源是 http，
+   同一个地址嵌得出来 —— 又是那个「只看桌面端永远复现不了」的签名。
+   🔴 判据必须是「页面自己是不是 https」，不能写成「是不是 Android」：
+   后者是平台代理，Tauri 一改 scheme 就失效；前者就是混合内容的定义本身。 */
+assert.ok(src.includes('const PAGE_IS_HTTPS = location.protocol === "https:"'),
+  '判据要用页面来源的协议，不是平台名');
+assert.ok(src.includes('const cleartextBlocked = (url) => PAGE_IS_HTTPS && /^http:\\/\\//i.test(String(url || ""));'),
+  'cleartextBlocked 必须**同时**要求「页面是 https」且「地址是 http」—— 少一个条件就会误伤');
+// 两个分支都要在：降级面板（嵌不出来）与 iframe（嵌得出来）
+assert.ok(src.includes('const body = cleartextBlocked(item.url)'),
+  'openInside 必须按 cleartextBlocked 分流，不能无条件挂 iframe');
+assert.ok(src.includes('? `<div class="wc-web-blocked">'),
+  '嵌不出来的地址要渲染降级面板，把原因和出口摆出来');
+assert.ok(src.includes(': `<iframe src="${esc(item.url)}"'),
+  '嵌得出来的地址仍要照常挂 iframe —— 桌面端就是这么工作的，别一刀切');
+// 降级面板里的「浏览器打开」也要接上：原来只 querySelector 了头部那一个
+assert.ok(src.includes('panel.querySelectorAll("[data-web-external]").forEach'),
+  '两个「浏览器打开」按钮都要接线（querySelector 只会接上头部那个，降级面板里的点了没反应）');
+assert.ok(!src.includes('panel.querySelector("[data-web-external]")'),
+  '旧的单选写法必须消失 —— 留着一个 querySelector 就等于降级面板里的按钮是死的');
+assert.ok(src.includes('.wc-web-blocked{flex:1;display:grid;place-content:center'),
+  '降级面板要有居中样式，否则提示文字挤在角落');
 assert.match(src, /\.wc-edit\{[^}]*minmax\(0,1fr\)[^}]*\}/, '.wc-edit 两列轨道必须 minmax(0,1fr) —— 1fr 的下限是 min-content，会被长值撑破卡片');
 assert.match(src, /\.wc-edit input\{[^}]*min-width:0[^}]*\}/, '.wc-edit input 必须 min-width:0，否则输入框固有宽度把卡片顶破');
 assert.match(src, /\.wc-edit input\{[^}]*width:100%[^}]*\}/, '.wc-edit input 必须 width:100% 才会老老实实缩进轨道里');
@@ -113,9 +170,14 @@ assert.match(src, /fitInputFonts\(\);\s*\n?\s*\}/, 'paint() 末尾必须调用 f
 assert.match(src, /async function fetchIcon\(/, '必须单独提供 fetchIcon(url)，只取图标');
 assert.match(src, /async function probeIcon\(/, '顶栏「自动获取网站图标」要有对应处理函数');
 assert.match(src, /async function refreshIcon\(id\)/, '卡片「换图标」要有对应处理函数');
-// fetchIcon 只回两个字段 —— 这是「不误伤标题」的契约，多回一个就可能被 Object.assign 覆盖
-assert.match(src, /return \{ iconUrl, iconName: iconName \|\| "globe" \};/,
-  'fetchIcon 必须只回 { iconUrl, iconName }，否则会覆盖用户手改的标题');
+// fetchIcon 的回写字段只许「图标三件套」—— 这是「不误伤标题」的契约：
+// refreshIcon 里是 Object.assign(item, got)，多回一个 title/note 就会覆盖用户手改的内容。
+// iconData 是 v0.73.0 加的（APK 上 http favicon 直连被 WebView 静默拦掉，改原生侧抓成 data URL），
+// 它只落在图标上，不碰标题。
+assert.match(src, /return \{ iconUrl, iconName: iconName \|\| "globe", iconData: await fetchIconData\(iconUrl\) \};/,
+  'fetchIcon 必须回 { iconUrl, iconName, iconData } 三件套');
+assert.doesNotMatch(src, /return \{ iconUrl[^}]*\b(title|note|host)\b/,
+  'fetchIcon 不许回 title/note/host —— Object.assign 会覆盖用户手改的内容');
 // 顶栏与卡片按钮的 data 标记必须不同，否则事件委托里顶栏分支会抢走卡片的点击
 assert.match(src, /data-probe-icon/, '顶栏按钮用 data-probe-icon');
 assert.match(src, /data-fetch-icon/, '卡片按钮用 data-fetch-icon');

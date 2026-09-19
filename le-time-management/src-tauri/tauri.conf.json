@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Le时间管理",
-  "version": "0.72.0",
+  "productName": "U-Time",
+  "version": "0.74.2",
   "identifier": "com.yile.letime",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Le时间管理 · 时间块与四象限",
+        "title": "U-Time · 时间块与四象限",
         "width": 1440,
         "height": 900,
         "minWidth": 400,
@@ -29,8 +29,8 @@
   "bundle": {
     "active": true,
     "category": "Productivity",
-    "shortDescription": "Le时间管理 · 时间块与四象限",
-    "longDescription": "Le时间管理：本地优先的时间管理平台，整合四象限、时间块、课程表与插件扩展，支持 Windows / Linux / Android。",
+    "shortDescription": "U-Time · 时间块与四象限",
+    "longDescription": "U-Time：本地优先的时间管理平台，整合四象限、时间块、课程表与插件扩展，支持 Windows / Linux / Android。",
     "targets": [
       "nsis",
       "msi",

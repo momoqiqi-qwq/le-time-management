@@ -980,7 +980,7 @@ Page({
         if (delta >= 0 && delta <= p.lead && p.pushed.indexOf(key) < 0) {
           p.pushed.push(key);
           const endMin = store.mmOf(b.start) + (Number(b.durMin) || 0);
-          await this.pushSend("⏰ " + b.start + " " + b.title, b.start + " – " + store.hhmmOf(endMin) + " · " + b.durMin + " 分钟\n\n来自 Le时间管理 · 时间块提醒");
+          await this.pushSend("⏰ " + b.start + " " + b.title, b.start + " – " + store.hhmmOf(endMin) + " · " + b.durMin + " 分钟\n\n来自 U-Time · 时间块提醒");
         }
       }
     }
@@ -995,7 +995,7 @@ Page({
           const key = "task|" + task.id + "|" + offset + "|" + at;
           if (nowMs >= at && nowMs - at <= 90000 && p.pushed.indexOf(key) < 0) {
             p.pushed.push(key);
-            await this.pushSend("📌 " + task.title, this.pushOffsetLabel(offset) + "\n截止：" + task.due + " " + (task.dueTime || "23:59") + "\n\n来自 Le时间管理 · 任务提醒");
+            await this.pushSend("📌 " + task.title, this.pushOffsetLabel(offset) + "\n截止：" + task.due + " " + (task.dueTime || "23:59") + "\n\n来自 U-Time · 任务提醒");
           }
         }
       }
@@ -1048,7 +1048,7 @@ Page({
   },
   onPushTest() {
     if (!this.pushConfigured()) { wx.showToast({ title: "请先填写 Token", icon: "none" }); return; }
-    this.pushSend("Le时间管理测试推送", "如果你在微信里看到这条消息，说明推送通道正常 ✓");
+    this.pushSend("U-Time测试推送", "如果你在微信里看到这条消息，说明推送通道正常 ✓");
   },
 
   /* ════ 竞赛消息雷达（gxxsjs.com 摩课云公告） ════ */

@@ -111,6 +111,30 @@ export const api = {
     return { status: r.status, body: decodeWebBody(new Uint8Array(await r.arrayBuffer()), contentType), finalUrl: r.url, contentType };
   },
 
+  /**
+   * 抓远程图标并返回 data URL。
+   *
+   * 为什么不让前端 `<img src>` 直接引用图标地址：Android 上页面来源是
+   * `https://tauri.localhost`，WebView 默认禁混合内容 ⇒ 学校网站常见的
+   * `http://…/favicon.ico` 会被静默拦掉（桌面端页面来源是 http，看不出问题）。
+   * 走这里则由 Rust 抓取，不受 WebView 策略约束。
+   */
+  async httpGetIcon(url) {
+    if (isTauri) return invoke("http_get_icon", { url });
+    // 浏览器端兜底：网页版没有 WebView 那套混合内容限制。
+    // 读 blob 仍受 CORS 约束，失败时上层会退回首字母兜底，不额外处理。
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    if (!/^image\//.test(blob.type) || /svg/.test(blob.type)) throw new Error("不是可用的图标格式");
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("读取图标失败"));
+      reader.readAsDataURL(blob);
+    });
+  },
+
   async openExternal(url) {
     if (isTauri) return invoke("open_external", { url });
     window.open(url, "_blank");
@@ -196,9 +220,9 @@ export const api = {
   },
 
   // 局域网联动服务
-  async lanStart(port, token) {
+  async lanStart(port, token, allowPush = false) {
     if (!isTauri) throw new Error("仅 Tauri 环境可用");
-    return invoke("lan_start", { port, token });
+    return invoke("lan_start", { port, token, allowPush });
   },
   async lanStop() {
     if (isTauri) return invoke("lan_stop");
@@ -206,6 +230,16 @@ export const api = {
   async lanStatus() {
     if (!isTauri) return { running: false };
     return invoke("lan_status");
+  },
+
+  // 手机推回来的快照：桌面端确认后取原文 / 把决定回给手机。服务端从不自己写盘。
+  async lanPushTake(id) {
+    if (!isTauri) throw new Error("仅 Tauri 环境可用");
+    return invoke("lan_push_take", { id });
+  },
+  async lanPushResolve(id, approve, note = "") {
+    if (!isTauri) return false;
+    return invoke("lan_push_resolve", { id, approve, note });
   },
 
   // AI 凭据只保存在 Rust 侧加密保险箱；不会进入 data.json / 普通备份。

@@ -18,7 +18,7 @@
     if (document.getElementById("web-collector-style")) return;
     const s = document.createElement("style"); s.id = "web-collector-style";
     s.textContent = `
-      .wc{max-width:1100px;margin:0 auto;padding:14px 0 30px;color:var(--ink)}.wc-hero{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}.wc-input{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--paper);color:var(--ink);min-width:0}.wc-btn{height:42px;border-radius:10px;border:1px solid var(--line);padding:0 15px;background:var(--panel);color:var(--ink);font-weight:650}.wc-btn.pri{background:var(--deep);border-color:var(--deep);color:white}.wc-btn:disabled{opacity:.55}.wc-icon-preview{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line-soft);border-radius:12px;background:var(--paper);margin-top:2px}.wc-icon-preview .wc-icon{flex:none;width:38px;height:38px;border-radius:10px}.wc-icon-preview .wc-icon img{width:24px;height:24px}.wc-preview-text{flex:1;min-width:0;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2)}.wc-preview-text code{display:block;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3);white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}.wc-icon-preview .wc-btn{height:32px;padding:0 12px;font-size:calc(12px * var(--ui-text-scale));flex:none}.wc-toolbar{display:flex;gap:9px;align-items:center;margin:10px 0 12px}.wc-toolbar .wc-input{flex:1}.wc-open-mode{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--paper);color:var(--ink);font-size:calc(12px * var(--ui-text-scale))}.wc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:11px}.wc-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;grid-template-columns:46px minmax(0,1fr);gap:11px;content-visibility:auto;contain-intrinsic-size:120px}.wc-icon{width:46px;height:46px;border-radius:12px;background:var(--paper);border:1px solid var(--line-soft);display:grid;place-items:center;overflow:hidden}.wc-icon img{width:30px;height:30px;object-fit:contain}.wc-icon svg{width:24px;height:24px;fill:var(--deep)}.wc-title{font-size:calc(14px * var(--ui-text-scale));font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wc-host{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wc-note{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);margin-top:8px;line-height:1.55;min-height:19px;overflow-wrap:anywhere}.wc-actions{grid-column:1/-1;display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}.wc-actions button{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:6px 10px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink)}.wc-empty{border:1.5px dashed var(--line);border-radius:16px;padding:32px;text-align:center;color:var(--ink-3)}.wc-edit{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:4px}.wc-edit input{height:34px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);padding:0 9px;min-width:0;width:100%;font-size:calc(13px * var(--ui-text-scale))}.wc-badge{display:inline-flex;font-size:calc(10px * var(--ui-text-scale));padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--deep) 10%,var(--panel));color:var(--deep);margin-top:6px}.wc-web-mask{position:fixed;inset:0;z-index:1980;background:rgba(15,23,42,.42);backdrop-filter:blur(3px)}.wc-web-panel{position:fixed;inset:calc(18px + var(--sat,env(safe-area-inset-top,0px))) calc(18px + var(--sar,env(safe-area-inset-right,0px))) calc(18px + var(--sab,env(safe-area-inset-bottom,0px))) calc(18px + var(--sal,env(safe-area-inset-left,0px)));z-index:1981;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:0 24px 70px rgba(15,23,42,.26)}.wc-web-head{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line-soft)}.wc-web-head b{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wc-web-head button{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:6px 10px;color:var(--ink)}.wc-web-panel iframe{flex:1;width:100%;border:0;background:var(--paper)}
+      .wc{max-width:1100px;margin:0 auto;padding:14px 0 30px;color:var(--ink)}.wc-hero{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px}.wc-input{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 12px;background:var(--paper);color:var(--ink);min-width:0}.wc-btn{height:42px;border-radius:10px;border:1px solid var(--line);padding:0 15px;background:var(--panel);color:var(--ink);font-weight:650}.wc-btn.pri{background:var(--deep);border-color:var(--deep);color:white}.wc-btn:disabled{opacity:.55}.wc-icon-preview{grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line-soft);border-radius:12px;background:var(--paper);margin-top:2px}.wc-icon-preview .wc-icon{flex:none;width:38px;height:38px;border-radius:10px}.wc-icon-preview .wc-icon img{width:24px;height:24px}.wc-preview-text{flex:1;min-width:0;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2)}.wc-preview-text code{display:block;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3);white-space:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}.wc-icon-preview .wc-btn{height:32px;padding:0 12px;font-size:calc(12px * var(--ui-text-scale));flex:none}.wc-toolbar{display:flex;gap:9px;align-items:center;margin:10px 0 12px}.wc-toolbar .wc-input{flex:1}.wc-open-mode{height:42px;border:1px solid var(--line);border-radius:10px;padding:0 10px;background:var(--paper);color:var(--ink);font-size:calc(12px * var(--ui-text-scale))}.wc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:11px}.wc-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;grid-template-columns:46px minmax(0,1fr);gap:11px;content-visibility:auto;contain-intrinsic-size:120px}.wc-icon{width:46px;height:46px;border-radius:12px;background:var(--paper);border:1px solid var(--line-soft);display:grid;place-items:center;overflow:hidden}.wc-icon img{width:30px;height:30px;object-fit:contain}.wc-icon svg{width:24px;height:24px;fill:var(--deep)}.wc-title{font-size:calc(14px * var(--ui-text-scale));font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wc-host{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wc-note{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);margin-top:8px;line-height:1.55;min-height:19px;overflow-wrap:anywhere}.wc-actions{grid-column:1/-1;display:flex;gap:7px;flex-wrap:wrap;margin-top:2px}.wc-actions button{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:6px 10px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink)}.wc-empty{border:1.5px dashed var(--line);border-radius:16px;padding:32px;text-align:center;color:var(--ink-3)}.wc-edit{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:4px}.wc-edit input{height:34px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);padding:0 9px;min-width:0;width:100%;font-size:calc(13px * var(--ui-text-scale))}.wc-badge{display:inline-flex;font-size:calc(10px * var(--ui-text-scale));padding:2px 7px;border-radius:999px;background:color-mix(in srgb,var(--deep) 10%,var(--panel));color:var(--deep);margin-top:6px}.wc-web-mask{position:fixed;inset:0;z-index:1980;background:rgba(15,23,42,.42);backdrop-filter:blur(3px)}.wc-web-panel{position:fixed;inset:calc(18px + var(--sat,env(safe-area-inset-top,0px))) calc(18px + var(--sar,env(safe-area-inset-right,0px))) calc(18px + var(--sab,env(safe-area-inset-bottom,0px))) calc(18px + var(--sal,env(safe-area-inset-left,0px)));z-index:1981;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:0 24px 70px rgba(15,23,42,.26)}.wc-web-head{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid var(--line-soft)}.wc-web-head b{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wc-web-head button{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:6px 10px;color:var(--ink)}.wc-web-panel iframe{flex:1;width:100%;border:0;background:var(--paper)}.wc-web-blocked{flex:1;display:grid;place-content:center;justify-items:center;gap:11px;padding:24px;text-align:center;background:var(--paper)}.wc-web-blocked b{font-size:calc(14px * var(--ui-text-scale))}.wc-web-blocked p{margin:0;max-width:34em;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.7;color:var(--ink-2)}
       @media(max-width:640px){.wc-hero{grid-template-columns:1fr}.wc-hero .wc-btn{width:100%}.wc-icon-preview .wc-btn{width:auto}.wc-icon-preview{flex-wrap:wrap}.wc-preview-text{flex-basis:100%}.wc-grid{grid-template-columns:1fr}.wc-edit{grid-template-columns:1fr}}
     `; document.head.append(s);
   }
@@ -47,10 +47,24 @@
     }
     if (changed) await save();
   }
+  // 图标一律优先用抓好的 data URL。**必须走原生侧**：Android 上页面来源是
+  // `https://tauri.localhost`，WebView 默认禁混合内容，内置预置条目那种
+  // `http://…/favicon.ico` 直连会被静默拦掉（桌面端页面来源是 http，看不出问题）。
+  // 只认我们自己生成的那种 data URL —— 只查前缀的话，脏值里塞个引号就能突破 src 属性。
+  function iconDataOf(item) {
+    const v = item.iconData;
+    return typeof v === "string" && /^data:image\/(?!svg)[a-z0-9][a-z0-9.+-]*;base64,[A-Za-z0-9+/]+={0,2}$/i.test(v) ? v : "";
+  }
+  /** 抓图标转 data URL。失败**不抛** —— 调用它的是识别 / 刷新流程，图标拿不到不该把整条流程带塌。 */
+  async function fetchIconData(iconUrl) {
+    if (!iconUrl) return "";
+    try { return (await tide.http.getIcon(iconUrl)) || ""; } catch { return ""; }
+  }
   function favicon(item) {
     const fallback = fa(item.iconName || "globe");
-    if (!item.iconUrl) return fallback;
-    return `<img loading="lazy" decoding="async" src="${esc(item.iconUrl)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">` + `<span style="display:none">${fallback}</span>`;
+    const src = iconDataOf(item) || String(item.iconUrl || "");
+    if (!src) return fallback;
+    return `<img loading="lazy" decoding="async" src="${esc(src)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">` + `<span style="display:none">${fallback}</span>`;
   }
   function visible() {
     const q = query.trim().toLowerCase(); if (!q) return items;
@@ -79,6 +93,17 @@
     }
   }
 
+  /* 🔴 站内 iframe 在 APK 上会「白板」—— 和图标那次是同一个根因：
+     Android 上 Tauri 用 WebViewAssetLoader（没指定 scheme ⇒ 默认 https），页面来源是
+     https://tauri.localhost；WebView 自 API 21 起默认 MIXED_CONTENT_NEVER_ALLOW
+     ⇒ 页面里 http 的 iframe 被**静默拦掉**；release 还叠了 usesCleartextTraffic=false。
+     桌面端页面来源是 http://tauri.localhost，同一个地址嵌得出来 —— 所以只有 APK 上是空白。
+     判据用「页面自己是不是 https」而不是「是不是 Android」：混合内容的定义就是这个，
+     换平台 / 换 scheme 都不会失效。（站点允许被嵌：实测两个站点都回了 200 且无
+     X-Frame-Options / CSP frame-ancestors，所以不是 frame-ancestors 的锅。） */
+  const PAGE_IS_HTTPS = location.protocol === "https:";
+  const cleartextBlocked = (url) => PAGE_IS_HTTPS && /^http:\/\//i.test(String(url || ""));
+
   function openInside(item) {
     document.querySelector(".wc-web-panel")?._close?.();
     const mask = document.createElement("div"); mask.className = "wc-web-mask";
@@ -87,9 +112,15 @@
     const onKey = (e) => { if (e.key === "Escape") close(); };
     panel._close = close;
     mask.addEventListener("click", close);
-    panel.innerHTML = `<div class="wc-web-head"><b title="${esc(item.url)}">${esc(item.title || item.url)}</b><button data-web-external>浏览器打开</button><button data-web-close>关闭</button></div><iframe src="${esc(item.url)}" title="${esc(item.title || "网站")}"></iframe>`;
+    /* 嵌不出来的地址**不要挂 iframe** —— 挂上去只会得到一块空白，看起来就是「插件坏了」，
+       用户也不知道该点哪里。直接把原因和出口摆进面板，出口就是头部那个「浏览器打开」。 */
+    const body = cleartextBlocked(item.url)
+      ? `<div class="wc-web-blocked"><b>这个站点是 http 明文地址</b><p>应用内显示不了：页面来源是 https，系统不允许 https 页面加载 http 内容。请用「浏览器打开」。</p><button class="wc-btn" data-web-external>浏览器打开</button></div>`
+      : `<iframe src="${esc(item.url)}" title="${esc(item.title || "网站")}"></iframe>`;
+    panel.innerHTML = `<div class="wc-web-head"><b title="${esc(item.url)}">${esc(item.title || item.url)}</b><button data-web-external>浏览器打开</button><button data-web-close>关闭</button></div>${body}`;
     panel.querySelector("[data-web-close]").addEventListener("click", close);
-    panel.querySelector("[data-web-external]").addEventListener("click", () => tide.util.openUrl(item.url));
+    // querySelectorAll：降级面板里还有一个「浏览器打开」，两个都要接上
+    panel.querySelectorAll("[data-web-external]").forEach((b) => b.addEventListener("click", () => tide.util.openUrl(item.url)));
     document.addEventListener("keydown", onKey);
     document.body.append(mask, panel);
   }
@@ -111,7 +142,7 @@
       const u = new URL(normalized);
       meta = { title: u.hostname.replace(/^www\./, ""), host: u.hostname.replace(/^www\./, ""), iconUrl: new URL("/favicon.ico", normalized).toString(), iconName: tide.util.web.inferIconName("", normalized), warning: e.message || String(e) };
     }
-    return { url: finalUrl, ...meta };
+    return { url: finalUrl, ...meta, iconData: await fetchIconData(meta.iconUrl) };
   }
 
   /* ── 只取网站图标，不碰名称与备注 ──
@@ -133,7 +164,7 @@
       iconName = tide.util.web.inferIconName("", normalized);
     }
     if (!iconUrl) iconUrl = new URL("/favicon.ico", finalUrl).toString();
-    return { iconUrl, iconName: iconName || "globe" };
+    return { iconUrl, iconName: iconName || "globe", iconData: await fetchIconData(iconUrl) };
   }
 
   /** 顶栏「自动获取网站图标」：拿输入框里的网址试抓一次，只回显结果，不动已有条目。 */
@@ -199,6 +230,19 @@
     host = el; styles(); items = await tide.storage.get("items", []); if (!Array.isArray(items)) items = [];
     openMode = await tide.storage.get("openMode", DEFAULT_OPEN_MODE); if (!["external", "inside"].includes(openMode)) openMode = DEFAULT_OPEN_MODE;
     await ensureDefaults(); await migrateNotes(); paint();
+    // 存量条目补图标：升级前保存的条目只有远程地址，在 APK 上取不到
+    // （内置预置的「大学名录」本身就是 http）。后台补抓，不阻塞首屏。
+    if (items.some((x) => x.iconUrl && !iconDataOf(x))) {
+      setTimeout(async () => {
+        let changed = false;
+        for (const item of items) {
+          if (!item.iconUrl || iconDataOf(item)) continue;
+          const data = await fetchIconData(item.iconUrl);
+          if (data) { item.iconData = data; changed = true; }
+        }
+        if (changed) { await save(); paint(); }
+      }, 0);
+    }
     host.addEventListener("click", (e) => {
       // ⚠️ 顶栏按钮与卡片按钮必须用**不同**的 data 标记：
       // 两者都叫 data-fetch-icon 的话，这行会抢先命中，卡片的「换图标」永远拿不到 id。

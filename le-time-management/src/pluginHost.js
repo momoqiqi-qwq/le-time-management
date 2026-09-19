@@ -4,7 +4,7 @@ import * as S from "./store.js";
 import { toast } from "./ui.js";
 import { parseWhen, guessCategory, guessQuad } from "./timeParser.js";
 import { BUILTIN_IDS, BUILTIN_PLUGINS } from "./pluginCatalog.js";
-import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, detectLoginForm, formEncode, detectSpaShell, matchJsonSiteAdapter, buildJsonSiteListUrl, parseJsonSiteList } from "./webContent.js";
+import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, extractPager, noticeKind, extractArticleText, detectLoginForm, formEncode, detectSpaShell, matchJsonSiteAdapter, buildJsonSiteListUrl, parseJsonSiteList } from "./webContent.js";
 import { PROJECT_LINKS } from "./projectLinks.js";
 import { previewSchedule } from "./scheduleConflict.js";
 import { pushInbox } from "./automation.js";
@@ -253,6 +253,9 @@ function makeApi(man, source) {
     // 网络桥：Rust 端抓取，绕开 WebView CORS；每次调用都会校验插件是否在 manifest 中声明了 http 能力。
     http: {
       get: (url) => { requirePermission(man, pid, "http"); return api.httpGet(url); },
+      // 图标抓取：返回 data URL。必须走这里而不是 `<img src=远程地址>` ——
+      // Android 页面来源是 https，WebView 会拦掉 http 图标（详见 api.js 注释）。
+      getIcon: (url) => { requirePermission(man, pid, "http"); return api.httpGetIcon(url); },
       getCached: (url, ttlMs) => { requirePermission(man, pid, "http"); return cachedHttpGet(url, ttlMs); },
       session: () => { requirePermission(man, pid, "http"); return api.httpSessionNew(); },
       fetch: (sid, method, url, opts) => { requirePermission(man, pid, "http"); return api.httpFetch(sid, method, url, opts); },
@@ -287,6 +290,7 @@ function makeApi(man, source) {
         parseSiteMeta: (...args) => { requirePermission(man, pid, "http"); return parseSiteMeta(...args); },
         inferIconName: (...args) => { requirePermission(man, pid, "http"); return inferSiteIconName(...args); },
         extractNoticeLinks: (...args) => { requirePermission(man, pid, "http"); return extractNoticeLinks(...args); },
+        extractPager: (...args) => { requirePermission(man, pid, "http"); return extractPager(...args); },
         detectSpaShell: (...args) => { requirePermission(man, pid, "http"); return detectSpaShell(...args); },
         matchJsonSiteAdapter: (...args) => { requirePermission(man, pid, "http"); return matchJsonSiteAdapter(...args); },
         buildJsonSiteListUrl: (...args) => { requirePermission(man, pid, "http"); return buildJsonSiteListUrl(...args); },

@@ -1,4 +1,4 @@
-# Le时间管理 · Android 端说明
+# U-Time · Android 端说明
 
 Android 端**不维护第二份插件目录**。Tauri Android 构建直接复用 `../`（即 `le-time-management/`）的前端与 `src-tauri`，因此内置插件以：
 
@@ -30,7 +30,7 @@ Android 端**不维护第二份插件目录**。Tauri Android 构建直接复用
 `scripts/build-android-apk.sh` 在构建最开始就会跑一次同步（失败即中止），所以正常流程下不用手工记这件事。
 
 除 Kotlin 外，同一脚本还**幂等**补三处声明，这三处都是「改在 gen 里必然被下次 init 抹掉」的：
-AndroidManifest 的 `REQUEST_INSTALL_PACKAGES`（应用内升级要拉起系统安装器）、去掉 MainActivity 的 activity 级 label（否则 launcher 图标名取到「Le时间管理 · 时间块与四象限」被桌面截断）、`res/xml/file_paths.xml` 的 `<cache-path>`（更新包暂存在 `app_cache_dir()`＝内部 `getCacheDir`，FileProvider 靠它才肯共享）。
+AndroidManifest 的 `REQUEST_INSTALL_PACKAGES`（应用内升级要拉起系统安装器）、去掉 MainActivity 的 activity 级 label（否则 launcher 图标名取到「U-Time · 时间块与四象限」被桌面截断）、`res/xml/file_paths.xml` 的 `<cache-path>`（更新包暂存在 `app_cache_dir()`＝内部 `getCacheDir`，FileProvider 靠它才肯共享）。
 
 > 变更历史：v0.38.0 起改由 `tools/sync-android-native.js` 统一管理。此前 Kotlin 副本散在 `android/` 根下（`MainActivity.kt` 早已是 255 字节的旧桩），清单补丁则写死在构建脚本的 python 段里。
 

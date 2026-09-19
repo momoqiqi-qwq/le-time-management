@@ -1,4 +1,4 @@
-/* Le时间管理 插件：考试日历（exam-calendar）
+/* U-Time 插件：考试日历（exam-calendar）
  * ⚠ 这个文件是构建产物，不要直接改。改 src/main.template.js + src/exam-data.json，
  *   然后在仓库根跑：node tools/build-exam-calendar-plugin.js
  *

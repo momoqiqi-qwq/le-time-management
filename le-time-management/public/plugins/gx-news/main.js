@@ -686,9 +686,12 @@
       .gx-more .gx-btn{padding:8px 20px;font-size:calc(12px * var(--ui-text-scale))}
       .gx-refresh{font-size:calc(12.5px * var(--ui-text-scale));font-weight:600;height:34px;padding:0 15px;border-radius:9px;background:#0F4C5C;color:#fff;cursor:pointer}
       .gx-refresh:disabled{opacity:.5}
-      /* 添加 / 管理自定义源：挂在插件自己的容器里，不碰 document.body（宿主切视图会连它一起摘掉） */
-      .gx-mask{position:fixed;inset:0;background:rgba(20,28,34,.42);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
-      .gx-dlg{width:min(460px,100%);max-height:82vh;overflow:auto;background:#fff;border-radius:16px;padding:18px 20px}
+      /* 添加 / 管理自定义源：挂在插件自己的容器里，不碰 document.body（宿主切视图会连它一起摘掉）
+         ⚠️ position:fixed 的包含块是宿主 .view 的 padding box（.view 上有 will-change:transform），
+         所以 .view 替插件垫掉的四条安全区边拦不住它 —— 浮层必须自己让开，且一律走
+         var(--sa*, env(…)) 双路（铁律四：Android WebView 里裸 env() 恒为 0）。 */
+      .gx-mask{position:fixed;inset:0;background:rgba(20,28,34,.42);display:flex;align-items:center;justify-content:center;z-index:40;padding:calc(16px + var(--sat,env(safe-area-inset-top,0px))) calc(16px + var(--sar,env(safe-area-inset-right,0px))) calc(16px + var(--sab,env(safe-area-inset-bottom,0px))) calc(16px + var(--sal,env(safe-area-inset-left,0px)))}
+      .gx-dlg{width:min(460px,100%);max-height:min(82vh,100%);overflow:auto;background:#fff;border-radius:16px;padding:18px 20px}
       .gx-dlg h4{margin:0 0 4px;font-size:calc(14px * var(--ui-text-scale));color:#22303A}
       .gx-dlg p{margin:0 0 12px;font-size:calc(11.5px * var(--ui-text-scale));color:#7E8B94;line-height:1.7}
       .gx-field{display:block;margin-bottom:10px;font-size:calc(11.5px * var(--ui-text-scale));color:#7E8B94}

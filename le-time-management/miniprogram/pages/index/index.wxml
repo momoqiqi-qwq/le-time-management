@@ -1,5 +1,5 @@
 <view wx:if="{{err}}" class="err">{{err}}</view>
-<view class="head">Le时间管理 · 今日</view>
+<view class="head">U-Time · 今日</view>
 <view class="date">{{dateStr}} {{updated ? "· 更新于 " + updated : ""}}</view>
 
 <view class="sec">今日时间块</view>

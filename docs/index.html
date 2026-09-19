@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Le时间管理 插件开发、平台适配、调试与发布文档。内容逐条对应当前插件宿主实现。">
+  <meta name="description" content="U-Time 插件开发、平台适配、调试与发布文档。内容逐条对应当前插件宿主实现。">
   <meta name="theme-color" content="#16213e">
-  <title>Le时间管理插件开发手册 · Le</title>
+  <title>U-Time插件开发手册 · Le</title>
   <style>
     :root {
       --ink: #16213e;
@@ -149,14 +149,14 @@
   <a class="skip" href="#content">跳到正文</a>
   <header class="hero" id="top">
     <div class="topbar">
-      <a class="brand" href="#top"><span class="brand-mark">Le</span><span>Le时间管理</span></a>
+      <a class="brand" href="#top"><span class="brand-mark">Le</span><span>U-Time</span></a>
       <a class="repo-link" href="https://github.com/momoqiqi-qwq/le-time-management" target="_blank" rel="noreferrer">查看源代码 ↗</a>
     </div>
     <div class="hero-grid">
       <div>
         <p class="eyebrow">Plugin development manual / implementation-aligned</p>
         <h1>让时间<br>长出<em>新能力</em></h1>
-        <p class="lede">Le时间管理插件开发完整手册：运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
+        <p class="lede">U-Time插件开发完整手册：运行模型、tide API 逐条说明、时间解析语法、四个取自真实内置插件的实战范例、调试排错与发布清单。每一句话都对应当前源码，不需要框架或构建工具。</p>
       </div>
       <aside class="hero-meta" aria-label="文档摘要">
         <div><b>RUNTIME</b><p>Tauri 2 · 原生 JavaScript · Rust 网络桥</p></div>
@@ -197,7 +197,7 @@
     <main id="content">
       <section id="model">
         <p class="section-kicker">宿主 / Host lifecycle</p>
-        <h2>插件如何进入Le时间管理</h2>
+        <h2>插件如何进入U-Time</h2>
         <p class="intro">宿主发现插件目录，读取清单与入口文件，把受控的 <code>tide</code> 对象传给入口代码；插件在顶层调用注册 API 挂载视图、任务动作或事件监听。整个过程不需要 npm、打包器或构建步骤。</p>
         <div class="flow" aria-label="插件加载流程">
           <div><b>DISCOVER</b><span>先加载内置插件目录（由 <code>tools/sync-plugins.js</code> 从各 manifest 生成），再扫描外部插件目录（仅桌面端）</span></div>
@@ -367,6 +367,38 @@ tide.notify("插件已加载");</code></pre>
             <tr><td>notify(message, opts?)</td><td>显示 toast，自动加「插件名：」前缀；<code>opts.ms</code> 控制毫秒数。</td></tr>
           </tbody>
         </table></div>
+
+        <h3>安全区（APK 必读）</h3>
+        <p class="intro">Android 是全面屏，状态栏、导航栏与横屏时的摄像头挖孔会<strong>盖在网页上面</strong>。WebView 里的 <code>env(safe-area-inset-*)</code> 恒为 <code>0</code>，所以原生侧按真实 <code>WindowInsets</code> 把四个方向注入成 CSS 变量，宿主统一垫在插件页外面 —— <strong>画在 <code>render(el)</code> 给的容器里的内容一行代码都不用写</strong>。</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>变量</th><th>含义</th><th>不管它就会</th></tr></thead>
+          <tbody>
+            <tr><td><code>--sat</code></td><td>顶部状态栏</td><td>标题与返回按钮压进状态栏</td></tr>
+            <tr><td><code>--sab</code></td><td>底部导航栏</td><td>最后一行按钮点不到</td></tr>
+            <tr><td><code>--sal</code> / <code>--sar</code></td><td>左 / 右（横屏挖孔、三键栏在侧）</td><td>横屏时内容被挖孔切掉</td></tr>
+          </tbody>
+        </table></div>
+        <ul class="plain">
+          <li><strong>禁止裸用 <code>env()</code></strong>：必须写 <code>var(--sat, env(safe-area-inset-top, 0px))</code> 这种双路形式 —— APK 取原生注入的变量，桌面与 iOS 靠 <code>env()</code> 兜底。<code>scripts/test-plugin-safe-area.mjs</code> 会拦这一条。</li>
+          <li><strong>禁止再垫一遍</strong>：宿主已经垫过了，插件对自己的容器再加一次会<strong>双重计算</strong>（实测：桌面端插件页底部因此凭空多出 86px 纯空白）。也不要去猜一个固定像素值。</li>
+          <li><strong>唯一例外是 <code>position:fixed</code></strong>：浮层的包含块是宿主内容区元素的 padding box，padding 划不出它的新边界，所以自建遮罩 / 弹层 / 菜单必须自己让开四条边。<strong>让开的边 = 你钉住的边</strong>：声明了 <code>bottom:</code> 就要让开 <code>--sab</code>，钉了 <code>inset:</code> 就是四条全让 —— 只让底、不让左右是最典型的错法（竖屏看不出问题，横屏挖孔压在内容上）。</li>
+          <li><strong>别信 <code>100vh</code> 与 <code>innerWidth</code></strong>：它们量的是视口而不是可视区，用它算弹层高度或夹取边界会把内容算到导航栏 / 挖孔底下。弹层高度用 <code>max-height:min(82vh,100%)</code>，夹取要先减掉 <code>--sal/--sar/--sat/--sab</code>。</li>
+        </ul>
+        <pre><code>/* 配方 A：CSS 浮层。遮罩铺满整屏是对的，让内边距去吃安全区 */
+.my-mask{position:fixed;inset:0;z-index:1900;display:flex;align-items:center;justify-content:center;
+  padding:calc(16px + var(--sat,env(safe-area-inset-top,0px)))
+          calc(16px + var(--sar,env(safe-area-inset-right,0px)))
+          calc(16px + var(--sab,env(safe-area-inset-bottom,0px)))
+          calc(16px + var(--sal,env(safe-area-inset-left,0px)))}
+
+/* 配方 B：JS 按视口坐标定位的浮层（右键菜单、跟随手指的气泡）。
+   坐标是从屏幕角上量的，所以夹取边界要自己减掉安全区。 */
+const px = (v) =&gt; parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0;
+<span class="cmt">// 变量取不到时 parseFloat 出 NaN → 0，桌面端行为不变</span>
+const [sat, sab, sal, sar] = [px("--sat"), px("--sab"), px("--sal"), px("--sar")];
+const x = Math.max(8 + sal, Math.min(rawX, window.innerWidth - sar - MENU_W));
+const y = Math.max(8 + sat, Math.min(rawY, window.innerHeight - sab - MENU_H));</code></pre>
+        <p class="intro">真机自检：APK 装好后把手机转成横屏（挖孔跑到左侧）打开插件页，内容左边缘应留出挖孔宽度；再开一个弹层，确认它既不压状态栏也不被导航栏吃掉。</p>
 
         <h3>任务与时间块</h3>
         <div class="table-wrap"><table>
@@ -707,6 +739,7 @@ const feed = await tide.http.fetch(sid, "GET", "https://example.com/api/feed");<
           <li><div><strong>检查数据写入</strong><br>创建、更新、删除任务/时间块后重启应用，确认持久化正确；删任务时关联时间块一并消失符合预期。</div></li>
           <li><div><strong>覆盖失败分支</strong><br>断网、非 2xx、返回结构改变、登录过期、空列表、存储损坏——每种情况都有可行动的用户提示，而不是静默失败。</div></li>
           <li><div><strong>检查页面安全</strong><br>远端文本用 <code>textContent</code> 或转义后渲染；外链限可信 http/https；凭据不进日志。</div></li>
+          <li><div><strong>界面没超出安全区</strong><br>页内容交给宿主垫，插件不重复加；自建 <code>position:fixed</code> 浮层必须让开 <code>--sat/--sab/--sal/--sar</code>，且不许裸用 <code>env(safe-area-inset-*)</code>。横屏真机各开一页、各开一个弹层确认。</div></li>
           <li><div><strong>做目标平台实测</strong><br>外部插件在真实数据目录验证；内置插件必须随 APK 构建后在 Android 真机过一遍。</div></li>
         </ol>
         <h3>内置发布改动清单</h3>
@@ -720,7 +753,7 @@ le-time-management/public/icons/plugins/&lt;plugin-id&gt;.png  <span class="cmt"
   </div>
 
   <footer>
-    <p>Le时间管理 · 本地优先的时间管理平台</p>
+    <p>U-Time · 本地优先的时间管理平台</p>
     <p><a href="#top">回到顶部 ↑</a> · <a href="plugins.html">插件使用说明</a> · <a href="upload.html">插件工坊</a> · <a href="https://github.com/momoqiqi-qwq/le-time-management" target="_blank" rel="noreferrer">GitHub 仓库</a></p>
   </footer>
 

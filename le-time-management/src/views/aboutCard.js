@@ -22,7 +22,7 @@ export function createAboutCard(info, registry = []) {
 
   const card = el("div", { class: "card set-card about-card" },
     el("div", { class: "about-head" },
-      el("div", {}, el("h2", {}, "关于 Le时间管理")),
+      el("div", {}, el("h2", {}, "关于 U-Time")),
       el("span", { class: "about-version" }, `v${currentVersion}`),
     ),
     el("div", { class: "about-meta-grid" },

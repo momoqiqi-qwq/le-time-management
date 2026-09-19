@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   Le时间管理 · 设计系统
+   U-Time · 设计系统
    融合：03「权衡」四象限（纸面质感、四色象限）
         04「潮汐」时间块（暖沙底、深青/珊瑚/日黄/海蓝）
    ═══════════════════════════════════════════════════════════ */
@@ -344,6 +344,17 @@ body.rail-resizing iframe { pointer-events: none !important; }
 .topbar .pill b { color: var(--ink); }
 
 .view { flex: 1; overflow: auto; min-height: 0; }
+/* 安全区的左右两边由这一条负责，和上下是同一家分工：上下在 .view 自己的窄屏规则里
+   （padding-bottom 的 --sab、让顶栏位的 --sat），左右在这里 —— 插件页与核心页一次覆盖，
+   插件侧一律不许再垫第二遍（v0.38.2「安全区被算了两遍」同族问题）。
+   双路 var() 是铁律四：Android WebView 里 env() 恒为 0，桌面/iOS 又拿不到原生
+   注入的 --sal/--sar，两边各留一条路。桌面两端都取到 0 ⇒ 像素不变。
+   ⚠️ 不要挪到 .plugview：窄屏媒体块里有一条 .app.rail-hidden .plugview { padding: 0 }
+   把沉浸式插件页的内边距整条归零，挂那儿就会漏掉那一类视图。 */
+.view {
+  padding-left: var(--sal, env(safe-area-inset-left, 0px));
+  padding-right: var(--sar, env(safe-area-inset-right, 0px));
+}
 
 /* ── 通用卡片/按钮 ── */
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
@@ -365,6 +376,10 @@ body.rail-resizing iframe { pointer-events: none !important; }
 .quad-head .sp { flex: 1; }
 .chip { font-size: calc(12px * var(--ui-text-scale)); color: var(--ink-2); background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 6px 13px; }
 .chip b { color: var(--ink); }
+/* 任务表头部的「清理已完成」：借用 chip 的外形跟筛选条对齐，但用危险色标出它是删除动作 */
+.chip.clear-done { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 32%, var(--line)); }
+.chip.clear-done:hover { background: color-mix(in srgb, var(--danger) 9%, var(--panel)); }
+.chip.clear-done:disabled { opacity: .45; cursor: default; }
 
 .quad-grid { flex: 1; min-height: 0;
   display: grid; gap: 13px;
@@ -804,7 +819,8 @@ button, .nav { touch-action: manipulation; }
      三条必须成对：光藏 .rail 的话，.view 那条为底栏预留的 padding-bottom 会留成一条空白。
      v0.59.0 追加：padding-top 一并收掉 46px 顶栏让位、.plugview 左右内边距清零 ——
      这类视图自己带顶栏，需求是「内容铺满除安全区之外的整屏」。安全区原样保留，
-     只去掉额外留白；横向安全区（横屏挖孔）由插件自己的 .sg.bleed 补回。
+     只去掉额外留白；横向安全区（横屏挖孔）由基础样式里那条 .view 的 --sal/--sar 负责，
+     插件侧（课程表的 .sg.bleed）不再自补 —— 补了就是双重计算。
      ⚠️ 下面 46px 那条必须写成 :not(.rail-hidden)，否则同为 (0,3,0) 会靠后覆盖掉这里的 top。 */
   .app.rail-hidden .rail { display: none; }
   .app.rail-hidden .view {
@@ -3690,6 +3706,9 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 .app-dialog-field:focus { outline: 2px solid color-mix(in srgb, var(--sea) 65%, transparent); outline-offset: 1px; }
 .app-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* 倒计时那一行只在带 timeoutMs 的对话框里出现（局域网回传确认门）。
+   放在 message 和按钮之间：它是关于「这个窗还能活多久」的，不是关于内容的。 */
+.app-dialog-countdown { font-size: calc(11.5px * var(--ui-text-scale)); color: var(--ink-3); margin: -4px 0 10px; font-variant-numeric: tabular-nums; }
 .app-dialog-btn {
   min-width: 76px; height: 34px; padding: 0 14px;
   border: 1px solid var(--line); border-radius: 9px;
@@ -4116,6 +4135,27 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .sync-result.is-error { color: var(--danger); }
 .sync-daily { margin-top: 16px; }
 .sync-lan { margin-top: 18px; padding-top: 13px; border-top: 1px dashed var(--line); }
+/* 电脑端「局域网联动」卡里的回传开关：开关和标题一行，说明文字单独一行铺开。 */
+.lan-push-row { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.lan-push-label { display: flex; align-items: center; gap: 9px; font-size: calc(13px * var(--ui-text-scale)); font-weight: 600; }
+
+/* ── 端内扫一扫（src/qrScan.js）──
+   根元素同时挂着 .drawer-mask，为的是 Android 返回键把它当最上层浮层关掉；
+   所以背景必须压成不透明 —— 半透明遮罩透出底下设置页，只会让人以为相机卡住了。
+   颜色一律写死深色：这一层永远盖在实时相机画面上，跟着主题换色等于看不清取景。
+   控件必须自己让开安全区四边：position:fixed 不吃宿主 .view 的 padding（AGENTS.md 铁律四）。 */
+.qrscan { z-index: 60; background: #0B1014; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+  padding: calc(20px + var(--sat, env(safe-area-inset-top, 0px))) calc(16px + var(--sar, env(safe-area-inset-right, 0px))) calc(22px + var(--sab, env(safe-area-inset-bottom, 0px))) calc(16px + var(--sal, env(safe-area-inset-left, 0px))); }
+.qrscan-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+/* 那一圈 9999px 的阴影就是遮罩：只有取景框是亮的，不用另搭一层 dim 元素。
+   宽度用 --ui-vw 而不是 62vw：理由同上面 .drawer 那条 —— zoom 下 vw 会超屏。 */
+.qrscan-frame { position: relative; width: min(calc(var(--ui-vw, 100vw) * 0.62), 236px); aspect-ratio: 1; border-radius: 16px;
+  outline: 2px solid rgba(255, 255, 255, .82); box-shadow: 0 0 0 9999px rgba(6, 10, 13, .46); }
+.qrscan-hint { position: relative; margin: 0; font-size: calc(13px * var(--ui-text-scale)); line-height: 1.6; color: #E7EEF2; text-align: center; }
+.qrscan-cancel { position: relative; min-width: 124px; height: 38px; padding: 0 18px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .42); background: rgba(255, 255, 255, .12); color: #fff;
+  font-size: calc(13.5px * var(--ui-text-scale)); cursor: pointer; }
+.qrscan-cancel:active { background: rgba(255, 255, 255, .22); }
 
 
 /* 窄屏：操作条是底栏的一部分（.rail-bottom 那组规则给了 order:-1 / width:20%），

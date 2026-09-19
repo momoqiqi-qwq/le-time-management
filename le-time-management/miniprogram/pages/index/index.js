@@ -24,11 +24,11 @@ Page({
       data: { token: CONFIG.token },
       timeout: 6000,
       success: (r) => {
-        if (r.statusCode !== 200 || !r.data || !r.data.tasks) { this.setData({ err: "连接失败：请确认Le时间管理在电脑上运行、地址与令牌正确、勾选了「不校验合法域名」" }); return; }
+        if (r.statusCode !== 200 || !r.data || !r.data.tasks) { this.setData({ err: "连接失败：请确认U-Time在电脑上运行、地址与令牌正确、勾选了「不校验合法域名」" }); return; }
         this.setData({ err: "", updated: now.toTimeString().slice(0, 5) });
         this.render(r.data, ds, now);
       },
-      fail: () => this.setData({ err: "连接失败：请确认Le时间管理在电脑上运行、手机与电脑同一 Wi-Fi、勾选了「不校验合法域名」" }),
+      fail: () => this.setData({ err: "连接失败：请确认U-Time在电脑上运行、手机与电脑同一 Wi-Fi、勾选了「不校验合法域名」" }),
     });
   },
 

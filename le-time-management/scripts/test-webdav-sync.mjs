@@ -85,25 +85,28 @@ globalThis.window = {
 const L = await import('../src/syncLayer.js');
 
 /* ── ① URL 拼接与反解 ── */
-const target = L.buildDavUrl({ root: 'https://dav.jianguoyun.com/dav', folder: 'Le时间管理' });
-assert.equal(target, 'https://dav.jianguoyun.com/dav/Le%E6%97%B6%E9%97%B4%E7%AE%A1%E7%90%86/le-time-data.json', '中文文件夹名必须逐段转义');
-assert.deepEqual(L.splitDavUrl(target), { origin: 'https://dav.jianguoyun.com', segments: ['dav', 'Le时间管理'], fileName: 'le-time-data.json' }, '反解只拆到「段」，不猜根地址边界');
+// 更名后预设默认文件夹是纯 ASCII 的 U-Time，「中文逐段转义」这个行为必须显式传中文来测，
+// 不能再蹭默认名当靶子。
+assert.equal(L.getPreset('jianguoyun').folder, 'U-Time', '预设默认文件夹已随更名改为 U-Time');
+const target = L.buildDavUrl({ root: 'https://dav.jianguoyun.com/dav', folder: '时间管理' });
+assert.equal(target, 'https://dav.jianguoyun.com/dav/%E6%97%B6%E9%97%B4%E7%AE%A1%E7%90%86/le-time-data.json', '中文文件夹名必须逐段转义');
+assert.deepEqual(L.splitDavUrl(target), { origin: 'https://dav.jianguoyun.com', segments: ['dav', '时间管理'], fileName: 'le-time-data.json' }, '反解只拆到「段」，不猜根地址边界');
 assert.equal(L.davRootDepth('https://dav.jianguoyun.com/dav'), 1, '坚果云的根自带一层 /dav');
-assert.equal(L.composeDavRoot('https://x.test', ['dav', 'Le时间管理']), 'https://x.test/dav/Le%E6%97%B6%E9%97%B4%E7%AE%A1%E7%90%86', '拼回去不带结尾斜杠');
+assert.equal(L.composeDavRoot('https://x.test', ['dav', '时间管理']), 'https://x.test/dav/%E6%97%B6%E9%97%B4%E7%AE%A1%E7%90%86', '拼回去不带结尾斜杠');
 assert.equal(L.buildDavFolderUrl({ root: 'https://dav.jianguoyun.com/dav/', folder: 'a/b' }), 'https://dav.jianguoyun.com/dav/a/b', '目录地址不带结尾斜杠');
 assert.equal(L.buildDavUrl({ root: 'https://x.test/dav', folder: '' }).endsWith('/dav/le-time-data.json'), true, '文件夹留空就放根下');
 assert.throws(() => L.buildDavUrl({ root: 'ftp://x.test/dav' }), /只支持 http/);
 
 /* ── ② 老地址迁移：整条 url → 根地址 + 文件夹 + 文件名 ── */
-const legacy = { url: 'https://dav.jianguoyun.com/dav/Le时间管理/data.json', username: ACCOUNT };
+const legacy = { url: 'https://dav.jianguoyun.com/dav/U-Time/data.json', username: ACCOUNT };
 L.migrateLegacyUrl(legacy);
 assert.equal(legacy.presetId, 'jianguoyun');
 assert.equal(legacy.root, 'https://dav.jianguoyun.com/dav');
-assert.equal(legacy.folder, 'Le时间管理', '根地址自带的 /dav 不能当成文件夹名');
+assert.equal(legacy.folder, 'U-Time', '根地址自带的 /dav 不能当成文件夹名');
 assert.equal(legacy.fileName, 'data.json', '老文件名要保留，否则第一次「拉回本地」会扑空');
-assert.equal(L.buildDavUrl(legacy), 'https://dav.jianguoyun.com/dav/Le%E6%97%B6%E9%97%B4%E7%AE%A1%E7%90%86/data.json');
+assert.equal(L.buildDavUrl(legacy), 'https://dav.jianguoyun.com/dav/U-Time/data.json');
 L.migrateLegacyUrl(legacy);
-assert.equal(legacy.folder, 'Le时间管理', '迁移必须幂等，第二次不能把文件夹吃成空');
+assert.equal(legacy.folder, 'U-Time', '迁移必须幂等，第二次不能把文件夹吃成空');
 const legacyAtRoot = { url: 'https://dav.jianguoyun.com/dav/data.json' };
 L.migrateLegacyUrl(legacyAtRoot);
 assert.equal(legacyAtRoot.folder, '', '快照原本就放在根下时，文件夹是空而不是「dav」');
@@ -125,21 +128,22 @@ assert.ok(L.getPreset('jianguoyun').root.startsWith('https://'), '内置预设�
 assert.ok(L.getPreset('jianguoyun').howto.some((line) => /第三方应用管理/.test(line)), '坚果云必须写清应用密码在哪生成');
 
 /* ── ④ 一键配好：核对账号 → 自动建目录 → 传快照 ── */
-const creds = { root: 'https://dav.jianguoyun.com/dav', folder: 'Le时间管理', username: ACCOUNT, password: APP_SECRET };
+const creds = { root: 'https://dav.jianguoyun.com/dav', folder: 'U-Time', username: ACCOUNT, password: APP_SECRET };
 calls.length = 0;
 assert.equal((await L.testWebDavConnection(creds)).status, 207, '根目录探到 207 说明账号可登录');
 const first = await L.ensureWebDavFolder(creds);
-assert.deepEqual(first.created, ['Le时间管理'], '目录不存在时自动建出来');
-assert.deepEqual(calls, ['PROPFIND /dav/', 'PROPFIND /dav/Le时间管理/', 'MKCOL /dav/Le时间管理/'], '先探测再建，探测与建目录都走集合形式，不多发请求');
+assert.deepEqual(first.created, ['U-Time'], '目录不存在时自动建出来');
+assert.deepEqual(calls, ['PROPFIND /dav/', 'PROPFIND /dav/U-Time/', 'MKCOL /dav/U-Time/'], '先探测再建，探测与建目录都走集合形式，不多发请求');
 assert.deepEqual((await L.ensureWebDavFolder(creds)).created, [], '重复点是幂等的：目录已有就不再 MKCOL');
-assert.deepEqual((await L.ensureWebDavFolder({ ...creds, folder: 'Le时间管理/子目录' })).created, ['子目录'], '多级目录只补缺的那几层');
+assert.deepEqual((await L.ensureWebDavFolder({ ...creds, folder: 'U-Time/子目录' })).created, ['子目录'], '多级目录只补缺的那几层');
 calls.length = 0;
 assert.deepEqual((await L.ensureWebDavFolder({ ...creds, folder: '' })).created, [], '文件夹留空时一个请求都不该发');
 assert.deepEqual(calls, []);
 
-const up = await L.uploadWebDav({ url: target, username: ACCOUNT, password: APP_SECRET, data: { tasks: [], blocks: [] }, appVersion: '9.9.9' });
+// 上传走 ④ 建好的 U-Time 目录；① 里的 target 是中文文件夹 URL，桩子里没建过那个目录。
+const up = await L.uploadWebDav({ url: L.buildDavUrl({ root: creds.root, folder: 'U-Time' }), username: ACCOUNT, password: APP_SECRET, data: { tasks: [], blocks: [] }, appVersion: '9.9.9' });
 assert.equal(up.snapshot.format, 'le-time-management-sync');
-const onDisk = files.get('/dav/Le时间管理/le-time-data.json');
+const onDisk = files.get('/dav/U-Time/le-time-data.json');
 assert.deepEqual(L.parseSnapshot(onDisk).data.tasks, [], '传上去的快照要能原样读回来');
 assert.equal(JSON.parse(onDisk).appVersion, '9.9.9');
 assert.equal(onDisk.includes(APP_SECRET), false, '快照里绝不能出现密码');

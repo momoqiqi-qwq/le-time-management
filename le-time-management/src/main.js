@@ -13,6 +13,7 @@ import { initCommandPalette } from "./commandPalette.js";
 import { initGlobalShortcuts } from "./globalShortcuts.js";
 import { initAutomation } from "./automation.js";
 import { initMotionInteractions } from "./motion.js";
+import { initLanPushGate } from "./lanPushGate.js";
 import { initUpdateChecker } from "./updateChecker.js";
 
 // 首次启动的初始数据 —— 刻意全空，让空状态引导用户自己建第一条（对接 Rust seed_data()）。
@@ -64,7 +65,7 @@ async function boot() {
     // 自动启动局域网联动服务
     const st = getState().settings;
     if (st.lanAuto && st.lanPort && st.lanToken) {
-      api.lanStart(Number(st.lanPort), st.lanToken).catch((e) => console.error("联动服务启动失败:", e));
+      api.lanStart(Number(st.lanPort), st.lanToken, Boolean(st.lanPush)).catch((e) => console.error("联动服务启动失败:", e));
     }
     // 托盘「退出」：Rust 侧广播 app-quit 后**等这里的存盘回执**再退出（最多 2s 兜底）。
     // 回执必须成功、失败都发 —— 否则写盘报错时 Rust 会白等满 2s 才退出。
@@ -74,6 +75,11 @@ async function boot() {
         .then((S) => S.saveNow())
         .then(ack, ack);
     });
+    // 手机推回来的数据要不要接收，由电脑端这个确认门决定（挂在全局：推送来的时候
+    // 用户多半没开着设置页）。版本带上是为了恢复点能记住是哪版存的。
+    api.appInfo()
+      .then((x) => initLanPushGate(x?.version || ""))
+      .catch(() => initLanPushGate(""));
   }
   // 插件加载放在界面之后，不阻塞首屏
   initPluginHost().catch((e) => console.error("插件宿主初始化失败:", e));

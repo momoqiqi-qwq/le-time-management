@@ -191,7 +191,7 @@ export function normalizeIngestEvents(raw, base = new Date()) {
 
 function ingestSystemPrompt() {
   const now = new Date();
-  return `你是 Le时间管理 应用里的「内容解析器」。用户会给你一段文字、一张截图或一份文档，
+  return `你是 U-Time 应用里的「内容解析器」。用户会给你一段文字、一张截图或一份文档，
 你负责把里面的**时间安排**抽成结构化事件。当前本地时间：${now.toLocaleString("zh-CN")}
 （星期${"日一二三四五六"[now.getDay()]}，今天日期 ${S.todayStr()}）。
 

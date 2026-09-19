@@ -25,7 +25,7 @@ class NativeSchedulePlugin(private val host: Activity) : Plugin(host) {
             catch (error: Exception) { invoke.reject("原版课表启动失败：${error.message}") }
         }
     }
-    // Android owns a separate Activity in the same APK; its back stack handles returning to Le时间管理.
+    // Android owns a separate Activity in the same APK; its back stack handles returning to U-Time.
     @Command fun hide(invoke: Invoke) { invoke.resolve() }
     @Command fun close(invoke: Invoke) { invoke.resolve() }
 }

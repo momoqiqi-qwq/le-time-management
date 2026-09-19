@@ -11,6 +11,7 @@ import { renderInbox } from "./views/inbox.js";
 import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
 import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
+import { hasNavOverride, navDisplayIcon, navDisplayName, resetNavOverride, setNavOverride } from "./navAppearance.js";
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
 import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
@@ -42,6 +43,8 @@ function ensureActiveView() {
   return activeView;
 }
 
+// 核心页的**默认**名称与图标（图标 key 见 icons.js 的 NAV_ICONS8）。
+// 用户在侧栏右键改的是显示名，落在 settings.navOverrides（见 navAppearance.js），不动这里。
 const VIEWS = [
   { id: "quadrant", icon: "table-cells-large", title: "任务表", sub: "先决定，再动手" },
   // v0.52.0：时间线 —— APK（移动运行时）专属核心视图，替代窄屏下的时间块 / 收件箱；
@@ -97,7 +100,10 @@ function viewDef(id) {
   // v0.52.0：核心视图按平台裁剪 —— 移动端查不到时间块 / 收件箱（viewDef 返回 null），
   // 桌面端查不到时间线。switchTo 里有更早的重定向兜底（见下）。
   if (!coreViewIds().includes(id)) return null;
-  return VIEWS.find((v) => v.id === id) || VIEWS[0];
+  const def = VIEWS.find((v) => v.id === id) || VIEWS[0];
+  // 右键改过名才新建对象：VIEWS 是默认名的事实源，也是「恢复默认」的比对基准，不许被写脏
+  const title = navDisplayName(def.id, def.title);
+  return title === def.title ? def : { ...def, title };
 }
 
 function pluginOrderState() {
@@ -253,7 +259,7 @@ export function renderShell(root) {
   const rail = el("aside", { class: "rail" },
       el("div", { class: "brand" },
       el("span", { class: "mark" }),
-      el("div", {}, el("b", {}, "Le时间管理"), el("small", {}, "LE · TIME MANAGEMENT")),
+      el("div", {}, el("b", {}, "U-Time"), el("small", {}, "U-TIME")),
     ),
     nav,
     railDock,
@@ -504,8 +510,11 @@ export function renderShell(root) {
   }
   renderTopbarOrder();
 
-  let pluginContextMenu = null;
-  let pendingPluginIconId = null;
+  // 核心页与插件的右键菜单共用一个槽位：同一时刻只可能有一个菜单开着，
+  // 关闭逻辑（含全局 pointerdown / Escape）也只有一份。
+  let contextMenu = null;
+  // 挑图标的 <input type=file> 也只有一份，靠这个字段记住「这次是给谁挑」
+  let pendingIconTarget = null; // { kind: "plugin" | "nav", id }
   const pluginZipInput = el("input", { type: "file", accept: ".zip,application/zip", multiple: true, hidden: true });
   const pluginIconInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", hidden: true });
   root.append(pluginZipInput, pluginIconInput);
@@ -518,6 +527,18 @@ export function renderShell(root) {
   function refreshPluginPresentation() {
     renderNav();
     if (activeView === "market" || activeView.startsWith("plug:")) switchTo(activeView, undefined, { history: false });
+  }
+
+  /* 核心页改名 / 换图标后只刷外壳：侧栏条目 + 顶栏标题卡。
+     不走 switchTo —— 那会重渲染整个视图，把用户的滚动位置和未保存的输入一起弄没，
+     而这里改的只是标签文字和一张图标。 */
+  function refreshCorePresentation() {
+    renderNav();
+    const def = viewDef(activeView);
+    if (!def || def.pluginView) return;
+    titleEl.textContent = def.title;
+    subEl.textContent = def.sub ? ` · ${def.sub}` : "";
+    renderTitleMark(def);
   }
 
   pluginZipInput.addEventListener("change", async () => {
@@ -540,9 +561,9 @@ export function renderShell(root) {
 
   pluginIconInput.addEventListener("change", async () => {
     const file = pluginIconInput.files?.[0];
-    const pluginId = pendingPluginIconId;
-    pendingPluginIconId = null;
-    if (!file || !pluginId) return;
+    const target = pendingIconTarget;
+    pendingIconTarget = null;
+    if (!file || !target) return;
     try {
       if (!file.type.startsWith("image/")) throw new Error("请选择图片文件");
       if (file.size > 1024 * 1024) throw new Error("图标不能超过 1 MB");
@@ -552,9 +573,15 @@ export function renderShell(root) {
         reader.onerror = () => reject(new Error("读取图标失败"));
         reader.readAsDataURL(file);
       });
-      setPluginOverride(pluginId, { icon });
-      refreshPluginPresentation();
-      toast("插件图标已更新");
+      if (target.kind === "nav") {
+        setNavOverride(target.id, { icon });
+        refreshCorePresentation();
+        toast("图标已更新");
+      } else {
+        setPluginOverride(target.id, { icon });
+        refreshPluginPresentation();
+        toast("插件图标已更新");
+      }
     } catch (error) {
       toast(`修改图标失败：${error.message || error}`);
     } finally {
@@ -562,48 +589,60 @@ export function renderShell(root) {
     }
   });
 
-  function closePluginContextMenu(immediate = false) {
-    const menu = pluginContextMenu;
-    pluginContextMenu = null;
+  function closeContextMenu(immediate = false) {
+    const menu = contextMenu;
+    contextMenu = null;
     if (!menu) return;
     if (immediate) menu.remove();
     else removeWithMotion(menu);
   }
 
+  const contextMenuItem = (label, onClick, { danger = false, disabled = false, title = "" } = {}) => el("button", {
+    class: `plugin-context-item${danger ? " danger" : ""}`,
+    type: "button",
+    disabled: disabled ? true : null,
+    title: title || null,
+    onclick: async () => {
+      if (disabled) return;
+      closeContextMenu();
+      await onClick();
+    },
+  }, label);
+
+  // 调用前由各 open*ContextMenu 自己 preventDefault（查不到目标时要提前返回，
+  // 那时不该把原生右键菜单一起吞掉）
+  function showContextMenu(event, menu) {
+    closeContextMenu(true);
+    document.body.append(menu);
+    contextMenu = menu;
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8))}px`;
+    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8 - bottomInsetPx()))}px`;
+    requestAnimationFrame(() => menu.querySelector("button:not(:disabled)")?.focus());
+  }
+
   function openPluginContextMenu(event, pluginId) {
     event.preventDefault();
     event.stopPropagation();
-    closePluginContextMenu(true);
     const rec = getRegistry().find((item) => item.id === pluginId);
     if (!rec) return;
     const fallbackName = rec.manifest?.name || pluginViews.find((item) => item.pluginId === pluginId)?.title || pluginId;
     const displayName = pluginDisplayName(pluginId, fallbackName);
     const effSc = effectiveShortcutLetter(pluginId);
-    const menuButton = (label, onClick, { danger = false, disabled = false, title = "" } = {}) => el("button", {
-      class: `plugin-context-item${danger ? " danger" : ""}`,
-      type: "button",
-      disabled: disabled ? true : null,
-      title: title || null,
-      onclick: async () => {
-        if (disabled) return;
-        closePluginContextMenu();
-        await onClick();
-      },
-    }, label);
     const menu = el("div", { class: "plugin-context-menu", role: "menu", "aria-label": `${displayName}插件菜单` },
       el("div", { class: "plugin-context-head" }, pluginDisplayIcon(pluginId, displayName), el("span", {}, el("b", {}, displayName), el("small", {}, rec.source === "builtin" ? "内置插件" : "用户插件"))),
-      menuButton("重命名", async () => {
+      contextMenuItem("重命名", async () => {
         const value = await appPrompt("重命名插件", { label: "输入插件显示名称（留空恢复默认名称）", value: displayName, confirmText: "保存" });
         if (value === null) return;
         setPluginOverride(pluginId, { name: value });
         refreshPluginPresentation();
         toast(value ? "插件名称已更新" : "已恢复默认名称");
       }),
-      menuButton("修改图标…", () => {
-        pendingPluginIconId = pluginId;
+      contextMenuItem("修改图标…", () => {
+        pendingIconTarget = { kind: "plugin", id: pluginId };
         pluginIconInput.click();
       }),
-      menuButton(`快捷键 · ${effSc ? `${PLUGIN_SHORTCUT_MODIFIER}+${effSc}` : "未设置"}`, async () => {
+      contextMenuItem(`快捷键 · ${effSc ? `${PLUGIN_SHORTCUT_MODIFIER}+${effSc}` : "未设置"}`, async () => {
         const value = await appPrompt("设置插件快捷键", {
           label: `输入一个字母（A–Z），按 ${PLUGIN_SHORTCUT_MODIFIER} + 字母直接打开「${displayName}」。留空恢复自动分配（按插件 ID 首字母，先到先得）。`,
           value: getPluginShortcutCustoms()[pluginId] || effSc || "",
@@ -624,14 +663,14 @@ export function renderShell(root) {
           toast("已清除，恢复自动分配");
         }
       }),
-      menuButton("恢复默认名称与图标", () => {
+      contextMenuItem("恢复默认名称与图标", () => {
         resetPluginOverride(pluginId);
         refreshPluginPresentation();
         toast("已恢复插件默认外观");
       }, { disabled: !Object.keys(getPluginOverride(pluginId)).length }),
       el("div", { class: "plugin-context-separator", role: "separator" }),
-      menuButton("导入插件…", () => pluginZipInput.click()),
-      menuButton("删除插件", async () => {
+      contextMenuItem("导入插件…", () => pluginZipInput.click()),
+      contextMenuItem("删除插件", async () => {
         if (!(await appConfirm(`删除用户插件「${displayName}」？`, "插件文件夹和保存状态将一并移除。", { confirmText: "删除", danger: true }))) return;
         try {
           await removeExternalPlugin(pluginId);
@@ -642,18 +681,42 @@ export function renderShell(root) {
         }
       }, { danger: true, disabled: rec.source === "builtin", title: rec.source === "builtin" ? "内置插件不能删除，可在插件中心关闭" : "" }),
     );
-    document.body.append(menu);
-    pluginContextMenu = menu;
-    const rect = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(8, Math.min(event.clientX, window.innerWidth - rect.width - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(event.clientY, window.innerHeight - rect.height - 8 - bottomInsetPx()))}px`;
-    requestAnimationFrame(() => menu.querySelector("button:not(:disabled)")?.focus());
+    showContextMenu(event, menu);
+  }
+
+  /* 核心页（任务表 / 时间块 / 收件箱 / 插件 / 时间线）的右键菜单。
+     与插件菜单同形同风格，但只有外观三项 —— 快捷键、导入、删除都是插件独有的概念。 */
+  function openNavContextMenu(event, viewId) {
+    event.preventDefault();
+    event.stopPropagation();
+    const def = viewDef(viewId);
+    if (!def) return;
+    const menu = el("div", { class: "plugin-context-menu", role: "menu", "aria-label": `${def.title}页面菜单` },
+      el("div", { class: "plugin-context-head" }, navDisplayIcon(viewId, def.title), el("span", {}, el("b", {}, def.title), el("small", {}, "核心页面"))),
+      contextMenuItem("重命名", async () => {
+        const value = await appPrompt("重命名页面", { label: "输入侧栏与标题栏显示的名称（留空恢复默认名称）", value: def.title, confirmText: "保存" });
+        if (value === null) return;
+        setNavOverride(viewId, { name: value });
+        refreshCorePresentation();
+        toast(value ? "页面名称已更新" : "已恢复默认名称");
+      }),
+      contextMenuItem("修改图标…", () => {
+        pendingIconTarget = { kind: "nav", id: viewId };
+        pluginIconInput.click();
+      }),
+      contextMenuItem("恢复默认名称与图标", () => {
+        resetNavOverride(viewId);
+        refreshCorePresentation();
+        toast("已恢复页面默认外观");
+      }, { disabled: !hasNavOverride(viewId) }),
+    );
+    showContextMenu(event, menu);
   }
 
   document.addEventListener("pointerdown", (event) => {
-    if (pluginContextMenu && !pluginContextMenu.contains(event.target)) closePluginContextMenu();
+    if (contextMenu && !contextMenu.contains(event.target)) closeContextMenu();
   }, true);
-  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closePluginContextMenu(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeContextMenu(); });
 
   function renderNav() {
     nav.replaceChildren();
@@ -682,13 +745,19 @@ export function renderShell(root) {
       if (rec) pvLabel = rec.source === "builtin" ? "内置" : "导入";
     }
     const b = el("button", { class: on ? "on" : "", "data-view": id },
-      el("span", { class: "ic", style: isPlug ? `--plugin-accent:${pluginAccent(def.pluginView?.pluginId)}` : null }, isPlug ? pluginDisplayIcon(def.pluginView.pluginId, def.title) : appIcon(id)),
+      el("span", { class: "ic", style: isPlug ? `--plugin-accent:${pluginAccent(def.pluginView?.pluginId)}` : null }, isPlug ? pluginDisplayIcon(def.pluginView.pluginId, def.title) : navDisplayIcon(id, def.title)),
       el("span", { class: "lb" }, def.title),
       isPlug ? el("span", { class: "pv-count" }, pvLabel) : null,
       // 快捷键徽标：平时收着（opacity:0），悬停 / 选中 / 键盘聚焦时现形，不挤占常驻空间
       sc ? el("kbd", { class: "nav-kbd", "aria-hidden": "true" }, `${PLUGIN_SHORTCUT_MODIFIER}+${sc}`) : null,
     );
     b.addEventListener("click", () => switchTo(id));
+    // 核心页与插件项一样可右键改外观。窄屏是底栏、没有右键语义，
+    // 所以与插件菜单同样只在桌面窗口开放（见下面插件分支的 desktopWindow 条件）。
+    if (desktopWindow && !isPlug) {
+      b.title = "右键可重命名、更换图标";
+      b.addEventListener("contextmenu", (event) => openNavContextMenu(event, id));
+    }
     if (desktopWindow && isPlug && def.pluginView?.pluginId) {
       b.draggable = true;
       b.dataset.pluginId = def.pluginView.pluginId;
@@ -870,7 +939,7 @@ export function renderShell(root) {
       titleMark.append(pluginDisplayIcon(def.pluginView.pluginId, def.title));
     } else {
       titleMark.style.removeProperty("--plugin-accent");
-      titleMark.append(appIcon(def.id, def.title));
+      titleMark.append(navDisplayIcon(def.id, def.title));
     }
   }
 

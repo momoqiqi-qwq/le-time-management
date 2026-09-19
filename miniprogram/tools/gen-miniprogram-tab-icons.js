@@ -1,4 +1,4 @@
-// Generate Mini Program tab icons from the Font Awesome Free SVG sprite bundled with Le时间管理.
+// Generate Mini Program tab icons from the Font Awesome Free SVG sprite bundled with U-Time.
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 const python = process.platform === "win32" ? "python" : "python3";

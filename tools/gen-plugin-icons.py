@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Le时间管理 · 图标生成器（Icons8 / iGoutu Color 彩色图标集）
+"""U-Time · 图标生成器（Icons8 / iGoutu Color 彩色图标集）
 
 用途
     ① 把内置插件的图标统一成 Icons8「Color」彩色风格（品牌类走 3D 图标）；

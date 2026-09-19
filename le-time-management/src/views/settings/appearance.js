@@ -13,6 +13,7 @@ import {
   setUiPreferences,
 } from "../../uiPreferences.js";
 import { CUSTOM_SIZE_LIMITS, applyWindowSize, isDesktopRuntime, windowSizeHint } from "../../windowSize.js";
+import { navDisplayName } from "../../navAppearance.js";
 import { NARROW_REFERENCE_WIDTH, UI_SCALE_LIMITS, UI_SCALE_PRESETS, dragStableScale, getAutoScaleFactor, normalizeUiScale, parseCustomScaleInput } from "../../uiScale.js";
 import { toggleSwitch } from "../../switchControl.js";
 
@@ -279,7 +280,9 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
   const coreSet = new Set(coreViewIds());
   for (const [id, label] of STARTUP_VIEW_OPTIONS) {
     if (id !== "last" && !coreSet.has(id)) continue;
-    startup.append(el("option", { value: id }, label));
+    // 跟随侧栏的右键改名（settings.navOverrides）：这里选的就是那几个页面，
+    // 写着「收件箱」而侧栏叫别的名字会让人不确定选的是哪一页。「继续上次页面」不是视图，不参与。
+    startup.append(el("option", { value: id }, id === "last" ? label : navDisplayName(id, label)));
   }
   startup.value = prefs.startupView;
   startup.addEventListener("change", () => { setUiPreferences({ startupView: startup.value }); toast("启动页设置将在下次打开应用时生效"); });

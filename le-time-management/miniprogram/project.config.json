@@ -1,5 +1,5 @@
 {
-  "description": "Le时间管理小程序（连接 Win 控制端局域网服务）",
+  "description": "U-Time小程序（连接 Win 控制端局域网服务）",
   "appid": "touristappid",
   "setting": {
     "urlCheck": false,

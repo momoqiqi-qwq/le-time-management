@@ -14,10 +14,11 @@ import * as S from "../../store.js";
 import { el, toast } from "../../ui.js";
 import { toggleSwitch } from "../../switchControl.js";
 import { createAutoBackup } from "../../dataCenter.js";
-import { parseLanTarget, lanInfo, lanPullSnapshot, describeLanInfo, DEFAULT_LAN_PORT } from "../../lanSync.js";
+import { parseLanTarget, lanInfo, lanPullSnapshot, lanPushSnapshot, describeLanInfo, DEFAULT_LAN_PORT } from "../../lanSync.js";
+import { canScanQr, scanQr } from "../../qrScan.js";
 import {
   WEBDAV_PRESETS, DEFAULT_SYNC_FILE_NAME, getPreset,
-  buildDavUrl, migrateLegacyUrl,
+  buildDavUrl, migrateLegacyUrl, makeSnapshot,
   ensureWebDavFolder, testWebDavConnection,
   describeSyncError,
   saveStoredSyncPassword, loadStoredSyncPassword, clearStoredSyncPassword,
@@ -39,7 +40,7 @@ export async function createSyncCard({ appVersion = "", os = "" } = {}) {
   /* ── ① 选网盘 ── */
   const presetChips = el("div", { class: "sync-presets" });
   const rootInput = el("input", { type: "url", placeholder: "https://…/dav", autocomplete: "off", spellcheck: "false" });
-  const folderInput = el("input", { type: "text", placeholder: "Le时间管理", autocomplete: "off", spellcheck: "false" });
+  const folderInput = el("input", { type: "text", placeholder: "U-Time", autocomplete: "off", spellcheck: "false" });
   const userInput = el("input", { type: "text", autocomplete: "username", spellcheck: "false" });
   const passInput = el("input", { type: "password", autocomplete: "new-password", spellcheck: "false" });
   const remember = toggleSwitch({ checked: cfg.remember !== false, ariaLabel: "在本机记住应用密码" });
@@ -321,10 +322,15 @@ export async function createSyncCard({ appVersion = "", os = "" } = {}) {
 
 
 /**
- * 「不用网盘：从电脑直接拉」—— 局域网单向拉取。
+ * 「不用网盘：跟电脑直接传」—— 局域网双向。
  *
- * 只有拉、没有推，而且「拉回本机」在「连接看看」成功之前一直是锁着的：
+ * 拉（手机 ← 电脑）：先探后拉。「拉回本机」在「连接看看」成功之前一直是锁着的，
  * 让人先看清电脑上躺着多少条数据，再决定要不要覆盖自己手上这份。
+ * 推（手机 → 电脑）：多一道门。电脑端「允许手机推回本机」默认关，开着也只是把快照
+ * 放进电脑内存里等着，必须有人在那台电脑上点「接收」才算数（三道门的理由见
+ * src-tauri/src/lan.rs 顶部）。所以这里的按钮文案一律写「等电脑上确认」，
+ * 不写「已同步」—— 发出去不等于对方接受了。
+ *
  * 配对码不落盘（它跟着链接走，粘一次用一次）—— 存进 settings 就等于存进 data.json，
  * 而 data.json 会被 WebDAV 原样传到网盘上去。
  */
@@ -333,7 +339,7 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
   const isDesktop = ["windows", "macos", "linux"].includes(String(os));
   const linkInput = el("input", {
     type: "text", value: lanCfg.host || "",
-    placeholder: `电脑上「复制链接」得来的整条，或 192.168.1.5:${DEFAULT_LAN_PORT}`,
+    placeholder: `电脑上「复制链接」或「扫码」得来的配对链接，或 192.168.1.5:${DEFAULT_LAN_PORT}`,
     autocomplete: "off", spellcheck: "false",
   });
   const tokenInput = el("input", {
@@ -341,11 +347,13 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
   });
   const result = el("div", { class: "shortcut-status sync-result" });
   const pullBtn = el("button", { class: "btn pri sm", type: "button", disabled: true }, "拉回本机（覆盖本机现在的数据）");
+  const pushBtn = el("button", { class: "btn ghost sm", type: "button", disabled: true }, "推到电脑（等电脑上点接收）");
   const howto = el("ol", { class: "sync-howto" },
-    el("li", {}, "在电脑上打开 Le时间管理，两边连同一个 Wi-Fi（手机用流量连不上）"),
-    el("li", {}, "电脑上进 设置 → 局域网联动 → 点「启动服务」"),
-    el("li", {}, "点「复制链接」，把这条链接发到手机上（微信发给自己就行）"),
-    el("li", {}, "回到这里粘进上面的框 → 先「连接看看电脑上有什么」，确认无误再「拉回本机」"),
+    el("li", {}, "在电脑上打开 U-Time，两边连同一个 Wi-Fi（手机用流量连不上）"),
+    el("li", {}, "电脑上进 设置 → 局域网联动 → 点「启动服务」，屏幕上会出现一张二维码"),
+    el("li", {}, "要往电脑推的，顺手在电脑那张卡里打开「允许手机把数据推回本机」（默认关着）"),
+    el("li", {}, "回到手机这边点「扫一扫」，对准电脑上那张码 —— 连上就直接列出电脑上有多少条数据"),
+    el("li", {}, "不方便扫码就走老路：电脑上「复制链接」发到手机，粘进上面那栏再点「连接看看电脑上有什么」"),
   );
   const howtoToggle = el("button", { class: "btn ghost sm", type: "button" }, "电脑上要怎么准备？");
   let howtoOpen = false;
@@ -361,24 +369,68 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
   };
 
   let target = null;
+  /** 连上之后才有的两件事：电脑上的概况（含肯不肯收回传），以及本机这边现在的条数。 */
+  let seen = null;
+
+  /**
+   * 连一次电脑，顺手把两个按钮的可用性刷对。
+   * 粘贴那条和扫码那条共用这一个入口 —— 「扫完还要再点一下连接」不算一键。
+   */
+  async function connectTo(next) {
+    say("正在连电脑…");
+    seen = await lanInfo(next);
+    // 只记地址，不记配对码
+    lanCfg.host = next.base.replace(/^https?:\/\//, "");
+    await S.saveNow();
+    target = next;
+    say(`${describeLanInfo(seen)}。确认是你要的那份，再点「拉回本机」`, "is-ok");
+    pullBtn.disabled = false;
+    paintPushState();
+  }
+
+  const fail = (e) => {
+    target = null;
+    seen = null;
+    pullBtn.disabled = true;
+    pushBtn.disabled = true;
+    say(e?.message || String(e), "is-error");
+  };
+
   const connectBtn = el("button", {
     class: "btn ghost sm", type: "button", onclick: async () => {
-      try {
-        target = parseLanTarget(linkInput.value, tokenInput.value);
-        say("正在连电脑…");
-        const seen = await lanInfo(target);
-        // 只记地址，不记配对码
-        lanCfg.host = target.base.replace(/^https?:\/\//, "");
-        await S.saveNow();
-        say(`${describeLanInfo(seen)}。确认是你要的那份，再点「拉回本机」`, "is-ok");
-        pullBtn.disabled = false;
-      } catch (e) {
-        target = null;
-        pullBtn.disabled = true;
-        say(e?.message || String(e), "is-error");
-      }
+      try { await connectTo(parseLanTarget(linkInput.value, tokenInput.value)); }
+      catch (e) { fail(e); }
     },
   }, "连接看看电脑上有什么");
+
+  /* 扫码：省掉「电脑上复制链接 → 微信发给自己 → 长按复制 → 粘进来」这四步。
+     只在真有相机的地方出现：桌面端 WebView 不是安全上下文，mediaDevices 直接就是 undefined。 */
+  const scanBtn = !isDesktop && canScanQr() ? el("button", {
+    class: "btn ghost sm", type: "button", onclick: async () => {
+      let text = null;
+      try { text = await scanQr(); } catch (e) { fail(e); return; }
+      if (!text) return;   // 用户自己按的取消，不是错误，别报红
+      try {
+        await connectTo(parseLanTarget(text));
+        linkInput.value = text;
+        tokenInput.value = "";
+      } catch (e) {
+        // 相机里能扫到的东西多了去了（付款码、网址），要说清是「这不是配对码」而不是「连不上」。
+        say(`扫到了，但那不是本程序的配对二维码：${e?.message || e}`, "is-error");
+        target = null; seen = null; pullBtn.disabled = true; pushBtn.disabled = true;
+      }
+    },
+  }, "扫一扫电脑上的二维码") : null;
+
+  /** 推这条的可用性只能探出来，不能猜：老版本电脑根本没有 /api/push。 */
+  function paintPushState() {
+    if (!seen) { pushBtn.disabled = true; return; }
+    pushBtn.disabled = false;
+    if (!seen.allowPush) {
+      pushBtn.disabled = true;
+      say("这条路径只能拉：那台电脑上没开「允许手机把数据推回本机」（设置 → 局域网联动 里那个开关）", "is-error");
+    }
+  }
 
   pullBtn.addEventListener("click", async () => {
     if (!target) return;
@@ -398,22 +450,39 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
     } catch (e) { say(e?.message || String(e), "is-error"); }
   });
 
+  pushBtn.addEventListener("click", async () => {
+    if (!target || !seen) return;
+    const mine = S.getState();
+    const n = mine.tasks?.length ?? 0;
+    const m = mine.blocks?.length ?? 0;
+    if (!window.confirm(`要把本机这份 ${n} 条任务、${m} 个时间块推到电脑上，覆盖电脑上现在那份（那边是 ${seen.tasks} 条任务、${seen.blocks} 个时间块）。\n\n电脑上会先弹一个确认框，要有人点「接收」才真的生效；点接收前那边会自动存一个恢复点。继续？`)) {
+      say("已取消，两边都没动");
+      return;
+    }
+    try {
+      const out = await lanPushSnapshot(target, makeSnapshot(mine, appVersion), { onStage: (s) => say(s) });
+      say(out.status === "accepted" ? `电脑已接收 · 本机 ${n} 条任务、${m} 个时间块` : "电脑端没接收", out.status === "accepted" ? "is-ok" : "is-error");
+      toast(out.status === "accepted" ? "电脑上已接收这份数据" : "电脑没接收");
+    } catch (e) { say(e?.message || String(e), "is-error"); }
+  });
+
   paintHowto();
+  paintPushState();
   return el("div", { class: "sync-lan" },
-    el("div", { class: "data-section-title" }, "不用网盘：从电脑直接拉（局域网）"),
+    el("div", { class: "data-section-title" }, "不用网盘：跟电脑直接传（局域网）"),
     el("p", { class: "desc" },
-      "手机和电脑在同一个 Wi-Fi 时，跳过网盘直接拿电脑上的数据。",
+      "手机和电脑在同一个 Wi-Fi 时，跳过网盘直接互传整份数据：电脑上那张二维码扫一下就能连。",
       el("br"),
-      "这条路径只能「手机拉电脑」：本程序不会把任何数据从手机写回电脑，电脑上那份永远是电脑自己说了算。",
+      "拉：直接把电脑上的拿过来。推：要在那台电脑上点「接收」才算数，而且电脑端的「允许手机推回本机」默认是关的。",
       el("br"),
-      "注意拉回来的是电脑上的整份状态，连电脑那台的「同步设置」（网盘地址、账号）也会一起过来；本机原来那份可以用恢复点退回（设置 → 数据中心）。",
+      "两个方向都是整份覆盖：拉回来的是电脑上的整份状态，连电脑那台的「同步设置」（网盘地址、账号）也会一起过来；本机原来那份可以用恢复点退回（设置 → 数据中心）。",
     ),
     el("div", { class: "sync-form" },
       el("label", { class: "sync-field" }, el("span", {}, "电脑地址或配对链接"), linkInput),
       el("label", { class: "sync-field" }, el("span", {}, "配对码"), tokenInput),
     ),
     el("div", { class: "data-actions", style: "margin-top:10px" },
-      connectBtn, pullBtn, howtoToggle,
+      scanBtn, connectBtn, pullBtn, pushBtn, howtoToggle,
       isDesktop ? el("button", {
         class: "btn ghost sm", type: "button",
         onclick: () => window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: "lan" } })),

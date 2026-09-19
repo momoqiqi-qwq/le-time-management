@@ -70,7 +70,7 @@ await assert.rejects(() => pushPlus('t', 'c'), /HTTP 403/);
 /* ── 3. v1.5.0：PushPlus 频次限制防护 ──
    官方规则：相同内容 1 小时限 3 条、每分钟限 5 次，超限返回 999「服务端验证错误」。
    实测事故：15:04 连发 3 条相同测试推送成功，15:05 起第 4 条开始全部 999。 */
-assert.match(source, /Le时间管理测试推送 \$\{at\}/, '测试推送标题必须带时间戳，避免撞「相同内容 1 小时 3 条」限制');
+assert.match(source, /U-Time测试推送 \$\{at\}/, '测试推送标题必须带时间戳，避免撞「相同内容 1 小时 3 条」限制');
 assert.match(source, /lastTestAt/, '测试推送必须有防连点节流');
 assert.match(source, /999\|服务端验证/, '失败日志必须识别 999 并给出频次限制提示');
 assert.match(source, /推送「\$\{title\.slice\(0, 20\)\}」/, '失败日志必须带上推送标题，便于对号入座');
@@ -157,9 +157,15 @@ assert.match(source, /function pruneQueue\(\)/, '取消勾选后要能清掉队�
 assert.match(source, /ensurePrefs\(\)\.then\(\(\) => enqueuePluginNotice\(p\)\)/,
   '广播早于偏好读回时必须先等 prefs，否则勾选状态还是默认值会把消息错杀');
 /* 无头 Chrome 实测：390px 宽时那一行会换行、按钮被挤到 x=236，面板（302px）从那里展开
-   右半边 148px 掉到视口外，勾格看不见也点不到 → 打开时必须按视口右缘夹回来。 */
-assert.match(source, /msBtn\.getBoundingClientRect\(\)\.left \+ msPanel\.offsetWidth - \(innerWidth - 12\)/,
-  '下拉面板打开时必须量一次视口右缘并把自己推回可见区域（窄屏换行后按钮靠右会被裁掉）');
+   右半边 148px 掉到视口外，勾格看不见也点不到 → 打开时必须按视口右缘夹回来。
+   v0.74.0 起那条右缘不是 `innerWidth` 而是 `innerWidth - sar`：横屏时挖孔与侧边三键栏
+   占掉一段，视口的边 ≠ 可视区的边（AGENTS.md 铁律四 · 插件安全区）。 */
+assert.match(source, /const \[sal, sar\] = \[px\("--sal"\), px\("--sar"\)\]/,
+  '夹取用的左右边界必须先读宿主注入的安全区变量');
+assert.match(source, /msBtn\.getBoundingClientRect\(\)\.left \+ msPanel\.offsetWidth - \(innerWidth - sar - 12\)/,
+  '下拉面板打开时必须量一次可视区右缘并把自己推回可见区域（窄屏换行后按钮靠右会被裁掉）');
+assert.match(source, /Math\.min\(Math\.ceil\(over\), msBtn\.getBoundingClientRect\(\)\.left - sal - 12\)/,
+  '推回的量还要夹一次，免得把面板顶穿可视区左缘');
 
 /* 四个消息类插件必须真的广播 notice:new，并声明 events 权限（否则勾格是永远不出消息的死选项） */
 for (const id of ["chaoxing-notify", "cppu-notify", "gx-news", "rss-reader", "school-notice"]) {

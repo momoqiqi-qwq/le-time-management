@@ -81,7 +81,7 @@ class ApkInstallerPlugin(private val host: Activity) : Plugin(host) {
         put("ready", allowed && installer)
         put("reason", when {
           !installer -> "系统里没有可用的安装程序"
-          !allowed -> "需要先允许 Le时间管理 安装未知来源应用"
+          !allowed -> "需要先允许 U-Time 安装未知来源应用"
           else -> ""
         })
       }

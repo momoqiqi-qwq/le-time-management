@@ -1,6 +1,6 @@
-# Le时间管理 · 插件开发文档
+# U-Time · 插件开发文档
 
-> 适用于 Le时间管理 v0.52.x 的 Windows / Android Tauri 插件宿主。`permissions` 是运行时权限闸门：调用未声明的能力时宿主直接抛错。
+> 适用于 U-Time v0.52.x 的 Windows / Android Tauri 插件宿主。`permissions` 是运行时权限闸门：调用未声明的能力时宿主直接抛错。
 
 ## 1. 最小插件结构
 
@@ -54,7 +54,7 @@ tide.ui.registerView({
   title: "我的页面",
   icon: "puzzle-piece",
   render(el) {
-    el.textContent = "Hello Le时间管理";
+    el.textContent = "Hello U-Time";
   },
 });
 ```
@@ -206,7 +206,66 @@ function gotoTimeblock() {
 backButton.onclick = () => tide.util.navigate(fromView);
 ```
 
-### 4.2 其他建议
+### 4.2 安全区（硬性要求）
+
+APK 上是全面屏：状态栏、导航栏、横屏时的前置摄像头挖孔都会盖在网页上面。**这块区域叫安全区**，插件界面压上去就是「标题被状态栏吃掉」「最后一行点不到」。
+
+宿主已经把四条边统一垫在插件页外面了，所以：
+
+| 你的界面 | 要做什么 |
+|---|---|
+| 正常画在 `render(el)` 给的容器里（包括整页滚动、吸底输入框） | **什么都不用做**，宿主负责 |
+| 自己往 `document.body` 挂 `position:fixed` 的全屏遮罩 / 弹层 / 菜单 | 必须自己让开四条边，见下面的配方 |
+
+对应的四个宿主变量（单位 px，由 Android 原生按真实 `WindowInsets` 注入）：
+
+| 变量 | 含义 | 常见故障 |
+|---|---|---|
+| `--sat` | 顶部状态栏 | 标题、返回按钮压进状态栏 |
+| `--sab` | 底部导航栏 | 最后一个按钮、吸底栏点不到 |
+| `--sal` / `--sar` | 左 / 右（横屏挖孔、三键导航栏在侧边） | 横屏时内容被挖孔切掉 |
+
+三条硬性禁令：
+
+1. **禁止裸用 `env(safe-area-inset-*)`。** Android WebView 里它恒为 `0`，写了等于没写（AGENTS.md 铁律四）。必须写成 `var(--sat, env(safe-area-inset-top, 0px))` 这种**双路**形式：APK 走原生注入的变量，桌面与 iOS 走 `env()` 兜底。
+2. **禁止给页面内容再垫一遍安全区。** 宿主已经垫过了，插件再对自己的容器加一次会**双重计算**（实测过：桌面端插件页底部因此凭空多出 86px 纯空白）。同理，不要为了"避开导航栏"去猜一个固定像素值。
+3. **禁止假设 `100vh` / `innerHeight` 就是可视区。** 它们包含安全区，用它算高度会把内容算到导航栏底下。
+
+> 为什么 `position:fixed` 是唯一的例外：fixed 元素的包含块是宿主内容区那个元素的 **padding box**，padding 划不出它的新边界 —— 所以浮层只能自己让开。（`scripts/test-plugin-safe-area.mjs` 会拦前两条，写错直接红。）
+
+> **让开的边 = 你钉住的边。** 声明了 `bottom:` 就得让开 `--sab`，钉了 `inset:` 就是四条全让；只让底、不让左右是最典型的错法（课程表的个性化抽屉就这么漏过：竖屏看不出问题，横屏时挖孔压在滑杆上）。同理，用 `innerWidth` / `innerHeight` 算夹取边界时也要减掉安全区 —— 视口的边不等于可视区的边。
+
+**配方 A：CSS 浮层**（遮罩 + 居中弹窗）
+
+```css
+/* 遮罩铺满整屏是对的，让内边距去吃安全区 */
+.my-mask {
+  position: fixed; inset: 0; z-index: 1900;
+  display: flex; align-items: center; justify-content: center;
+  padding: calc(16px + var(--sat, env(safe-area-inset-top, 0px)))
+           calc(16px + var(--sar, env(safe-area-inset-right, 0px)))
+           calc(16px + var(--sab, env(safe-area-inset-bottom, 0px)))
+           calc(16px + var(--sal, env(safe-area-inset-left, 0px)));
+}
+/* 弹窗高度别用 82vh：vh 不扣安全区，弹窗会比可视区高，底边照样被导航栏压住 */
+.my-dialog { max-height: min(82vh, 100%); overflow: auto; }
+```
+
+**配方 B：JS 按坐标定位的浮层**（右键菜单、跟随手指的气泡）
+
+夹取边界时把安全区算进去，读法与宿主的 `bottomInsetPx()` 一致：
+
+```js
+const px = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0;
+const [sat, sab, sal, sar] = [px("--sat"), px("--sab"), px("--sal"), px("--sar")];
+// 变量取不到时 parseFloat 出 NaN → 0，桌面端行为不变
+const x = Math.max(8 + sal, Math.min(rawX, window.innerWidth - sar - MENU_W));
+const y = Math.max(8 + sat, Math.min(rawY, window.innerHeight - sab - MENU_H));
+```
+
+**真机自检**：APK 装好后把手机转成横屏（挖孔跑到左侧）打开插件页，内容左边缘应留出挖孔宽度；再开一个弹层，确认它不压状态栏与导航栏。
+
+### 4.3 其他建议
 
 - 首屏先展示插件能做什么，再展示配置项。
 - 登录类插件明确说明账号信息如何保存、是否落盘。
@@ -227,6 +286,7 @@ backButton.onclick = () => tide.util.navigate(fromView);
 - `entry` 文件存在。
 - 所声明权限与实际能力一致。
 - 每个插件页面都有返回按钮，点击后能正确返回上一页（子页面回上一级，跨视图跳转回来源视图）。
+- 界面没有超出安全区：页内容不重复垫（宿主已垫），自建 `position:fixed` 浮层让开了 `--sat/--sab/--sal/--sar`，全文没有裸用 `env(safe-area-inset-*)`。跑 `node scripts/test-plugin-safe-area.mjs` 会自动拦这三条。
 - 无硬编码密钥、账号、Cookie、上传私钥。
 - 离线状态不会卡死页面。
 - 失败信息对用户可读。

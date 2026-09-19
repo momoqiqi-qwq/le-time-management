@@ -1,4 +1,4 @@
-# Le时间管理 · 开源项目与第三方来源说明
+# U-Time · 开源项目与第三方来源说明
 
 > 本文件用于产品内“关于”页面的可读说明，不替代各依赖自身的 LICENSE / NOTICE，也不是完整的传递依赖 SBOM。发布二进制时，应继续保留项目中随附的许可证与归属文件。
 
@@ -14,6 +14,7 @@
 | RustCrypto DES / block-modes 相关 crate | 警大门户兼容加密流程 | 以各 crate 上游许可证为准 | https://github.com/RustCrypto |
 | tiny_http | 局域网联动 HTTP 服务 | 以其上游许可证为准 | https://github.com/tiny-http/tiny-http |
 | qrcode | 局域网配对二维码 | 以其上游许可证为准 | https://github.com/kennytm/qrcode-rust |
+| jsQR | 手机端「扫一扫」配对二维码的解码器（仅在打开扫码时按需加载） | Apache-2.0 | https://github.com/cozmo/jsQR |
 | zip | 用户插件 ZIP 导入/导出 | 以其上游许可证为准 | https://github.com/zip-rs/zip2 |
 
 ## 图标

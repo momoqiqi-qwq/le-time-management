@@ -41,7 +41,7 @@ export function parseSnapshot(raw) {
   if (obj && Array.isArray(obj.tasks) && Array.isArray(obj.blocks)) {
     return { format: "legacy-data-json", schema: 0, exportedAt: null, appVersion: "", data: obj };
   }
-  throw new Error("远端文件不是 Le时间管理 可识别的同步快照");
+  throw new Error("远端文件不是 U-Time 可识别的同步快照");
 }
 
 export async function uploadWebDav({ url, username, password, data, appVersion }) {
@@ -83,7 +83,7 @@ export const WEBDAV_PRESETS = [
     tagline: "国内直连、免费版够用，最省事",
     root: "https://dav.jianguoyun.com/dav",
     rootEditable: false,
-    folder: "Le时间管理",
+    folder: "U-Time",
     accountLabel: "账号（登录邮箱）",
     accountPlaceholder: "you@example.com",
     passwordLabel: "应用密码",
@@ -93,7 +93,7 @@ export const WEBDAV_PRESETS = [
     howto: [
       "在电脑浏览器打开 jianguoyun.com 并登录（手机上操作更麻烦，建议用电脑）",
       "右上角头像 →「账户信息」→ 左侧「安全选项」→「第三方应用管理」",
-      "点「添加应用」，名字随便填（比如 Le时间管理），然后点生成",
+      "点「添加应用」，名字随便填（比如 U-Time），然后点生成",
       "把弹出来的那串密码复制、贴到左边 —— 它只显示这一次，关掉就得重新生成",
     ],
     howtoNote: "这里的密码不是网页登录密码。拿登录密码来填，一律会报「账号或密码不对」。",
@@ -105,7 +105,7 @@ export const WEBDAV_PRESETS = [
     root: "",
     rootEditable: true,
     rootPlaceholder: "https://cloud.example.com/remote.php/dav/files/你的用户名",
-    folder: "Le时间管理",
+    folder: "U-Time",
     accountLabel: "账号（登录用户名）",
     accountPlaceholder: "你的用户名",
     passwordLabel: "密码或应用密码",
@@ -125,7 +125,7 @@ export const WEBDAV_PRESETS = [
     root: "",
     rootEditable: true,
     rootPlaceholder: "https://example.com/dav 或 http://192.168.1.10:5005",
-    folder: "Le时间管理",
+    folder: "U-Time",
     accountLabel: "账号",
     accountPlaceholder: "用户名",
     passwordLabel: "密码",

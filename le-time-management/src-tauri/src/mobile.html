@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Le时间管理 · 手机端</title>
+<title>U-Time · 手机端</title>
 <style>
   :root{--bg:#F2EFEA;--ink:#22303A;--ink2:#7E8B94;--line:#E4DFD6;--deep:#0F4C5C;--coral:#FF6B6B;--mint:#2EC4B6;--ui-text-scale:1}
   *{margin:0;padding:0;box-sizing:border-box}
@@ -36,7 +36,7 @@
 </style>
 </head>
 <body>
-  <h1><span class="mk"></span>Le时间管理 · 手机端</h1>
+  <h1><span class="mk"></span>U-Time · 手机端</h1>
   <div class="date" id="date"></div>
   <div class="sec">今 日 时 间 块</div>
   <div id="blocks"><div class="empty">加载中…</div></div>
@@ -80,7 +80,7 @@ async function load() {
     render(await r.json());
     document.getElementById("st").textContent = "已连接 Win 控制端 · " + new Date().toTimeString().slice(0,5);
   } catch (e) {
-    document.getElementById("st").textContent = "连接失败：确保Le时间管理在电脑上运行且手机与电脑同一网络";
+    document.getElementById("st").textContent = "连接失败：确保U-Time在电脑上运行且手机与电脑同一网络";
   }
 }
 async function toggle(id) {

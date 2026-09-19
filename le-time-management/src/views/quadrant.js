@@ -348,14 +348,32 @@ export function renderQuadrant(container) {
     for (const [id, label, count] of [["all", "全部", all.length], ["open", "待办", open.length], ["done", "已完成", all.length - open.length]]) {
       chips.append(el("button", { class: "chip", "aria-pressed": String(filter === id), onclick: () => { filter = id; cells.forEach(c => c._refresh()); refreshChips(); } }, `${label} ${count} 项`));
     }
+    const done = all.length - open.length;
+    clearDoneBtn.disabled = done === 0;
+    clearDoneBtn.textContent = done ? `清理已完成 ${done} 项` : "清理已完成";
   };
   const chips = el("div", {});
+
+  // 一键清理已完成：与单条删除同一套「删了给撤销」语义，整批一次撤销（连同各自的排程）。
+  const clearDoneBtn = el("button", {
+    class: "chip clear-done",
+    title: "删除全部已完成任务（连同它们已排入的时间块），删除后可在提示条撤销",
+    onclick: () => {
+      const done = S.getState().tasks.filter((t) => t.done);
+      if (!done.length) return;
+      const ids = new Set(done.map((t) => t.id));
+      const blockCount = S.getState().blocks.filter((b) => ids.has(b.taskId)).length;
+      const undo = S.deleteDoneTasksUndoable();
+      toast(`已删除 ${done.length} 个已完成任务${blockCount ? `（含 ${blockCount} 个时间块）` : ""}`, { actionLabel: "撤销", action: undo });
+    },
+  }, "清理已完成");
 
   const wrap = el("div", { class: "quad-wrap" },
     el("div", { class: "quad-head" },
       el("span", { class: "motto" }, "把任务放进象限，就是做决定 · 象限 I 的面积最大，因为它值得你最多时间"),
       el("span", { class: "sp" }),
       chips,
+      clearDoneBtn,
     ),
     search, grid,
   );

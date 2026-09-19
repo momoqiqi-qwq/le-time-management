@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, noticeKind, extractArticleText, screenNotice, formEncode,
+import { normalizeWebUrl, resolveWebUrl, parseSiteMeta, inferSiteIconName, extractNoticeLinks, extractPager, noticeKind, extractArticleText, screenNotice, formEncode,
   charsetFromContentType, charsetFromMeta, looksLikeMarkup, decodeWebBody,
   detectSpaShell, matchJsonSiteAdapter, buildJsonSiteListUrl, parseJsonSiteList } from '../src/webContent.js';
 assert.equal(normalizeWebUrl('example.edu.cn'), 'https://example.edu.cn/');
@@ -207,4 +207,45 @@ assert.ok(decodeWebBody(GBK_PAGE, '').includes('大学网站大全'), '没有 co
 // 未知 / 非法标签不能抛，回落 UTF-8
 assert.equal(decodeWebBody(enc.encode('中文'), 'text/html; charset=x-unknown-9'), '中文');
 
-console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction (nav/footer/listing-page screening), notice classification, article body extraction, form encoding, charset decoding and JSON-API site adapters (SPA shell detection, field mapping)');
+/* ── 分页器：窗口里没印出来的页码也必须能拿到 ──
+   真实取证：北京大学本科招生网「通知公告」（2026-09-19 抓取），每页只给 8 条、共 46 页，
+   分页器**每页都只印 1…5 + 末页 46**（第 6 页的链接在第 1 页上根本不出现），
+   且页码写在文件名上：第 2 页是 index1.htm。抄字面链接只能读到第 5 页。 */
+const PKU_TZGG = 'https://bkzs.pku.edu.cn/tzgg/index.htm';
+const PKU_PAGER = `<div class="paging-box">
+  <a class="paging-item paging-arrow xfont xicon-left"></a>
+  <a href="index.htm" class="paging-item paging-link cur">1</a>
+  <a href="index1.htm" class="paging-item paging-link">2</a>
+  <a href="index2.htm" class="paging-item paging-link">3</a>
+  <a href="index3.htm" class="paging-item paging-link">4</a>
+  <a href="index4.htm" class="paging-item paging-link">5</a>
+  <span class="paging-item paging-dot">…</span><a href="index45.htm" class="paging-item paging-link">46</a>
+  <a href="index1.htm" class="paging-item paging-arrow xfont xicon-right"></a>
+</div><div class="paging-more"><a class="next_min" href="index1.htm">下一页</a></div>`;
+const pkuPager = extractPager(PKU_PAGER, PKU_TZGG);
+assert.equal(pkuPager.total, 46);
+assert.equal(pkuPager.pages.length, 46, '缺的第 6~45 页要按通式补全，不然翻到第 5 页就断');
+assert.equal(pkuPager.pages[0].url, PKU_TZGG, '第 1 页是省掉数字的 index.htm');
+assert.equal(pkuPager.pages[5].url, 'https://bkzs.pku.edu.cn/tzgg/index5.htm', '第 6 页 → index5.htm（实测该页确实有 7 条 2025 年的通知）');
+assert.equal(pkuPager.pages[45].url, 'https://bkzs.pku.edu.cn/tzgg/index45.htm', '补出来的末页要和分页器上的字面链接一致');
+
+// 另外两种常见写法：下划线后缀（第 1 页连分隔符一起省）、查询参数
+const underPager = extractPager('<a href="list.htm">1</a><a href="list_1.htm">2</a><a href="list_2.htm">3</a><a href="list_19.htm">20</a>', 'https://jwc.example.edu.cn/tzgg/list.htm');
+assert.equal(underPager.total, 20);
+assert.equal(underPager.pages[0].url, 'https://jwc.example.edu.cn/tzgg/list.htm');
+assert.equal(underPager.pages[3].url, 'https://jwc.example.edu.cn/tzgg/list_3.htm');
+const qsPager = extractPager('<a href="?page=1">1</a><a href="?page=2">2</a><a href="?page=3">3</a><a href="?page=12">12</a>', 'https://x.example.edu.cn/n/list.htm');
+assert.equal(qsPager.pages[4].url, 'https://x.example.edu.cn/n/list.htm?page=5');
+
+// 推不出通式时**绝不编造网址**：只回字面链接
+const hashPager = extractPager('<a href="a7f3.htm">1</a><a href="b2c9.htm">2</a><a href="c1d8.htm">3</a><a href="e5a1.htm">9</a>', PKU_TZGG);
+assert.equal(hashPager.total, 9);
+assert.deepEqual(hashPager.pages.map((x) => x.page), [1, 2, 3, 9], '哈希分页只能照抄有的四页');
+// 没有分页器 / 四位数（年份档）/ 别的栏目目录下的数字链接，都不算页码
+assert.equal(extractPager('<a href="/tzgg/2026.htm">2026</a><a href="../xwzx/index5.htm">2</a><a href="index1.htm">3</a>', PKU_TZGG).total, 3,
+  '异目录的数字链接不能当分页（会跳到别的栏目）');
+assert.equal(extractPager('<ul><li><a href="/tzgg/2026/0911/c1a2.htm">关于放假的通知</a></li></ul>', PKU_TZGG).total, 1);
+assert.deepEqual(extractPager('', PKU_TZGG).pages, []);
+assert.equal(extractPager(PKU_PAGER, '不是网址').total, 1, 'baseUrl 非法时不能抛');
+
+console.log('PASS: web URL normalization, site metadata, favicon, FA icon inference, generic notice extraction (nav/footer/listing-page screening), notice classification, article body extraction, form encoding, charset decoding, JSON-API site adapters (SPA shell detection, field mapping) and pager page-number synthesis');

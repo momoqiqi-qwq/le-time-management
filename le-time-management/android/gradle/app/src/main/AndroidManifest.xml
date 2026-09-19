@@ -12,7 +12,7 @@
     ② 注册 .SchoolImportActivity（v0.37.12 手加，不是 Tauri 模板内容）—— 教务导入窗口
        专用 Activity。没注册就 startActivity 直接崩。
     ③ 去掉 .MainActivity 的 activity 级 android:label —— launcher 图标取的是 activity 级
-       label，留着会变成「Le时间管理 · 时间块与四象限」被手机桌面截断。
+       label，留着会变成「U-Time · 时间块与四象限」被手机桌面截断。
        教务窗口（.SchoolImportActivity）的 label 是有意保留的应用内标题。
     ④ 确保 res/xml/file_paths.xml 里有 cache-path（更新包暂存在 app_cache_dir，即内部
        getCacheDir；要交给 FileProvider 共享就得声明这条根）。
@@ -21,12 +21,19 @@
        .ReminderActionReceiver（通知上的「停止响铃 / 标记完成」按钮）、
        .ReminderBootReceiver（开机把不跨重启的闹钟按持久化记录重排）。
        接收器漏注册的症状最难查：PendingIntent 构造照样成功，直到闹钟响起来才发现没人收。
+    ⑥ 端内扫一扫（src/qrScan.js）：补 CAMERA 权限 + uses-feature camera required=false。
+       权限漏了的话 WebView 的 getUserMedia 连授权弹窗都弹不出来（系统在 ActivityResult 那层
+       直接判拒），症状是「点扫一扫没反应」；feature 不写 required=false 会让商店把没相机
+       的设备整个挡在门外，而扫码对这款应用只是可选入口。
 
   改本文件不影响构建；要改行为请改上面那个脚本里的补丁函数。
 -->
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 端内扫一扫（src/qrScan.js）：WebView 的 getUserMedia 靠这条才拿得到系统授权；
+         配套的 uses-feature required=false 见下，少了它商店会把没相机的设备挡在外面。 -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -35,6 +42,8 @@
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- 扫一扫只是可选入口：required 必须是 false，否则商店会把没相机的设备整个挡在门外 -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries>
     <application
@@ -53,7 +62,7 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity>
 
 
         <!-- 教务导入窗口（school_import_open 在 Android 上指定 activity_name）：
