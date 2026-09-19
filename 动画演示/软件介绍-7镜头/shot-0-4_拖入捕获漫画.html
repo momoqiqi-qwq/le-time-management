@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 0-4 · 拖入捕获 · 美式漫画</title>
+
+<!-- [改这里] 字体：美式漫画 —— Bangers(拟声拉丁) + ZCOOL KuaiLe(中文) + Share Tech Mono(等宽) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 美式漫画：米白网点纸 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:#f4efe4}
+#halftone{position:absolute;inset:0;opacity:.6;background-image:radial-gradient(rgba(30,20,10,.13) 1.6px,transparent 1.6px);background-size:20px 20px}
+
+/* ===== [不动] 镜头层 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：美式漫画 · 拖入捕获
+   ──────────────────────────────────────────────── */
+#title{position:absolute;left:76px;top:52px;opacity:0;transform:translateY(-14px) rotate(-1.5deg);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#title.show{opacity:1;transform:translateY(0) rotate(-1.5deg)}
+#title .no{display:inline-block;font-family:'Bangers';font-size:22px;letter-spacing:3px;color:#fff;background:#e0393e;border:3px solid #1c1712;border-radius:10px;padding:5px 18px;transform:rotate(-2deg);box-shadow:5px 5px 0 #1c1712}
+#title h1{margin-top:14px;font-family:'ZCOOL KuaiLe','Bangers';font-size:54px;color:#1c1712;letter-spacing:4px;text-shadow:4px 4px 0 rgba(224,57,62,.35)}
+#title .en{font-family:'Share Tech Mono';font-size:15px;color:#8a7a60;margin-top:6px;letter-spacing:4px}
+
+/* 聊天窗口漫画分格 */
+#chatPanel{position:absolute;left:90px;top:230px;width:470px;height:330px;background:#fff;border:4px solid #1c1712;
+  border-radius:14px;box-shadow:10px 10px 0 rgba(28,23,18,.9);transform:scale(.6) rotate(-3deg);opacity:0;transition:all .55s cubic-bezier(.34,1.6,.64,1);overflow:hidden}
+#chatPanel.on{opacity:1;transform:scale(1) rotate(-1deg)}
+#chatPanel .cbar{height:46px;background:#e0393e;display:flex;align-items:center;padding:0 16px;gap:10px;border-bottom:4px solid #1c1712}
+#chatPanel .cbar i{width:14px;height:14px;border-radius:50%;background:#fff}
+#chatPanel .cbar span{color:#fff;font-family:'ZCOOL KuaiLe';font-size:19px;letter-spacing:2px}
+#msg{margin:26px 0 0 24px;background:#f2e9d8;border:3px solid #1c1712;border-radius:16px 16px 16px 4px;padding:16px 20px;
+  font-family:'ZCOOL KuaiLe';font-size:24px;color:#1c1712;width:330px;position:relative}
+#msg.sel{background:#ffd23f}
+#msg small{display:block;font-family:'Share Tech Mono';font-size:13px;color:#8a7a60;margin-top:8px}
+
+/* U-Time 接收窗口分格 */
+#utPanel{position:absolute;left:1210px;top:116px;width:600px;height:400px;background:#fffdf4;border:4px solid #1c1712;
+  border-radius:14px;box-shadow:10px 10px 0 rgba(28,23,18,.9);transform:scale(.6) rotate(2.5deg);opacity:0;transition:all .55s cubic-bezier(.34,1.6,.64,1);overflow:hidden}
+#utPanel.on{opacity:1;transform:scale(1) rotate(1deg)}
+#utPanel .ubar{height:48px;background:#2b3350;display:flex;align-items:center;padding:0 16px;gap:8px;border-bottom:4px solid #1c1712}
+#utPanel .ubar i{width:12px;height:12px;border-radius:50%;background:#5b688f}
+#utPanel .ubar span{margin-left:10px;color:#ffd23f;font-family:'Bangers';font-size:20px;letter-spacing:2px}
+#utl{position:relative;padding:22px 24px;height:330px}
+.slotrow{position:relative;height:88px;border-bottom:3px dashed #d8c9a8}
+.slotrow .h{position:absolute;left:0;top:28px;font-family:'Share Tech Mono';font-size:16px;color:#a58c5c;width:70px}
+.slot{position:absolute;left:84px;right:8px;top:14px;height:60px;border-radius:9px;background:repeating-linear-gradient(45deg,#efe6cd 0 12px,#f7f0da 12px 24px)}
+#big{background:#e8a13f;opacity:0;transform:scaleX(.2);transform-origin:left center;transition:all .5s cubic-bezier(.34,1.6,.64,1);display:flex;align-items:center;padding-left:14px;font-family:'ZCOOL KuaiLe';font-size:20px;color:#fff;gap:10px}
+#big.on{opacity:1;transform:none}
+#big .att{margin-left:auto;margin-right:10px;background:rgba(255,255,255,.9);color:#1c1712;border-radius:7px;font-size:14px;font-family:'ZCOOL KuaiLe';padding:3px 10px;display:flex;align-items:center;gap:6px;opacity:0;transition:opacity .4s}
+#big .att.on{opacity:1}
+
+/* 拖拽轨迹（虚线弧 + 飞行文本） */
+#trail{position:absolute;left:520px;top:330px;width:700px;height:260px;opacity:0;transition:opacity .3s}
+#trail.on{opacity:1}
+#trail path{stroke-dasharray:14 12;animation:dashmove 1s linear infinite}
+@keyframes dashmove{to{stroke-dashoffset:-26}}
+#flyTxt{position:absolute;left:150px;top:300px;width:250px;background:#ffd23f;border:3px solid #1c1712;border-radius:10px;
+  padding:10px 14px;font-family:'ZCOOL KuaiLe';font-size:18px;color:#1c1712;box-shadow:6px 6px 0 rgba(28,23,18,.85);z-index:22;opacity:0}
+
+/* BAM 爆炸拟声框 */
+#bam{position:absolute;left:700px;top:340px;width:430px;height:330px;z-index:24;opacity:0;transform:scale(.2) rotate(14deg);transition:all .35s cubic-bezier(.34,1.8,.64,1)}
+#bam.on{opacity:1;transform:scale(1) rotate(-6deg)}
+#bam.off{opacity:0;transform:scale(.85) rotate(-6deg);transition:all .45s ease}
+#bam .cap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Bangers','ZCOOL KuaiLe';font-size:52px;color:#fff;text-shadow:3px 3px 0 #1c1712;letter-spacing:4px;padding-top:40px}
+
+/* 解析结果标签（ slam 入场） */
+#parse{position:absolute;left:90px;top:660px;width:1100px;display:flex;gap:26px;z-index:15}
+.ptok{background:#fff;border:4px solid #1c1712;border-radius:12px;box-shadow:8px 8px 0 rgba(28,23,18,.85);padding:16px 24px;
+  opacity:0;transform:scale(1.6) rotate(var(--rot,0deg));transition:all .4s cubic-bezier(.34,1.6,.64,1)}
+.ptok.on{opacity:1;transform:scale(1) rotate(var(--rot,0deg))}
+.ptok.bye{opacity:0!important}
+.ptok .a{font-family:'Share Tech Mono';font-size:14px;color:#8a7a60;letter-spacing:1px}
+.ptok .b{font-family:'ZCOOL KuaiLe';font-size:26px;color:#1c1712;margin-top:6px}
+.ptok .b i{font-style:normal;color:#e0393e}
+#p1{--rot:-2deg}#p2{--rot:1.5deg}#p3{--rot:-1deg}
+
+/* 截图确认卡 */
+#confirm{position:absolute;left:640px;top:200px;width:560px;background:#fff;border:4px solid #1c1712;border-radius:14px;
+  box-shadow:10px 10px 0 rgba(28,23,18,.9);padding:20px 24px;opacity:0;transform:translateY(60px) scale(.8);transition:all .5s cubic-bezier(.34,1.6,.64,1);z-index:21}
+#confirm.on{opacity:1;transform:none}
+#confirm.gone{opacity:0;transform:translate(420px,60px) scale(.15);transition:all .7s cubic-bezier(.5,0,.8,.4)}
+#confirm h4{font-family:'ZCOOL KuaiLe';font-size:22px;color:#1c1712;letter-spacing:2px;display:flex;align-items:center;gap:10px}
+#confirm .prev{margin-top:12px;height:130px;border:3px solid #1c1712;border-radius:9px;background:
+  linear-gradient(160deg,#cfe3f5 0 55%,#b7d6a8 55% 100%);position:relative;overflow:hidden}
+#confirm .prev svg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+#confirm .fields{display:flex;gap:16px;margin-top:12px;font-family:'ZCOOL KuaiLe';font-size:17px;color:#1c1712}
+#confirm .fields span{background:#f2e9d8;border:2.5px solid #1c1712;border-radius:8px;padding:5px 12px}
+#confirm .fields span i{font-style:normal;color:#e0393e}
+#confirm .ok{margin-top:14px;text-align:center;background:#e0393e;color:#fff;font-family:'ZCOOL KuaiLe';font-size:20px;letter-spacing:3px;border-radius:9px;padding:11px 0;border:3px solid #1c1712}
+#confirm .ok.hot{animation:okpulse .45s ease 2}
+@keyframes okpulse{50%{transform:scale(1.05)}}
+
+/* Ctrl+V 键帽 */
+#keys{position:absolute;left:430px;top:850px;display:flex;align-items:center;gap:18px;z-index:15;opacity:0;transition:opacity .5s}
+#keys.on{opacity:1}
+.key{width:110px;height:86px;background:#fff;border:4px solid #1c1712;border-radius:12px;box-shadow:0 9px 0 #1c1712;
+  display:flex;align-items:center;justify-content:center;font-family:'Share Tech Mono';font-size:30px;color:#1c1712;transition:all .12s}
+.key.press{transform:translateY(8px);box-shadow:0 1px 0 #1c1712;background:#ffd23f}
+#keys .plus{font-family:'Bangers';font-size:34px;color:#1c1712}
+#pasteTag{margin-left:16px;background:#2b3350;color:#ffd23f;font-family:'ZCOOL KuaiLe';font-size:20px;border-radius:10px;padding:12px 20px;letter-spacing:2px;opacity:0;transform:scale(.7);transition:all .4s cubic-bezier(.34,1.6,.64,1)}
+#pasteTag.on{opacity:1;transform:scale(1)}
+
+/* ── 角色特写位：安安（左）× 橘雪莉（右，重点页同框） ── */
+#anan{position:absolute;left:-6px;bottom:-10px;width:390px;z-index:28;opacity:0;transition:opacity .9s ease}
+#shery{position:absolute;right:24px;bottom:-8px;width:340px;z-index:27;opacity:0;transition:opacity .8s ease;filter:drop-shadow(0 14px 30px rgba(60,40,20,.35))}
+#anan.show,#shery.show{opacity:1}
+#anan img,#shery img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#fffdf4;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#1c1712;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(60,40,20,.4)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fffdf4}
+#anan .say b{color:#e0393e}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+#shery .ssay{position:absolute;left:-200px;top:60px;width:220px;background:#fff6ec;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#4a2c1a;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(60,40,20,.4)}
+#shery .ssay::after{content:'';position:absolute;right:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fff6ec}
+#shery .ssay b{color:#e8722a}
+#shery.show .ssay{opacity:1;transform:scale(1);transition-delay:.45s}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(60,45,25,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#e0393e;box-shadow:0 0 10px rgba(224,57,62,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="halftone"></div>
+
+  <!-- [改这里] 全部画面内容包进 #cam -->
+  <div id="cam">
+    <div id="title">
+      <span class="no">CATCH!</span>
+      <h1>拖入捕获 · 聊天记录变身时间块</h1>
+      <div class="en">DROP CAPTURE · 中文时间自动解析</div>
+    </div>
+
+    <!-- 聊天窗口 -->
+    <div id="chatPanel">
+      <div class="cbar"><i></i><i></i><i></i><span>微信 · 班级群</span></div>
+      <div id="msg">明天下午3点到4点 组会，带上实验数据<small>WECHAT · 12:03</small></div>
+    </div>
+
+    <!-- 拖拽轨迹 + 飞行文本 -->
+    <svg id="trail" viewBox="0 0 700 260">
+      <path d="M20 170 Q330 -60 660 110" fill="none" stroke="#1c1712" stroke-width="6" stroke-linecap="round"/>
+      <path d="M20 170 Q330 -60 660 110" fill="none" stroke="#ffd23f" stroke-width="3" stroke-linecap="round" stroke-dasharray="14 12"/>
+    </svg>
+    <div id="flyTxt">明天下午3点到4点 组会</div>
+
+    <!-- U-Time 接收窗口 -->
+    <div id="utPanel">
+      <div class="ubar"><i></i><i></i><i></i><span>U-TIME · TODAY</span></div>
+      <div id="utl">
+        <div class="slotrow"><span class="h">09:00</span><div class="slot"></div></div>
+        <div class="slotrow"><span class="h">15:00</span><div class="slot"></div>
+          <div class="slot" id="big" style="position:absolute;left:84px;top:14px;width:470px">组会 · 15:00 - 16:00
+            <span class="att" id="att">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#1c1712" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>
+              白板照片</span></div></div>
+        <div class="slotrow"><span class="h">19:00</span><div class="slot"></div></div>
+      </div>
+    </div>
+
+    <!-- BAM 爆炸 -->
+    <div id="bam">
+      <svg width="430" height="330" viewBox="0 0 430 330"><polygon fill="#e0393e" stroke="#1c1712" stroke-width="7" points="215,6 262,72 340,30 336,116 424,118 358,170 416,240 322,230 322,318 246,258 196,324 168,240 82,268 118,182 10,168 96,118 56,36 152,72"/></svg>
+      <div class="cap">接住了!</div>
+    </div>
+
+    <!-- 解析标签 -->
+    <div id="parse">
+      <div class="ptok" id="p1"><div class="a">明天 →</div><div class="b">9月21日 <i>周一</i></div></div>
+      <div class="ptok" id="p2"><div class="a">下午3点 →</div><div class="b">15:00 开始</div></div>
+      <div class="ptok" id="p3"><div class="a">到4点 →</div><div class="b">时长 <i>1 小时</i></div></div>
+    </div>
+
+    <!-- 截图确认卡 -->
+    <div id="confirm">
+      <h4><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#e0393e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>截图拖进来 · 确认一下</h4>
+      <div class="prev">
+        <svg width="120" height="86" viewBox="0 0 120 86"><rect x="10" y="10" width="100" height="66" rx="6" fill="#fff" stroke="#4a5668" stroke-width="3"/><rect x="20" y="22" width="80" height="8" rx="4" fill="#8fa3bd"/><rect x="20" y="38" width="56" height="8" rx="4" fill="#c3d2e2"/><rect x="20" y="54" width="68" height="8" rx="4" fill="#c3d2e2"/></svg>
+      </div>
+      <div class="fields"><span>标题 · <i>实验白板</i></span><span>9月21日</span><span>15:00 · 1h</span><span>分类 · 学习</span></div>
+      <div class="ok" id="okBtn">确认收进任务</div>
+    </div>
+
+    <!-- Ctrl+V 兜底 -->
+    <div id="keys">
+      <div class="key" id="kCtrl">Ctrl</div><span class="plus">+</span><div class="key" id="kV">V</div>
+      <div id="pasteTag">已捕获 → 今天 15:00</div>
+    </div>
+
+    <!-- 角色特写：安安（左）× 橘雪莉（右） -->
+    <div id="anan">
+      <div class="say">聊天记录<b>拖</b>进窗口？！</div>
+      <img src="anan - emotion rename/07_睁眸微张_愕然疑惑.png" alt="安安">
+    </div>
+    <div id="shery">
+      <div class="ssay">它把消息<b>吃</b>进去了?!</div>
+      <img src="shery - emotion rename/15_震惊被吓到.png" alt="橘雪莉">
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">04 / 捕获 · 拖拽进窗口</div>
+  <div class="corner" id="src">解析规则 · src/timeParser.js（纯规则 · 零依赖）</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 0-4 · 拖入捕获漫画 · 28s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=28000;                       /* [改这里] = 本镜头规定时长(ms) */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue（28s）
+   口播：0:00「在微信里看到『明天下午3点到4点组会』——选中，直接拖进 U-Time」
+         0:07「中文时间自动解析：明天、下午3点、1 小时，时间块当场生成」
+         0:13「截图和图片拖进来，确认卡改两笔，附件就挂在任务上」
+         0:20「微信不让拖文字？选中复制，Ctrl+V 一样接得住」
+   ──────────────────────────────────────────────── */
+on(300,()=>camTo(0,0,1,2.4));                                    // 开场拉镜
+on(400,()=>{$('#title').classList.add('show')});
+on(1600,()=>{$('#chatPanel').classList.add('on')});              // 口播 0:00 聊天分格
+on(2400,()=>{const m=$('#msg');m.classList.add('sel')});         // 选中高亮
+on(3600,()=>{$('#utPanel').classList.add('on')});                // U-Time 分格就位
+on(4200,()=>{$('#trail').classList.add('on');__sfx.swipe(.8)});  // 拖拽轨迹
+on(4400,()=>{const t=$('#flyTxt');t.style.opacity=1;fly(t,150,300,1230,240,950,80,null,()=>{t.style.opacity=0})});   // 文本飞过去
+on(5800,()=>{$('#stage').classList.add('letter');$('#dim').classList.add('on');$('#bam').classList.add('on');camFocus(915,505,1.22,.9)});   // BAM 慢放高潮
+on(6700,()=>{$('#big').classList.add('on')});
+on(7600,()=>{$('#stage').classList.remove('letter');$('#dim').classList.remove('on');$('#bam').classList.add('off');camTo(0,0,1,1.2)});   // 口播 0:07 拉回
+on(8800,()=>{$('#p1').classList.add('on')});                     // 解析标签 slam
+on(9400,()=>{$('#p2').classList.add('on')});
+on(10000,()=>{$('#p3').classList.add('on')});
+on(10900,()=>{const a=$('#anan');a.classList.add('show');__sfx.pop(.55)});   // 安安中段快闪（39%）
+on(12000,()=>{$('#anan').classList.remove('show')});
+on(13000,()=>{$('#confirm').classList.add('on')});               // 口播 0:13 截图确认卡
+on(13600,()=>camFocus(920,380,1.15,1.1));
+on(15800,()=>{$('#okBtn').classList.add('hot')});                // 确认按钮
+on(16600,()=>{$('#confirm').classList.add('gone')});             // 卡片飞进任务
+on(17300,()=>{$('#att').classList.add('on')});                   // 附件挂上时间块
+on(17600,()=>camTo(0,0,1,1.2));
+on(19200,()=>{$('#keys').classList.add('on')});                  // 口播 0:20 Ctrl+V 兜底
+on(20500,()=>{$('#kCtrl').classList.add('press')});
+on(20620,()=>{$('#kCtrl').classList.remove('press')});
+on(20800,()=>{$('#kV').classList.add('press')});
+on(20920,()=>{$('#kV').classList.remove('press')});
+on(21200,()=>{$('#pasteTag').classList.add('on')});
+on(21400,()=>{for(const id of['p1','p2','p3'])$('#'+id).classList.add('bye');$('#trail').classList.remove('on')});   // 解析标签与拖拽轨迹退场，给结尾角色让位
+on(22000,()=>{$('#shery').classList.add('show')});               // 雪莉先吐槽（79%）
+on(23200,()=>{$('#anan .say').innerHTML='是时间块…<b>排好了</b>';$('#anan img').src='anan - emotion rename/04_闭目莞尔_温柔娇羞.png';$('#anan').classList.add('show')});   // +1.2s 安安接茬
+on(26200,()=>{$('#anan').classList.remove('show');$('#shery').classList.remove('show')});   // 同框退场
+/* ===== 音效 ===== */
+on(300,()=>__sfx.swipe(0.6));
+on(500,()=>__sfx.pop(0.5));
+on(1600,()=>__sfx.whoosh(0.7,0.6));
+on(2400,()=>__sfx.type(0.6));
+on(3600,()=>__sfx.pop(0.55));
+on(4200,()=>__sfx.whoosh(0.9,0.55));
+on(5800,()=>__sfx.thud(1.1));
+on(6700,()=>__sfx.pop(0.7));
+on(7600,()=>__sfx.whoosh(1.2,0.5));
+on(8800,()=>__sfx.thud(0.7));
+on(9400,()=>__sfx.thud(0.7));
+on(10000,()=>__sfx.thud(0.7));
+on(10900,()=>__sfx.pop(0.55));
+on(13000,()=>__sfx.whoosh(0.7,0.6));
+on(13600,()=>__sfx.whoosh(1.1,0.5));
+on(15800,()=>__sfx.thud(0.8));
+on(16600,()=>__sfx.swipe(0.8));
+on(17300,()=>__sfx.ding(0.9));
+on(20500,()=>__sfx.type(0.7));
+on(20800,()=>__sfx.type(0.7));
+on(21200,()=>__sfx.ding(0.8));
+on(22000,()=>__sfx.pop(0.6));
+on(23200,()=>__sfx.pop(0.6));
+</script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 0-7 · 片尾 · 把时间放回你手里</title>
+
+<!-- [改这里] 字体：哑光片尾 —— Ma Shan Zheng(毛笔中文) + Archivo(拉丁小字) + Share Tech Mono(等宽) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Archivo:wght@600&family=Noto+Sans+SC:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 哑光片尾：深墨蓝居中呼吸光 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:radial-gradient(1100px 680px at 50% 47%,#23324f 0%,#182338 55%,#101a2c 100%)}
+#breathe{position:absolute;left:50%;top:47%;width:1300px;height:820px;transform:translate(-50%,-50%);pointer-events:none;
+  background:radial-gradient(closest-side,rgba(255,214,150,.13),rgba(255,214,150,.05) 55%,transparent 75%);
+  animation:breath 4.5s ease-in-out infinite alternate}
+@keyframes breath{from{opacity:.55}to{opacity:1}}
+#stars i{position:absolute;width:3px;height:3px;border-radius:50%;background:rgba(255,240,215,.5)}
+
+/* ===== [不动] 镜头层 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.14);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：哑光片尾
+   ──────────────────────────────────────────────── */
+#brushTitle{position:absolute;left:0;right:0;top:200px;text-align:center;opacity:0;transform:translateY(18px);transition:all 1.4s ease}
+#brushTitle.on{opacity:1;transform:none}
+#brushTitle h1{font-family:'Ma Shan Zheng','Noto Sans SC';font-size:96px;color:#f5e9d2;letter-spacing:10px;text-shadow:0 6px 40px rgba(255,214,150,.25)}
+#brushTitle h1 i{font-style:normal;color:#ffce8a}
+#brushTitle .sub{font-family:'Share Tech Mono';font-size:16px;color:rgba(245,233,210,.5);margin-top:18px;letter-spacing:6px}
+
+/* 四句话总结章 */
+#recap{position:absolute;left:50%;top:440px;transform:translateX(-50%);display:flex;gap:20px}
+.rc{background:rgba(245,233,210,.08);border:1.5px solid rgba(245,233,210,.35);border-radius:14px;padding:18px 26px;text-align:center;
+  opacity:0;transform:translateY(22px) scale(.85);transition:all .55s cubic-bezier(.34,1.6,.64,1)}
+.rc.on{opacity:1;transform:none}
+.rc .a{font-family:'Ma Shan Zheng';font-size:30px;color:#f5e9d2;letter-spacing:3px}
+.rc .b{font-family:'Noto Sans SC';font-size:14.5px;font-weight:700;color:rgba(245,233,210,.6);margin-top:7px;letter-spacing:2px}
+.rc b{color:#ffce8a}
+
+/* U-Time 落款 */
+#wm{position:absolute;left:0;right:0;top:660px;text-align:center;opacity:0;transition:opacity 1.2s ease}
+#wm.on{opacity:1}
+#wm .logo{font-family:'Archivo';font-weight:600;font-size:44px;color:#ffce8a;letter-spacing:8px}
+#wm .line{font-family:'Share Tech Mono';font-size:15px;color:rgba(245,233,210,.55);margin-top:12px;letter-spacing:3px}
+
+/* 重播暗示 */
+#replayHint{position:absolute;left:0;right:0;top:790px;text-align:center;opacity:0;transition:opacity .8s}
+#replayHint.on{opacity:1;animation:hintpulse 1.8s ease-in-out infinite}
+@keyframes hintpulse{50%{opacity:.45}}
+#replayHint span{font-family:'Noto Sans SC';font-size:17px;font-weight:700;color:rgba(245,233,210,.65);letter-spacing:3px}
+
+/* ── 角色特写位：安安（强约束气泡模板，仅 4 配色随页） ── */
+#anan{position:absolute;left:-6px;bottom:-10px;width:390px;z-index:28;opacity:0;transition:opacity .9s ease}
+#anan.show{opacity:1}
+#anan img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#1d2942;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#f5e9d2;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(5,10,20,.6)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #1d2942}
+#anan .say b{color:#ffce8a}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(245,233,210,.45);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#ffce8a;box-shadow:0 0 10px rgba(255,206,138,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="breathe"></div>
+  <div id="stars">
+    <i style="left:220px;top:170px"></i><i style="left:380px;top:90px"></i><i style="left:1580px;top:150px"></i>
+    <i style="left:1710px;top:280px"></i><i style="left:270px;top:560px"></i><i style="left:1650px;top:640px"></i>
+    <i style="left:520px;top:840px"></i><i style="left:1420px;top:880px"></i>
+  </div>
+
+  <!-- [改这里] 全部画面内容包进 #cam -->
+  <div id="cam">
+    <div id="brushTitle">
+      <h1>把时间，<i>放回你手里</i></h1>
+      <div class="sub">U-TIME · A LOCAL-FIRST TIME DESK</div>
+    </div>
+
+    <div id="recap">
+      <div class="rc" id="r1"><div class="a">四象限</div><div class="b">决定<b>做什么</b></div></div>
+      <div class="rc" id="r2"><div class="a">时间块</div><div class="b">决定<b>何时做</b></div></div>
+      <div class="rc" id="r3"><div class="a">捕获</div><div class="b">聊天截图<b>替你记</b></div></div>
+      <div class="rc" id="r4"><div class="a">插件</div><div class="b">课程表番茄钟<b>替你盯</b></div></div>
+    </div>
+
+    <div id="wm">
+      <div class="logo">U-TIME</div>
+      <div class="line">本地优先 · 一个 JSON · Windows / Android / 小程序 · 9 套主题 · Ctrl+K</div>
+    </div>
+
+    <div id="replayHint"><span>↺ 没看过瘾？右下角「重播」再来一遍</span></div>
+
+    <!-- 角色特写：安安 -->
+    <div id="anan">
+      <div class="say">主题居然有 <b>9 套</b>！</div>
+      <img src="anan - emotion rename/12_粉颊捧笺_娇羞雀跃.png" alt="安安">
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">07 / 片尾 · U-Time</div>
+  <div class="corner" id="src">功能与数据 · le-time-management README v0.11.4</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 0-7 · 片尾 · 20s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=20000;                       /* [改这里] = 本镜头规定时长(ms) */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue（20s）
+   口播：0:00「9 套主题、界面缩放、Ctrl+K 全局搜索——细节都调好了」
+         0:05「四象限决定做什么，时间块决定何时做，捕获替你记，插件替你盯」
+         0:13「U-Time——把时间，放回你手里」
+   ──────────────────────────────────────────────── */
+on(400,()=>camTo(0,0,1,4.5));                                    // 开场 Ken Burns 缓推
+on(900,()=>{$('#brushTitle').classList.add('on')});              // 毛笔标题浮现
+on(3200,()=>{$('#r1').classList.add('on')});                     // 口播 0:05 四句总结
+on(3900,()=>{$('#r2').classList.add('on')});
+on(4600,()=>{$('#r3').classList.add('on')});
+on(5300,()=>{$('#r4').classList.add('on')});
+on(6600,()=>camFocus(960,510,1.12,1.4));                         // 缓推总结章
+on(8000,()=>{const a=$('#anan');a.classList.add('show');__sfx.pop(.55)});   // 安安中段快闪（40%）
+on(9100,()=>{$('#anan').classList.remove('show')});
+on(9800,()=>camTo(0,0,1,1.4));                                   // 拉回
+on(10600,()=>{$('#wm').classList.add('on')});                    // 口播 0:13 落款
+on(13500,()=>{$('#replayHint').classList.add('on')});            // 重播暗示
+on(15400,()=>{$('#anan .say').innerHTML='晚安，交给 <b>U-Time</b> 吧';$('#anan img').src='anan - emotion rename/10_闭目含笑_恬静满足.png';$('#anan').classList.add('show')});   // 结尾定场（77%）
+on(19300,()=>$('#anan').classList.remove('show'));
+/* ===== 音效 ===== */
+on(400,()=>__sfx.whoosh(2.0,0.35));
+on(900,()=>__sfx.swipe(0.5));
+on(3200,()=>__sfx.pop(0.5));
+on(3900,()=>__sfx.pop(0.5));
+on(4600,()=>__sfx.pop(0.5));
+on(5300,()=>__sfx.pop(0.55));
+on(6600,()=>__sfx.whoosh(1.4,0.4));
+on(8000,()=>__sfx.pop(0.55));
+on(9800,()=>__sfx.whoosh(1.4,0.4));
+on(10600,()=>__sfx.ding(0.85));
+on(13500,()=>__sfx.type(0.4));
+on(15400,()=>__sfx.pop(0.6));
+</script>
+</body>
+</html>

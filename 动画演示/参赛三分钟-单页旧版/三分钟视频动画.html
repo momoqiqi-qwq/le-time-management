@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Le时间管理 · 三分钟参赛视频动画</title>
+<style>
+  :root{
+    --ink:#2b2a26; --soft:#6b6860; --paper:#fdfcf9; --teal:#0f766e; --teal-soft:#e6f4f2;
+    --amber:#b45309; --line:#e8e4dc; --wxgreen:#95ec69; --card:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#262522;font-family:"Microsoft YaHei","PingFang SC",sans-serif;color:var(--ink)}
+  #stage{
+    position:relative;width:1280px;height:720px;margin:24px auto;background:var(--paper);
+    overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.5);border-radius:6px;
+  }
+  body.render #stage{margin:0 auto;border-radius:0;box-shadow:none}
+  /* ===== 顶部 ===== */
+  #bar{position:absolute;top:0;left:0;height:5px;background:var(--teal);width:0;z-index:60}
+  #chap{position:absolute;top:18px;left:28px;z-index:60;font-size:15px;color:var(--soft);letter-spacing:1px;opacity:0}
+  #chap b{color:var(--teal);margin-right:10px}
+  #tc{position:absolute;top:18px;right:28px;z-index:60;font-size:14px;color:#b6b1a6;font-variant-numeric:tabular-nums}
+  /* ===== 字幕 ===== */
+  #subbg{position:absolute;left:0;right:0;bottom:0;height:150px;z-index:55;pointer-events:none;
+    background:linear-gradient(transparent,rgba(24,23,20,.62))}
+  #sub{
+    position:absolute;left:90px;right:90px;bottom:28px;z-index:60;text-align:center;
+    font-size:26px;font-weight:700;line-height:1.55;color:#fff;
+    text-shadow:0 2px 6px rgba(0,0,0,.65);min-height:80px;
+  }
+  #sub .cur{color:#ffd58a}
+  #mark{position:absolute;left:28px;bottom:26px;z-index:59;font-size:12px;color:#c9c4b8;letter-spacing:1px;opacity:.75}
+  /* ===== 场景公共 ===== */
+  .scene{position:absolute;inset:0;visibility:hidden;opacity:0}
+  .chip{display:inline-block;background:var(--teal-soft);color:var(--teal);font-weight:700;
+    border:1.5px solid var(--teal);border-radius:999px;padding:7px 20px;font-size:17px}
+  .bignum{font-weight:900;letter-spacing:2px}
+  /* ===== 手机框 ===== */
+  .phone{position:absolute;background:#f6f5f1;border:3px solid #2b2a26;border-radius:30px;overflow:hidden;
+    box-shadow:0 10px 30px rgba(0,0,0,.14)}
+  .p-head{background:#ededeb;padding:12px 14px 8px;text-align:center;font-size:14px;font-weight:700;
+    border-bottom:1px solid #ddd}
+  .chat{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+  .msg{display:flex;gap:8px;align-items:flex-start}
+  .msg.right{flex-direction:row-reverse}
+  .ava{width:30px;height:30px;border-radius:6px;flex:none;color:#fff;font-size:14px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  .ava.t{background:#e79f4e}.ava.s{background:#8aa2b8}
+  .bub{background:#fff;border-radius:8px;padding:8px 11px;font-size:13.5px;line-height:1.5;max-width:190px;
+    box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  .bub.green{background:var(--wxgreen)}
+  .sys{align-self:center;font-size:11px;color:#a9a49a;background:#e3e1db;border-radius:4px;padding:2px 8px}
+  /* ===== S1 ===== */
+  #s1phone{left:120px;top:88px;width:320px;height:520px}
+  #s1cards{position:absolute;left:520px;top:110px;width:430px;display:flex;flex-direction:column;gap:18px}
+  .ncard{display:flex;gap:14px;align-items:center;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:16px 18px;box-shadow:0 4px 14px rgba(0,0,0,.07);font-size:16px}
+  .ncard .ic{width:44px;height:44px;border-radius:10px;background:var(--teal-soft);display:flex;
+    align-items:center;justify-content:center;font-size:22px;flex:none}
+  .ncard b{font-size:17px}
+  .ncard .sub{color:var(--soft);font-size:13.5px;margin-top:2px}
+  .ncard .dot{margin-left:auto;background:#e0533f;color:#fff;border-radius:999px;font-size:13px;
+    padding:2px 9px;font-weight:700}
+  #s1cal{position:absolute;left:520px;top:432px;width:430px;background:var(--card);border:1px solid var(--line);
+    border-radius:14px;padding:16px 18px;box-shadow:0 4px 14px rgba(0,0,0,.07)}
+  #s1cal b{font-size:17px}
+  #s1cal .empty{color:#c9c4b8;font-size:14px;margin-top:14px;padding:26px 0;text-align:center;
+    border-top:1px dashed var(--line)}
+  #s1big{position:absolute;right:110px;top:60px;font-size:30px;color:var(--amber);font-weight:900;letter-spacing:4px}
+  /* ===== S2 ===== */
+  #s2axis{position:absolute;left:100px;right:430px;top:560px;height:3px;background:var(--line);border-radius:2px}
+  .blk{position:absolute;top:-9px;width:64px;height:21px;border-radius:6px;background:var(--teal);opacity:.9}
+  #s2logo{position:absolute;left:0;right:0;top:130px;text-align:center}
+  #s2logo svg{filter:drop-shadow(0 6px 18px rgba(15,118,110,.25))}
+  #s2name{font-size:58px;font-weight:900;letter-spacing:6px;margin-top:22px}
+  #s2slogan{font-size:24px;color:var(--soft);letter-spacing:3px;margin-top:14px}
+  #s2chip{margin-top:26px}
+  #s2shot{right:120px;top:96px;width:236px;height:500px}
+  #s2shot img{width:100%;height:100%;object-fit:cover;object-position:top}
+  #s2tag{position:absolute;right:130px;top:612px;font-size:15px;color:var(--soft);letter-spacing:1px}
+  /* ===== S3 ===== */
+  #s3phone{left:96px;top:110px;width:316px;height:400px}
+  #s3lewin{position:absolute;left:560px;top:96px;width:560px;height:420px;background:var(--card);
+    border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 32px rgba(0,0,0,.12);overflow:hidden}
+  .titlebar{height:38px;background:#f1efe9;border-bottom:1px solid var(--line);display:flex;align-items:center;
+    padding:0 14px;gap:7px;font-size:13px;color:var(--soft)}
+  .tdot{width:11px;height:11px;border-radius:50%}
+  #s3confirm{margin:18px 22px 0;background:#faf8f4;border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  #s3confirm .row{display:flex;gap:10px;font-size:17px;margin-bottom:9px;align-items:baseline}
+  #s3confirm .row b{font-size:19px}
+  #s3confirm .k{color:var(--soft);font-size:13.5px;width:52px;flex:none}
+  #s3btn{margin-top:6px;background:var(--teal);color:#fff;text-align:center;border-radius:9px;
+    padding:9px 0;font-size:16px;font-weight:700}
+  #s3axis{position:absolute;left:22px;right:22px;bottom:26px;height:3px;background:var(--line)}
+  #s3now{position:absolute;bottom:18px;width:2.5px;height:26px;background:#e0533f}
+  #s3now i{position:absolute;top:-20px;left:-14px;font-style:normal;font-size:12px;color:#e0533f;font-weight:700;white-space:nowrap}
+  #s3blk{position:absolute;bottom:-6px;height:15px;border-radius:4px;background:var(--teal)}
+  #s3ghost{position:absolute;background:var(--wxgreen);border-radius:8px;padding:8px 11px;font-size:13.5px;
+    max-width:230px;box-shadow:0 8px 22px rgba(0,0,0,.2);z-index:40}
+  #s3toast{position:absolute;left:600px;top:545px;background:#2b2a26;color:#fff;border-radius:10px;
+    padding:12px 22px;font-size:17px;box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:45}
+  #s3chips{position:absolute;left:0;right:0;bottom:110px;text-align:center}
+  #s3chips .chip{margin:0 10px}
+  /* ===== S4 ===== */
+  #s4quad{position:absolute;left:96px;top:110px;width:520px;height:470px;display:grid;
+    grid-template:1fr 1fr / 1fr 1fr;gap:10px}
+  .qcell{background:var(--card);border:1px solid var(--line);border-radius:12px;position:relative;
+    padding:10px 12px}
+  .qcell .ql{font-size:12.5px;color:var(--soft);font-weight:700}
+  .qcell.q1{background:#fdf1ee}.qcell.q2{background:var(--teal-soft)}
+  .qcell.q3{background:#fef3e2}.qcell.q4{background:#f4f3ef}
+  .tcard{position:absolute;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--teal);
+    border-radius:10px;padding:10px 14px;font-size:15px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,.09);z-index:30}
+  .tcard small{display:block;color:var(--soft);font-weight:400;font-size:12.5px;margin-top:2px}
+  #s4tb{position:absolute;left:700px;right:90px;top:300px;height:3px;background:#d8d4cb;border-radius:2px}
+  .hblk{position:absolute;top:-10px;height:23px;border-radius:6px;background:#c9c4b8;opacity:.75}
+  .hblk.teal{background:var(--teal);opacity:1}
+  .hlabel{position:absolute;top:-46px;font-size:13px;color:var(--soft);white-space:nowrap;transform:translateX(-50%)}
+  #s4now{position:absolute;top:-14px;width:3px;height:31px;background:#e0533f}
+  #s4now i{position:absolute;top:-20px;left:-15px;font-style:normal;font-size:12.5px;color:#e0533f;font-weight:700;white-space:nowrap}
+  #s4week{position:absolute;left:700px;right:90px;top:420px;display:flex;gap:10px;align-items:flex-end;height:90px}
+  .day{flex:1;height:100%;background:var(--teal-soft);border:1px solid #cfe6e2;border-radius:6px;position:relative}
+  .day i{position:absolute;bottom:-24px;left:0;right:0;text-align:center;font-style:normal;font-size:12px;color:var(--soft)}
+  .day .fill{position:absolute;bottom:0;left:0;right:0;background:var(--teal);border-radius:4px 4px 0 0;opacity:.85}
+  #s4h{position:absolute;left:700px;top:110px;font-size:21px;font-weight:900;letter-spacing:2px;color:var(--ink)}
+  #s4chip{position:absolute;left:700px;top:560px}
+  /* ===== S5 ===== */
+  #s5grid{position:absolute;left:96px;top:104px;width:660px;display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .pcard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 6px 10px;
+    text-align:center;font-size:13.5px;font-weight:700;box-shadow:0 3px 10px rgba(0,0,0,.05)}
+  .pcard .e{font-size:26px;display:block;margin-bottom:6px}
+  .pcard.hl{outline:3px solid var(--amber);position:relative;z-index:5}
+  #s5news{position:absolute;left:96px;top:436px;width:660px;background:#fff8ec;border:1.5px solid #ecd3a8;
+    border-radius:12px;padding:14px 18px;font-size:16px;box-shadow:0 6px 18px rgba(0,0,0,.08)}
+  #s5news b{color:var(--amber)}
+  #s5news .sub{font-size:13.5px;color:var(--soft);margin-top:4px}
+  #s5push{position:absolute;right:90px;top:120px;width:360px;background:#fff;border-radius:16px;
+    box-shadow:0 12px 34px rgba(0,0,0,.18);padding:14px 16px;display:flex;gap:12px;align-items:center}
+  #s5push .wic{width:44px;height:44px;border-radius:10px;background:#2aae67;color:#fff;font-size:22px;
+    display:flex;align-items:center;justify-content:center;flex:none}
+  #s5push b{font-size:15px}
+  #s5push .tx{font-size:15px;margin-top:3px}
+  #s5push .tm{font-size:12px;color:#a9a49a;margin-top:3px}
+  #s5sync{position:absolute;right:90px;top:300px;width:360px;text-align:center}
+  #s5sync .row{display:flex;align-items:center;justify-content:center;gap:16px}
+  #s5sync .cap{font-size:15px;color:var(--soft);margin-top:10px;letter-spacing:1px}
+  /* ===== S6 ===== */
+  #s6devs{position:absolute;left:0;right:0;top:120px;display:flex;justify-content:center;gap:56px;align-items:flex-end}
+  .dev{background:var(--card);border:2px solid var(--ink);border-radius:12px;box-shadow:0 8px 22px rgba(0,0,0,.12)}
+  #d1{width:300px;height:190px;padding:10px}
+  #d1 .scr{height:100%;background:var(--teal-soft);border-radius:6px;display:flex;align-items:center;
+    justify-content:center;font-weight:900;font-size:22px;color:var(--teal);letter-spacing:2px}
+  #d2{width:120px;height:220px;padding:8px;border-radius:18px}
+  #d2 .scr{height:100%;background:var(--teal-soft);border-radius:10px;display:flex;align-items:center;
+    justify-content:center;font-weight:900;font-size:15px;color:var(--teal)}
+  #d3{width:150px;height:150px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+    flex-direction:column;gap:6px;font-weight:700;font-size:14px}
+  #d3 .e{font-size:34px}
+  #s6link{position:absolute;left:0;right:0;top:368px;text-align:center}
+  #s6json{position:absolute;left:170px;top:420px;width:470px;background:#26251f;border-radius:14px;padding:18px 22px;
+    box-shadow:0 10px 30px rgba(0,0,0,.3)}
+  #s6json pre{font-family:Consolas,monospace;font-size:14.5px;color:#d8e6c8;line-height:1.85}
+  #s6json .k{color:#7dd3c8}
+  #s6jtag{position:absolute;left:680px;top:446px;font-size:17px;color:var(--ink);font-weight:700;line-height:1.9}
+  #s6jtag small{display:block;color:var(--soft);font-size:14px;font-weight:400}
+  #s6stamps{position:absolute;left:680px;top:540px}
+  #s6stamps .st{display:inline-block;border:2.5px solid var(--amber);color:var(--amber);border-radius:8px;
+    font-weight:900;font-size:17px;padding:5px 14px;margin-right:12px;transform:rotate(-4deg);letter-spacing:2px}
+  #s6badge{position:absolute;left:0;right:0;top:66px;text-align:center}
+  /* ===== S7 ===== */
+  #s7axis{position:absolute;left:110px;right:110px;top:300px;height:3px;background:var(--line)}
+  .vnode{position:absolute;top:-6px;width:15px;height:15px;border-radius:50%;background:var(--teal);
+    box-shadow:0 0 0 4px var(--teal-soft)}
+  .vlab{position:absolute;top:16px;transform:translateX(-50%);font-size:12.5px;color:var(--soft);white-space:nowrap}
+  #s7big{position:absolute;left:0;right:0;top:200px;text-align:center;font-size:56px;font-weight:900;letter-spacing:4px}
+  #s7q{position:absolute;left:0;right:0;top:292px;text-align:center;font-size:21px;color:var(--soft);letter-spacing:2px}
+  #s7end{position:absolute;inset:0;text-align:center;background:var(--paper)}
+  #s7end .nm{font-size:52px;font-weight:900;letter-spacing:6px;margin-top:36px}
+  #s7end .sg{font-size:34px;font-weight:900;color:var(--teal);letter-spacing:8px;margin-top:26px}
+  #s7end .in{font-size:16px;color:var(--soft);margin-top:30px;letter-spacing:2px}
+  /* ===== 播放器 ===== */
+  #player{width:1280px;margin:14px auto 40px;display:flex;gap:12px;align-items:center;color:#cfcac0;font-size:14px}
+  #player button{background:var(--teal);border:none;color:#fff;border-radius:8px;padding:9px 22px;
+    font-size:15px;cursor:pointer;font-weight:700}
+  #pbar{flex:1;height:8px;background:#4a4843;border-radius:4px;cursor:pointer;position:relative}
+  #pfill{height:100%;background:var(--teal);border-radius:4px;width:0}
+  #ptime{font-variant-numeric:tabular-nums}
+  body.render #player{display:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="bar"></div>
+  <div id="chap"></div>
+  <div id="tc">0:00 / 3:00</div>
+
+  <!-- S1 微信痛点 -->
+  <section class="scene" id="s1">
+    <div class="phone" id="s1phone">
+      <div class="p-head">药大 · 辅导员通知群（52）</div>
+      <div class="chat" id="s1chat">
+        <div class="sys">周五 13:02</div>
+        <div class="msg"><div class="ava t">导</div><div class="bub green">周五下午两点，项目答辩，别忘了。</div></div>
+      </div>
+    </div>
+    <div id="s1cards">
+      <div class="ncard" id="s1c1"><div class="ic">🔔</div><div><b>学习通</b> · 3 条新通知<div class="sub">《药事管理》作业截止：今晚 23:59</div></div><div class="dot">3</div></div>
+      <div class="ncard" id="s1c2"><div class="ic">🏫</div><div><b>教务处</b> · 通知公告<div class="sub">关于 2026 年秋季学期补考安排的通知</div></div></div>
+      <div class="ncard" id="s1c3"><div class="ic">📡</div><div><b>竞赛平台</b> · 新公告<div class="sub">全国大学生数学建模竞赛 报名开始</div></div></div>
+    </div>
+    <div id="s1cal"><b>📅 9月18日 · 周五</b><div class="empty">—— 空空如也 ——</div></div>
+    <div class="bignum" id="s1big">信息散落 · 提醒缺位</div>
+  </section>
+
+  <!-- S2 产品亮相 -->
+  <section class="scene" id="s2">
+    <div id="s2axis">
+      <div class="blk" style="left:6%"></div><div class="blk" style="left:24%"></div>
+      <div class="blk" style="left:47%"></div><div class="blk" style="left:66%"></div>
+      <div class="blk" style="left:88%"></div>
+    </div>
+    <div class="phone" id="s2shot"><img src="../output/preview/phone/app-quadrant-light.png" alt=""></div>
+    <div id="s2tag">Windows · Linux · Android · 小程序</div>
+    <div id="s2logo">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#0f766e" stroke-width="7"/>
+        <circle cx="60" cy="60" r="42" fill="#e6f4f2"/>
+        <line x1="60" y1="60" x2="60" y2="30" stroke="#0f766e" stroke-width="6" stroke-linecap="round"/>
+        <line x1="60" y1="60" x2="82" y2="70" stroke="#e0533f" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="60" cy="60" r="6" fill="#2b2a26"/>
+      </svg>
+      <div id="s2name">Le时间管理</div>
+      <div id="s2slogan">把散落的信息，收拢成一条时间轴</div>
+      <div><span class="chip" id="s2chip">中国药科大学 · ×××（姓名）</span></div>
+    </div>
+  </section>
+
+  <!-- S3 智能捕获 -->
+  <section class="scene" id="s3">
+    <div class="phone" id="s3phone">
+      <div class="p-head">辅导员</div>
+      <div class="chat">
+        <div class="sys">周四 18:47</div>
+        <div class="msg"><div class="ava t">导</div><div class="bub green" id="s3msg">明天下午3点到4点，开题组会，带上初稿。</div></div>
+      </div>
+    </div>
+    <div class="phone" id="s3ghost">明天下午3点到4点，开题组会，带上初稿。</div>
+    <div id="s3lewin">
+      <div class="titlebar"><span class="tdot" style="background:#e0604c"></span><span class="tdot" style="background:#e6b84e"></span><span class="tdot" style="background:#6dbd63"></span>&nbsp;Le时间管理</div>
+      <div id="s3confirm">
+        <div class="row"><span class="k">事件</span><b>📌 开题组会</b></div>
+        <div class="row"><span class="k">日期</span><span id="s3d1">明天 · 9月18日 周五</span></div>
+        <div class="row"><span class="k">时间</span><span id="s3d2">15:00 – 16:00 · 1 小时</span></div>
+        <div class="row"><span class="k">分类</span><span id="s3d3">学习 · 重要不紧急</span></div>
+        <div id="s3btn">确认创建</div>
+      </div>
+      <div id="s3axis">
+        <div id="s3now"><i>现在</i></div>
+        <div id="s3blk"></div>
+        <div class="hlabel" style="left:70%">15:00</div>
+      </div>
+    </div>
+    <div id="s3toast">✓ 已创建：明天 15:00 开题组会</div>
+    <div id="s3chips">
+      <span class="chip" id="s3c1">纯本地规则</span>
+      <span class="chip" id="s3c2">不联网</span>
+      <span class="chip" id="s3c3">断网照样用</span>
+    </div>
+  </section>
+
+  <!-- S4 四象限 + 时间轴 -->
+  <section class="scene" id="s4">
+    <div id="s4quad">
+      <div class="qcell q1"><span class="ql">重要 · 紧急</span></div>
+      <div class="qcell q2"><span class="ql">重要 · 不紧急</span></div>
+      <div class="qcell q3"><span class="ql">紧急 · 不重要</span></div>
+      <div class="qcell q4"><span class="ql">不重要 · 不紧急</span></div>
+    </div>
+    <div class="tcard" id="s4t1">实验报告<small>周五截止</small></div>
+    <div class="tcard" id="s4t2">健身<small>今晚 19:00</small></div>
+    <div class="tcard" id="s4t3">数模竞赛报名<small>9月25日截止</small></div>
+    <div class="tcard" id="s4hero" style="border-left-color:#e0533f">开题组会<small>明天 15:00</small></div>
+    <div id="s4h">今日时间轴</div>
+    <div id="s4tb">
+      <span class="hlabel" style="left:2%">08:00</span><span class="hlabel" style="left:98%">22:00</span>
+      <div class="hblk" style="left:8%;width:14%"></div>
+      <div class="hblk" style="left:30%;width:10%"></div>
+      <div id="s4now" style="left:37%"><i>现在</i></div>
+      <div class="hblk teal" id="s4blk"></div>
+    </div>
+    <div id="s4week">
+      <div class="day"><div class="fill" data-h="34" style="height:34%"></div><i>周四</i></div>
+      <div class="day"><div class="fill" data-h="62" style="height:62%"></div><i>周五</i></div>
+      <div class="day"><div class="fill" data-h="28" style="height:28%"></div><i>周六</i></div>
+      <div class="day"><div class="fill" data-h="16" style="height:16%"></div><i>周日</i></div>
+      <div class="day"><div class="fill" data-h="48" style="height:48%"></div><i>周一</i></div>
+      <div class="day"><div class="fill" data-h="22" style="height:22%"></div><i>周二</i></div>
+      <div class="day"><div class="fill" data-h="52" style="height:52%"></div><i>周三</i></div>
+    </div>
+    <span class="chip" id="s4chip">拖一下，重新排，三秒钟的事</span>
+  </section>
+
+  <!-- S5 插件生态 -->
+  <section class="scene" id="s5">
+    <div id="s5grid"></div>
+    <div id="s5news"><b>📡 竞赛雷达 · 抓到新公告</b><div>全国大学生数学建模竞赛 报名开始</div><div class="sub">点击「转提醒」→ 自动排进日程（9月25日 截止）</div></div>
+    <div id="s5push"><div class="wic">💬</div><div><b>Le时间管理</b><div class="tx"><span style="color:#e0533f">●</span> 5 分钟后 · 开题组会</div><div class="tm">微信推送 · 刚刚</div></div></div>
+    <div id="s5sync">
+      <div class="row">
+        <svg width="86" height="86" viewBox="0 0 86 86" id="s5qr"></svg>
+        <svg width="40" height="40" viewBox="0 0 40 40"><path d="M8 26 L20 34 L32 18" fill="none" stroke="#0f766e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <div class="phone" style="position:relative;left:0;top:0;width:86px;height:170px;box-shadow:0 4px 14px rgba(0,0,0,.12)">
+          <div class="p-head" style="font-size:10px;padding:8px 4px 5px">今日时间块</div>
+          <div style="padding:8px 6px;display:flex;flex-direction:column;gap:6px">
+            <div style="height:22px;border-radius:5px;background:#9fd8cf"></div>
+            <div style="height:22px;border-radius:5px;background:#c9e9e3"></div>
+            <div style="height:22px;border-radius:5px;background:#e6f4f2"></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">手机扫码 · 小程序与电脑实时同步</div>
+    </div>
+  </section>
+
+  <!-- S6 技术与隐私 -->
+  <section class="scene" id="s6">
+    <div id="s6badge"><span class="chip">Tauri 2 + Rust · 安装包不到 10 兆</span></div>
+    <div id="s6devs">
+      <div class="dev" id="d1"><div class="scr">Le时间管理</div></div>
+      <div class="dev" id="d2"><div class="scr">Le</div></div>
+      <div class="dev" id="d3"><span class="e">💬</span>小程序</div>
+    </div>
+    <div id="s6link">——————————&nbsp; 同一套代码，四个端全都能跑 &nbsp;——————————</div>
+    <div id="s6json">
+      <pre><span class="k">{</span>
+  <span class="k">"tasks"</span>:  [ … 42 条 … ],
+  <span class="k">"blocks"</span>: [ … 今日 6 块 … ],
+  <span class="k">"plugins"</span>: [ … 12 个 … ]
+<span class="k">}</span></pre>
+    </div>
+    <div id="s6jtag">data.json<small>就躺在你自己电脑里 · 没有账号，不用上传</small></div>
+    <div id="s6stamps">
+      <span class="st" id="s6st1">无账号</span>
+      <span class="st" id="s6st2">不上传</span>
+      <span class="st" id="s6st3">数据不出本机</span>
+    </div>
+  </section>
+
+  <!-- S7 收尾 -->
+  <section class="scene" id="s7">
+    <div id="s7axis"></div>
+    <div id="s7big" class="bignum">50+ 个版本</div>
+    <div id="s7q">每一个功能，都来自真实的需求</div>
+    <div id="s7end">
+      <svg width="130" height="130" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="52" fill="none" stroke="#0f766e" stroke-width="7"/>
+        <circle cx="60" cy="60" r="42" fill="#e6f4f2"/>
+        <line x1="60" y1="60" x2="60" y2="30" stroke="#0f766e" stroke-width="6" stroke-linecap="round"/>
+        <line x1="60" y1="60" x2="82" y2="70" stroke="#e0533f" stroke-width="5" stroke-linecap="round"/>
+        <circle cx="60" cy="60" r="6" fill="#2b2a26"/>
+      </svg>
+      <div class="nm">Le时间管理</div>
+      <div class="sg">把时间，还给你</div>
+      <div class="in">首届全国创客比赛 · 中国药科大学 · ×××（姓名）</div>
+    </div>
+  </section>
+
+  <div id="subbg"></div>
+  <div id="sub"></div>
+  <div id="mark">界面为示意动画 · 实机效果以演示为准</div>
+</div>
+
+<div id="player">
+  <button id="btnPlay">▶ 播放</button>
+  <div id="pbar"><div id="pfill"></div></div>
+  <span id="ptime">0:00 / 3:00</span>
+  <span style="opacity:.7">点画面区域外的进度条可拖动 · 全屏请按 F11</span>
+</div>
+
+<script>
+(function(){
+  /* ============ 时间表（秒） ============ */
+  /* orig = 这一幕编排本身要演多少秒（关键帧的原始时长），配音对齐后按 k 倍速演完 */
+  var SC = [
+    {orig:22, name:"第 1 幕 · 开场钩子",
+     sub:"上礼拜，辅导员在群里发了一句，「周五下午两点，项目答辩，别忘了。」全班五十个人回了「收到」。第二天，还是有十个人没去。日子全散在各个地方，微信群一条，学习通一条，教务网站一条，竞赛平台又一条。想记，记不过来。想管，懒得管。"},
+    {orig:23, name:"第 2 幕 · 方案亮相",
+     sub:"大家好，我是中国药科大学的×××。屏幕上这个，是我自己写的，叫 Le时间管理。我想干的事很简单，把散在各个角落的信息，归到一条时间轴上。你不用动手记，它自己会流过去。"},
+    {orig:35, name:"第 3 幕 · 智能捕获",
+     sub:"来看个操作。老师在微信里说，「明天下午3点到4点，开题组会，带上初稿。」我把这句话直接拖进 Le时间管理。它读懂了，「明天」「3点到4点」，一块时间就排好了，任务也归了档。截图、链接、网页上的字，拖进来行，粘进来也行。这套中文时间解析是纯本地的规则，不联网，不用什么云服务，断网照样用。"},
+    {orig:30, name:"第 4 幕 · 四象限与时间块",
+     sub:"事一多，就得分轻重。四象限把任务摊开，点开卡片，直接「排入今天」。左边是任务池，拖到右边的时间轴上。那条红线是「现在」，走到哪儿就该干什么。后面七天什么安排，一眼也能看到。计划变了？没事，拖一下，重新排，三秒钟的事。"},
+    {orig:30, name:"第 5 幕 · 插件生态",
+     sub:"它还有一个插件系统，我觉得这是最有意思的部分。内置十二个校园插件，课程表、番茄专注、考试日历，竞赛雷达自己抓竞赛公告，学习通的作业截止日期直接进日程。微信推送更实用，时间块开始前五分钟，提醒直接发到你微信上。而且它是开放的，做一个文件夹放进去，谁都能给它加新功能。手机扫一下二维码，小程序和手机页面跟电脑实时同步。"},
+    {orig:20, name:"第 6 幕 · 技术与隐私",
+     sub:"技术上是 Tauri 2 加 Rust，一套代码，Windows、Linux、Android、微信小程序全都能跑，安装包不到 10 兆。你的数据就是一个 JSON 文件，就躺在你自己电脑里。没有账号，不用上传，数据从来没离开过你的机器。"},
+    {orig:20, name:"第 7 幕 · 收尾",
+     sub:"从第一行代码到现在，这个软件迭代了五十多个版本。里面每一个功能，都是我自己，或者身边同学，真的需要，才去做的。我觉得做创客就是这么回事，身边有问题，就自己动手解决它。Le时间管理，把时间还给你。谢谢大家。"}
+  ];
+
+/* ⚙ 时间轴 · align-voice.py 生成 */
+  var TL = {
+    total:180, pad:8.088, voiceFill:0.55,
+    acts:[
+      {s:0, e:24.566, voice:16.478, anim:20.926, k:1.0513},  // 第 1 幕 · 开场钩子
+      {s:24.566, e:45.341, voice:12.686, anim:17.135, k:1.3423},  // 第 2 幕 · 方案亮相
+      {s:45.341, e:75.027, voice:21.597, anim:26.046, k:1.3438},  // 第 3 幕 · 智能捕获
+      {s:75.027, e:99.133, voice:16.018, anim:20.466, k:1.4658},  // 第 4 幕 · 四象限与时间块
+      {s:99.133, e:133.534, voice:26.313, anim:30.761, k:0.9753},  // 第 5 幕 · 插件生态
+      {s:133.534, e:156.197, voice:14.575, anim:19.024, k:1.0513},  // 第 6 幕 · 技术与隐私
+      {s:156.197, e:180, voice:15.715, anim:20.163, k:0.9919},  // 第 7 幕 · 收尾
+    ]
+  };
+  SC.forEach(function(c,i){ var t=TL.acts[i]; if(t) for(var k in t) c[k]=t[k]; });
+/* ⚙ 时间轴结束 */
+  var TOTAL = TL.total;
+
+  var RENDER = /[?&]render=1/.test(location.search);
+
+  /* ============ 工具 ============ */
+  var $ = function(id){ return document.getElementById(id); };
+  function clamp(x,a,b){ return x<a?a:(x>b?b:x); }
+  function seg(t,a,b){ return clamp((t-a)/(b-a),0,1); }
+  function eo(x){ x=clamp(x,0,1); return 1-Math.pow(1-x,3); }
+  function eio(x){ x=clamp(x,0,1); return x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2; }
+  function back(x){ x=clamp(x,0,1); var c=1.70158; x=x-1; return 1+(c+1)*x*x*x+c*x*x; }
+  function show(el,p,ty,tx){
+    if(!el) return;
+    if(p<=0){ el.style.opacity="0"; el.style.visibility="hidden";
+      el.style.transform="translate("+(tx?(1-0)*tx:0)+"px,"+((1-0)*(ty||24))+"px)"; return; }
+    var e=eo(p);
+    el.style.visibility="visible"; el.style.opacity=String(e);
+    el.style.transform="translate("+((1-e)*(tx||0))+"px,"+((1-e)*(ty||24))+"px)";
+  }
+  function pop(el,p){ // 弹入（含回弹）
+    if(!el) return;
+    if(p<=0){ el.style.opacity="0"; el.style.visibility="hidden"; el.style.transform="scale(.4)"; return; }
+    var e=back(p);
+    el.style.visibility="visible"; el.style.opacity=String(clamp(p*2.5,0,1));
+    el.style.transform="scale("+clamp(e,0.4,1.06)+")";
+  }
+  function at(el,css){ if(el){ for(var k in css) el.style[k]=css[k]; } }
+
+  /* ============ S1 数据 ============ */
+  var s1chat=$("s1chat");
+  for(var i=0;i<8;i++){
+    var d=document.createElement("div"); d.className="msg right";
+    d.innerHTML='<div class="ava s">同</div><div class="bub">收到</div>';
+    d.id="s1r"+i; s1chat.appendChild(d);
+  }
+
+  /* ============ S5 数据 ============ */
+  var PLUG=[["📅","课程表"],["🍅","番茄专注"],["🗓","考试日历"],["📡","竞赛雷达"],
+            ["🔔","学习通通知"],["🏖","中国节假日"],["🧹","轮换值日"],["🌐","网页收集"],
+            ["🏫","学校通知"],["📥","收纳箱"],["💬","微信推送"],["📖","插件指南"]];
+  var s5g=$("s5grid");
+  PLUG.forEach(function(p,i){
+    var d=document.createElement("div"); d.className="pcard"; d.id="s5p"+i;
+    d.innerHTML='<span class="e">'+p[0]+'</span>'+p[1]; s5g.appendChild(d);
+  });
+  /* 伪二维码 */
+  (function(){
+    var q=$("s5qr"), s="", x,y;
+    for(y=0;y<11;y++) for(x=0;x<11;x++){
+      var corner=(x<3&&y<3)||(x>7&&y<3)||(x<3&&y>7);
+      if(corner? ((x%3==1&&y%3==1)||x%3==0&&y%3==0||false) : ((x*7+y*13)%5<2)) {
+        s+='<rect x="'+(x*7+3)+'" y="'+(y*7+3)+'" width="6" height="6" fill="#2b2a26"/>';
+      }
+    }
+    q.innerHTML=s;
+  })();
+
+  /* ============ S7 数据 ============ */
+  var VERS=["v0.1","v0.5","v0.10","v0.20","v0.30","v0.40","v0.45","v0.48","v0.50","v0.51"];
+  var VT=[161.5,162.4,163.5,164.8,166.2,167.6,168.6,169.4,170.0,170.5];
+  var s7ax=$("s7axis");
+  VERS.forEach(function(v,i){
+    var n=document.createElement("div"); n.className="vnode"; n.id="s7n"+i;
+    n.style.left=(i/(VERS.length-1)*100)+"%"; s7ax.appendChild(n);
+    var l=document.createElement("div"); l.className="vlab"; l.id="s7l"+i;
+    l.style.left=(i/(VERS.length-1)*100)+"%"; l.textContent=v; s7ax.appendChild(l);
+  });
+
+  /* ============ 各幕更新 ============ */
+  function updS1(t){ var L=t; // 局部秒
+    var m1=s1chat.querySelector(".msg");
+    var p1=seg(L,0.6,1.8);
+    at(m1,{opacity:String(eo(p1)),transform:"translateY("+((1-eo(p1))*16)+"px)",visibility:p1>0?"visible":"hidden"});
+    for(var i=0;i<8;i++) pop($("s1r"+i), seg(L,2.2+i*0.9, 2.7+i*0.9));
+    show($("s1c1"),seg(L,5.4,6.4),28,60);
+    show($("s1c2"),seg(L,7.4,8.4),28,60);
+    show($("s1c3"),seg(L,9.4,10.4),28,60);
+    show($("s1cal"),seg(L,12.4,13.4),28,0);
+    show($("s1big"),seg(L,16.5,18.5),-20,0);
+  }
+  function updS2(t){ var L=t;
+    pop($("s2logo"),seg(L,1.0,2.2));
+    show($("s2name"),seg(L,2.0,3.0),20,0);
+    show($("s2slogan"),seg(L,3.4,4.4),20,0);
+    show($("s2chip"),seg(L,5.0,6.0),20,0);
+    var ax=$("s2axis"); at(ax,{opacity:String(seg(L,6,8))});
+    var bl=ax.querySelectorAll(".blk");
+    for(var i=0;i<bl.length;i++) at(bl[i],{opacity:String(seg(L,8+i*1.1,9+i*1.1)),transform:"scaleY("+back(seg(L,8+i*1.1,9.3+i*1.1))+")"});
+    show($("s2shot"),seg(L,10.5,11.8),0,-80);
+    show($("s2tag"),seg(L,12.0,13.0),14,0);
+  }
+  function updS3(t){ var L=t;
+    var msg=$("s3msg"); at(msg,{opacity:String(seg(L,0.5,2.4))});
+    show($("s3lewin"),seg(L,2.2,3.2),30,60);
+    /* 拖拽幽灵：从微信气泡 → le 窗口 */
+    var g=$("s3ghost"), pg=seg(L,3.6,6.0), e=eio(pg);
+    if(pg<=0||pg>=1){ g.style.visibility="hidden"; }
+    else{
+      var x0=190,y0=330,x1=700,y1=220;
+      g.style.visibility="visible"; g.style.opacity="0.92";
+      g.style.left=(x0+(x1-x0)*e)+"px"; g.style.top=(y0+(y1-y0)*e - Math.sin(e*Math.PI)*70)+"px";
+      g.style.transform="rotate("+(e*8-4)+"deg) scale("+(1-0.12*e)+")";
+    }
+    show($("s3d1"),seg(L,6.4,7.0),10,0);
+    show($("s3d2"),seg(L,7.1,7.7),10,0);
+    show($("s3d3"),seg(L,7.8,8.4),10,0);
+    at($("s3btn"),{opacity:String(seg(L,8.6,9.2)),boxShadow:seg(L,9.4,10.0)>0.5?"0 0 0 4px rgba(15,118,110,.25)":"none"});
+    /* 时间轴落块 */
+    var pb=seg(L,9.8,10.9), be=back(pb);
+    var blk=$("s3blk");
+    at(blk,{left:(62+ (1-be)*-30)+"%", width:(20*Math.max(be,0.01))+"%", opacity:String(clamp(pb*2,0,1))});
+    show($("s3toast"),seg(L,11.4,12.0),0,0);
+    at($("s3toast"),{opacity:String(seg(L,11.4,11.8)*seg(L,17.5,18.1)>0?1- seg(L,17.5,18.1):0)});
+    show($("s3c1"),seg(L,14.0,14.7),14,0);
+    show($("s3c2"),seg(L,14.7,15.4),14,0);
+    show($("s3c3"),seg(L,15.4,16.1),14,0);
+  }
+  function updS4(t){ var L=t;
+    at($("s4quad"),{opacity:String(seg(L,0.6,1.6)),transform:"translateY("+((1-eo(seg(L,0.6,1.6)))*24)+"px)"});
+    show($("s4t1"),seg(L,1.8,2.6),0,0); at($("s4t1"),{left:"130px",top:"150px"});
+    show($("s4t2"),seg(L,2.4,3.2),0,0); at($("s4t2"),{left:"330px",top:"330px"});
+    show($("s4t3"),seg(L,3.0,3.8),0,0); at($("s4t3"),{left:"180px",top:"420px"});
+    show($("s4h"),seg(L,4.2,5.0),14,0);
+    at($("s4tb"),{opacity:String(seg(L,4.2,5.2))});
+    /* hero 卡：从象限飞到时间轴 15:00 上方，再落块 */
+    var pf=seg(L,5.6,7.2), e=eio(pf);
+    var hero=$("s4hero");
+    if(pf<=0){ hero.style.visibility="hidden"; }
+    else{
+      var hx=620+(905-620)*e, hy=190+(240-190)*e;
+      hero.style.visibility="visible"; hero.style.opacity="1";
+      hero.style.left=hx+"px"; hero.style.top=hy+"px";
+      hero.style.transform="scale("+(1-0.18*e)+")";
+    }
+    var pb=seg(L,7.0,8.0), be=back(pb), blk=$("s4blk");
+    at(blk,{left:(58+(1-be)*-26)+"%", width:(15*Math.max(be,0.01))+"%", opacity:String(clamp(pb*2,0,1))});
+    var wk=$("s4week");
+    at(wk,{opacity:String(seg(L,9.5,10.5))});
+    var fills=wk.querySelectorAll(".fill");
+    for(var i=0;i<fills.length;i++){
+      var base=parseFloat(fills[i].getAttribute("data-h"))||0;
+      at(fills[i],{height:(base*seg(L,9.8+i*0.12,11.2+i*0.12))+"%"});
+    }
+    show($("s4chip"),seg(L,14.0,15.0),14,0);
+    /* 重新排：块右移 */
+    var mv=seg(L,15.2,16.4), me=eio(mv);
+    at(blk,{left:(58+me*16)+"%"});
+    at(hero,{left:(880+me*120)+"px"});
+  }
+  function updS5(t){ var L=t;
+    for(var i=0;i<12;i++) pop($("s5p"+i), seg(L,0.8+i*0.5, 1.5+i*0.5));
+    at($("s5p3"),{outline:seg(L,7.5,8.2)>0.6?"3px solid #b45309":"3px solid transparent"});
+    show($("s5news"),seg(L,8.4,9.4),22,0);
+    show($("s5push"),seg(L,12.5,13.6),0,-90);
+    at($("s5sync"),{opacity:String(seg(L,17.5,18.8)),transform:"translateY("+((1-eo(seg(L,17.5,18.8)))*20)+"px)"});
+  }
+  function updS6(t){ var L=t;
+    show($("s6badge"),seg(L,0.8,1.8),14,0);
+    show($("d1"),seg(L,1.6,2.6),0,0);
+    show($("d2"),seg(L,2.0,3.0),0,0);
+    show($("d3"),seg(L,2.4,3.4),0,0);
+    show($("s6link"),seg(L,3.6,4.6),10,0);
+    show($("s6json"),seg(L,5.6,6.8),24,0);
+    show($("s6jtag"),seg(L,6.6,7.6),14,60);
+    pop($("s6st1"),seg(L,9.0,9.7));
+    pop($("s6st2"),seg(L,9.7,10.4));
+    pop($("s6st3"),seg(L,10.4,11.1));
+  }
+  function updS7(t){ var L=t;
+    at($("s7axis"),{opacity:String(seg(L,0.5,1.2))});
+    for(var i=0;i<VERS.length;i++){
+      var p=seg(L,VT[i]-160,VT[i]-160+0.45);
+      at($("s7n"+i),{opacity:String(clamp(p*2,0,1)),transform:"scale("+clamp(back(p),0.3,1.15)+")"});
+      at($("s7l"+i),{opacity:String(p)});
+    }
+    show($("s7big"),seg(L,10.8,11.8),24,0);
+    show($("s7q"),seg(L,12.4,13.4),16,0);
+    show($("s7end"),seg(L,14.2,15.6),0,0);
+  }
+
+  /* ============ 主更新 ============ */
+  var scenes=[$("s1"),$("s2"),$("s3"),$("s4"),$("s5"),$("s6"),$("s7")];
+  var chap=$("chap"), subEl=$("sub"), tcEl=$("tc"), bar=$("bar");
+
+  function fmt(s){ s=Math.max(0,s); var m=Math.floor(s/60); return m+":"+("0"+Math.floor(s%60)).slice(-2); }
+
+  function update(ms){
+    var t=clamp(ms/1000,0,TOTAL);
+    for(var i=0;i<scenes.length;i++){
+      var c=SC[i], on=(t>=c.s-0.01 && t<c.e);
+      if(on){
+        scenes[i].style.visibility="visible";
+        scenes[i].style.opacity=String(seg(t,c.s,c.s+0.6)*(i===6?1:1));
+        var w=t-c.s, L=w*(c.k||1);  // 关键帧一律按 orig 秒数编排，这里换算成配音对齐后的倍速
+        if(i===0)updS1(L); else if(i===1)updS2(L); else if(i===2)updS3(L);
+        else if(i===3)updS4(L); else if(i===4)updS5(L); else if(i===5)updS6(L); else updS7(L);
+        /* 字幕打字机（滚动窗口，最多约 2 行）· 打完的时刻跟着配音走，不按整幕铺 */
+        var t0=0.8, typeDur=Math.max((c.voice||w)-t0-0.6, 3);
+        var n=Math.floor(seg(w,t0,t0+typeDur)*c.sub.length);
+        var done=n>=c.sub.length;
+        var WIN=86;
+        var txt=c.sub.slice(Math.max(0,n-WIN),n);
+        subEl.innerHTML="";
+        subEl.appendChild(document.createTextNode(txt));
+        if(!done){ var cur=document.createElement("span"); cur.className="cur"; cur.textContent="▌"; subEl.appendChild(cur); }
+        at(chap,{opacity:String(clamp(t-c.s,0,1))});
+        chap.innerHTML="<b>"+c.name+"</b>"+fmt(t).replace(/^/,"");
+      } else {
+        scenes[i].style.visibility="hidden"; scenes[i].style.opacity="0";
+      }
+    }
+    bar.style.width=(t/TOTAL*100)+"%";
+    tcEl.textContent=fmt(t)+" / 3:00";
+    if(pfill){ pfill.style.width=(t/TOTAL*100)+"%"; ptime.textContent=fmt(t)+" / 3:00"; }
+  }
+
+  /* ============ 播放器 ============ */
+  var playing=false, T=0, lastTs=0, rafId=null;
+  var pfill=$("pfill")||null, ptime=$("ptime"), btn=$("btnPlay"), pbar=$("pbar");
+
+  function loop(ts){
+    if(!playing) return;
+    if(lastTs){ T+=(ts-lastTs)/1000; }
+    lastTs=ts;
+    if(T>=TOTAL){ T=TOTAL; playing=false; btn.textContent="▶ 重播"; }
+    update(T*1000);
+    rafId=requestAnimationFrame(loop);
+  }
+  function play(){
+    if(T>=TOTAL) T=0;
+    playing=true; lastTs=0; btn.textContent="❚❚ 暂停";
+    rafId=requestAnimationFrame(loop);
+  }
+  function pause(){ playing=false; btn.textContent="▶ 播放"; if(rafId)cancelAnimationFrame(rafId); }
+
+  btn.addEventListener("click",function(){ playing?pause():play(); });
+  pbar.addEventListener("click",function(ev){
+    var r=pbar.getBoundingClientRect();
+    T=clamp((ev.clientX-r.left)/r.width,0,1)*TOTAL;
+    update(T*1000);
+  });
+  document.addEventListener("keydown",function(e){
+    if(e.code==="Space"&&RENDER===false){ e.preventDefault(); playing?pause():play(); }
+  });
+
+  if(RENDER){
+    document.body.classList.add("render");
+    window.seek=function(ms){ T=ms/1000; update(T*1000); };
+    window.__ready=true;
+  } else {
+    update(0);
+  }
+})();
+</script>
+</body>
+</html>

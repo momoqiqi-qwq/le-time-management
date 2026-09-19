@@ -1,0 +1,182 @@
+{
+  "title": "U-Time 三分钟介绍动画",
+  "durationMs": 180000,
+  "shots": [
+    {
+      "id": "01",
+      "file": "shot-01_brand-opening.html",
+      "title": "时间，不该追着你跑",
+      "chapter": "序章",
+      "durationMs": 8000,
+      "style": "curtain"
+    },
+    {
+      "id": "02",
+      "file": "shot-02_quadrant.html",
+      "title": "先做什么，一眼决定",
+      "chapter": "核心能力",
+      "durationMs": 10000,
+      "style": "quadrant"
+    },
+    {
+      "id": "03",
+      "file": "shot-03_timeline.html",
+      "title": "把一天铺成可以触摸的路线",
+      "chapter": "核心能力",
+      "durationMs": 11000,
+      "style": "itinerary"
+    },
+    {
+      "id": "04",
+      "file": "shot-04_smart-capture.html",
+      "title": "一句话，自动落进正确时间",
+      "chapter": "核心能力",
+      "durationMs": 11000,
+      "style": "sticky"
+    },
+    {
+      "id": "05",
+      "file": "shot-05_plugin-chapter.html",
+      "title": "一座会生长的时间工具箱",
+      "chapter": "插件生态",
+      "durationMs": 4000,
+      "style": "portal"
+    },
+    {
+      "id": "06",
+      "file": "shot-06_schedule.html",
+      "title": "课程表：从教务系统到时间块",
+      "chapter": "插件 01",
+      "durationMs": 8000,
+      "style": "schedule"
+    },
+    {
+      "id": "07",
+      "file": "shot-07_pomodoro.html",
+      "title": "番茄专注：把注意力留给此刻",
+      "chapter": "插件 02",
+      "durationMs": 8000,
+      "style": "tomato"
+    },
+    {
+      "id": "08",
+      "file": "shot-08_chaoxing.html",
+      "title": "学习通：通知、作业、考试不漏接",
+      "chapter": "插件 03",
+      "durationMs": 8000,
+      "style": "inbox"
+    },
+    {
+      "id": "09",
+      "file": "shot-09_cppu.html",
+      "title": "警大门户：通知与校园服务直达",
+      "chapter": "插件 04",
+      "durationMs": 8000,
+      "style": "archive"
+    },
+    {
+      "id": "10",
+      "file": "shot-10_exam-calendar.html",
+      "title": "考试日历：从报名到开考全程倒数",
+      "chapter": "插件 05",
+      "durationMs": 8000,
+      "style": "calendar"
+    },
+    {
+      "id": "11",
+      "file": "shot-11_competition-radar.html",
+      "title": "竞赛雷达：机会出现时马上捕获",
+      "chapter": "插件 06",
+      "durationMs": 8000,
+      "style": "radar"
+    },
+    {
+      "id": "12",
+      "file": "shot-12_school-notice.html",
+      "title": "学校通知网站：公告自动排好队",
+      "chapter": "插件 07",
+      "durationMs": 8000,
+      "style": "notice"
+    },
+    {
+      "id": "13",
+      "file": "shot-13_rss.html",
+      "title": "RSS 信息流：把分散更新收成一份报纸",
+      "chapter": "插件 08",
+      "durationMs": 8000,
+      "style": "newsprint"
+    },
+    {
+      "id": "14",
+      "file": "shot-14_wechat-push.html",
+      "title": "微信提醒推送：该知道的准时送达",
+      "chapter": "插件 09",
+      "durationMs": 8000,
+      "style": "postoffice"
+    },
+    {
+      "id": "15",
+      "file": "shot-15_inbox-drop.html",
+      "title": "拖入消息收纳：散落的信息都有入口",
+      "chapter": "插件 10",
+      "durationMs": 8000,
+      "style": "warehouse"
+    },
+    {
+      "id": "16",
+      "file": "shot-16_web-collector.html",
+      "title": "网页收集：把互联网折成自己的卡片",
+      "chapter": "插件 11",
+      "durationMs": 8000,
+      "style": "library"
+    },
+    {
+      "id": "17",
+      "file": "shot-17_dorm-duty.html",
+      "title": "轮换值日：公平地轮到每一个人",
+      "chapter": "插件 12",
+      "durationMs": 8000,
+      "style": "wheel"
+    },
+    {
+      "id": "18",
+      "file": "shot-18_holiday.html",
+      "title": "中国节假日：放假与调休提前算清",
+      "chapter": "插件 13",
+      "durationMs": 8000,
+      "style": "lunar"
+    },
+    {
+      "id": "19",
+      "file": "shot-19_weekly-report.html",
+      "title": "周度报告：这一周到底去了哪里",
+      "chapter": "插件 14",
+      "durationMs": 8000,
+      "style": "magazine"
+    },
+    {
+      "id": "20",
+      "file": "shot-20_plugin-guide.html",
+      "title": "插件使用说明：每项能力都有路线图",
+      "chapter": "插件 15",
+      "durationMs": 8000,
+      "style": "manual"
+    },
+    {
+      "id": "21",
+      "file": "shot-21_local-cross-platform.html",
+      "title": "你的时间，只属于你",
+      "chapter": "底层承诺",
+      "durationMs": 8000,
+      "style": "boarding"
+    },
+    {
+      "id": "22",
+      "file": "shot-22_finale.html",
+      "title": "把时间，重新握在手里",
+      "chapter": "终章",
+      "durationMs": 8000,
+      "style": "riso"
+    }
+  ]
+}

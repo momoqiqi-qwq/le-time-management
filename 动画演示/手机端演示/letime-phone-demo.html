@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Le时间管理 · 手机端演示</title>
+<style>
+/* ============================================================
+   Le时间管理 · 手机系统 UI 风格编排录屏动画
+   HyperOS/MIUI 设计语言：大圆角 + 毛玻璃 + 动态壁纸渐变
+   ============================================================ */
+:root{
+  --le-deep:#14555C;
+  --le-teal:#177E8C;
+  --le-sand:#F2EFEA;
+  --le-paper:#FAF8F4;
+  --le-accent:#E8A25B;
+  --le-ink:#22302E;
+  --le-ink2:#6A7A78;
+  --le-ink3:#9AA8A6;
+  --stage-bg:#0B1013;
+  --s:0.78; /* 手机整体缩放 */
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{
+  font-family:"MiSans","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  background:var(--stage-bg);
+  color:#E9EFEF;
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- 舞台 ---------- */
+.stage{
+  position:fixed;inset:0;
+  display:grid;place-items:center;
+  perspective:1700px;
+  overflow:hidden;
+}
+.stage::before{ /* 动态环境光 */
+  content:"";position:absolute;inset:-20%;
+  background:
+    radial-gradient(38% 30% at 22% 26%, rgba(23,126,140,.32), transparent 70%),
+    radial-gradient(34% 28% at 80% 30%, rgba(232,162,91,.16), transparent 70%),
+    radial-gradient(40% 34% at 62% 88%, rgba(20,85,92,.30), transparent 70%);
+  filter:blur(40px);
+  animation:ambience 14s ease-in-out infinite alternate;
+}
+@keyframes ambience{
+  0%{transform:translate(0,0) scale(1)}
+  100%{transform:translate(-3%,2%) scale(1.06)}
+}
+.stage::after{ /* 地面反射 */
+  content:"";position:absolute;left:50%;bottom:6%;
+  width:520px;height:120px;transform:translateX(-50%);
+  background:radial-gradient(50% 100% at 50% 0%, rgba(23,126,140,.28), transparent 75%);
+  filter:blur(18px);
+}
+
+/* 顶部标题 */
+.brand{
+  position:fixed;top:26px;left:34px;z-index:20;
+  display:flex;align-items:center;gap:12px;
+}
+.brand .mark{
+  width:38px;height:38px;border-radius:12px;
+  background:linear-gradient(135deg,var(--le-teal),var(--le-deep));
+  display:grid;place-items:center;
+  font-weight:800;font-size:19px;color:#fff;
+  box-shadow:0 6px 18px rgba(23,126,140,.4);
+}
+.brand .txt b{font-size:16px;letter-spacing:.5px}
+.brand .txt span{display:block;font-size:11.5px;color:#8fa5a5;margin-top:2px}
+
+/* ---------- 手机（演员） ---------- */
+.scaler{
+  transform:scale(var(--s));
+  transform-style:preserve-3d;
+  position:relative;z-index:5;
+}
+.phone{
+  position:relative;width:390px;height:844px;
+  transform-style:preserve-3d;
+  will-change:transform;
+}
+.frame{
+  position:absolute;inset:0;border-radius:58px;
+  background:linear-gradient(150deg,#3c4348 0%,#16191c 22%,#0e1113 55%,#2a3034 82%,#43494d 100%);
+  padding:11px;
+  box-shadow:
+    0 40px 90px rgba(0,0,0,.65),
+    0 12px 30px rgba(0,0,0,.5),
+    inset 0 0 3px rgba(255,255,255,.28);
+}
+/* 天线带 */
+.band{position:absolute;background:#05070a;border-radius:3px;z-index:2}
+.band.l1{left:-1px;top:140px;width:4px;height:16px}
+.band.l2{left:-1px;bottom:150px;width:4px;height:16px}
+.band.r1{right:-1px;top:190px;width:4px;height:16px}
+.band.r2{right:-1px;bottom:110px;width:4px;height:16px}
+/* 侧键 */
+.key{position:absolute;right:-3.5px;background:linear-gradient(90deg,#262b2e,#4a5055);border-radius:3px;z-index:2}
+.key.power{top:252px;width:4px;height:84px}
+.key.volu{top:150px;width:4px;height:44px}
+.key.vold{top:200px;width:4px;height:44px}
+/* 屏幕 */
+.screen{
+  position:relative;width:100%;height:100%;
+  border-radius:47px;overflow:hidden;
+  background:#000;
+  transform-style:preserve-3d;
+}
+/* 挖孔摄像头 */
+.punch{
+  position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  width:13px;height:13px;border-radius:50%;z-index:60;
+  background:radial-gradient(circle at 35% 35%, #2c3a44 0%, #0a0e12 55%, #000 100%);
+  box-shadow:0 0 0 1.5px rgba(0,0,0,.9), inset 0 0 2px rgba(120,180,255,.35);
+}
+/* 屏幕反光 */
+.glare{
+  position:absolute;inset:0;border-radius:47px;z-index:55;pointer-events:none;
+  background:linear-gradient(112deg, rgba(255,255,255,.11) 0%, rgba(255,255,255,.035) 16%, transparent 30%, transparent 70%, rgba(255,255,255,.05) 92%);
+  mix-blend-mode:screen;
+}
+
+/* 状态栏 */
+.statusbar{
+  position:absolute;top:0;left:0;right:0;height:46px;z-index:50;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 26px 0;
+  font-size:14px;font-weight:700;letter-spacing:.3px;
+  color:var(--sb,#22302E);transition:color .5s;
+  pointer-events:none;
+}
+.screen[data-bar="light"]{--sb:#F4F7F7}
+.screen[data-bar="dark"]{--sb:#22302E}
+.sb-icons{display:flex;align-items:center;gap:6px}
+.sb-icons svg{display:block}
+.sb-batt{width:25px;height:12.5px;border:1.6px solid currentColor;border-radius:3.5px;position:relative;opacity:.95}
+.sb-batt::before{content:"";position:absolute;inset:1.8px;right:5px;background:currentColor;border-radius:1.5px}
+.sb-batt::after{content:"";position:absolute;right:-4px;top:3px;width:2px;height:5px;background:currentColor;border-radius:1px}
+
+/* Home 指示条 */
+.homebar{
+  position:absolute;bottom:9px;left:50%;transform:translateX(-50%);
+  width:120px;height:5px;border-radius:3px;z-index:56;
+  background:var(--hb,rgba(34,48,46,.85));transition:background .5s;pointer-events:none;
+}
+.screen[data-bar="light"]{--hb:rgba(244,247,247,.9)}
+
+/* ---------- 镜头（shot） ---------- */
+.shot{position:absolute;inset:0;display:none;overflow:hidden}
+.shot.active{display:block}
+.screen.off .shot{opacity:0;transition:opacity .8s}
+
+/* ============ 镜头 1 · 锁屏通知 ============ */
+.wp{position:absolute;inset:0;background:linear-gradient(175deg,#0E4A52 0%,#14636D 34%,#2E8B8F 62%,#D9A05F 115%)}
+.wp .blob{position:absolute;border-radius:50%;filter:blur(52px);opacity:.6}
+.wp .b1{width:340px;height:340px;left:-90px;top:8%;background:rgba(64,196,201,.5);animation:blob 9s ease-in-out infinite alternate}
+.wp .b2{width:300px;height:300px;right:-80px;top:34%;background:rgba(240,177,102,.42);animation:blob 11s ease-in-out infinite alternate-reverse}
+.wp .b3{width:280px;height:280px;left:12%;bottom:-60px;background:rgba(12,60,70,.6);animation:blob 8s ease-in-out infinite alternate}
+@keyframes blob{from{transform:translate(0,0) scale(1)}to{transform:translate(34px,-26px) scale(1.14)}}
+.wp::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.12),transparent 30%,rgba(0,0,0,.22))}
+.lock-clock{position:absolute;top:96px;width:100%;text-align:center;color:#fff}
+.lock-clock .time{font-size:82px;font-weight:250;letter-spacing:2px;line-height:1;animation:fadeUp .8s .1s both}
+.lock-clock .date{font-size:16.5px;font-weight:600;margin-top:12px;opacity:.92;animation:fadeUp .8s .25s both}
+.lock-clock .tag{display:inline-block;margin-top:14px;padding:5px 13px;border-radius:99px;font-size:12px;font-weight:600;
+  background:rgba(255,255,255,.16);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.22);animation:fadeUp .8s .4s both}
+.notif-stack{position:absolute;left:14px;right:14px;top:328px;display:flex;flex-direction:column;gap:11px}
+.notif{
+  border-radius:26px;padding:15px 17px 14px;
+  background:rgba(255,255,255,.72);backdrop-filter:blur(22px);
+  box-shadow:0 10px 30px rgba(10,40,44,.22);
+  animation:fadeUp .7s both;
+}
+.notif:nth-child(1){animation-delay:.55s}
+.notif:nth-child(2){animation-delay:.75s}
+.notif-head{display:flex;align-items:center;gap:8px;font-size:12px;color:#5E6E6C;font-weight:600}
+.notif-head .appic{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800;
+  background:linear-gradient(135deg,var(--le-teal),var(--le-deep))}
+.notif-head .when{margin-left:auto;font-weight:500}
+.notif .t{font-size:15.5px;font-weight:700;color:#22302E;margin-top:7px}
+.notif .d{font-size:13px;color:#5E6E6C;margin-top:3px;line-height:1.45}
+.lock-bottom{position:absolute;bottom:52px;width:100%;display:flex;justify-content:space-between;padding:0 42px;align-items:center}
+.lock-bottom .circ{width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.16);backdrop-filter:blur(10px);
+  display:grid;place-items:center;color:#fff;animation:fadeUp .8s 1s both}
+.swipe-hint{position:absolute;bottom:86px;width:100%;text-align:center;color:rgba(255,255,255,.85);font-size:12.5px;animation:fadeUp .8s 1.15s both}
+
+/* ============ 通用 App 界面 ============ */
+.app{position:absolute;inset:0;background:var(--le-paper);color:var(--le-ink)}
+.app-top{padding:60px 22px 0}
+.app-top .vt{display:flex;align-items:baseline;gap:10px}
+.app-top .vt b{font-size:26px;font-weight:800;letter-spacing:.5px}
+.app-top .vt span{font-size:12.5px;color:var(--le-ink3);font-weight:600}
+.app-search{margin-top:14px;height:40px;border-radius:14px;background:#EFEBE4;display:flex;align-items:center;gap:8px;
+  padding:0 14px;color:var(--le-ink3);font-size:13.5px}
+.chips{display:flex;gap:8px;margin-top:12px}
+.chip{padding:6px 13px;border-radius:99px;font-size:12.5px;font-weight:700;background:#EFEBE4;color:var(--le-ink2)}
+.chip.on{background:var(--le-deep);color:#fff}
+.qgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:14px 16px 0}
+.quad{
+  border-radius:22px;padding:13px 14px;min-height:158px;
+  background:#fff;box-shadow:0 3px 14px rgba(34,48,46,.07);
+  animation:popIn .55s both;
+}
+.quad.q1{background:linear-gradient(150deg,#FDECE7,#FFF7F3);animation-delay:.15s}
+.quad.q2{background:linear-gradient(150deg,#E7F4F0,#F3FAF8);animation-delay:.3s}
+.quad.q3{background:linear-gradient(150deg,#FFF3E2,#FFFAF1);animation-delay:.45s}
+.quad.q4{background:linear-gradient(150deg,#EFEEF6,#F8F7FB);animation-delay:.6s}
+.quad .qh{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:800}
+.quad .qh .sq{width:9px;height:9px;border-radius:3px}
+.q1 .sq{background:#E2694A}.q2 .sq{background:#1E9E8E}.q3 .sq{background:#E8A25B}.q4 .sq{background:#8E8FB5}
+.quad .qh i{margin-left:auto;font-style:normal;font-size:11.5px;color:var(--le-ink3);font-weight:700}
+.trow{display:flex;align-items:center;gap:9px;padding:9px 2px 0;font-size:13px;font-weight:600}
+.trow .cb{width:18px;height:18px;border-radius:6px;border:2px solid #C9CFCB;flex:none}
+.trow.done .cb{background:var(--le-teal);border-color:var(--le-teal);position:relative}
+.trow.done .cb::after{content:"✓";color:#fff;font-size:11px;position:absolute;inset:0;display:grid;place-items:center}
+.trow.done{color:var(--le-ink3);text-decoration:line-through}
+.trow .est{margin-left:auto;font-size:10.5px;color:var(--le-ink3);font-weight:700;background:#F2EFEA;padding:2px 7px;border-radius:8px}
+.app-motto{position:absolute;bottom:34px;width:100%;text-align:center;font-size:11px;color:var(--le-ink3);padding:0 30px;line-height:1.5}
+.app-add{position:absolute;bottom:64px;left:22px;right:22px;height:46px;border-radius:16px;border:1.6px dashed #CFC9BE;
+  display:grid;place-items:center;font-size:13.5px;font-weight:700;color:var(--le-ink3)}
+
+/* ============ 镜头 3 · 时间块 ============ */
+.tb-pool{margin:14px 16px 0;padding:12px 14px;border-radius:20px;background:#fff;box-shadow:0 3px 14px rgba(34,48,46,.07)}
+.tb-pool .pt{font-size:12.5px;font-weight:800;color:var(--le-ink2);display:flex;align-items:center;gap:7px}
+.tb-pool .pt::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--le-accent)}
+.ptasks{display:flex;gap:8px;margin-top:9px}
+.ptask{flex:1;padding:9px 11px;border-radius:14px;font-size:12.5px;font-weight:700;color:#fff;line-height:1.3}
+.ptask small{display:block;font-size:10px;opacity:.82;font-weight:600;margin-top:2px}
+.ptask.study{background:linear-gradient(135deg,#1E9E8E,#177E8C)}
+.ptask.work{background:linear-gradient(135deg,#E2694A,#D8532F)}
+.ptask.sport{background:linear-gradient(135deg,#E8A25B,#DE8C3B)}
+.timeline{margin:12px 16px 0;position:relative;height:520px;border-radius:22px;background:#fff;
+  box-shadow:0 3px 14px rgba(34,48,46,.07);overflow:hidden;padding:12px 14px}
+.tl-head{display:flex;justify-content:space-between;font-size:12.5px;font-weight:800;color:var(--le-ink2);padding:0 2px 8px}
+.tl-scroll{position:relative;height:440px;border-radius:14px;background:repeating-linear-gradient(180deg,#F6F3EE 0 1px,transparent 1px 44px)}
+.tl-now{position:absolute;left:0;right:0;top:172px;height:2px;background:#E2694A;z-index:3}
+.tl-now::before{content:"现在";position:absolute;right:0;top:-19px;font-size:10px;font-weight:800;color:#E2694A}
+.block{position:absolute;left:8px;right:8px;border-radius:13px;padding:8px 12px;color:#fff;font-size:12.5px;font-weight:700;
+  display:flex;flex-direction:column;justify-content:center;animation:slideIn .6s both}
+.block small{font-size:10px;opacity:.85;font-weight:600}
+.block.cat-study{background:linear-gradient(135deg,#1E9E8E,#177E8C);animation-delay:.2s}
+.block.cat-work{background:linear-gradient(135deg,#E2694A,#D8532F);animation-delay:.4s}
+.block.cat-rest{background:linear-gradient(135deg,#B8AFA0,#A79D8D);animation-delay:.5s}
+.block.cat-sport{background:linear-gradient(135deg,#E8A25B,#DE8C3B);animation-delay:.6s}
+.tl-hr{position:absolute;left:2px;font-size:9.5px;color:var(--le-ink3);font-weight:700}
+
+/* ============ 镜头 4 · 番茄钟 ============ */
+.pomo{position:absolute;inset:0;background:linear-gradient(180deg,#0D2E33 0%,#123A40 45%,#0E3138 100%);color:#EAF4F3}
+.pomo::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(50% 30% at 50% 34%, rgba(30,158,142,.30), transparent 70%)}
+.pomo-top{position:absolute;top:66px;width:100%;text-align:center}
+.pomo-top .lab{font-size:13px;font-weight:700;letter-spacing:4px;color:#7FB8B2}
+.pomo-top .task{font-size:18px;font-weight:800;margin-top:10px;color:#F2FAF9}
+.pomo-ring{position:absolute;top:158px;left:50%;transform:translateX(-50%);width:262px;height:262px}
+.pomo-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.pomo-ring .track{fill:none;stroke:rgba(255,255,255,.10);stroke-width:10}
+.pomo-ring .bar{fill:none;stroke:url(#pgrad);stroke-width:10;stroke-linecap:round;
+  stroke-dasharray:754;stroke-dashoffset:754;animation:ring 2.2s .4s cubic-bezier(.3,.8,.3,1) forwards}
+@keyframes ring{to{stroke-dashoffset:118}}
+.pomo-ring .center{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.pomo-ring .center b{font-size:56px;font-weight:250;letter-spacing:1px}
+.pomo-ring .center span{display:block;font-size:12px;color:#7FB8B2;font-weight:700;margin-top:6px;letter-spacing:2px}
+.pomo-acts{position:absolute;top:472px;width:100%;display:flex;justify-content:center;gap:18px}
+.pbtn{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;font-size:20px;font-weight:800}
+.pbtn.pri{background:linear-gradient(135deg,#2BB8A5,#1E9E8E);color:#fff;box-shadow:0 10px 26px rgba(43,184,165,.4)}
+.pbtn.sec{background:rgba(255,255,255,.10);color:#CFE4E1;border:1px solid rgba(255,255,255,.16)}
+.pomo-stats{position:absolute;top:568px;left:34px;right:34px;display:flex;justify-content:space-between;
+  padding:15px 20px;border-radius:20px;background:rgba(255,255,255,.07);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.10)}
+.pst{text-align:center}
+.pst b{display:block;font-size:19px;font-weight:800;color:#F2FAF9}
+.pst span{font-size:11px;color:#7FB8B2;font-weight:700}
+
+/* ============ 镜头 5 · 课程表（横屏内容） ============ */
+.ls-stage{
+  position:absolute;width:844px;height:390px;left:50%;top:50%;
+  margin-left:-422px;margin-top:-195px;
+  transform:rotate(-90deg);
+  background:var(--le-paper);color:var(--le-ink);
+}
+.ls-top{display:flex;align-items:baseline;gap:12px;padding:18px 26px 0}
+.ls-top b{font-size:21px;font-weight:800}
+.ls-top span{font-size:12.5px;color:var(--le-ink3);font-weight:700}
+.ls-week{display:grid;grid-template-columns:44px repeat(5,1fr);gap:6px;padding:12px 24px 0}
+.ls-day{text-align:center;font-size:12px;font-weight:800;color:var(--le-ink2)}
+.ls-day.today{color:#fff;background:var(--le-deep);border-radius:10px;padding:3px 0}
+.ls-grid{display:grid;grid-template-columns:44px repeat(5,1fr);gap:6px;padding:10px 24px 0}
+.ls-slot{border-radius:14px;background:#F1EDE6;min-height:64px;display:grid;place-items:center;font-size:10px;color:var(--le-ink3);font-weight:700;padding:5px 4px;text-align:center}
+.course{border-radius:14px;padding:8px 8px;color:#fff;font-size:11.5px;font-weight:800;line-height:1.35;display:flex;flex-direction:column;justify-content:center;animation:popIn .5s both}
+.course small{font-size:9.5px;opacity:.85;font-weight:600}
+.course.c1{background:linear-gradient(135deg,#1E9E8E,#177E8C);animation-delay:.2s}
+.course.c2{background:linear-gradient(135deg,#5B7FD4,#4663B8);animation-delay:.35s}
+.course.c3{background:linear-gradient(135deg,#E2694A,#D8532F);animation-delay:.5s}
+.course.c4{background:linear-gradient(135deg,#E8A25B,#DE8C3B);animation-delay:.65s}
+.course.c5{background:linear-gradient(135deg,#8E8FB5,#76779E);animation-delay:.8s}
+
+/* ============ 镜头 6 · 插件市场 ============ */
+.market-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:14px 16px 0}
+.mcard{border-radius:22px;background:#fff;padding:14px;box-shadow:0 3px 14px rgba(34,48,46,.07);animation:popIn .5s both}
+.mcard:nth-child(1){animation-delay:.1s}.mcard:nth-child(2){animation-delay:.22s}
+.mcard:nth-child(3){animation-delay:.34s}.mcard:nth-child(4){animation-delay:.46s}
+.mcard:nth-child(5){animation-delay:.58s}.mcard:nth-child(6){animation-delay:.7s}
+.mic{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;color:#fff;font-size:17px;font-weight:800}
+.mic.t{background:linear-gradient(135deg,#1E9E8E,#177E8C)}
+.mic.o{background:linear-gradient(135deg,#E8A25B,#DE8C3B)}
+.mic.b{background:linear-gradient(135deg,#5B7FD4,#4663B8)}
+.mic.p{background:linear-gradient(135deg,#B06AB3,#8E4FA0)}
+.mic.g{background:linear-gradient(135deg,#8E8FB5,#76779E)}
+.mic.r{background:linear-gradient(135deg,#E2694A,#D8532F)}
+.mcard .n{font-size:14px;font-weight:800;margin-top:9px}
+.mcard .d{font-size:10.5px;color:var(--le-ink3);margin-top:3px;line-height:1.45;min-height:30px}
+.mbtn{margin-top:9px;height:32px;border-radius:11px;display:grid;place-items:center;font-size:12px;font-weight:800}
+.mbtn.open{background:var(--le-deep);color:#fff}
+.mbtn.inst{background:#EFEBE4;color:var(--le-ink2)}
+
+/* ============ 镜头 7 · 控制中心 ============ */
+.cc{position:absolute;inset:0;padding:64px 14px 0;background:linear-gradient(180deg,#12181B 0%,#1A2226 100%);color:#EDF3F2}
+.cc::before{content:"";position:absolute;inset:0;background:radial-gradient(60% 34% at 70% 0%, rgba(23,126,140,.24), transparent 70%)}
+.cc-panel{position:relative;border-radius:32px;padding:18px;
+  background:rgba(255,255,255,.09);backdrop-filter:blur(26px);border:1px solid rgba(255,255,255,.12)}
+.cc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.tile{border-radius:20px;aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+  font-size:10.5px;font-weight:700;color:#C9D6D4;background:rgba(255,255,255,.08);animation:popIn .5s both}
+.tile:nth-child(1){animation-delay:.1s}.tile:nth-child(2){animation-delay:.2s}
+.tile:nth-child(3){animation-delay:.3s}.tile:nth-child(4){animation-delay:.4s}
+.tile.on{background:linear-gradient(135deg,#2BB8A5,#177E8C);color:#fff;box-shadow:0 8px 22px rgba(43,184,165,.35)}
+.tile .ti{font-size:21px}
+.cc-slider{margin-top:14px;height:52px;border-radius:18px;background:rgba(255,255,255,.10);position:relative;overflow:hidden}
+.cc-slider .fill{position:absolute;inset:4px;width:64%;border-radius:14px;background:linear-gradient(90deg,#F5E9D6,#E8A25B)}
+.cc-slider .ic{position:absolute;left:16px;top:50%;transform:translateY(-50%);font-size:16px;z-index:2}
+.cc-notifs{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.cc-notif{border-radius:26px;padding:15px 17px;
+  background:rgba(255,255,255,.72);backdrop-filter:blur(22px);color:#22302E;animation:fadeUp .6s .5s both}
+.cc-notif .t{font-size:15px;font-weight:800}
+.cc-notif .d{font-size:12.5px;color:#5E6E6C;margin-top:4px}
+
+/* ============ 镜头 8 · 完成盖章 ============ */
+.done-bg{position:absolute;inset:0;background:var(--le-paper)}
+.done-bg .dim{position:absolute;inset:0;background:rgba(34,48,46,.30);backdrop-filter:blur(3px)}
+.stamp{
+  position:absolute;top:270px;left:50%;width:230px;height:230px;margin-left:-115px;
+  border-radius:50%;border:5px solid #1E9E8E;color:#1E9E8E;
+  display:grid;place-content:center;text-align:center;gap:5px;
+  transform:scale(3.4);opacity:0;
+  animation:stamp .65s .35s cubic-bezier(.2,1.6,.4,1) forwards;
+  background:rgba(255,255,255,.86);backdrop-filter:blur(8px);
+  box-shadow:0 0 0 12px rgba(30,158,142,.12), 0 24px 60px rgba(30,158,142,.28);
+}
+.stamp b{font-size:34px;font-weight:900;letter-spacing:3px}
+.stamp span{font-size:14px;font-weight:800;letter-spacing:1px}
+.stamp small{font-size:11px;font-weight:700;color:#5E8B85}
+@keyframes stamp{
+  0%{transform:scale(3.2) rotate(-14deg);opacity:0}
+  60%{opacity:1}
+  100%{transform:scale(1) rotate(-8deg);opacity:1}
+}
+.confetti{position:absolute;top:250px;left:50%;width:0;height:0}
+.confetti i{position:absolute;width:9px;height:14px;border-radius:2px;opacity:0;animation:conf 1.2s .6s ease-out forwards}
+@keyframes conf{
+  0%{opacity:1;transform:translate(0,0) rotate(0)}
+  100%{opacity:0;transform:translate(var(--cx),var(--cy)) rotate(var(--cr))}
+}
+.done-toast{
+  position:absolute;bottom:110px;left:50%;transform:translateX(-50%) translateY(16px);
+  padding:11px 18px;border-radius:99px;background:rgba(20,45,44,.92);color:#fff;font-size:12.5px;font-weight:700;
+  opacity:0;animation:fadeUp .5s 1s both;white-space:nowrap;box-shadow:0 12px 30px rgba(0,0,0,.3);
+}
+
+/* ============ 镜头 9 · 熄屏谢幕 ============ */
+.endcard{
+  position:fixed;inset:0;z-index:4;display:grid;place-items:center;place-content:center;gap:14px;
+  text-align:center;opacity:0;pointer-events:none;transition:opacity 1.2s;
+}
+.endcard.show{opacity:1}
+.endcard b{font-size:34px;font-weight:800;letter-spacing:2px;
+  background:linear-gradient(90deg,#7FD4CE,#E8C79A);-webkit-background-clip:text;background-clip:text;color:transparent}
+.endcard span{font-size:14.5px;color:#9AB3B1;letter-spacing:3px}
+
+/* ?static=1：入场动画直接跳到终态（用于截静帧/无头验证） */
+.static *,.static *::before,.static *::after{animation-duration:.001s !important;animation-delay:0s !important}
+
+/* ---------- 动画通用 ---------- */
+@keyframes fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+@keyframes popIn{from{opacity:0;transform:scale(.92) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes slideIn{from{opacity:0;transform:translateX(-16px)}to{opacity:1;transform:translateX(0)}}
+
+/* ---------- 控制条 ---------- */
+.controls{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:30;
+  width:min(860px,92vw);
+  display:flex;align-items:center;gap:14px;
+  padding:12px 18px;border-radius:20px;
+  background:rgba(16,24,26,.78);backdrop-filter:blur(18px);
+  border:1px solid rgba(255,255,255,.09);
+}
+.cbtn{width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.12);
+  background:rgba(255,255,255,.07);color:#DDE9E8;font-size:15px;cursor:pointer;flex:none;
+  display:grid;place-items:center;transition:.2s}
+.cbtn:hover{background:rgba(255,255,255,.16)}
+.cbtn.play{width:44px;background:linear-gradient(135deg,#2BB8A5,#177E8C);border:none;color:#fff}
+.tracks{flex:1;display:flex;gap:5px}
+.seg{flex:1;cursor:pointer;padding:5px 0}
+.seg .bar{height:4px;border-radius:2px;background:rgba(255,255,255,.14);overflow:hidden}
+.seg .fill{height:100%;width:0;background:linear-gradient(90deg,#2BB8A5,#7FD4CE)}
+.seg .nm{font-size:10px;color:#8FA5A3;margin-top:5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600}
+.seg.cur .nm{color:#7FD4CE}
+.timecode{font-size:12px;color:#8FA5A3;font-variant-numeric:tabular-nums;flex:none;min-width:74px;text-align:right}
+@media (max-width:900px){ .brand .txt span{display:none} .seg .nm{display:none} }
+</style>
+</head>
+<body>
+
+<div class="stage" id="stage">
+  <div class="scaler">
+    <div class="phone" id="phone">
+      <div class="band l1"></div><div class="band l2"></div>
+      <div class="band r1"></div><div class="band r2"></div>
+      <div class="key volu"></div><div class="key vold"></div><div class="key power"></div>
+      <div class="frame">
+        <div class="screen" id="screen" data-bar="dark">
+          <div class="punch"></div>
+
+          <!-- 镜头 1 · 锁屏通知 -->
+          <section class="shot" data-s="lock">
+            <div class="wp"><div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div></div>
+            <div class="lock-clock">
+              <div class="time">17:36</div>
+              <div class="date">9月16日 星期三</div>
+              <div class="tag">Le时间管理 · 已专注 3 小时</div>
+            </div>
+            <div class="notif-stack">
+              <div class="notif">
+                <div class="notif-head"><span class="appic">Le</span>Le时间管理<span class="when">现在</span></div>
+                <div class="t">🍅 番茄钟完成</div>
+                <div class="d">「数据结构复习」专注 25 分钟，休息 5 分钟吧</div>
+              </div>
+              <div class="notif">
+                <div class="notif-head"><span class="appic">表</span>时光课程表<span class="when">8 分钟前</span></div>
+                <div class="t">第 3 节 · 数据结构</div>
+                <div class="d">14:00 · 教学楼 B201 · 记得带上实验报告</div>
+              </div>
+            </div>
+            <div class="swipe-hint">上滑查看专注概览</div>
+            <div class="lock-bottom">
+              <div class="circ">🔦</div>
+              <div class="circ">📷</div>
+            </div>
+          </section>
+
+          <!-- 镜头 2 · 启动页 -->
+          <section class="shot" data-s="boot">
+            <div class="app" style="display:grid;place-items:center;place-content:center;gap:0">
+              <div style="width:96px;height:96px;border-radius:28px;background:linear-gradient(135deg,#177E8C,#14555C);
+                display:grid;place-items:center;color:#fff;font-size:44px;font-weight:800;box-shadow:0 20px 46px rgba(20,85,92,.35);
+                animation:popIn .7s .1s both">Le</div>
+              <div style="font-size:27px;font-weight:800;margin-top:26px;animation:fadeUp .7s .4s both">Le时间管理</div>
+              <div style="font-size:14px;color:#6A7A78;font-weight:600;margin-top:9px;letter-spacing:2px;animation:fadeUp .7s .6s both">先决定，再动手</div>
+              <div style="display:flex;gap:7px;margin-top:44px;animation:fadeUp .6s .8s both">
+                <span style="width:7px;height:7px;border-radius:50%;background:#177E8C;animation:blob 1s infinite alternate"></span>
+                <span style="width:7px;height:7px;border-radius:50%;background:#8FC5C0;animation:blob 1s .2s infinite alternate"></span>
+                <span style="width:7px;height:7px;border-radius:50%;background:#D8CFC2;animation:blob 1s .4s infinite alternate"></span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 3 · 四象限 -->
+          <section class="shot" data-s="quad">
+            <div class="app">
+              <div class="app-top">
+                <div class="vt"><b>四象限</b><span>先决定，再动手</span></div>
+                <div class="app-search">🔍 搜索任务 / 备注 / 项目</div>
+                <div class="chips">
+                  <span class="chip on">全部 7 项</span><span class="chip">待办 5 项</span><span class="chip">已完成 2 项</span>
+                </div>
+              </div>
+              <div class="qgrid">
+                <div class="quad q1">
+                  <div class="qh"><span class="sq"></span>紧急重要<i>Ⅰ</i></div>
+                  <div class="trow"><span class="cb"></span>完成实验报告初稿<span class="est">90m</span></div>
+                  <div class="trow"><span class="cb"></span>复习药理学 第5章<span class="est">45m</span></div>
+                </div>
+                <div class="quad q2">
+                  <div class="qh"><span class="sq"></span>重要不紧急<i>Ⅱ</i></div>
+                  <div class="trow done"><span class="cb"></span>制定下周学习计划<span class="est">30m</span></div>
+                  <div class="trow"><span class="cb"></span>阅读文献 2 篇<span class="est">60m</span></div>
+                </div>
+                <div class="quad q3">
+                  <div class="qh"><span class="sq"></span>紧急不重要<i>Ⅲ</i></div>
+                  <div class="trow"><span class="cb"></span>回复辅导员通知<span class="est">10m</span></div>
+                </div>
+                <div class="quad q4">
+                  <div class="qh"><span class="sq"></span>不紧急不重要<i>Ⅳ</i></div>
+                  <div class="trow done"><span class="cb"></span>整理桌面文件<span class="est">15m</span></div>
+                </div>
+              </div>
+              <div class="app-add">＋ 添加到这个象限</div>
+              <div class="app-motto">把任务放进象限，就是做决定 · 象限 Ⅰ 的面积最大，因为它值得你最多时间</div>
+            </div>
+          </section>
+
+          <!-- 镜头 4 · 时间块 -->
+          <section class="shot" data-s="timeblock">
+            <div class="app">
+              <div class="app-top">
+                <div class="vt"><b>时间块</b><span>把任务装进一天的格子</span></div>
+              </div>
+              <div class="tb-pool">
+                <div class="pt">任务池 · 拖进右侧时间轴</div>
+                <div class="ptasks">
+                  <div class="ptask study">高数复习<small>预计 120m</small></div>
+                  <div class="ptask work">实验报告<small>预计 90m</small></div>
+                  <div class="ptask sport">夜跑 5km<small>预计 40m</small></div>
+                </div>
+              </div>
+              <div class="timeline">
+                <div class="tl-head"><span>今天 · 9月16日</span><span>已安排 6h 20m</span></div>
+                <div class="tl-scroll">
+                  <span class="tl-hr" style="top:-4px">08:00</span>
+                  <span class="tl-hr" style="top:132px">12:00</span>
+                  <span class="tl-hr" style="top:268px">16:00</span>
+                  <span class="tl-hr" style="top:404px">20:00</span>
+                  <div class="tl-now"></div>
+                  <div class="block cat-study" style="top:8px;height:110px">高数复习 · 微积分<small>09:00 – 10:50 · 110m</small></div>
+                  <div class="block cat-rest" style="top:126px;height:44px">午餐 · 休息<small>12:10 – 12:54</small></div>
+                  <div class="block cat-work" style="top:186px;height:96px">实验报告 · 数据部分<small>14:00 – 15:36 · 96m</small></div>
+                  <div class="block cat-study" style="top:292px;height:70px">药理学 · 第5章<small>16:30 – 17:40</small></div>
+                  <div class="block cat-sport" style="top:380px;height:52px">夜跑 5km<small>19:00 – 19:40</small></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 5 · 番茄钟 -->
+          <section class="shot" data-s="pomo">
+            <div class="pomo">
+              <div class="pomo-top">
+                <div class="lab">专注中</div>
+                <div class="task">数据结构复习</div>
+              </div>
+              <div class="pomo-ring">
+                <svg viewBox="0 0 262 262">
+                  <defs>
+                    <linearGradient id="pgrad" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#2BB8A5"/><stop offset="1" stop-color="#7FD4CE"/>
+                    </linearGradient>
+                  </defs>
+                  <circle class="track" cx="131" cy="131" r="120"/>
+                  <circle class="bar" cx="131" cy="131" r="120"/>
+                </svg>
+                <div class="center">
+                  <div><b>24:36</b><span>第 4 个番茄</span></div>
+                </div>
+              </div>
+              <div class="pomo-acts">
+                <div class="pbtn sec">⏸</div>
+                <div class="pbtn pri">✓</div>
+                <div class="pbtn sec">✕</div>
+              </div>
+              <div class="pomo-stats">
+                <div class="pst"><b>3</b><span>今日完成</span></div>
+                <div class="pst"><b>75m</b><span>专注时长</span></div>
+                <div class="pst"><b>6</b><span>本周番茄</span></div>
+                <div class="pst"><b>96%</b><span>专注率</span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 6 · 课程表（横屏） -->
+          <section class="shot" data-s="schedule">
+            <div class="ls-stage">
+              <div class="ls-top">
+                <b>时光课程表</b><span>中国药科大学 · 2026 秋季学期 · 第 2 周</span>
+              </div>
+              <div class="ls-week">
+                <span></span>
+                <span class="ls-day">周一</span><span class="ls-day today">周二</span><span class="ls-day">周三</span><span class="ls-day">周四</span><span class="ls-day">周五</span>
+              </div>
+              <div class="ls-grid">
+                <div></div>
+                <div class="ls-slot">1–2 节<br>08:00</div>
+                <div class="course c1">药理学<small>B301 · 1-8周</small></div>
+                <div class="ls-slot">1–2 节<br>08:00</div>
+                <div class="course c2">有机化学<small>A203 · 1-16周</small></div>
+                <div class="ls-slot">1–2 节<br>08:00</div>
+
+                <div></div>
+                <div class="course c3">数据结构<small>B201 · 1-16周</small></div>
+                <div class="course c1">药理实验<small>实验楼 302</small></div>
+                <div class="course c4">大学英语<small>C105 · 1-16周</small></div>
+                <div class="ls-slot">3–4 节<br>10:00</div>
+                <div class="course c5">体育 · 排球<small>田径场</small></div>
+
+                <div></div>
+                <div class="ls-slot">5–6 节<br>14:00</div>
+                <div class="course c2">有机化学<small>A203 · 双周</small></div>
+                <div class="ls-slot">5–6 节<br>14:00</div>
+                <div class="course c3">数据结构<br>实验<small>机房 401</small></div>
+                <div class="ls-slot">5–6 节<br>14:00</div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 7 · 插件市场 -->
+          <section class="shot" data-s="market">
+            <div class="app">
+              <div class="app-top">
+                <div class="vt"><b>插件</b><span>扩展能力集中在这里</span></div>
+                <div class="app-search">🔍 搜索插件</div>
+              </div>
+              <div class="market-grid">
+                <div class="mcard"><div class="mic t">表</div><div class="n">时光课程表</div><div class="d">导入教务课表，多校适配调色板</div><div class="mbtn open">打开</div></div>
+                <div class="mcard"><div class="mic o">🍅</div><div class="n">番茄钟</div><div class="d">专注计时与提醒设置面板</div><div class="mbtn open">打开</div></div>
+                <div class="mcard"><div class="mic b">警</div><div class="n">校园通知</div><div class="d">智慧警大门户通知公告速览</div><div class="mbtn inst">安装</div></div>
+                <div class="mcard"><div class="mic p">超</div><div class="n">超星学习通</div><div class="d">收件箱通知与作业提醒</div><div class="mbtn inst">安装</div></div>
+                <div class="mcard"><div class="mic g">报</div><div class="n">周报生成器</div><div class="d">按周汇总完成情况一键导出</div><div class="mbtn inst">安装</div></div>
+                <div class="mcard"><div class="mic r">推</div><div class="n">微信推送</div><div class="d">待办与番茄结束推送到微信</div><div class="mbtn inst">安装</div></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 8 · 控制中心 -->
+          <section class="shot" data-s="cc">
+            <div class="cc">
+              <div class="cc-panel">
+                <div class="cc-grid">
+                  <div class="tile on"><span class="ti">📶</span>Wi-Fi</div>
+                  <div class="tile on"><span class="ti">🌙</span>深色模式</div>
+                  <div class="tile on"><span class="ti">🍅</span>专注模式</div>
+                  <div class="tile"><span class="ti">🔵</span>蓝牙</div>
+                </div>
+                <div class="cc-slider"><span class="ic">☀️</span><div class="fill"></div></div>
+              </div>
+              <div class="cc-notifs">
+              <div class="cc-notif">
+                <div class="notif-head"><span class="appic">Le</span>Le时间管理<span class="when">现在</span></div>
+                <div class="t" style="margin-top:7px">📊 今日概览已生成</div>
+                <div class="d">完成 5 项 · 专注 3 小时 20 分 · 明日有 2 节早课</div>
+              </div>
+              <div class="cc-notif" style="animation-delay:.7s">
+                <div class="notif-head"><span class="appic" style="background:linear-gradient(135deg,#5B7FD4,#4663B8)">校</span>校园通知<span class="when">1 小时前</span></div>
+                <div class="t" style="margin-top:7px">关于国庆节放假安排的通知</div>
+                <div class="d">10月1日 – 10月8日 放假调休</div>
+              </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 镜头 9 · 完成盖章 -->
+          <section class="shot" data-s="done">
+            <div class="done-bg">
+              <div class="app" style="filter:blur(1px)">
+                <div class="app-top"><div class="vt"><b>四象限</b><span>先决定，再动手</span></div></div>
+                <div class="qgrid">
+                  <div class="quad q1"><div class="qh"><span class="sq"></span>紧急重要<i>Ⅰ</i></div>
+                    <div class="trow done"><span class="cb"></span>完成实验报告初稿</div>
+                    <div class="trow done"><span class="cb"></span>复习药理学 第5章</div></div>
+                  <div class="quad q2"><div class="qh"><span class="sq"></span>重要不紧急<i>Ⅱ</i></div>
+                    <div class="trow done"><span class="cb"></span>制定下周学习计划</div>
+                    <div class="trow done"><span class="cb"></span>阅读文献 2 篇</div></div>
+                  <div class="quad q3"><div class="qh"><span class="sq"></span>紧急不重要<i>Ⅲ</i></div>
+                    <div class="trow done"><span class="cb"></span>回复辅导员通知</div></div>
+                  <div class="quad q4"><div class="qh"><span class="sq"></span>不紧急不重要<i>Ⅳ</i></div>
+                    <div class="trow done"><span class="cb"></span>整理桌面文件</div></div>
+                </div>
+              </div>
+              <div class="dim"></div>
+            </div>
+            <div class="confetti">
+              <i style="--cx:-120px;--cy:-90px;--cr:-160deg;background:#E8A25B"></i>
+              <i style="--cx:110px;--cy:-110px;--cr:120deg;background:#1E9E8E"></i>
+              <i style="--cx:-70px;--cy:80px;--cr:200deg;background:#5B7FD4"></i>
+              <i style="--cx:90px;--cy:70px;--cr:-90deg;background:#E2694A"></i>
+              <i style="--cx:-140px;--cy:20px;--cr:60deg;background:#7FD4CE"></i>
+              <i style="--cx:140px;--cy:-30px;--cr:-200deg;background:#E8C79A"></i>
+            </div>
+            <div class="stamp"><b>今日达成</b><span>✓ ALL DONE</span><small>2026.09.16 · 5 项任务</small></div>
+            <div class="done-toast">已完成 5 项 · 连续打卡 12 天</div>
+          </section>
+
+          <!-- 镜头 10 · 熄屏 -->
+          <section class="shot" data-s="off">
+            <div class="wp"><div class="blob b1"></div><div class="blob b2"></div></div>
+          </section>
+
+          <div class="glare"></div>
+          <div class="statusbar">
+            <span>17:36</span>
+            <span class="sb-icons">
+              <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="4.5" y="5.5" width="3" height="6.5" rx="1"/><rect x="9" y="3" width="3" height="9" rx="1"/><rect x="13.5" y="0.5" width="3" height="11.5" rx="1" opacity=".4"/></svg>
+              <svg width="15" height="12" viewBox="0 0 15 12" fill="currentColor"><path d="M7.5 9.6 5.6 7.7a2.7 2.7 0 0 1 3.8 0Zm3.3-3.3a5.2 5.2 0 0 0-6.6 0L2.7 4.8a7.6 7.6 0 0 1 9.6 0ZM13.9 4.2a9.6 9.6 0 0 0-12.8 0L.6 3a11.6 11.6 0 0 1 13.8 0Z"/></svg>
+              <span class="sb-batt"></span>
+            </span>
+          </div>
+          <div class="homebar"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="endcard" id="endcard">
+    <b>Le时间管理</b>
+    <span>把时间还给生活 · LE TIME</span>
+  </div>
+</div>
+
+<div class="brand">
+  <div class="mark">Le</div>
+  <div class="txt"><b>Le时间管理 · 手机端演示</b><span>手机系统 UI 风格 · 编排录屏动画 · HyperOS 设计语言</span></div>
+</div>
+
+<div class="controls">
+  <button class="cbtn play" id="btnPlay" title="播放 / 暂停">⏸</button>
+  <button class="cbtn" id="btnPrev" title="上一个镜头">⏮</button>
+  <button class="cbtn" id="btnNext" title="下一个镜头">⏭</button>
+  <div class="tracks" id="tracks"></div>
+  <div class="timecode" id="timecode">00:00 / 00:00</div>
+</div>
+
+<script>
+/* ================= 编排器 ================= */
+const SHOTS = [
+  { id:"lock",      name:"锁屏通知",   dur:6,  bar:"light" },
+  { id:"boot",      name:"启动",       dur:4,  bar:"dark"  },
+  { id:"quad",      name:"四象限",     dur:7,  bar:"dark"  },
+  { id:"timeblock", name:"时间块",     dur:7,  bar:"dark"  },
+  { id:"pomo",      name:"番茄钟",     dur:7,  bar:"light" },
+  { id:"schedule",  name:"课程表·横屏", dur:7, bar:"light" },
+  { id:"market",    name:"插件市场",   dur:6,  bar:"dark"  },
+  { id:"cc",        name:"控制中心",   dur:6,  bar:"light" },
+  { id:"done",      name:"完成盖章",   dur:5,  bar:"light" },
+  { id:"off",       name:"熄屏谢幕",   dur:5,  bar:"light" },
+];
+const TOTAL = SHOTS.reduce((a,s)=>a+s.dur,0);
+
+const phone   = document.getElementById("phone");
+const screenEl= document.getElementById("screen");
+const endcard = document.getElementById("endcard");
+const tracks  = document.getElementById("tracks");
+const tcEl    = document.getElementById("timecode");
+const btnPlay = document.getElementById("btnPlay");
+
+/* 进度分段 */
+let segs = [];
+SHOTS.forEach((s,i)=>{
+  const seg = document.createElement("div");
+  seg.className = "seg";
+  seg.innerHTML = `<div class="bar"><div class="fill"></div></div><div class="nm">${i+1}. ${s.name}</div>`;
+  seg.onclick = ()=> seekTo(i);
+  tracks.appendChild(seg);
+  segs.push(seg);
+});
+
+let playing = true;
+let t = 0;           // 已播秒数
+let last = performance.now();
+let shotIdx = -1;
+let shotStart = 0;   // 当前镜头开始时间（用于姿态过渡）
+
+function fmt(v){ const m=String(Math.floor(v/60)).padStart(2,"0"), s=String(Math.floor(v%60)).padStart(2,"0"); return m+":"+s; }
+
+function shotAt(time){
+  let acc=0;
+  for(let i=0;i<SHOTS.length;i++){ acc+=SHOTS[i].dur; if(time<acc) return i; }
+  return SHOTS.length-1;
+}
+function seekTo(i){
+  let acc=0; for(let k=0;k<i;k++) acc+=SHOTS[k].dur;
+  t = acc + 0.0001; applyShot(true);
+}
+
+function applyShot(force){
+  const idx = shotAt(t);
+  if(idx!==shotIdx || force){
+    shotIdx = idx; shotStart = t;
+    const shot = SHOTS[idx];
+    document.querySelectorAll(".shot").forEach(el=>el.classList.toggle("active", el.dataset.s===shot.id));
+    screenEl.dataset.bar = shot.bar;
+    // 进入新镜头：内容淡入由 CSS 动画承担；熄屏镜头在片尾触发黑屏
+    if(shot.id!=="off") screenEl.classList.remove("off");
+    endcard.classList.remove("show");
+    segs.forEach((seg,k)=>seg.classList.toggle("cur",k===idx));
+  }
+}
+
+/* ---------- 手机姿态（3D 演员） ---------- */
+function ease(x){ return x<0?0 : x>1?1 : 1-Math.pow(1-x,3); }
+
+function applyPose(){
+  const shot = SHOTS[shotIdx];
+  const st = t - shotStart;                    // 镜头内时间
+  const enter = ease(st/0.9);                  // 进场过渡
+  const leave = ease((t+SHOTS[shotIdx].dur - 0.9 - shotStart)/0.9); // 出场前倾
+
+  // 基础呼吸摇摆
+  const swayY = Math.sin(t*0.9)*5;
+  const swayZ = Math.sin(t*0.63)*0.9;
+  let ry = swayY, rz = swayZ, rx = 0, sc = 1, dx = 0, dy = 0;
+
+  // 镜头切换时轻微前倾
+  rx += (1-enter)*8 - leave*7;
+  sc -= (1-enter)*0.02 + leave*0.02;
+
+  if(shot.id==="schedule"){                    // 横屏：手机顺时针躺倒
+    rz += enter*90;
+    ry = 0; rz -= swayZ*0.4;
+  }
+  if(shot.id==="done"){                        // 盖章震动：衰减抖动
+    const shake = Math.sin(st*42)*Math.exp(-st*3.2)*3.4;
+    rz += shake; dx = Math.sin(st*50)*Math.exp(-st*3.2)*4;
+  }
+  if(shot.id==="off"){                         // 熄屏旋走
+    const k = ease(st/2.6);
+    ry += k*330; rx += k*14; rz += k*8; sc -= k*0.34; dy += k*40;
+    if(st>1.4) screenEl.classList.add("off");
+    if(st>2.2) endcard.classList.add("show");
+  }
+  if(shot.id==="lock" && st<0.2){ ry=0; rz=0; }
+
+  phone.style.transform =
+    `translate3d(${dx}px,${dy}px,0) scale(${sc}) rotateX(${rx}deg) rotateY(${ry}deg) rotateZ(${rz}deg)`;
+}
+
+/* ---------- 主循环 ---------- */
+function loop(now){
+  const dt = (now-last)/1000; last = now;
+  if(playing){
+    t += dt;
+    if(t>=TOTAL){ t=0; shotIdx=-1; }          // 循环
+    applyShot(false);
+  }
+  applyPose();
+
+  /* 进度条 & 时间码 */
+  let acc=0;
+  SHOTS.forEach((s,i)=>{
+    const start=acc; acc+=s.dur;
+    const p = Math.max(0, Math.min(1, (t-start)/s.dur));
+    segs[i].querySelector(".fill").style.width = (p*100).toFixed(1)+"%";
+  });
+  tcEl.textContent = `${fmt(t)} / ${fmt(TOTAL)}`;
+
+  requestAnimationFrame(loop);
+}
+
+/* ---------- 控制 ---------- */
+btnPlay.onclick = ()=>{
+  playing = !playing;
+  btnPlay.textContent = playing ? "⏸" : "▶";
+};
+document.getElementById("btnPrev").onclick = ()=>{
+  const st = t - shotStart;
+  if(st>1.2) seekTo(shotIdx); else seekTo((shotIdx-1+SHOTS.length)%SHOTS.length);
+};
+document.getElementById("btnNext").onclick = ()=> seekTo((shotIdx+1)%SHOTS.length);
+document.addEventListener("keydown", e=>{
+  if(e.key===" "){ e.preventDefault(); btnPlay.click(); }
+  if(e.key==="ArrowRight") document.getElementById("btnNext").click();
+  if(e.key==="ArrowLeft")  document.getElementById("btnPrev").click();
+});
+
+/* 支持 ?t=秒数 从指定时间起播（便于分享/截图指定镜头），?pause=1 则暂停在该时刻，?static=1 跳过入场动画 */
+const qs = new URLSearchParams(location.search);
+if(qs.has("static")) document.documentElement.classList.add("static");
+if(qs.has("t")){
+  t = Math.max(0, Math.min(TOTAL - 0.01, parseFloat(qs.get("t")) || 0));
+  if(qs.has("pause")){ playing = false; btnPlay.textContent = "▶"; }
+  applyShot(true);
+  shotStart = t - 1.5; // 视为已进场，姿态过渡直接到位
+}
+if(qs.has("debug")){
+  addEventListener("load", ()=>{
+    const p=document.querySelector(".cc-panel"), g=document.querySelector(".cc-grid"), t0=document.querySelector(".tile");
+    document.title = JSON.stringify({p:p?p.offsetHeight:null, g:g?g.offsetHeight:null,
+      t:t0?{w:t0.offsetWidth,h:t0.offsetHeight,op:getComputedStyle(t0).opacity}:null});
+  });
+}
+if(!qs.has("t")) applyShot(true);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

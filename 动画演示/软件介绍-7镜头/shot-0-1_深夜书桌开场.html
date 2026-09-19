@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 0-1 · 深夜书桌 · U-Time 登场</title>
+
+<!-- [改这里] 字体：深夜书桌扁平插画 —— Nunito(展示拉丁) + Noto Sans SC(中文) + Share Tech Mono(等宽) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;900&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 深夜书桌：暖夜灯渐变 + 桌面扁平插画 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:radial-gradient(1500px 900px at 24% 18%,#33406b 0%,#232c4e 45%,#161d36 100%)}
+#glow{position:absolute;left:-160px;top:-140px;width:1000px;height:900px;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(255,205,140,.32),rgba(255,205,140,.10) 55%,transparent 75%)}
+#desk{position:absolute;left:0;right:0;bottom:0;height:210px;background:linear-gradient(#4a3b52,#3b2f45);
+  box-shadow:inset 0 14px 0 rgba(255,255,255,.05)}
+#deskline{position:absolute;left:0;right:0;bottom:210px;height:4px;background:rgba(255,214,160,.28)}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：深夜书桌扁平插画
+   ──────────────────────────────────────────────── */
+#title{position:absolute;left:64px;top:44px;opacity:0;transform:translateY(-16px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#title.show{opacity:1;transform:translateY(0)}
+#title .no{display:inline-block;font-family:'Nunito';font-weight:900;font-size:16px;letter-spacing:3px;color:#1d2233;background:#ffd894;border-radius:9px;padding:6px 16px}
+#title h1{margin-top:14px;font-family:'Nunito','Noto Sans SC';font-size:58px;font-weight:900;letter-spacing:3px;color:#fdf3e3}
+#title h1 i{font-style:normal;color:#ff9d6b}
+#title .en{font-family:'Share Tech Mono';font-size:15px;color:rgba(253,243,227,.55);margin-top:8px;letter-spacing:4px}
+
+/* 台灯（扁平插画）：灯罩 + 光锥 */
+#lamp{position:absolute;left:150px;top:300px;width:120px;opacity:0;transition:opacity .8s ease}
+#lamp.show{opacity:1}
+#cone{position:absolute;left:60px;top:250px;width:520px;height:640px;pointer-events:none;opacity:0;transition:opacity 1s ease;
+  background:linear-gradient(rgba(255,214,150,.14),rgba(255,214,150,0) 78%);clip-path:polygon(22% 0,50% 0,96% 100%,0% 100%)}
+
+/* 散落的事项碎片（聊天/便签/通知/闹钟） */
+.scrap{position:absolute;opacity:0;transform:scale(.5) rotate(var(--rot,0deg));transition:all .55s cubic-bezier(.34,1.6,.64,1);z-index:12}
+.scrap.pop{opacity:1;transform:scale(1) rotate(var(--rot,0deg))}
+.scrap.bye{opacity:0!important;transform:scale(.75) rotate(var(--rot,0deg))}
+.scrap .card{box-shadow:0 16px 36px rgba(8,10,22,.45)}
+#s1{left:430px;top:400px;--rot:-3deg}
+#s1 .card{width:250px;background:#fff;border-radius:20px 20px 20px 4px;padding:18px 22px;font-size:23px;font-weight:900;color:#2b3350}
+#s1 .card small{display:block;margin-top:6px;font-size:14px;color:#9aa3bd;font-weight:700}
+#s2{left:1310px;top:280px;--rot:6deg}
+#s2 .card{width:220px;background:#ffe58f;border-radius:6px;padding:20px 22px;font-size:24px;font-weight:900;color:#5c4310}
+#s2 .card small{display:block;margin-top:8px;font-size:14px;color:#8a6d23;font-weight:700}
+#s3{left:1240px;top:560px;--rot:-2deg}
+#s3 .card{display:flex;align-items:center;gap:12px;width:330px;background:#fff;border-radius:14px;padding:14px 18px;font-size:19px;font-weight:900;color:#2b3350}
+#s3 .card b{color:#ff6a4d}
+#s4{left:640px;top:640px;--rot:0deg}
+#s4 svg{filter:drop-shadow(0 12px 24px rgba(8,10,22,.4))}
+.ring{animation:ring 1s ease-in-out infinite;transform-origin:60px 22px}
+@keyframes ring{0%,100%{transform:rotate(0)}25%{transform:rotate(9deg)}75%{transform:rotate(-9deg)}}
+
+/* U-Time 迷你窗口：任务池 → 时间轴 */
+#appMock{position:absolute;left:50%;top:472px;transform:translate(-50%,-50%) scale(.7);width:1000px;height:520px;
+  background:#fdf6ea;border-radius:20px;box-shadow:0 34px 80px rgba(5,8,20,.55);overflow:hidden;
+  opacity:0;transition:all .8s cubic-bezier(.16,1,.3,1)}
+#appMock.in{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#appMock .bar{height:52px;background:#2b3350;display:flex;align-items:center;padding:0 20px;gap:9px}
+#appMock .bar i{width:13px;height:13px;border-radius:50%;background:#4a5578}
+#appMock .bar span{margin-left:14px;color:#ffd894;font-family:'Nunito';font-weight:900;font-size:19px;letter-spacing:2px}
+#appMock .body{display:flex;height:468px}
+.pool{width:330px;background:#f3e7d2;padding:22px;border-right:3px dashed #d8c8a8}
+.pool h4{font-size:17px;font-weight:900;color:#8a6d3a;letter-spacing:3px;margin-bottom:16px}
+.pcard{background:#fff;border-radius:12px;padding:13px 16px;margin-bottom:14px;font-size:19px;font-weight:900;color:#2b3350;box-shadow:0 8px 18px rgba(90,70,40,.16);display:flex;gap:10px;align-items:center}
+.pcard .dot{width:12px;height:12px;border-radius:4px;background:#ffb648;flex:none}
+.tl{flex:1;position:relative;padding:20px 26px}
+.tl h4{font-size:17px;font-weight:900;color:#8a6d3a;letter-spacing:3px}
+.slotrow{position:relative;height:76px;margin-top:12px;border-bottom:2px dashed #e2d3b4}
+.slotrow .h{position:absolute;left:0;top:22px;font-family:'Share Tech Mono';font-size:16px;color:#a58c5c;width:64px}
+.slot{position:absolute;left:84px;right:10px;top:12px;height:52px;border-radius:10px;background:repeating-linear-gradient(45deg,#efe2c8 0 10px,#f7edd8 10px 20px)}
+.filled{background:#ffb648;box-shadow:0 8px 18px rgba(255,150,40,.35)}
+.filled.green{background:#7cc47f;box-shadow:0 8px 18px rgba(80,170,90,.35)}
+.slot .cap{position:absolute;left:14px;top:13px;font-size:17px;font-weight:900;color:#fff}
+#nowline{position:absolute;left:84px;top:100px;bottom:24px;width:4px;border-radius:2px;background:#ff4d4d;box-shadow:0 0 12px rgba(255,70,70,.7)}
+#nowline::after{content:'现在';position:absolute;left:-8px;top:-34px;font-size:14px;font-weight:900;color:#fff;background:#ff4d4d;border-radius:7px;padding:3px 10px}
+.pcard.moving{position:absolute;z-index:5}
+
+/* 三枚特性徽章 */
+#chips{position:absolute;left:50%;bottom:74px;transform:translateX(-50%);display:flex;gap:22px;z-index:13}
+.chip{opacity:0;transform:translateY(26px) scale(.8);transition:all .5s cubic-bezier(.34,1.6,.64,1);
+  background:rgba(253,246,234,.95);color:#2b3350;font-weight:900;font-size:20px;border-radius:999px;padding:13px 26px;
+  box-shadow:0 14px 30px rgba(5,8,20,.45);display:flex;align-items:center;gap:10px}
+.chip svg{flex:none}
+.chip.in{opacity:1;transform:translateY(0) scale(1)}
+
+/* ── 角色特写位：安安（强约束气泡模板，仅 4 配色随页） ── */
+#anan{position:absolute;left:-6px;bottom:-10px;width:390px;z-index:28;opacity:0;transition:opacity .9s ease}
+#anan.show{opacity:1}
+#anan img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#fdf6ea;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#2b3350;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(5,8,20,.45)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fdf6ea}
+#anan .say b{color:#ff6a4d}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(253,243,227,.5);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#ff9d6b;box-shadow:0 0 10px rgba(255,157,107,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="glow"></div>
+  <div id="cone"></div>
+  <div id="lamp">
+    <svg viewBox="0 0 120 150" width="120"><g stroke="#1d2233" stroke-width="3" stroke-linejoin="round">
+      <path d="M38 18 L82 18 L104 66 L16 66 Z" fill="#ff9d6b"/>
+      <rect x="54" y="66" width="12" height="52" fill="#3a4468"/>
+      <path d="M30 130 Q60 112 90 130 L90 142 L30 142 Z" fill="#3a4468"/>
+      <circle cx="60" cy="72" r="7" fill="#ffe9b8"/>
+    </g></svg>
+  </div>
+  <div id="desk"></div><div id="deskline"></div>
+
+  <!-- [改这里] 全部画面内容包进 #cam -->
+  <div id="cam">
+    <div id="title">
+      <span class="no">U-TIME · 01</span>
+      <h1>深夜 23:47 <i>·</i> 事情散落一桌</h1>
+      <div class="en">A LOCAL-FIRST TIME DESK</div>
+    </div>
+
+    <div class="scrap" id="s1"><div class="card">「实验报告明天交！」<small>微信 · 22:41</small></div></div>
+    <div class="scrap" id="s2"><div class="card">查文献<br><small>脑子里的 · 随时会忘</small></div></div>
+    <div class="scrap" id="s3"><div class="card">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#ff6a4d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span>9月10日 <b>14:00</b> · 组会</span></div></div>
+    <div class="scrap" id="s4">
+      <svg width="120" height="120" viewBox="0 0 120 120"><g class="ring"><circle cx="60" cy="66" r="40" fill="#fdf6ea" stroke="#2b3350" stroke-width="5"/><path d="M60 66 L60 42" stroke="#ff6a4d" stroke-width="6" stroke-linecap="round"/><path d="M60 66 L78 74" stroke="#2b3350" stroke-width="5" stroke-linecap="round"/><path d="M28 26 L44 40 M92 26 L76 40" stroke="#2b3350" stroke-width="6" stroke-linecap="round"/></g></svg>
+    </div>
+
+    <div id="appMock">
+      <div class="bar"><i></i><i></i><i></i><span>U-Time</span></div>
+      <div class="body">
+        <div class="pool"><h4>任务池</h4>
+          <div class="pcard" id="pc1"><span class="dot"></span>实验报告 · 周五</div>
+          <div class="pcard" id="pc2"><span class="dot" style="background:#7cc47f"></span>组会 · 14:00</div>
+        </div>
+        <div class="tl"><h4>今天 · 时间块</h4>
+          <div class="slotrow"><span class="h">10:00</span><div class="slot" id="slot1"></div></div>
+          <div class="slotrow"><span class="h">14:00</span><div class="slot" id="slot2"></div></div>
+          <div class="slotrow"><span class="h">16:00</span><div class="slot"></div></div>
+          <div id="nowline"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="chips">
+      <div class="chip" id="chip1"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#2b3350" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 3"/></svg>本地优先 · 一个 JSON</div>
+      <div class="chip" id="chip2"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#2b3350" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 8 19z"/></svg>无账号 · 无联网</div>
+      <div class="chip" id="chip3"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#2b3350" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>Windows / Android / 小程序</div>
+    </div>
+
+    <!-- 角色特写：安安（素材已复制到输出目录） -->
+    <div id="anan">
+      <div class="say">今天到底干了<b>啥</b>啊……</div>
+      <img src="anan - emotion rename/08_倦眼半阖_慵懒无力.png" alt="安安">
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">01 / 开场 · 深夜书桌</div>
+  <div class="corner" id="src">功能与数据 · le-time-management README v0.11.4</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 0-1 · 深夜书桌开场 · 24s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=24000;                       /* [改这里] = 本镜头规定时长(ms) */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue（24s）
+   口播：0:00「深夜十一点半，瘫在桌上回想——今天到底干了什么？」
+         0:03「想做的事散落在聊天记录、便签和脑子里」
+         0:11「U-Time 把『决定做什么』和『什么时候做』放上同一张桌面」
+         0:17「本地一个 JSON、无账号无联网，Windows / Android / 小程序」
+   ──────────────────────────────────────────────── */
+on(300,()=>camTo(0,0,1,2.4));                                    // 开场拉镜：台灯特写 → 全景
+on(400,()=>{$('#title').classList.add('show');$('#lamp').classList.add('show')});
+on(900,()=>{$('#cone').classList.add('show')});
+on(1800,()=>{$('#s1').classList.add('pop')});                    // 口播 0:03 碎片逐一砸上桌
+on(3000,()=>{$('#s2').classList.add('pop')});
+on(4200,()=>{$('#s3').classList.add('pop')});
+on(5400,()=>{$('#s4').classList.add('pop')});
+on(7200,()=>camFocus(1350,430,1.15,1.0));                        // 关键推近：碎片堆
+on(8300,()=>{const a=$('#anan');a.classList.add('show');__sfx.pop(.55)});   // 安安中段快闪（34%）
+on(10600,()=>camTo(0,0,1,1.1));                                  // 转场拉回
+on(10900,()=>{$('#appMock').classList.add('in')});
+on(11300,()=>{for(const id of['s1','s2','s3','s4'])$('#'+id).classList.add('bye')});   // 碎片退场，别压住窗口               // U-Time 迷你窗口落桌
+on(12500,()=>camFocus(960,470,1.16,1.1));                        // 推近窗口
+on(13300,()=>{const c=$('#pc1');c.classList.add('moving');fly(c,46,120,120,60,900,60,null,()=>{c.style.opacity=0;$('#slot1').classList.add('filled');$('#slot1').innerHTML='<span class="cap">实验报告 · 2h</span>'})});   // 口播 0:11 卡片拖进时间轴
+on(14200,()=>{const c=$('#pc2');c.classList.add('moving');fly(c,46,210,120,148,900,50,null,()=>{c.style.opacity=0;$('#slot2').classList.add('filled','green');$('#slot2').innerHTML='<span class="cap">组会 · 14:00</span>'})});
+on(15800,()=>__sfx.ding(.9));
+on(16500,()=>camTo(0,0,1,1.2));                                  // 收尾拉回全景
+on(17300,()=>{$('#chip1').classList.add('in')});                 // 口播 0:17 三枚徽章
+on(17800,()=>{$('#chip2').classList.add('in')});
+on(18300,()=>{$('#chip3').classList.add('in')});
+on(19000,()=>{$('#anan .say').innerHTML='那就…把它交给 <b>U-Time</b> 吧';$('#anan img').src='anan - emotion rename/04_闭目莞尔_温柔娇羞.png';$('#anan').classList.add('show')});   // 结尾定场（79%）
+on(23400,()=>$('#anan').classList.remove('show'));
+/* ===== 音效 ===== */
+on(300,()=>__sfx.swipe(0.6));
+on(500,()=>__sfx.pop(0.5));
+on(1800,()=>__sfx.pop(0.5));
+on(3000,()=>__sfx.pop(0.5));
+on(4200,()=>__sfx.pop(0.55));
+on(5400,()=>__sfx.pop(0.6));
+on(7200,()=>__sfx.whoosh(1.0,0.5));
+on(10900,()=>__sfx.whoosh(0.8,0.7));
+on(12500,()=>__sfx.whoosh(1.1,0.5));
+on(13300,()=>__sfx.swipe(0.8));
+on(13680,()=>__sfx.type(0.5));
+on(14200,()=>__sfx.swipe(0.8));
+on(14580,()=>__sfx.type(0.5));
+on(15800,()=>__sfx.ding(0.9));
+on(17300,()=>__sfx.pop(0.55));
+on(17800,()=>__sfx.pop(0.55));
+on(18300,()=>__sfx.pop(0.6));
+on(19000,()=>__sfx.pop(0.6));
+</script>
+</body>
+</html>

@@ -61,3 +61,12 @@ upload-keys/
 # 与本项目无关的目录（另有归属，只是放在同一工作区里）
 /创客比赛/
 cloudflare-pages/plugin-guide/.wrangler/
+
+# 录屏用 HTML 动画（只入库页面与脚本，不入库截图与立绘素材）
+# 立绘可由 `cp -r ~/.agents/skills/video-shot-demos/assets/examples/<项目>/{anan,shery}* <页面目录>/` 复原，
+# _qc/*.png 由 `node ~/.agents/skills/video-shot-demos/scripts/shot.js` 重跑生成。
+/动画演示/**/_qc/
+/动画演示/**/anan - emotion rename/
+/动画演示/**/shery - emotion rename/
+/动画演示/**/*.png
+/动画演示/**/*.jpg

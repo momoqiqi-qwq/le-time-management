@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 0-6 · 三端联动 · 地铁线路图</title>
+
+<!-- [改这里] 字体：地铁线路图 —— Archivo(站牌拉丁) + Noto Sans SC(中文) + Share Tech Mono(等宽) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 地铁线路图：奶白图纸 + 淡色分区 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:#f7f4ec}
+#zones{position:absolute;inset:0;opacity:.5;
+  background:linear-gradient(120deg,rgba(59,165,93,.07) 0 30%,rgba(232,114,42,.07) 30% 62%,rgba(224,57,62,.07) 62% 100%)}
+
+/* ===== [不动] 镜头层 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：地铁线路图 · 三端联动
+   ──────────────────────────────────────────────── */
+#title{position:absolute;left:76px;top:54px;opacity:0;transform:translateY(-14px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#title.show{opacity:1;transform:translateY(0)}
+#title .no{display:inline-block;font-family:'Archivo';font-weight:800;font-size:16px;letter-spacing:3px;color:#fff;background:#2b3350;border-radius:6px;padding:6px 16px}
+#title h1{margin-top:14px;font-family:'Archivo','Noto Sans SC';font-size:52px;font-weight:800;letter-spacing:3px;color:#23293d}
+#title .en{font-family:'Share Tech Mono';font-size:15px;color:#8f939f;margin-top:6px;letter-spacing:4px}
+
+/* 线网（SVG，pathLength=1 画线动画） */
+#lines{position:absolute;inset:0;width:1920px;height:1080px}
+#lines path{fill:none;stroke-width:16;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.1s cubic-bezier(.6,0,.3,1)}
+#lines path.on{stroke-dashoffset:0}
+#la{stroke:#3ba55d}#lb{stroke:#e8722a}#lc{stroke:#e0393e}
+
+/* 枢纽站：U-Time 控制端 */
+#hub{position:absolute;left:465px;top:345px;width:190px;height:190px;border-radius:50%;background:#2b3350;border:9px solid #fff;
+  box-shadow:0 0 0 6px #2b3350,0 18px 40px rgba(35,41,61,.35);display:flex;flex-direction:column;align-items:center;justify-content:center;
+  opacity:0;transform:scale(.4);transition:all .6s cubic-bezier(.34,1.6,.64,1);z-index:5}
+#hub.on{opacity:1;transform:scale(1)}
+#hub .h1{font-family:'Archivo';font-weight:800;font-size:30px;color:#ffd23f;letter-spacing:1px}
+#hub .h2{font-family:'Noto Sans SC';font-size:15px;font-weight:700;color:#fff;margin-top:4px;letter-spacing:1px}
+
+/* 中途站圆点 */
+.stn{position:absolute;width:34px;height:34px;border-radius:50%;background:#fff;border:7px solid #3ba55d;z-index:4;
+  opacity:0;transform:scale(.3);transition:all .5s cubic-bezier(.34,1.6,.64,1)}
+.stn.on{opacity:1;transform:scale(1)}
+#stnA{left:793px;top:223px;border-color:#3ba55d}
+#stnB{left:793px;top:423px;border-color:#e8722a}
+#stnC{left:793px;top:623px;border-color:#e0393e}
+.stnlbl{position:absolute;font-family:'Noto Sans SC';font-size:16px;font-weight:900;color:#565b6b;letter-spacing:1px;
+  opacity:0;transition:opacity .5s;z-index:4}
+.stnlbl.on{opacity:1}
+#stnAlbl{left:762px;top:186px}
+#stnBlbl{left:762px;top:386px}
+#stnClbl{left:762px;top:586px}
+
+/* 终点站牌 */
+.term{position:absolute;left:1190px;width:330px;background:#fff;border-radius:14px;padding:18px 22px;
+  box-shadow:0 12px 30px rgba(35,41,61,.16);border-top:8px solid #3ba55d;
+  opacity:0;transform:translateX(50px);transition:all .6s cubic-bezier(.16,1,.3,1);z-index:5}
+.term.on{opacity:1;transform:none}
+.term .t1{font-family:'Archivo','Noto Sans SC';font-weight:800;font-size:24px;color:#23293d;letter-spacing:1px}
+.term .t2{font-family:'Share Tech Mono';font-size:13.5px;color:#8f939f;margin-top:6px;letter-spacing:1px}
+#termA{top:190px;border-top-color:#3ba55d}
+#termB{top:390px;border-top-color:#e8722a}
+#termC{top:590px;border-top-color:#e0393e}
+
+/* 配对令牌章 */
+#token{position:absolute;left:620px;top:692px;background:#fff;border:3px solid #2b3350;border-radius:12px;padding:13px 20px;
+  display:flex;align-items:center;gap:11px;font-family:'Noto Sans SC';font-size:18px;font-weight:900;color:#23293d;
+  box-shadow:6px 6px 0 rgba(43,51,80,.8);transform:rotate(-2deg) scale(.6);opacity:0;transition:all .45s cubic-bezier(.34,1.6,.64,1);z-index:6}
+#token.on{opacity:1;transform:rotate(-2deg) scale(1)}
+
+/* 底部：JSON 卡 + WebDAV 徽章 */
+#jsonCard{position:absolute;left:430px;top:878px;background:#fff;border-radius:12px;padding:15px 22px;display:flex;align-items:center;gap:13px;
+  box-shadow:0 12px 28px rgba(35,41,61,.16);opacity:0;transform:translateY(26px);transition:all .55s cubic-bezier(.34,1.6,.64,1)}
+#jsonCard.on{opacity:1;transform:none}
+#jsonCard .t1{font-family:'Share Tech Mono';font-size:17px;color:#23293d}
+#jsonCard .t2{font-family:'Noto Sans SC';font-size:14px;font-weight:700;color:#8f939f;margin-top:2px}
+#webdav{position:absolute;left:1010px;top:878px;background:#2b3350;border-radius:12px;padding:15px 22px;display:flex;align-items:center;gap:13px;
+  opacity:0;transform:translateY(26px) scale(.85);transition:all .55s cubic-bezier(.34,1.6,.64,1)}
+#webdav.on{opacity:1;transform:none}
+#webdav .t1{font-family:'Noto Sans SC';font-size:17px;font-weight:900;color:#ffd23f;letter-spacing:1px}
+#webdav .t2{font-family:'Share Tech Mono';font-size:13px;color:rgba(255,255,255,.7);margin-top:2px}
+
+/* ── 角色特写位：安安（左）× 橘雪莉（右，重点页同框） ── */
+#anan{position:absolute;left:-6px;bottom:-10px;width:390px;z-index:28;opacity:0;transition:opacity .9s ease}
+#shery{position:absolute;right:24px;bottom:-8px;width:340px;z-index:27;opacity:0;transition:opacity .8s ease;filter:drop-shadow(0 14px 30px rgba(60,40,20,.35))}
+#anan.show,#shery.show{opacity:1}
+#anan img,#shery img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#fff;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#23293d;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(35,41,61,.3)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fff}
+#anan .say b{color:#2b5db8}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+#shery .ssay{position:absolute;left:-200px;top:60px;width:220px;background:#fff6ec;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#4a2c1a;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(35,41,61,.3)}
+#shery .ssay::after{content:'';position:absolute;right:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fff6ec}
+#shery .ssay b{color:#e8722a}
+#shery.show .ssay{opacity:1;transform:scale(1);transition-delay:.45s}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(60,60,70,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#2b5db8;box-shadow:0 0 10px rgba(43,93,184,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="zones"></div>
+
+  <!-- [改这里] 全部画面内容包进 #cam -->
+  <div id="cam">
+    <div id="title">
+      <span class="no">LINE MAP</span>
+      <h1>三端联动 · 一张线网图</h1>
+      <div class="en">LAN SYNC · PHONE / MINIPROGRAM / WECHAT PUSH</div>
+    </div>
+
+    <svg id="lines" viewBox="0 0 1920 1080">
+      <path id="la" pathLength="1" d="M560 440 H810 Q850 440 850 400 V280 Q850 240 890 240 H1150"/>
+      <path id="lb" pathLength="1" d="M560 440 H1150"/>
+      <path id="lc" pathLength="1" d="M560 440 H810 Q850 440 850 480 V600 Q850 640 890 640 H1150"/>
+    </svg>
+
+    <div id="hub">
+      <div class="h1">U-Time</div>
+      <div class="h2">控制端 · Windows</div>
+    </div>
+
+    <div class="stn" id="stnA"></div><div class="stnlbl" id="stnAlbl">扫码配对</div>
+    <div class="stn" id="stnB"></div><div class="stnlbl" id="stnBlbl">今日时间块</div>
+    <div class="stn" id="stnC"></div><div class="stnlbl" id="stnClbl">开始前提醒</div>
+
+    <div class="term" id="termA">
+      <div class="t1">手机浏览器</div>
+      <div class="t2">QR PAIRING · 改动实时回写</div>
+    </div>
+    <div class="term" id="termB">
+      <div class="t1">微信小程序</div>
+      <div class="t2">TASK CHECK · 快速添加</div>
+    </div>
+    <div class="term" id="termC">
+      <div class="t1">微信推送</div>
+      <div class="t2">SERVERCHAN · 提前 N 分钟</div>
+    </div>
+
+    <div id="token">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#2b3350" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="10" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      配对令牌 · 服务只监听局域网
+    </div>
+
+    <div id="jsonCard">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#2b5db8" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6.5A2.5 2.5 0 0 0 4 5.5v13A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5V9z"/><path d="M14 3v6h6"/><path d="M9 13.5l-1.8 1.8L9 17.1M15 13.5l1.8 1.8L15 17.1"/></svg>
+      <div><div class="t1">letime-data.json</div><div class="t2">全部数据就是本机这一个文件</div></div>
+    </div>
+    <div id="webdav">
+      <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="#ffd23f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 1 0 0-9h-1.8A7 7 0 1 0 8 19z"/><path d="M9.5 13.5h5M12 11v5" transform="translate(0,1.5)"/></svg>
+      <div><div class="t1">WebDAV 可选同步</div><div class="t2">显式上传/下载 · 密码不落地</div></div>
+    </div>
+
+    <!-- 角色特写：安安（左）× 橘雪莉（右） -->
+    <div id="anan">
+      <div class="say">手机上也能<b>直接改</b>？</div>
+      <img src="anan - emotion rename/05_阖眸轻语_雀跃腼腆.png" alt="安安">
+    </div>
+    <div id="shery">
+      <div class="ssay">三条线一起<b>转</b>起来了！</div>
+      <img src="shery - emotion rename/01_兴奋自信发现线索.png" alt="橘雪莉">
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">06 / 三端 · 联动</div>
+  <div class="corner" id="src">局域网联动说明 · le-time-management README v0.11.4</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 0-6 · 三端地铁图 · 26s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=26000;                       /* [改这里] = 本镜头规定时长(ms) */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue（26s）
+   口播：0:00「U-Time 常驻电脑当控制端，局域网里开出三条线」
+         0:06「手机浏览器扫码、微信小程序、微信推送——三条线都汇回同一个数据核」
+         0:13「所有请求带配对令牌，服务只监听局域网」
+         0:18「数据就是本地一个 JSON；想跨设备，WebDAV 显式上传下载，密码不落地」
+   ──────────────────────────────────────────────── */
+on(300,()=>camTo(0,0,1,2.4));                                    // 开场拉镜
+on(400,()=>{$('#title').classList.add('show')});
+on(1500,()=>{$('#hub').classList.add('on')});                    // 口播 0:00 枢纽站
+on(2400,()=>{$('#la').classList.add('on')});                     // 绿线画入
+on(3200,()=>{$('#lb').classList.add('on')});                     // 橙线画入
+on(4000,()=>{$('#lc').classList.add('on')});                     // 红线画入
+on(5100,()=>{$('#stnA').classList.add('on');$('#stnAlbl').classList.add('on')});   // 口播 0:06 沿线站点
+on(5500,()=>{$('#stnB').classList.add('on');$('#stnBlbl').classList.add('on')});
+on(5900,()=>{$('#stnC').classList.add('on');$('#stnClbl').classList.add('on')});
+on(6500,()=>{$('#termA').classList.add('on')});
+on(6900,()=>{$('#termB').classList.add('on')});
+on(7300,()=>{$('#termC').classList.add('on')});
+on(8600,()=>camFocus(560,440,1.15,1.1));                         // 跟拍：回到数据核
+on(9600,()=>{const a=$('#anan');a.classList.add('show');__sfx.pop(.55)});   // 安安中段快闪（37%）
+on(10700,()=>{$('#anan').classList.remove('show')});
+on(11300,()=>{$('#token').classList.add('on')});                 // 口播 0:13 配对令牌章
+on(13300,()=>camTo(0,0,1,1.2));                                  // 拉回
+on(14600,()=>{$('#jsonCard').classList.add('on')});              // 口播 0:18 本地 JSON
+on(15400,()=>{$('#webdav').classList.add('on')});                // WebDAV 徽章
+on(21000,()=>{$('#shery').classList.add('show')});               // 雪莉先吐槽（81%）
+on(22200,()=>{$('#anan .say').innerHTML='数据还是<b>本地那份</b>';$('#anan img').src='anan - emotion rename/10_闭目含笑_恬静满足.png';$('#anan').classList.add('show')});   // +1.2s 安安接茬
+on(25200,()=>{$('#anan').classList.remove('show');$('#shery').classList.remove('show')});   // 同框退场
+/* ===== 音效 ===== */
+on(300,()=>__sfx.swipe(0.6));
+on(500,()=>__sfx.pop(0.5));
+on(1500,()=>__sfx.thud(0.9));
+on(2400,()=>__sfx.whoosh(1.1,0.55));
+on(3200,()=>__sfx.whoosh(1.1,0.55));
+on(4000,()=>__sfx.whoosh(1.1,0.55));
+on(5100,()=>__sfx.pop(0.5));
+on(5500,()=>__sfx.pop(0.5));
+on(5900,()=>__sfx.pop(0.5));
+on(6500,()=>__sfx.pop(0.55));
+on(6900,()=>__sfx.pop(0.55));
+on(7300,()=>__sfx.pop(0.55));
+on(8600,()=>__sfx.whoosh(1.1,0.5));
+on(9600,()=>__sfx.pop(0.55));
+on(11300,()=>__sfx.thud(0.7));
+on(13300,()=>__sfx.whoosh(1.2,0.5));
+on(14600,()=>__sfx.pop(0.6));
+on(15400,()=>__sfx.pop(0.6));
+on(21000,()=>__sfx.pop(0.6));
+on(22200,()=>__sfx.pop(0.6));
+</script>
+</body>
+</html>

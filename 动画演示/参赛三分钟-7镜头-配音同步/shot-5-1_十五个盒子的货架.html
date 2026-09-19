@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 5-1 · 十五个盒子的货架</title>
+
+<!-- [改这里] 字体：Baloo 2（盒装玩具感的圆体拉丁）+ Noto Sans SC + 等宽数据 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+SC:wght@400;700;900&family=JetBrains+Mono:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色/纹理 —— 深夜小店：暖褐墙 + 细木纹 + 店招射灯的两团光池 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  font-family:'Noto Sans SC',sans-serif;
+  background:
+    radial-gradient(760px 420px at 26% 6%,rgba(255,214,150,.20),transparent 70%),
+    radial-gradient(680px 400px at 66% 4%,rgba(255,206,140,.14),transparent 72%),
+    repeating-linear-gradient(90deg,rgba(0,0,0,.16) 0 2px,transparent 2px 74px),
+    linear-gradient(#3d2b1c,#2b1d13 46%,#1d130c);
+  box-shadow:inset 0 0 260px rgba(14,7,2,.85)}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：软件货架 —— 店招 / 库存牌 / 三层木架 / 15 个插件盒 / 端头价签
+   ──────────────────────────────────────────────── */
+/* 开场特写位：库存牌 + 店招右半，300ms 后拉回全景 */
+#cam{transform:translate(-540px,0) scale(1.24)}
+
+/* 射灯灯光（常驻轻摆） */
+.lamp{position:absolute;top:-30px;width:560px;height:900px;z-index:8;pointer-events:none;opacity:.5;filter:blur(11px);
+  background:linear-gradient(to bottom,rgba(255,222,166,.2),rgba(255,222,166,.05) 44%,transparent 78%);
+  clip-path:polygon(44% 0,56% 0,100% 100%,0 100%);transform-origin:50% 0;
+  animation:sway 9s ease-in-out infinite alternate}
+#lamp1{left:96px}
+#lamp2{left:812px;animation-duration:11.5s;animation-delay:-4s;opacity:.4}
+@keyframes sway{from{transform:rotate(-2.4deg) scaleY(.97)}to{transform:rotate(2.6deg) scaleY(1)}}
+
+/* 店招：从左边出血，故意不居中 */
+#sign{position:absolute;left:-104px;top:34px;width:908px;height:114px;z-index:14;opacity:0;
+  transform:translateY(-30px) rotate(-1.2deg);transition:all .8s cubic-bezier(.16,1,.3,1)}
+#sign.in{opacity:1;transform:translateY(0) rotate(-1.2deg)}
+#sign .sw{position:absolute;inset:0;transform-origin:52% -70px;animation:signsway 7.5s 1s ease-in-out infinite alternate}
+@keyframes signsway{from{transform:rotate(-.55deg)}to{transform:rotate(.5deg)}}
+#sign .bd{position:absolute;inset:0;border-radius:9px;border:3px solid #462d15;
+  background:linear-gradient(#8f6339,#6c4623 58%,#5c3b1d);box-shadow:0 20px 38px rgba(0,0,0,.6),inset 0 2px 0 rgba(255,226,178,.3)}
+#sign .bd::after{content:'';position:absolute;left:0;right:0;bottom:0;height:9px;background:rgba(0,0,0,.28)}
+#sign .t{position:absolute;left:126px;top:19px;font-family:'Baloo 2';font-weight:800;font-size:47px;line-height:1;
+  letter-spacing:2px;color:#fdf3dd;text-shadow:0 3px 0 rgba(0,0,0,.32)}
+#sign .t b{color:#ffd15c}
+#sign .s{position:absolute;left:131px;top:76px;font-size:16px;font-weight:900;letter-spacing:8px;color:rgba(253,243,221,.7)}
+#sign .cn{position:absolute;right:30px;top:26px;text-align:right;font-size:31px;font-weight:900;letter-spacing:5px;color:#ffd15c}
+#sign .bulbs{position:absolute;left:120px;right:26px;bottom:-13px;display:flex;justify-content:space-between}
+#sign .bulbs i{width:11px;height:11px;border-radius:50%;background:#ffe6a8;box-shadow:0 0 12px 3px rgba(255,214,140,.75);
+  animation:blink 2.6s ease-in-out infinite alternate;animation-delay:var(--bd,0s)}
+@keyframes blink{from{opacity:.42}to{opacity:1}}
+
+/* 库存牌：数给你看 */
+#counter{position:absolute;left:1052px;top:36px;width:350px;height:114px;z-index:15;opacity:0;
+  transform:translateY(-22px) rotate(1.4deg);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#counter.in{opacity:1;transform:rotate(1.4deg)}
+#counter .cb{position:absolute;inset:0;border-radius:8px;border:3px solid #d9b174;
+  background:linear-gradient(#4c3218,#33200f);box-shadow:0 16px 30px rgba(0,0,0,.55)}
+#counter .cap{position:absolute;left:20px;top:16px;font-family:'Baloo 2';font-weight:700;font-size:15px;letter-spacing:4px;color:#e8c99a}
+#counter .cn{position:absolute;left:20px;top:44px;font-size:14px;font-weight:700;letter-spacing:3px;color:rgba(232,201,154,.75)}
+#counter .cn b{color:#ffd15c}
+#counter .n{position:absolute;right:22px;top:8px;font-family:'JetBrains Mono';font-weight:700;font-size:76px;line-height:1;
+  letter-spacing:1px;color:#ffd15c;font-variant-numeric:tabular-nums;text-shadow:0 0 24px rgba(255,209,92,.42)}
+#counter .u{position:absolute;right:24px;bottom:12px;font-family:'Baloo 2';font-weight:700;font-size:12px;letter-spacing:3px;color:rgba(255,209,92,.66)}
+
+/* 货架柜体 */
+#cab{position:absolute;left:92px;top:172px;width:1320px;height:766px;z-index:9;opacity:0;transition:opacity .9s ease}
+#cab.in{opacity:1}
+#cab .back{position:absolute;left:26px;top:22px;right:26px;bottom:40px;border-radius:3px;
+  background:linear-gradient(#4a3218,#3b2712 52%,#2d1d0d);box-shadow:inset 0 0 90px rgba(0,0,0,.62)}
+#cab .back::after{content:'';position:absolute;inset:0;opacity:.5;
+  background:repeating-linear-gradient(90deg,rgba(255,220,170,.05) 0 1px,transparent 1px 26px)}
+#cab .crown{position:absolute;left:0;top:0;width:1320px;height:24px;border-radius:5px;
+  background:linear-gradient(#c19060,#9c6d3e);box-shadow:0 8px 16px rgba(0,0,0,.5)}
+#cab .side{position:absolute;top:18px;width:26px;height:724px;background:linear-gradient(90deg,#a97a48,#7d5530);border-radius:4px}
+#cab .side.l{left:0}#cab .side.r{right:0}
+#cab .toe{position:absolute;left:12px;bottom:0;width:1296px;height:40px;border-radius:4px;
+  background:linear-gradient(#8a5f38,#5f3f22);box-shadow:0 -6px 18px rgba(0,0,0,.5)}
+#cab .plank{position:absolute;left:22px;width:1276px;height:22px;border-radius:3px;
+  background:linear-gradient(#cfa070,#a1713f 60%,#8a5f38);box-shadow:0 12px 22px rgba(0,0,0,.55),0 3px 0 rgba(0,0,0,.35);
+  opacity:0;transform:scaleX(.86);transition:opacity .5s,transform .7s cubic-bezier(.16,1,.3,1)}
+#cab .plank.in{opacity:1;transform:none}
+#cab .plank::after{content:'';position:absolute;left:0;right:0;top:100%;height:26px;
+  background:linear-gradient(rgba(0,0,0,.42),transparent)}
+
+/* 插件盒（15 个内置 + 1 个自带） */
+.box{position:absolute;width:186px;height:176px;z-index:12;opacity:0;transform:translateY(-20px) scale(.88);
+  transition:opacity .3s ease,transform .52s cubic-bezier(.2,1.42,.4,1)}
+.box.in{opacity:1;transform:none}
+.box.in.hot{transform:translateY(-10px) scale(1.04);z-index:17}
+.box .bd{position:absolute;inset:0;border-radius:5px;border:1px solid #c9ae82;overflow:hidden;
+  background:linear-gradient(#fdf7e8,#efe2c6);box-shadow:0 11px 20px rgba(0,0,0,.46),inset 0 2px 0 #fffdf5;
+  animation:breathe 5.4s ease-in-out infinite;animation-delay:var(--dl,0s)}
+@keyframes breathe{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-2px) scale(1.011)}}
+.box .bd::before{content:'';position:absolute;left:0;right:0;top:0;height:27px;background:var(--c);opacity:.17}
+.box .bd::after{content:'';position:absolute;left:0;right:0;bottom:0;height:5px;background:var(--c);opacity:.42}
+.box .bar{position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--c)}
+.box .ico{position:absolute;left:19px;top:15px;width:35px;height:35px;stroke:var(--c);fill:none;stroke-width:2.1;
+  stroke-linecap:round;stroke-linejoin:round}
+.box .nm{position:absolute;left:17px;top:58px;right:14px;font-size:17.5px;font-weight:900;letter-spacing:.4px;color:#3b2a16}
+.box .ds{position:absolute;left:17px;top:83px;right:12px;font-size:11px;line-height:1.42;font-weight:700;color:#8a745c}
+.box .id{position:absolute;left:17px;bottom:11px;font-family:'JetBrains Mono';font-size:9px;color:#b6a287;letter-spacing:-.2px}
+.box .tag{position:absolute;right:-9px;bottom:30px;width:62px;height:27px;border-radius:3px;background:#ffd15c;
+  border:1px solid #d9a92e;display:flex;align-items:center;justify-content:center;gap:4px;
+  font-family:'JetBrains Mono';font-size:10.5px;font-weight:700;color:#6b4a12;
+  box-shadow:2px 3px 7px rgba(0,0,0,.34);animation:tagwag 4.4s ease-in-out infinite;animation-delay:var(--dl,0s)}
+@keyframes tagwag{0%,100%{transform:rotate(-6.5deg)}50%{transform:rotate(-1.5deg)}}
+.box .tag::before{content:'';width:5px;height:5px;border-radius:50%;background:rgba(107,74,18,.45)}
+.box.in.hot .bd{box-shadow:0 0 0 3px var(--c),0 18px 30px rgba(0,0,0,.55)}
+.box.made .bd{background:linear-gradient(#eabf80,#d3a05c);border-color:#a97c3c}
+.box.made .nm{color:#472c10}
+.box.made .ds{color:#7a5729}
+.box.made .id{color:#9b7340}
+.box.made .sash{position:absolute;right:-36px;top:15px;width:120px;padding:3px 0;text-align:center;transform:rotate(43deg);
+  background:#ffd15c;color:#6b4a12;font-family:'Baloo 2';font-weight:800;font-size:12px;letter-spacing:2px}
+
+/* 预留的开放位 */
+#ghost{position:absolute;left:763px;top:696px;width:186px;height:176px;z-index:11;border-radius:6px;opacity:0;
+  border:2px dashed rgba(255,209,92,.42);background:rgba(255,209,92,.05);transition:opacity .7s,box-shadow .7s}
+#ghost.in{opacity:1}
+#ghost.glow{border-color:#ffd15c;box-shadow:inset 0 0 34px rgba(255,209,92,.28),0 0 26px rgba(255,209,92,.22)}
+#ghost.gone{opacity:0;transition:opacity .4s}
+#ghost span{position:absolute;left:0;right:0;top:56%;text-align:center;font-size:13px;font-weight:900;letter-spacing:3px;
+  color:rgba(255,229,175,.8)}
+#ghost em{position:absolute;left:0;right:0;top:76%;text-align:center;font-style:normal;font-family:'JetBrains Mono';
+  font-size:9.5px;letter-spacing:1px;color:rgba(255,229,175,.5)}
+
+/* 空货架区前斜靠的说明牌 */
+#placard{position:absolute;left:978px;top:752px;width:404px;height:118px;z-index:13;opacity:0;
+  transform:rotate(-2.2deg) translateY(16px);transition:all .8s cubic-bezier(.16,1,.3,1)}
+#placard.in{opacity:1;transform:rotate(-2.2deg)}
+#placard .pb{position:absolute;inset:0;border-radius:5px;background:linear-gradient(#5c3f1f,#42290f);
+  border:2px solid #b98555;box-shadow:0 12px 22px rgba(0,0,0,.5)}
+#placard h5{position:absolute;left:22px;top:19px;font-size:21px;font-weight:900;letter-spacing:2px;color:#ffe9c0}
+#placard p{position:absolute;left:22px;top:56px;font-size:12.5px;line-height:1.75;color:rgba(255,233,192,.66)}
+#placard p b{color:#ffd15c;font-family:'JetBrains Mono'}
+
+/* 文件夹（自带插件的形态） */
+#folder{position:absolute;left:-280px;top:816px;width:216px;height:156px;z-index:19;opacity:0;transition:opacity .45s}
+#folder.in{opacity:1}
+#folder.out{opacity:0;transform:scale(.86)}
+#folder .flap{position:absolute;inset:0;border-radius:6px 12px 6px 6px;border:1px solid #a97c3c;
+  background:linear-gradient(#e9c37e,#cf9d53);box-shadow:0 16px 28px rgba(0,0,0,.55)}
+#folder .flap::after{content:'';position:absolute;left:0;right:0;top:34%;height:2px;background:rgba(120,80,30,.35)}
+#folder .tab{position:absolute;left:18px;top:-14px;width:96px;height:20px;border-radius:7px 7px 0 0;
+  border:1px solid #a97c3c;border-bottom:0;background:#dcae66}
+#folder .lbl{position:absolute;left:17px;top:26px;padding:7px 10px;border-radius:4px;background:rgba(255,251,240,.82);
+  font-family:'JetBrains Mono';font-size:11.5px;line-height:1.65;color:#5b3f17;box-shadow:0 2px 6px rgba(0,0,0,.2)}
+#folder .who{position:absolute;left:17px;bottom:14px;font-size:13px;font-weight:900;letter-spacing:2px;color:#5b3f17}
+
+/* 落位烟雾 */
+#smoke{position:absolute;left:700px;top:646px;width:300px;height:240px;z-index:20;pointer-events:none;opacity:0}
+#smoke.on{opacity:1}
+#smoke i{position:absolute;border-radius:50%;background:radial-gradient(circle,rgba(255,246,226,.92),rgba(255,246,226,0) 72%)}
+#smoke.on i{animation:puff 1.05s cubic-bezier(.2,.8,.3,1) forwards}
+#smoke i:nth-child(1){left:96px;top:96px;width:120px;height:120px}
+#smoke i:nth-child(2){left:24px;top:120px;width:88px;height:88px;animation-delay:.08s!important}
+#smoke i:nth-child(3){left:168px;top:112px;width:96px;height:96px;animation-delay:.16s!important}
+@keyframes puff{0%{opacity:.95;transform:scale(.32)}100%{opacity:0;transform:scale(1.75) translateY(-26px)}}
+
+/* 飞入的小卡片（公告 / DDL） */
+.fly{position:absolute;z-index:24;width:226px;opacity:0;transition:opacity .3s}
+.fly.go{opacity:1}
+.fly .card{padding:11px 15px 12px;border-radius:6px;border-left:7px solid var(--c);background:#fdf7e8;
+  box-shadow:0 16px 30px rgba(0,0,0,.55);transform:rotate(var(--r,-2deg))}
+.fly .k{font-family:'JetBrains Mono';font-size:10px;letter-spacing:1.8px;color:var(--c)}
+.fly h4{margin-top:4px;font-size:15.5px;font-weight:900;letter-spacing:.4px;color:#3b2a16}
+.fly p{margin-top:3px;font-size:11px;font-weight:700;color:#8a745c}
+.fly.hit .card{animation:hit .42s cubic-bezier(.2,1.5,.4,1)}
+@keyframes hit{40%{transform:rotate(var(--r,-2deg)) scale(1.07) translateY(-5px)}}
+
+/* 迷你日程轴 */
+#axis{position:absolute;left:1446px;top:196px;width:190px;height:400px;z-index:15;opacity:0;
+  transform:translateX(28px);transition:opacity .7s,transform .7s cubic-bezier(.16,1,.3,1)}
+#axis.in{opacity:1;transform:none}
+#axis.dim{opacity:.4;transition:opacity .9s}
+#axis .ab{position:absolute;inset:0;border-radius:7px;border:2px solid #b98555;background:linear-gradient(#41301c,#2a1d10);
+  box-shadow:0 14px 26px rgba(0,0,0,.5)}
+#axis .hd{position:absolute;left:14px;top:11px;font-size:13px;font-weight:900;letter-spacing:2px;color:#ffe9c0}
+#axis .hen{position:absolute;right:14px;top:13px;font-family:'JetBrains Mono';font-size:9px;letter-spacing:1.5px;color:rgba(255,233,192,.45)}
+#axis .rail{position:absolute;left:26px;top:52px;bottom:16px;width:2px;background:rgba(255,233,192,.28)}
+#axis .hr{position:absolute;width:2px;height:8px;background:rgba(255,233,192,.36)}
+#axis .hl{position:absolute;font-family:'JetBrains Mono';font-size:9.5px;color:rgba(255,233,192,.5);transform:translateY(-4px)}
+#axis .blk{position:absolute;left:64px;width:112px;height:30px;border-radius:4px;background:#118AB2;
+  display:flex;align-items:center;padding-left:8px;font-size:11.5px;font-weight:900;letter-spacing:.2px;color:#f2fbff;
+  box-shadow:0 6px 14px rgba(0,0,0,.42);opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.2,1.3,.4,1)}
+#axis .blk.in{opacity:1;transform:none}
+#axis .blk s{text-decoration:none;font-family:'JetBrains Mono';font-size:9px;opacity:.85;margin-right:4px}
+#axis .ddl{position:absolute;left:64px;top:338px;width:112px;padding:6px 8px;border-radius:4px;background:rgba(253,247,232,.94);
+  border-left:5px solid #118AB2;opacity:0;transform:translateY(10px);transition:all .5s cubic-bezier(.2,1.3,.4,1)}
+#axis .ddl.in{opacity:1;transform:none}
+#axis .ddl b{display:block;font-size:11px;font-weight:900;color:#3b2a16;line-height:1.3}
+#axis .ddl i{font-style:normal;font-family:'JetBrains Mono';font-size:9px;color:#8a745c}
+
+/* 手机：推送与扫码两个状态 */
+#phone{position:absolute;left:1662px;top:190px;width:206px;height:408px;z-index:16;opacity:0;
+  transform:translateY(26px);transition:opacity .7s,transform .7s cubic-bezier(.16,1,.3,1)}
+#phone.in{opacity:1;transform:none}
+#phone .pbody{position:absolute;inset:0;border-radius:27px;border:3px solid #0a0d12;
+  background:linear-gradient(#2b313b,#141a21);box-shadow:0 20px 36px rgba(0,0,0,.62),inset 0 0 0 2px rgba(255,255,255,.07)}
+#phone .notch{position:absolute;left:50%;top:9px;transform:translateX(-50%);width:66px;height:9px;border-radius:5px;background:#0a0d12}
+#phone .scr{position:absolute;left:10px;right:10px;top:28px;bottom:28px;border-radius:14px;overflow:hidden;
+  background:linear-gradient(#f8f4ea,#eee4d0)}
+#phone .ph{padding:9px 11px 7px;font-size:11px;font-weight:900;letter-spacing:1px;color:#3b2a16;
+  border-bottom:1px solid rgba(59,42,22,.14)}
+#phone .ph em{font-style:normal;display:block;font-family:'JetBrains Mono';font-size:8px;letter-spacing:1.2px;color:#a89668}
+#phone .ln{position:absolute;left:11px;right:11px;height:16px;border-radius:4px;background:rgba(59,42,22,.1)}
+#phone .ln.a{top:60px;width:88px}#phone .ln.b{top:82px;width:120px}
+#phone .miniblk{position:absolute;left:11px;top:128px;right:11px;height:34px;border-radius:5px;background:#118AB2;
+  display:flex;flex-direction:column;justify-content:center;padding-left:9px}
+#phone .miniblk b{font-size:11.5px;font-weight:900;color:#f4fdff;letter-spacing:.4px}
+#phone .miniblk s{text-decoration:none;font-family:'JetBrains Mono';font-size:8.5px;color:rgba(244,253,255,.8)}
+#phone .lead{position:absolute;left:11px;top:174px;font-family:'JetBrains Mono';font-size:9px;letter-spacing:.6px;
+  color:#7d6a52;background:rgba(255,209,92,.34);border:1px solid rgba(180,132,20,.4);border-radius:3px;padding:2px 5px;
+  opacity:0;transform:translateY(-6px);transition:all .5s cubic-bezier(.2,1.3,.4,1)}
+#phone .lead.in{opacity:1;transform:none}
+#phone .bubble{position:absolute;left:8px;right:8px;top:52px;padding:8px 10px 9px;border-radius:11px;background:#fffdf6;
+  border-left:6px solid #118AB2;box-shadow:0 12px 24px rgba(0,0,0,.28);opacity:0;transform:translateY(-30px) scale(.92);
+  transition:all .55s cubic-bezier(.2,1.45,.4,1)}
+#phone .bubble.in{opacity:1;transform:none}
+#phone .bubble.hit{animation:bhit .5s cubic-bezier(.2,1.5,.4,1)}
+@keyframes bhit{40%{transform:scale(1.06) translateY(-3px)}}
+#phone .bubble .k{font-family:'JetBrains Mono';font-size:8px;letter-spacing:1.2px;color:#5e8f6f}
+#phone .bubble b{display:block;margin-top:3px;font-size:13px;font-weight:900;color:#2b1f12;line-height:1.25}
+#phone .bubble i{font-style:normal;display:block;margin-top:2px;font-size:11px;font-weight:700;color:#118AB2}
+#phone .scan{position:absolute;left:10px;right:10px;top:28px;bottom:28px;border-radius:14px;overflow:hidden;
+  background:linear-gradient(#152029,#0c1319);opacity:0;transition:opacity .6s}
+#phone .scan.in{opacity:1}
+#phone .view{position:absolute;left:26px;top:60px;width:128px;height:128px;border-radius:8px;
+  border:2px solid rgba(190,235,255,.5)}
+#phone .beam{position:absolute;left:28px;right:28px;top:64px;height:3px;border-radius:2px;background:#5fd0ff;
+  box-shadow:0 0 14px 4px rgba(95,208,255,.6);animation:beam 2.1s ease-in-out infinite alternate}
+@keyframes beam{from{transform:translateY(0)}to{transform:translateY(120px)}}
+#phone .scantx{position:absolute;left:0;right:0;bottom:44px;text-align:center;font-size:11px;font-weight:900;
+  letter-spacing:2px;color:rgba(200,240,255,.8)}
+#phone .capu{position:absolute;left:0;right:0;bottom:9px;text-align:center;font-family:'JetBrains Mono';font-size:8.5px;
+  letter-spacing:1px;color:rgba(255,233,192,.5)}
+#phonefoot{position:absolute;left:1656px;top:604px;width:212px;z-index:15;font-size:10px;line-height:1.65;color:rgba(255,233,192,.52);
+  text-align:center;opacity:0;transition:opacity .6s}
+#phonefoot.in{opacity:1}
+#phonefoot b{color:#ffd15c;font-weight:900}
+
+/* 端头超大价签：破掉货架的对称 */
+#bigtag{position:absolute;left:1660px;top:662px;width:152px;height:200px;z-index:17;opacity:0;
+  transform:translateY(-20px) rotate(-6deg);transition:opacity .7s,transform .7s cubic-bezier(.16,1,.3,1)}
+#bigtag.in{opacity:1;transform:rotate(-6deg)}
+#bigtag .sw2{position:absolute;inset:0;transform-origin:50% -16px;animation:signsway 5.6s 1.2s ease-in-out infinite alternate}
+#bigtag .tb{position:absolute;inset:0;border-radius:9px;background:linear-gradient(#ffe08a,#f2c04a);
+  border:2px solid #c9941f;box-shadow:0 18px 30px rgba(0,0,0,.5)}
+#bigtag .hole{position:absolute;left:50%;top:14px;width:24px;height:24px;margin-left:-12px;border-radius:50%;
+  background:#3a2a17;box-shadow:inset 0 3px 6px rgba(0,0,0,.6)}
+#bigtag .str{position:absolute;left:50%;top:-17px;width:3px;height:19px;margin-left:-2px;background:#c9a227;border-radius:2px}
+#bigtag .n{position:absolute;left:0;right:0;top:44px;text-align:center;font-family:'JetBrains Mono';font-weight:700;
+  font-size:56px;line-height:1;color:#6b4a12;font-variant-numeric:tabular-nums}
+#bigtag .t1{position:absolute;left:0;right:0;top:112px;text-align:center;font-size:16px;font-weight:900;letter-spacing:2px;color:#6b4a12}
+#bigtag .t2{position:absolute;left:0;right:0;top:138px;text-align:center;font-size:13px;font-weight:900;letter-spacing:3px;color:#8a5a12}
+#bigtag .t3{position:absolute;left:8px;right:8px;top:162px;text-align:center;font-family:'JetBrains Mono';font-size:8.5px;
+  line-height:1.5;color:rgba(107,74,18,.7)}
+
+/* 二维码卡 */
+#qr{position:absolute;left:1446px;top:628px;width:196px;height:392px;z-index:16;opacity:0;
+  transform:translateY(34px);transition:opacity .8s,transform .8s cubic-bezier(.16,1,.3,1)}
+#qr.in{opacity:1;transform:none}
+#qr .qb{position:absolute;inset:0;border-radius:9px;border:2px solid #b98555;background:linear-gradient(#fdf7e8,#eadfc4);
+  box-shadow:0 18px 32px rgba(0,0,0,.52)}
+#qr .qh{position:absolute;left:15px;top:14px;font-family:'Baloo 2';font-weight:700;font-size:13.5px;letter-spacing:2px;color:#8a5f38}
+#qr .qcn{position:absolute;left:15px;top:37px;font-size:12px;font-weight:900;letter-spacing:.6px;color:#3b2a16}
+#qr .code{position:absolute;left:8px;top:64px;width:180px;height:180px;background:#fffdf5;border-radius:4px;
+  box-shadow:inset 0 0 0 2px rgba(59,42,22,.16)}
+#qr .m{position:absolute;width:8px;height:8px;background:#2b1d12}
+#qr .fd{position:absolute;width:56px;height:56px;border:8px solid #2b1d12;background:#fffdf5}
+#qr .fd i{position:absolute;left:8px;top:8px;width:24px;height:24px;background:#2b1d12}
+#qr .qcap{position:absolute;left:15px;right:12px;top:258px;font-size:13.5px;font-weight:900;line-height:1.5;
+  letter-spacing:.2px;color:#3b2a16}
+#qr .qcap b{color:#0f4c5c}
+#qr .chips{position:absolute;left:15px;right:10px;top:320px;display:flex;gap:5px;flex-wrap:wrap}
+#qr .chips span{padding:3px 7px;border-radius:3px;background:rgba(15,76,92,.1);border:1px solid rgba(15,76,92,.35);
+  font-size:10.5px;font-weight:700;color:#0f4c5c;letter-spacing:.3px;opacity:0;transform:translateY(8px);
+  transition:all .4s cubic-bezier(.2,1.4,.4,1)}
+#qr .chips span.in{opacity:1;transform:none}
+#qr .qfile{position:absolute;left:15px;bottom:11px;font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:-.3px;color:#a8946f}
+
+/* 光带扫架 */
+#sweep{position:absolute;left:0;top:172px;width:360px;height:766px;z-index:13;pointer-events:none;opacity:0;
+  background:linear-gradient(100deg,transparent,rgba(255,238,196,.14) 44%,rgba(255,238,196,.3) 52%,transparent)}
+#sweep.on{opacity:1;animation:sweepx 1.6s ease-in-out}
+@keyframes sweepx{from{transform:translateX(-380px)}to{transform:translateX(1560px)}}
+
+/* 结论大字（地板贴） */
+#punch{position:absolute;left:92px;top:938px;width:1320px;line-height:1.06;z-index:15;opacity:0;transform:translateY(14px);
+  transition:all .9s cubic-bezier(.16,1,.3,1)}
+#punch.in{opacity:1;transform:none}
+#punch b{font-size:44px;font-weight:900;letter-spacing:4px;color:#fdf3dd;text-shadow:0 4px 0 rgba(0,0,0,.4)}
+#punch em{font-style:normal;color:#ffd15c;margin:0 16px}
+#punch .en{display:inline-block;margin-left:22px;font-family:'Baloo 2';font-weight:700;font-size:14px;letter-spacing:4px;
+  color:rgba(255,233,192,.55);vertical-align:10px}
+
+/* 本页深底：底盘暗角与角注是浅底配色 → 用 #stage 提一级权重压过底盘区，其余不动 */
+#stage #dim{background:radial-gradient(closest-side at 50% 46%,transparent 60%,rgba(10,5,1,.72) 100%)}
+#stage .corner{color:rgba(255,229,175,.44)}
+
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- [改这里] 全部画面内容包进 #cam：软件货架（15 个内置插件盒 + 1 个自带盒） -->
+  <div id="cam">
+
+    <div class="lamp" id="lamp1"></div>
+    <div class="lamp" id="lamp2"></div>
+
+    <!-- 店招（左侧出血） -->
+    <div id="sign">
+      <div class="sw">
+        <div class="bd"></div>
+        <div class="t">PLUGIN <b>SHELF</b></div>
+        <div class="s">插件货架</div>
+        <div class="cn">营业中</div>
+        <div class="bulbs"><i style="--bd:0s"></i><i style="--bd:.2s"></i><i style="--bd:.4s"></i><i style="--bd:.6s"></i><i style="--bd:.8s"></i><i style="--bd:1s"></i><i style="--bd:1.2s"></i><i style="--bd:1.4s"></i><i style="--bd:1.6s"></i></div>
+      </div>
+    </div>
+
+    <!-- 库存牌：15 数给你看 -->
+    <div id="counter">
+      <div class="cb"></div>
+      <div class="cap">IN STOCK</div>
+      <div class="cn">内置校园插件</div>
+      <div class="n" id="nBox">00</div>
+      <div class="u">BOXES ON SHELF</div>
+    </div>
+
+    <!-- 三层木货架 -->
+    <div id="cab">
+      <div class="back"></div>
+      <div class="crown"></div>
+      <div class="side l"></div><div class="side r"></div>
+      <div class="plank" id="p1" style="top:212px"></div>
+      <div class="plank" id="p2" style="top:456px"></div>
+      <div class="plank" id="p3" style="top:700px"></div>
+      <div class="toe"></div>
+    </div>
+
+    <!-- 预留的开放位 + 空架说明牌 -->
+    <div id="ghost"><span>开放位</span><em>YOUR PLUGIN HERE</em></div>
+    <div id="placard">
+      <div class="pb"></div>
+      <h5>这一层留给你自己</h5>
+      <p>一个文件夹，两个文件：<b>manifest.json</b> + <b>main.js</b><br>放进 plugins 目录，货架上就多出一盒</p>
+    </div>
+
+    <!-- 文件夹 + 落位烟雾 -->
+    <div id="folder">
+      <div class="tab"></div>
+      <div class="flap"></div>
+      <div class="lbl">manifest.json<br>main.js</div>
+      <div class="who">我的插件</div>
+    </div>
+    <div id="smoke"><i></i><i></i><i></i></div>
+
+    <!-- 迷你日程轴：DDL 落进来 -->
+    <div id="axis">
+      <div class="ab"></div>
+      <div class="hd">今日时间轴</div>
+      <div class="hen">TODAY</div>
+      <div class="rail"></div>
+      <div class="hr" style="left:26px;top:52px"></div><div class="hl" style="left:34px;top:52px">13:00</div>
+      <div class="hr" style="left:26px;top:112px"></div><div class="hl" style="left:34px;top:112px">15:00</div>
+      <div class="hr" style="left:26px;top:173px"></div><div class="hl" style="left:34px;top:173px">17:00</div>
+      <div class="hr" style="left:26px;top:233px"></div><div class="hl" style="left:34px;top:233px">19:00</div>
+      <div class="hr" style="left:26px;top:294px"></div><div class="hl" style="left:34px;top:294px">21:00</div>
+      <div class="hr" style="left:26px;top:354px"></div><div class="hl" style="left:34px;top:354px">23:00</div>
+      <div class="blk" id="aBlk" style="top:112px"><s>15:00</s>开题组会</div>
+      <div class="ddl" id="aDdl"><b>学习通作业截止</b><i>转成提醒 · 今日</i></div>
+    </div>
+
+    <!-- 手机：推送 → 扫码 -->
+    <div id="phone">
+      <div class="pbody"></div>
+      <div class="notch"></div>
+      <div class="scr">
+        <div class="ph">U-Time · 手机页面<em>MOBILE MIRROR</em></div>
+        <div class="ln a"></div><div class="ln b"></div>
+        <div class="miniblk"><b>15:00 开题组会</b><s>15:00 — 16:00</s></div>
+        <div class="lead">提前 5 分钟提醒</div>
+        <div class="bubble" id="pBubble">
+          <div class="k">U-TIME PUSH · PUSHPLUS</div>
+          <b>15:00 开题组会</b>
+          <i>还有 5 分钟开始</i>
+        </div>
+      </div>
+      <div class="scan" id="pScan">
+        <div class="view"></div>
+        <div class="beam"></div>
+        <div class="scantx">对准二维码</div>
+      </div>
+      <div class="capu">微信 · 服务通知</div>
+    </div>
+    <div id="phonefoot">填一次 <b>PushPlus Token</b> 即可<br>提前 <b>3 / 5 / 10 / 15 / 30</b> 分钟可选</div>
+
+    <!-- 端头超大价签：权限那件事 -->
+    <div id="bigtag">
+      <div class="sw2">
+        <div class="str"></div>
+        <div class="tb"></div>
+        <div class="hole"></div>
+        <div class="n">12</div>
+        <div class="t1">个权限位</div>
+        <div class="t2">能力契约</div>
+        <div class="t3">声明什么<br>才能用什么</div>
+      </div>
+    </div>
+
+    <!-- 二维码卡 -->
+    <div id="qr">
+      <div class="qb"></div>
+      <div class="qh">SCAN TO PAIR</div>
+      <div class="qcn">同一 Wi-Fi · 扫码配对</div>
+      <div class="code" id="qcode"></div>
+      <div class="qcap">同一份 <b>JSON</b><br>桌面与小程序互通</div>
+      <div class="chips"><span>桌面</span><span>手机页面</span><span>小程序</span></div>
+      <div class="qfile">letime-data.json</div>
+    </div>
+
+    <!-- 飞入的小卡片：竞赛公告 / 学习通 DDL -->
+    <div class="fly" id="flyNews" style="--c:#9B5DE5;--r:-2.6deg">
+      <div class="card">
+        <div class="k">GX NEWS RADAR</div>
+        <h4>抓到 1 条竞赛公告</h4>
+        <p>一键转成提醒 · 每 10 分钟自动刷新</p>
+      </div>
+    </div>
+    <div class="fly" id="flyDdl" style="width:186px;--c:#118AB2;--r:1.8deg">
+      <div class="card">
+        <div class="k">CHAOXING · 学习通</div>
+        <h4>作业截止 23:59</h4>
+        <p>直接落进今日日程</p>
+      </div>
+    </div>
+
+    <div id="sweep"></div>
+
+    <div id="punch"><b>15 个内置插件</b><em>·</em><b>开放扩展</b><span class="en">OPEN PLUGIN SHELF</span></div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">05 / 插件生态</div>
+  <div class="corner" id="src">内置插件实测 15 个 · v0.76.0</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 5-1 · 十五个盒子的货架 · 34.4s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=34400;                       /* 第 5 幕：1:39.133–2:13.534（voice-timeline.json） */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue —— 第 5 幕 插件生态（成片 1:39.133–2:13.534）
+   cue 毫秒 = 该句首字字符序 / 157 字 × 26313ms(voice) + 700ms 起播偏移
+   口播说「十二个」→ 画面按实测 15 个画；「实时同步」→ 画面写能兑现的「同一份 JSON 互通」
+   ──────────────────────────────────────────────── */
+/* 结构件：15 个内置插件盒（真实插件名 + 真实权限位数）+ 1 个自带盒 + 纯 CSS 二维码 */
+const ROWY=[208,452,696], SLOTX=c=>118+c*215;
+const ICONS={
+  'shiguang-schedule':'<path d="M3 5h18v15H3z"/><path d="M3 10h18M9 10v10M15 10v10"/>',
+  'web-collector':'<path d="M12 3a9 9 0 100 18 9 9 0 000-18z"/><path d="M3 12h18M12 3c3 3.6 3 14.4 0 18M12 3C9 6.6 9 17.4 12 21"/>',
+  'school-notice':'<path d="M4 10v4h3l7 4V6l-7 4H4z"/><path d="M18 9.5a5 5 0 010 5"/>',
+  'pomodoro':'<path d="M12 7.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13z"/><path d="M12 11v3.6l2.3 1.3M9.5 3.5h5M12 3.5v4"/>',
+  'weekly-report':'<path d="M3 21h18"/><path d="M6.5 21v-6M11.5 21V8M16.5 21v-10"/>',
+  'rss-reader':'<path d="M5 19.5a1.8 1.8 0 100-3.6 1.8 1.8 0 000 3.6z"/><path d="M4 11.5a8.5 8.5 0 018.5 8.5M4 5.5a14.5 14.5 0 0114.5 14.5"/>',
+  'gx-news':'<path d="M12 12l7-6.5"/><path d="M12 3.5a8.5 8.5 0 018.5 8.5"/><path d="M12 8.5A3.5 3.5 0 0115.5 12"/><path d="M4.2 16.5A8.5 8.5 0 0112 3.5"/>',
+  'chaoxing-notify':'<path d="M6 16.5v-5.5a6 6 0 1112 0v5.5l1.6 2.6H4.4z"/><path d="M10 21.2h4"/><path d="M9.5 8.5h5"/>',
+  'cppu-notify':'<path d="M12 3l7 3v6c0 4.2-2.9 7.2-7 9-4.1-1.8-7-4.8-7-9V6z"/><path d="M12 10.5v3"/>',
+  'wechat-push':'<path d="M4 5h16v11H11l-5 4v-4H4z"/><path d="M8 10.6h.6M12 10.6h.6M15.6 10.6h.6"/>',
+  'cn-holiday':'<path d="M4 6h16v14H4z"/><path d="M8 3v5M16 3v5M4 10.5h16"/><path d="M11.5 13.5h4l-1 3.5h-3z"/>',
+  'exam-calendar':'<path d="M4 6h16v14H4z"/><path d="M8 3v5M16 3v5M4 10.5h16"/><path d="M8 15.5l2.6 2.5L16.5 12"/>',
+  'dorm-duty':'<path d="M5 12a7 7 0 0112.6-4.2"/><path d="M18.5 4.5V8H15"/><path d="M19 12a7 7 0 01-12.6 4.2"/><path d="M5.5 19.5V16H9"/>',
+  'inbox-drop':'<path d="M12 3v9"/><path d="M8.6 8.8L12 12.4l3.4-3.6"/><path d="M4 14.5l2.2 5.5h11.6l2.2-5.5"/>',
+  'plugin-guide':'<path d="M12 4a8 8 0 100 16 8 8 0 000-16z"/><path d="M12 11v5.2"/><path d="M12 8h.01"/>',
+  'mine':'<path d="M4 6.5h16v13.5H4z"/><path d="M12 10.5v6M9 13.5h6"/>'
+};
+/* [name, id, 一行极短说明, 主色, 价签文案(权限位数), 层, 位] —— 层内按 manifest 的 order 读过去 */
+const PLUGINS=[
+  ['课程表','shiguang-schedule','周视图 · 教务一键导入','#E3A008','7 项能力',0,0],
+  ['网页收集','web-collector','网址自动认出站点','#4c7d9c','5 项能力',0,1],
+  ['学校通知网站','school-notice','公告列表自动识别','#b07b3e','9 项能力',0,2],
+  ['番茄专注','pomodoro','25 分钟一个环','#b8462f','6 项能力',0,3],
+  ['周度报告','weekly-report','一周时间分布','#6f8f4f','3 项能力',0,4],
+  ['RSS 信息流','rss-reader','多源聚成一条流','#c9762f','9 项能力',0,5],
+  ['竞赛消息雷达','gx-news','三源抓竞赛公告','#9B5DE5','9 项能力',1,0],
+  ['学习通通知','chaoxing-notify','作业考试截止识别','#118AB2','9 项能力',1,1],
+  ['警大门户通知','cppu-notify','登录一次自动续','#34697a','10 项能力',1,2],
+  ['微信提醒推送','wechat-push','推送到微信','#2EC4B6','8 项能力',1,3],
+  ['中国节假日','cn-holiday','2024–2026 离线','#9c4a3c','4 项能力',1,4],
+  ['考试日历','exam-calendar','国家级考试倒计时','#4a6fa5','8 项能力',1,5],
+  ['轮换值日','dorm-duty','按顺序轮着来','#5f8f6f','5 项能力',2,0],
+  ['拖入消息收纳','inbox-drop','拖进来就收好','#7d6b9e','7 项能力',2,1],
+  ['插件使用说明','plugin-guide','每个插件怎么用','#a8894f','3 项能力',2,2],
+  ['你的插件','mine','一个文件夹即可','#d99a3f','按需声明',2,3]
+];
+const camEl=$('#cam'), sweepEl=$('#sweep'), boxes=[];
+PLUGINS.forEach((p,i)=>{
+  const [nm,id,ds,c,perm,row,col]=p, made=i===15;
+  const d=document.createElement('div');
+  d.className='box'+(made?' made':'');
+  d.style.left=SLOTX(col)+'px'; d.style.top=ROWY[row]+'px';
+  d.style.setProperty('--c',c); d.style.setProperty('--dl',(i*0.29).toFixed(2)+'s');
+  d.innerHTML='<div class="bd"><span class="bar"></span>'+
+    '<svg class="ico" viewBox="0 0 24 24">'+ICONS[id]+'</svg>'+
+    '<div class="nm">'+nm+'</div><div class="ds">'+ds+'</div><div class="id">'+id+'</div>'+
+    (made?'<div class="sash">NEW</div>':'')+'</div>'+
+    '<div class="tag">'+perm+'</div>';
+  camEl.insertBefore(d,sweepEl); boxes.push(d);
+});
+/* 纯 CSS 二维码：21×21 模块 + 三个定位角（示意图形，不是真码） */
+(()=>{const code=$('#qcode'), inFd=(r,c)=>(r<8&&c<8)||(r<8&&c>12)||(r>12&&c<8);
+  for(let r=0;r<21;r++)for(let c=0;c<21;c++){
+    if(inFd(r,c)||((r*7+c*11+(r*c)%5)%9)>4)continue;
+    const m=document.createElement('div');m.className='m';m.style.left=(6+c*8)+'px';m.style.top=(6+r*8)+'px';code.appendChild(m)}
+  [[6,6],[118,6],[6,118]].forEach(p=>{const f=document.createElement('div');f.className='fd';
+    f.style.left=p[0]+'px';f.style.top=p[1]+'px';f.innerHTML='<i></i>';code.appendChild(f)})})();
+const hot=(el,v)=>el&&el.classList.toggle('hot',!!v);
+const chips=[...document.querySelectorAll('#qr .chips span')];
+/* 补间落地后把终值钉住（无头截图里 fly/cnt 会停在起始值，钉住才能质检） */
+const kill=tw=>{const k=tws.indexOf(tw);if(k>=0)tws.splice(k,1)};
+let twCnt,twNews,twDdl,twFolder;
+
+on(300,()=>camTo(0,0,1,2.2));                                    // 开场拉镜：库存牌特写 → 整间店
+/* 1:39.8「它还有一个插件系统」→ 店招亮起 + 三层层板依次架好 */
+on(700,()=>{$('#sign').classList.add('in');$('#cab').classList.add('in')});
+on(900,()=>$('#p1').classList.add('in'));
+on(1140,()=>$('#p2').classList.add('in'));
+on(1380,()=>$('#p3').classList.add('in'));
+/* 1:41.5「我觉得这是最有意思的部分」→ 光带扫过空架 + 端头价签挂上 */
+on(2380,()=>{$('#sweep').classList.add('on')});
+on(2600,()=>$('#bigtag').classList.add('in'));
+on(4000,()=>$('#sweep').classList.remove('on'));
+/* 1:43.2「内置…校园插件」→ 数给你看：0→15 滚动，15 盒 TnE 连击逐一点亮（末击=计数结束） */
+on(4060,()=>{$('#counter').classList.add('in');camFocus(1227,93,1.22,.9)});
+on(4150,()=>{cnt($('#nBox'),0,15,1750);twCnt=tws[tws.length-1]});
+for(let i=0;i<15;i++){const u=i/14;on(4150+1750*(1-Math.pow(1-u,1/3)),()=>{boxes[i].classList.add('in');__sfx.type(0.26)})}
+on(5960,()=>{kill(twCnt);$('#nBox').textContent='15';camTo(0,0,1,1.1)});
+/* 1:45.5「课程表、番茄专注、考试日历」→ 三盒特写推近 */
+on(6350,()=>{hot(boxes[0],1);camFocus(211,296,1.2,.85)});
+on(7050,()=>{hot(boxes[0],0);hot(boxes[3],1);camFocus(856,296,1.18,.8)});
+on(7750,()=>{hot(boxes[3],0);hot(boxes[11],1);camFocus(1286,540,1.18,.8)});
+on(8280,()=>{hot(boxes[11],0);camTo(0,0,1,.9)});
+/* 1:47.5「竞赛雷达自己抓竞赛公告」→ 公告小卡从上面抓到，摆在盒子前面（不压住盒名） */
+on(8360,()=>{hot(boxes[6],1);camFocus(211,540,1.15,.9)});
+on(8430,()=>{const f=$('#flyNews');f.style.left='150px';f.style.top='-170px';f.classList.add('go');
+  fly(f,150,-170,104,552,800,150,eio);twNews=tws[tws.length-1]});
+on(9240,()=>{const f=$('#flyNews');kill(twNews);f.style.left='104px';f.style.top='552px';f.classList.add('hit');
+  hot(boxes[6],0)});
+on(10000,()=>camTo(0,0,1,.8));
+/* 1:49.5「学习通的作业截止日期直接进日程」→ 迷你日程轴升起 + DDL 滑进去 */
+on(10340,()=>{hot(boxes[7],1);$('#axis').classList.add('in')});
+on(10560,()=>$('#aBlk').classList.add('in'));
+on(10700,()=>{const f=$('#flyDdl');f.style.left='426px';f.style.top='510px';f.classList.add('go');
+  fly(f,426,510,1458,486,660,130,eio);twDdl=tws[tws.length-1]});
+on(11370,()=>{const f=$('#flyDdl');kill(twDdl);f.classList.remove('go');$('#aDdl').classList.add('in')});
+on(11500,()=>{hot(boxes[7],0);camFocus(1540,420,1.14,.9)});
+/* 1:51.0「微信推送更实用」→ 手机亮起；1:52.7「时间块开始前五分钟」→ 气泡落下 */
+on(11840,()=>{camTo(0,0,1,.85);hot(boxes[9],1);$('#phone').classList.add('in')});
+on(12140,()=>$('#phonefoot').classList.add('in'));
+on(13520,()=>{$('#pBubble').classList.add('in');$('#phone .lead').classList.add('in')});
+on(14700,()=>hot(boxes[9],0));
+/* 1:54.3「提醒直接发到你微信上」→ 送达 */
+on(15200,()=>$('#pBubble').classList.add('hit'));
+/* 1:55.6「而且它是开放的」→ 货架上亮出一个虚线空位 */
+on(16350,()=>$('#flyNews').classList.remove('go'));
+on(16500,()=>{$('#ghost').classList.add('in');$('#placard').classList.add('in')});
+on(17500,()=>$('#ghost').classList.add('glow'));
+/* 1:57.3「做一个文件夹放进去」→ 文件夹沿地板滑到空位前 */
+on(18180,()=>{const f=$('#folder');f.classList.add('in');
+  fly(f,-280,816,690,816,1320,46,eio);twFolder=tws[tws.length-1]});
+on(19520,()=>{const f=$('#folder');kill(twFolder);f.style.left='690px';f.style.top='816px'});
+/* 1:59.0「谁都能给它加新功能」→ 烟雾 + 叮，货架上凭空多出一盒 */
+on(19860,()=>{const s=$('#smoke');s.classList.add('on');$('#folder').classList.add('out')});
+on(20040,()=>{boxes[15].classList.add('in');hot(boxes[15],1);$('#ghost').classList.add('gone');camFocus(856,760,1.24,.5)});
+on(20200,()=>$('#smoke').classList.remove('on'));
+on(20520,()=>{camTo(0,0,1,1);hot(boxes[15],0)});
+/* 2:00.5「手机扫一下二维码」→ 手机变取景框，右下角二维码卡升起 */
+on(20900,()=>$('#pBubble').classList.remove('in'));
+on(21350,()=>{$('#pScan').classList.add('in');$('#qr').classList.add('in');$('#axis').classList.add('dim');
+  camFocus(1560,800,1.14,1)});
+/* 2:02.2「小程序和手机页面跟电脑…」→ 同一份 JSON 互通（不写"实时同步"） */
+chips.forEach((c,i)=>on(23030+i*170,()=>c.classList.add('in')));
+on(24300,()=>camTo(0,0,1,1.3));
+/* 2:06 之后定格呼吸：满架 15+1 盒 + 结论大字（缓推收在 1.02，四边仍留在安全区内） */
+on(27000,()=>{$('#punch').classList.add('in');hot(boxes[15],1)});
+on(27600,()=>camFocus(960,520,1.02,4.5));
+
+/* ===== 音效 ===== */
+on(700,()=>__sfx.swipe(0.62));
+[900,1140,1380].forEach((t,i)=>on(t,()=>__sfx.ding(0.28+i*0.04)));
+on(2380,()=>__sfx.whoosh(1.4,0.5));
+on(2600,()=>__sfx.pop(0.55));
+on(4060,()=>__sfx.pop(0.95));
+on(5960,()=>__sfx.ding(0.95));                                    // 数到 15 落定
+[6350,7050,7750].forEach(t=>{on(t,()=>__sfx.pop(0.58));on(t+70,()=>__sfx.type(0.3))});
+on(8430,()=>__sfx.swipe(0.5));
+on(9230,()=>__sfx.ding(0.72));                                    // 公告抓到
+on(10340,()=>__sfx.pop(0.6));
+on(11360,()=>__sfx.ding(0.62));                                   // DDL 落进时间轴
+on(11840,()=>__sfx.pop(0.7));
+on(13520,()=>__sfx.swipe(0.48));
+on(15200,()=>__sfx.ding(1.1));                                    // 送达微信
+on(16500,()=>__sfx.swipe(0.42));
+on(18180,()=>__sfx.whoosh(1.2,0.5));                              // 文件夹滑入（非镜头位移，手动给声）
+on(19860,()=>__sfx.thud(1.15));
+on(20040,()=>__sfx.ding(1.0));                                    // 凭空多出一盒
+on(21350,()=>__sfx.swipe(0.55));
+on(23030,()=>__sfx.pop(0.7));
+[23030,23200,23370].forEach(t=>on(t,()=>__sfx.type(0.32)));
+on(27000,()=>__sfx.ding(1.2));                                    // 结论
+</script>
+</body>
+</html>

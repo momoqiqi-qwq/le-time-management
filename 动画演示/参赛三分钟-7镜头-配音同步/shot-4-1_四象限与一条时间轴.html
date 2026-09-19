@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 4-1 · 四象限与一条时间轴</title>
+
+<!-- [改这里] 字体：浅色 SaaS 仪表盘 —— Manrope（拉丁+数据）+ Noto Sans SC（中文）+ JetBrains Mono（时间戳） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 软件真实纸面 #F7F6F2 + 极淡点阵 + 顶部柔光，浅色 SaaS，不做深色底 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  font-family:'Manrope','Noto Sans SC',sans-serif;
+  background:radial-gradient(rgba(34,48,58,.045) 1px,transparent 1.1px),radial-gradient(1500px 900px at 26% -10%,#FFFFFF,#F7F6F2 56%);
+  background-size:26px 26px,auto}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：浅色 SaaS 仪表盘 —— 顶栏 / 四象限 / 详情抽屉 / 时间轴 / 右栏三卡 / 结论
+   色板取软件真实值：纸 #F7F6F2 · 卡 #FFF · 墨 #22303A · 深青 #0F4C5C
+   工作 #E3A008 · 学习 #118AB2 · 运动 #FF6B6B · 生活 #9B5DE5 · 休息 #2EC4B6
+   时间轴真实参数：07:00–24:00 · 62px/小时 · 1分钟≈1.0333px · 15分钟吸附(15.5px) · 最矮块 22px
+   ──────────────────────────────────────────────── */
+/* 开场怼脸在 Q1 特写位，300ms 后拉回全景 */
+#cam{transform:translate(513px,93px) scale(1.24)}
+
+/* ── 顶栏（常驻） ── */
+#topbar{position:absolute;left:64px;top:36px;width:1792px;height:56px;display:flex;align-items:center;z-index:20;
+  opacity:0;transform:translateY(-12px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#topbar.in{opacity:1;transform:none}
+#topbar .lg{width:30px;height:30px;stroke:#0F4C5C;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+#topbar .brand{margin-left:10px;font-size:21px;font-weight:800;color:#22303A;letter-spacing:.5px}
+#topbar .sep{width:1px;height:22px;background:#E4DFD6;margin:0 24px}
+#tabs{position:relative;display:flex;gap:32px}
+.tab{font-size:17px;font-weight:700;color:#A9B2BA;transition:color .4s}
+.tab.act{color:#22303A}
+#tabUL{position:absolute;left:0;bottom:-10px;width:52px;height:3px;border-radius:2px;background:#0F4C5C;transition:left .55s cubic-bezier(.16,1,.3,1)}
+#segT{margin-left:46px;font-size:15.5px;font-weight:600;color:#7E8B94;letter-spacing:1px}
+#segT b{color:#22303A;font-weight:800}
+#topbar .right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.dpill{background:#fff;border:1px solid #E4DFD6;border-radius:999px;padding:7px 16px;font-size:14px;font-weight:700;color:#22303A;box-shadow:0 2px 8px rgba(34,48,58,.04)}
+.tchip{display:flex;align-items:center;gap:7px;background:#fff;border:1px solid #FF6B6B;border-radius:999px;padding:7px 14px;font-family:'JetBrains Mono';font-size:13.5px;font-weight:700;color:#FF6B6B}
+.tchip i{width:7px;height:7px;border-radius:50%;background:#FF6B6B;animation:blip 2s ease-in-out infinite}
+@keyframes blip{50%{opacity:.3}}
+
+/* ── 第 1 阶段：四象限（CSS Grid 1.16fr/1fr，Q1 面积 ≈ Q4 的 1.35 倍） ── */
+#quadL{position:absolute;inset:0;z-index:12;transition:opacity .5s ease,transform .5s ease}
+#quadL.gone{opacity:0;transform:translateY(-10px) scale(.99);pointer-events:none}
+#grid{position:absolute;left:64px;top:150px;width:1112px;height:880px;display:grid;
+  grid-template-columns:1.16fr 1fr;grid-template-rows:1.16fr 1fr;gap:16px}
+.qc{background:#fff;border:1px solid #EFEAE1;border-radius:16px;box-shadow:0 8px 26px rgba(34,48,58,.05);padding:18px 20px;overflow:hidden;
+  opacity:0;transform:translateY(14px) scale(.99);transition:all .6s cubic-bezier(.16,1,.3,1)}
+.qc.in{opacity:1;transform:none}
+.qh{display:flex;align-items:center;gap:10px}
+.qh .rn{flex:none;width:30px;height:30px;border:1.5px solid #0F4C5C;border-radius:8px;display:flex;align-items:center;justify-content:center;
+  font-family:'JetBrains Mono';font-size:12.5px;font-weight:700;color:#0F4C5C}
+.qh h3{font-size:17px;font-weight:800;color:#22303A;letter-spacing:.5px;white-space:nowrap}
+.qh .tip{font-size:12.5px;color:#A9B2BA;font-weight:500;white-space:nowrap}
+.qh .area{margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;color:#0F4C5C;border:1px dashed rgba(15,76,92,.45);
+  border-radius:999px;padding:3px 9px;white-space:nowrap}
+.qcard{position:relative;display:flex;align-items:center;gap:10px;height:50px;margin-top:11px;background:#fff;
+  border:1px solid #EFEAE1;border-radius:11px;padding:0 14px 0 18px;font-size:15px;font-weight:600;color:#22303A;
+  box-shadow:0 3px 10px rgba(34,48,58,.045);transition:all .35s cubic-bezier(.16,1,.3,1)}
+.qcard::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;border-radius:11px 0 0 11px;background:var(--c)}
+.qcard em{font-style:normal;margin-left:auto;font-family:'JetBrains Mono';font-size:10.5px;color:#A9B2BA;font-weight:400}
+.qcard.tap{cursor:pointer}
+.qcard.tap .chev{width:15px;height:15px;stroke:#0F4C5C;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.qcard.open{outline:2px solid rgba(15,76,92,.4);outline-offset:1px}
+#q2 .qcard:not(.tap){animation:cardfloat 4s ease-in-out infinite alternate}
+@keyframes cardfloat{to{transform:translateY(-3px)}}
+
+/* 右侧题注 + 「面积 = 权重」引线 */
+#anno{position:absolute;left:1216px;top:158px;width:640px;opacity:0;transform:translateY(14px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#anno.in{opacity:1;transform:none}
+#anno .kick{font-family:'JetBrains Mono';font-size:12.5px;letter-spacing:5px;color:#A9B2BA}
+#anno .big{margin-top:16px;font-size:54px;font-weight:900;line-height:1.3;letter-spacing:2px;color:#22303A}
+#anno .big s{text-decoration:none;color:#0F4C5C}
+#anno .sub{margin-top:20px;font-size:16px;line-height:1.75;color:#7E8B94;font-weight:500}
+#anno .sub b{color:#22303A;font-weight:700}
+#pillA{position:absolute;left:1216px;top:660px;display:flex;align-items:center;gap:14px;background:#0F4C5C;color:#fff;
+  border-radius:14px;padding:14px 20px;box-shadow:0 14px 30px rgba(15,76,92,.28);z-index:15;
+  opacity:0;transform:translateX(14px) scale(.92);transition:all .5s cubic-bezier(.34,1.5,.64,1)}
+#pillA.in{opacity:1;transform:none;animation:pillfloat 3.4s 1s ease-in-out infinite alternate}
+@keyframes pillfloat{to{transform:translateY(-4px)}}
+#pillA .pv{width:34px;height:34px;stroke:#fff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#pillA b{font-size:19px;letter-spacing:2px;font-weight:800}
+#pillA span{display:block;margin-top:3px;font-family:'JetBrains Mono';font-size:10.5px;opacity:.75;letter-spacing:.5px}
+#annoSvg{position:absolute;inset:0;z-index:14;pointer-events:none;opacity:0;transition:opacity .5s}
+#annoSvg.in{opacity:1}
+#annoSvg path{fill:none;stroke:rgba(15,76,92,.55);stroke-width:2;stroke-dasharray:3 6;stroke-linecap:round;animation:march 12s linear infinite}
+@keyframes march{to{stroke-dashoffset:-180}}
+#annoSvg circle{fill:#0F4C5C}
+
+/* 抽屉遮罩 + 任务详情抽屉（改象限只走抽屉按钮 / Alt+↑↓） */
+#dimA{position:absolute;inset:0;background:rgba(34,48,58,.16);opacity:0;transition:opacity .45s;z-index:13;pointer-events:none}
+#dimA.on{opacity:1}
+#drawer{position:absolute;left:1216px;top:170px;width:632px;height:702px;background:#fff;border-radius:20px;padding:34px 38px;z-index:16;
+  box-shadow:0 30px 70px rgba(34,48,58,.18),0 4px 14px rgba(34,48,58,.05);
+  opacity:0;transform:translate(-430px,40px) scale(.55);transition:all .55s cubic-bezier(.16,1,.3,1)}
+#drawer.in{opacity:1;transform:none}
+#drawer.gone{opacity:0;transform:translate(-430px,40px) scale(.55);transition:all .4s ease}
+.dtag{display:inline-flex;align-items:center;gap:8px;background:rgba(227,160,8,.13);color:#9a6c05;border-radius:999px;padding:5px 14px;font-size:13px;font-weight:700}
+.dtag i{width:8px;height:8px;border-radius:50%;background:#E3A008}
+.dttl{margin-top:14px;font-size:27px;font-weight:800;color:#22303A;letter-spacing:.5px}
+.dsub{margin-top:6px;font-size:14px;color:#A9B2BA;font-weight:500}
+.drow{display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-bottom:1px solid #F2EFE8;font-size:15px}
+.drow s{text-decoration:none;color:#A9B2BA;font-size:13px;letter-spacing:2px;font-weight:600}
+.drow b{color:#22303A;font-weight:700}
+.dhint{display:inline-flex;align-items:center;gap:8px;margin-top:18px;font-family:'JetBrains Mono';font-size:11.5px;color:#7E8B94;
+  background:#F7F6F2;border:1px dashed #E4DFD6;border-radius:8px;padding:7px 12px}
+.dhint kbd{font-family:inherit;background:#fff;border:1px solid #E4DFD6;border-radius:5px;padding:1px 6px;color:#22303A;font-weight:700}
+#dBtn{position:absolute;left:38px;right:38px;bottom:36px;height:58px;border:none;border-radius:14px;background:#0F4C5C;color:#fff;
+  font-family:inherit;font-size:18px;font-weight:800;letter-spacing:3px;display:flex;align-items:center;justify-content:center;gap:10px;cursor:pointer;
+  box-shadow:0 12px 26px rgba(15,76,92,.32);transition:all .22s}
+#dBtn svg{width:20px;height:20px;stroke:#fff;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none}
+#dBtn.press{transform:scale(.965);background:#0B3A47}
+#dBtn.done{background:#0E4250}
+
+/* ── 第 2 阶段：任务池 + 时间轴 + 右栏 ── */
+#dayL{position:absolute;inset:0;z-index:12;opacity:0;transform:translateY(16px);transition:all .6s cubic-bezier(.16,1,.3,1)}
+#dayL.in{opacity:1;transform:none}
+#pool{position:absolute;left:64px;top:150px;width:470px}
+#poolH{display:flex;align-items:center;gap:10px;opacity:0;transform:translateY(10px);transition:all .5s}
+#poolH.in{opacity:1;transform:none}
+#poolH h4{font-size:21px;font-weight:800;color:#22303A;letter-spacing:1px}
+#poolH .n{font-family:'JetBrains Mono';font-size:11.5px;font-weight:700;color:#0F4C5C;background:rgba(15,76,92,.08);border-radius:999px;padding:3px 10px}
+#poolHint{margin-top:8px;font-size:13px;color:#A9B2BA;font-weight:500;transition:opacity .4s}
+#poolHint.off{opacity:0}
+.pk{position:absolute;left:0;width:470px;height:66px;background:#fff;border:1px solid #EFEAE1;border-radius:13px;overflow:hidden;
+  box-shadow:0 5px 16px rgba(34,48,58,.05);opacity:0;transform:translateX(-16px);transition:opacity .5s,transform .45s,box-shadow .3s,border-color .3s}
+.pk.in{opacity:1;transform:none}
+.pk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--c)}
+.pk .cf{position:absolute;inset:0;display:flex;align-items:center;gap:12px;padding:0 16px 0 20px}
+.pk.in .cf{animation:floaty 3.6s ease-in-out infinite alternate;animation-delay:var(--dl,0s)}
+@keyframes floaty{to{translate:0 -4px}}
+.pk .tt{font-size:16px;font-weight:700;color:#22303A}
+.pk .mt{margin-top:3px;font-family:'JetBrains Mono';font-size:10.5px;color:#A9B2BA;letter-spacing:.5px}
+.pk .du{margin-left:auto;font-family:'JetBrains Mono';font-size:11px;color:#7E8B94;border:1px solid #EFEAE1;border-radius:999px;padding:4px 10px;background:#F7F6F2;flex:none}
+#pk2{z-index:5}
+#pk2.lift{transform:translateY(-5px) scale(1.045);box-shadow:0 18px 34px rgba(34,48,58,.16);border-color:rgba(15,76,92,.45)}
+#pk2.lift .cf{animation:none}
+#pk2.gone{opacity:0;transform:scale(.9)}
+#pkSlot{position:absolute;left:0;top:286px;width:470px;height:66px;border:1.5px dashed #DDD6C9;border-radius:13px;
+  display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono';font-size:11px;color:#A9B2BA;letter-spacing:2px;opacity:0;transition:opacity .3s}
+#pkSlot.on{opacity:1}
+
+/* 时间轴列 */
+#tlCol{position:absolute;left:560px;top:140px;width:620px;height:906px}
+#tlH{display:flex;align-items:baseline;justify-content:space-between;opacity:0;transform:translateY(10px);transition:all .5s}
+#tlH.in{opacity:1;transform:none}
+#tlH h4{font-size:21px;font-weight:800;color:#22303A;letter-spacing:1px}
+#tlH .par{font-family:'JetBrains Mono';font-size:10px;color:#A9B2BA;border:1px solid #EFEAE1;border-radius:999px;padding:3px 9px;background:#fff}
+#sumL{margin-top:9px;font-size:13px;color:#7E8B94;font-weight:500;opacity:0;transition:opacity .5s}
+#sumL.in{opacity:1}
+#sumL b{color:#0F4C5C;font-weight:800}
+#tscroll{position:absolute;left:0;top:104px;width:620px;height:802px;overflow:hidden;border-left:1px solid #EFEAE1;
+  -webkit-mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 58px),transparent 100%);
+  mask-image:linear-gradient(180deg,#000 0,#000 calc(100% - 58px),transparent 100%)}
+#tscroll::before{content:'';position:absolute;left:56px;right:0;top:0;bottom:0;
+  background:repeating-linear-gradient(180deg,#EFEAE1 0 1px,transparent 1px 62px),repeating-linear-gradient(180deg,#F7F5EF 0 1px,transparent 1px 15.5px);
+  background-position:0 10px,0 10px}
+.hlab{position:absolute;left:8px;width:40px;text-align:right;font-family:'JetBrains Mono';font-size:12px;font-weight:700;color:#A9B2BA;transform:translateY(-50%)}
+.blk{position:absolute;left:76px;width:520px;background:#fff;border:1px solid #EFEAE1;border-left:6px solid var(--c);border-radius:12px;
+  box-shadow:0 3px 12px rgba(34,48,58,.05);padding:10px 16px;opacity:0;transform:scale(.985);transition:opacity .45s,transform .45s,box-shadow .25s}
+.blk.in{opacity:1;transform:none}
+.blk .bt{font-size:16px;font-weight:700;color:#22303A;letter-spacing:.3px}
+.blk .bm{margin-top:3px;font-family:'JetBrains Mono';font-size:11px;color:#7E8B94}
+.blk.sm{padding:7px 16px}
+.blk.sm .bt{font-size:14.5px}
+.blk.sm .bm{display:inline;margin-left:10px;font-size:10.5px}
+.blk .cat{position:absolute;right:14px;top:13px;width:9px;height:9px;border-radius:50%;background:var(--c)}
+#b4.flash{animation:bpop .9s}
+#b4chip{position:absolute;right:12px;top:-15px;font-family:'JetBrains Mono';font-size:10.5px;font-weight:700;letter-spacing:2px;color:#fff;
+  background:#0F4C5C;border-radius:999px;padding:4px 11px;opacity:0;transition:opacity .4s;z-index:6}
+#b4chip.on{opacity:1}
+@keyframes bpop{30%{box-shadow:0 0 0 5px rgba(15,76,92,.22)}}
+#b6{z-index:5}
+#b6.grabbed{transform:scale(1.015);box-shadow:0 16px 30px rgba(34,48,58,.18);border-color:rgba(15,76,92,.5)}
+#b6.land{animation:bpop .7s}
+#b6old{position:absolute;left:76px;top:568px;width:520px;height:62px;border:1.5px dashed #DDD6C9;border-radius:12px;opacity:0;transition:opacity .35s}
+#b6old.on{opacity:1}
+#dropL{position:absolute;left:76px;top:420px;width:520px;border-top:2px dashed rgba(15,76,92,.55);opacity:0;transition:opacity .3s;z-index:4}
+#dropL.on{opacity:1}
+#snapL{position:absolute;left:76px;right:6px;top:568px;border-top:2px solid #0F4C5C;opacity:0;z-index:6}
+#snapL.on{opacity:.9;transition:opacity .18s}
+#snapChip{position:absolute;left:416px;top:462px;font-family:'JetBrains Mono';font-size:10.5px;font-weight:700;color:#fff;background:#0F4C5C;
+  border-radius:999px;padding:4px 11px;letter-spacing:1px;opacity:0;transform:translateY(6px);transition:all .35s;z-index:7;box-shadow:0 8px 18px rgba(15,76,92,.3)}
+#snapChip.on{opacity:1;transform:none}
+/* 「现在」红线：只在当天渲染 · #FF6B6B 全片统一 */
+#nowL{position:absolute;left:58px;right:8px;top:475px;height:2px;background:#FF6B6B;z-index:5;transform-origin:left;transform:scaleX(0);
+  transition:transform .95s cubic-bezier(.65,0,.25,1)}
+#nowL.on{transform:scaleX(1);animation:nlbreathe 2.6s 1.1s ease-in-out infinite}
+@keyframes nlbreathe{50%{box-shadow:0 0 12px rgba(255,107,107,.75);opacity:.8}}
+#nowDot{position:absolute;left:52px;top:471px;width:10px;height:10px;border-radius:50%;background:#FF6B6B;z-index:6;opacity:0;transition:opacity .3s}
+#nowDot.on{opacity:1;animation:dotp 2.6s ease-out infinite}
+@keyframes dotp{0%{box-shadow:0 0 0 0 rgba(255,107,107,.45)}70%{box-shadow:0 0 0 10px rgba(255,107,107,0)}100%{box-shadow:0 0 0 0 rgba(255,107,107,0)}}
+#nowLab{position:absolute;left:84px;top:475px;transform:translateY(-55%) scale(.8);opacity:0;transition:all .4s cubic-bezier(.34,1.6,.64,1);z-index:7;
+  background:#fff;border:1px solid #FF6B6B;color:#FF6B6B;font-family:'JetBrains Mono';font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px;
+  box-shadow:0 4px 12px rgba(255,107,107,.18)}
+#nowLab.on{opacity:1;transform:translateY(-55%) scale(1)}
+/* 拖拽虚影（cam 层，跨列飞行） */
+#ghost{position:absolute;left:68px;top:436px;width:516px;height:62px;border:2px dashed #0F4C5C;background:rgba(15,76,92,.07);border-radius:14px;
+  z-index:32;opacity:0;display:flex;align-items:center;gap:12px;padding-left:18px;font-size:15px;font-weight:700;color:#0F4C5C;transition:opacity .25s}
+#ghost.on{opacity:.92;box-shadow:0 16px 30px rgba(34,48,58,.14)}
+#ghost i{width:8px;height:8px;border-radius:50%;background:#118AB2;flex:none}
+#ghost s{text-decoration:none;font-family:'JetBrains Mono';font-size:10.5px;color:rgba(15,76,92,.65);margin-left:auto;margin-right:16px}
+
+/* 右栏三卡 */
+#aside{position:absolute;left:1210px;top:140px;width:646px}
+.ac{position:absolute;left:0;width:646px;background:#fff;border:1px solid #EFEAE1;border-radius:16px;box-shadow:0 8px 26px rgba(34,48,58,.05);
+  padding:20px 24px;opacity:0;transform:translateY(16px);transition:all .55s cubic-bezier(.16,1,.3,1)}
+.ac.in{opacity:1;transform:none}
+.ac .at{font-size:12px;font-weight:700;letter-spacing:6px;color:#A9B2BA}
+#ac1{top:0;height:318px}
+.bigN{margin-top:12px;font-size:44px;font-weight:800;color:#22303A;font-variant-numeric:tabular-nums}
+.bigN small{font-size:14px;color:#A9B2BA;font-weight:600;letter-spacing:1px;margin-left:10px}
+.meter{display:flex;height:14px;border-radius:999px;overflow:hidden;margin-top:16px;background:#F7F6F2}
+.meter i{height:100%;transform-origin:left;transform:scaleX(0)}
+.ac.in .meter i{animation:grow .9s cubic-bezier(.16,1,.3,1) forwards;animation-delay:calc(var(--k)*120ms)}
+@keyframes grow{to{transform:scaleX(1)}}
+.legend{display:grid;grid-template-columns:1fr 1fr;gap:9px 20px;margin-top:16px}
+.legend span{display:flex;align-items:center;gap:8px;font-size:13px;color:#7E8B94;font-weight:600}
+.legend i{width:9px;height:9px;border-radius:3px;background:var(--c);flex:none}
+#ac2{top:340px;height:246px}
+.capl{position:relative;margin-top:22px;height:150px;border-top:1.5px dashed #E4DFD6}
+.capl s{position:absolute;right:0;top:-18px;text-decoration:none;font-family:'JetBrains Mono';font-size:10px;color:#A9B2BA;letter-spacing:1px}
+.rh{position:absolute;left:0;right:0;bottom:24px;top:0;display:flex;align-items:flex-end;gap:26px}
+.r{flex:1;height:100%;position:relative;display:flex;align-items:flex-end;border-radius:8px}
+.r.today{background:#DCEAEF}
+.r i{width:100%;border-radius:6px 6px 2px 2px;background:#0F4C5C;transform-origin:bottom;transform:scaleY(0)}
+.ac.in .r i{animation:growY .8s cubic-bezier(.16,1,.3,1) forwards;animation-delay:calc(var(--k)*90ms)}
+@keyframes growY{to{transform:scaleY(1)}}
+.r em{position:absolute;bottom:-22px;left:0;right:0;text-align:center;font-style:normal;font-size:11px;font-weight:600;color:#7E8B94}
+.r.today em{color:#0F4C5C;font-weight:800}
+#ac3{top:610px;height:268px}
+.trow{display:flex;align-items:center;gap:12px;height:46px;border-bottom:1px dashed #F2EFE8;padding:0 6px}
+.trow:last-child{border-bottom:none}
+.trow .td{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
+.trow .tt{font-size:15px;font-weight:600;color:#22303A}
+.trow .du{margin-left:auto;font-family:'JetBrains Mono';font-size:11px;color:#A9B2BA}
+.trow.first{background:rgba(17,138,178,.07);border-radius:10px;border-bottom:none}
+.trow.first .tt{font-weight:800}
+.ac.in .trow.first{animation:hlflash 1.1s .9s}
+@keyframes hlflash{40%{background:rgba(17,138,178,.2)}}
+
+/* 「计划变了？」批注 */
+#ask{position:absolute;left:648px;top:946px;display:flex;align-items:flex-end;gap:10px;z-index:22;
+  opacity:0;transform:scale(.8);transition:all .45s cubic-bezier(.34,1.6,.64,1)}
+#ask.in{opacity:1;transform:none}
+#ask.gone{opacity:0;transition:opacity .4s}
+#ask b{font-size:25px;font-weight:900;color:#22303A;letter-spacing:2px;border-bottom:3px dashed #FF6B6B;padding-bottom:3px}
+#ask svg{width:30px;height:36px;stroke:#0F4C5C;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;margin-bottom:6px}
+
+/* 定格：结论大字 + 出血描边水印 */
+#wm{position:absolute;left:552px;top:786px;font-family:'Manrope';font-size:190px;font-weight:900;letter-spacing:-2px;color:transparent;
+  -webkit-text-stroke:1.5px rgba(15,76,92,.10);z-index:11;opacity:0;transition:opacity 1.4s;pointer-events:none}
+#wm.in{opacity:1}
+#punch{position:absolute;left:64px;top:816px;z-index:24;opacity:0;transform:translateY(20px);transition:all .85s cubic-bezier(.16,1,.3,1)}
+#punch.in{opacity:1;transform:none}
+#punch .l1{font-size:60px;font-weight:900;letter-spacing:7px;color:#22303A;line-height:1.22}
+#punch .l2{color:#0F4C5C}
+#punch .l2 em{font-style:normal;color:#FF6B6B}
+#punch .ruled{display:inline-block;margin-top:10px;height:4px;width:190px;border-radius:2px;background:linear-gradient(90deg,#FF6B6B,#E3A008)}
+#punch .pen{margin-top:8px;font-family:'JetBrains Mono';font-size:12px;letter-spacing:5px;color:#A9B2BA}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- [改这里] 全部画面内容包进 #cam：浅色 SaaS 仪表盘（四象限 → 抽屉 → 时间块） -->
+  <div id="cam">
+
+    <!-- 顶栏 -->
+    <div id="topbar">
+      <svg class="lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.4 2"/></svg>
+      <span class="brand">U-Time</span>
+      <span class="sep"></span>
+      <span id="tabs">
+        <span class="tab act" id="tA">任务表</span><span class="tab" id="tB">时间块</span>
+        <i id="tabUL"></i>
+      </span>
+      <span id="segT">任务表 · <b>先决定，再动手</b></span>
+      <span class="right">
+        <span class="dpill">9月18日 · 周五 · 今天</span>
+        <span class="tchip"><i></i>14:30</span>
+      </span>
+    </div>
+
+    <!-- ── 阶段 1：四象限 ── -->
+    <div id="quadL">
+      <div id="grid">
+        <section class="qc" id="q1">
+          <div class="qh"><span class="rn">I</span><h3>重要且紧急 · 立即做</h3><span class="tip">截止压顶，别再犹豫</span><span class="area">面积 ×1.35</span></div>
+          <div class="qcard" style="--c:#118AB2">答辩 PPT · 终稿<em>今晚截止</em></div>
+          <div class="qcard" style="--c:#E3A008">实验补测 · 约设备<em>今天</em></div>
+        </section>
+        <section class="qc" id="q2">
+          <div class="qh"><span class="rn">II</span><h3>重要不紧急 · 排计划</h3><span class="tip">人生的复利都在这里</span></div>
+          <div class="qcard tap" id="dSrc" style="--c:#E3A008">毕业设计 · 二稿框架
+            <svg class="chev" viewBox="0 0 24 24"><path d="M6 10l6 5 6-5"/></svg></div>
+          <div class="qcard" style="--c:#118AB2">晨读 · 专业文献<em>每天 08:30</em></div>
+          <div class="qcard" style="--c:#FF6B6B">健身 · 力量训练<em>每周 3 练</em></div>
+        </section>
+        <section class="qc" id="q3">
+          <div class="qh"><span class="rn">III</span><h3>紧急不重要 · 少快办</h3><span class="tip">能批量就批量</span></div>
+          <div class="qcard" style="--c:#9B5DE5">打印 · 课程证明<em>顺路办</em></div>
+          <div class="qcard" style="--c:#9B5DE5">群消息 · 集中回一遍<em>批量处理</em></div>
+        </section>
+        <section class="qc" id="q4">
+          <div class="qh"><span class="rn">IV</span><h3>不重要不紧急 · 有空再说</h3><span class="area">面积 ×1.00</span></div>
+          <div class="qcard" style="--c:#2EC4B6">剧 · 两集<em>留给休息</em></div>
+        </section>
+      </div>
+
+      <div id="anno">
+        <div class="kick">EISENHOWER MATRIX · 任务表</div>
+        <div class="big">先决定，<br><s>再动手。</s></div>
+        <div class="sub">同一件事，<b>放错格子，节奏就全乱</b>。<br>四象限不改变任务，只改变做的顺序。</div>
+      </div>
+      <svg id="annoSvg" viewBox="0 0 1920 1080">
+        <path d="M1214 692 L 760 692 L 662 622"/>
+        <path d="M1214 712 L 1196 712 L 1180 640"/>
+        <circle cx="656" cy="618" r="4.5"/><circle cx="1177" cy="633" r="4.5"/>
+      </svg>
+      <div id="pillA">
+        <svg class="pv" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M11.6 3.5v17.5M3.5 11.6h17"/></svg>
+        <div><b>面积 = 权重</b><span>1.16fr : 1fr → Q1 ≈ 1.35 × Q4</span></div>
+      </div>
+    </div>
+
+    <div id="dimA"></div>
+
+    <!-- 任务详情抽屉：改象限只走抽屉按钮 / Alt+↑↓ -->
+    <div id="drawer">
+      <span class="dtag"><i></i>工作</span>
+      <div class="dttl">毕业设计 · 二稿框架</div>
+      <div class="dsub">来自 任务表 · 队列 II</div>
+      <div class="drow"><s>象限</s><b>II · 重要不紧急</b></div>
+      <div class="drow"><s>预估时长</s><b>1 小时</b></div>
+      <div class="drow"><s>备注</s><b>等两篇新文献</b></div>
+      <span class="dhint">改象限 · 下方按钮 或 <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd></span>
+      <button id="dBtn"><svg id="dBtnIc" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M9.5 15.5l2 2 4-4.5"/></svg><span id="dBtnT">排入今天</span></button>
+    </div>
+
+    <!-- ── 阶段 2：任务池 + 时间轴 + 右栏 ── -->
+    <div id="dayL">
+
+      <div id="pool">
+        <div id="poolH"><h4>任务池</h4><span class="n" id="pkN">6</span></div>
+        <div id="poolHint">拖一张，放到右边的时间轴上</div>
+        <div class="pk" id="pk1" style="--c:#E3A008;--dl:0s;top:208px"><div class="cf"><div><div class="tt">组会纪要 · 归档</div><div class="mt">工作 · 30 分</div></div><span class="du">30分</span></div></div>
+        <div class="pk" id="pk2" style="--c:#118AB2;--dl:.4s;top:286px"><div class="cf"><div><div class="tt">实验报告 · 数据整理</div><div class="mt">学习 · 60 分</div></div><span class="du">60分</span></div></div>
+        <div class="pk" id="pk3" style="--c:#118AB2;--dl:.8s;top:364px"><div class="cf"><div><div class="tt">竞赛材料 · 打包提交</div><div class="mt">学习 · 45 分</div></div><span class="du">45分</span></div></div>
+        <div class="pk" id="pk4" style="--c:#FF6B6B;--dl:1.2s;top:442px"><div class="cf"><div><div class="tt">羽毛球 · 约球</div><div class="mt">运动 · 60 分</div></div><span class="du">60分</span></div></div>
+        <div class="pk" id="pk5" style="--c:#9B5DE5;--dl:1.6s;top:520px"><div class="cf"><div><div class="tt">报销单 · 交财务</div><div class="mt">生活 · 15 分</div></div><span class="du">15分</span></div></div>
+        <div class="pk" id="pk6" style="--c:#9B5DE5;--dl:2s;top:598px"><div class="cf"><div><div class="tt">取快递 · 顺路</div><div class="mt">生活 · 15 分</div></div><span class="du">15分</span></div></div>
+        <div id="pkSlot">DRAGGING…</div>
+      </div>
+
+      <div id="tlCol">
+        <div id="tlH"><h4>9月18日 · 周五</h4><span class="par">07:00–24:00 · 62px/时 · 15分吸附</span></div>
+        <div id="sumL">已排 <b>5.5小时</b> · <span>6 个时间块</span></div>
+        <div id="tscroll">
+          <div class="blk" id="b1" style="--c:#118AB2;top:103px;height:62px"><span class="cat"></span><div class="bt">晨读 · 专业文献</div><div class="bm">08:30 – 09:30</div></div>
+          <div class="blk" id="b2" style="--c:#E3A008;top:196px;height:124px"><span class="cat"></span><div class="bt">文献整理 · 综述笔记</div><div class="bm">10:00 – 12:00</div></div>
+          <div class="blk sm" id="b3" style="--c:#9B5DE5;top:320px;height:31px"><div class="bt" style="display:inline">午餐 · 咖啡</div><div class="bm">12:00 – 12:30</div></div>
+          <div class="blk sm" id="b35" style="--c:#2EC4B6;top:351.5px;height:31px"><div class="bt" style="display:inline">午休</div><div class="bm">12:30 – 13:00</div></div>
+          <div class="blk" id="b4" style="--c:#E3A008;top:382px;height:62px"><span class="cat"></span><div class="bt">毕业设计 · 二稿框架</div><div class="bm">13:00 – 14:00</div><span id="b4chip">刚排入</span></div>
+          <div class="blk sm" id="b5" style="--c:#FF6B6B;top:506px;height:31px"><div class="bt" style="display:inline">健身 · 力量训练</div><div class="bm">15:00 – 15:30</div></div>
+          <div class="blk" id="b6" style="--c:#118AB2;top:568px;height:62px"><span class="cat"></span><div class="bt">实验报告 · 数据整理</div><div class="bm" id="b6bm">16:00 – 17:00</div></div>
+          <div id="b6old"></div>
+          <div id="dropL"></div>
+          <div id="snapL"></div>
+          <div id="snapChip">吸附 · 16:00</div>
+          <div id="nowL"></div>
+          <div id="nowDot"></div>
+          <div id="nowLab">现在 14:30</div>
+        </div>
+      </div>
+
+      <div id="aside">
+        <div class="ac" id="ac1">
+          <div class="at">这 天 已 排</div>
+          <div class="bigN">6.5小时 <small>/ 17小时 · 清醒时间</small></div>
+          <div class="meter">
+            <i style="width:46.2%;background:#E3A008;--k:0"></i><i style="width:30.7%;background:#118AB2;--k:1"></i>
+            <i style="width:7.7%;background:#FF6B6B;--k:2"></i><i style="width:7.7%;background:#9B5DE5;--k:3"></i><i style="width:7.7%;background:#2EC4B6;--k:4"></i>
+          </div>
+          <div class="legend">
+            <span style="--c:#E3A008"><i></i>深度工作 3小时</span><span style="--c:#118AB2"><i></i>学习 2小时</span>
+            <span style="--c:#FF6B6B"><i></i>运动 45分</span><span style="--c:#9B5DE5"><i></i>生活 30分</span>
+            <span style="--c:#2EC4B6"><i></i>休息 30分</span>
+          </div>
+        </div>
+        <div class="ac" id="ac2">
+          <div class="at">近 7 天节奏</div>
+          <div class="capl"><s>封顶 480 分</s>
+            <div class="rh">
+              <div class="r" style="--k:0"><i style="height:25%"></i><em>六</em></div>
+              <div class="r" style="--k:1"><i style="height:18.7%"></i><em>日</em></div>
+              <div class="r" style="--k:2"><i style="height:62.5%"></i><em>一</em></div>
+              <div class="r" style="--k:3"><i style="height:100%"></i><em>二</em></div>
+              <div class="r" style="--k:4"><i style="height:54.2%"></i><em>三</em></div>
+              <div class="r" style="--k:5"><i style="height:31.3%"></i><em>四</em></div>
+              <div class="r today" style="--k:6"><i style="height:81.3%"></i><em>五</em></div>
+            </div>
+          </div>
+        </div>
+        <div class="ac" id="ac3">
+          <div class="at">明 天 预 告</div>
+          <div style="margin-top:12px">
+            <div class="trow first" style="--c:#118AB2"><span class="td"></span><span class="tt">15:00 开题组会 · 带上初稿</span><span class="du">1小时</span></div>
+            <div class="trow" style="--c:#E3A008"><span class="td"></span><span class="tt">16:30 答辩彩排</span><span class="du">45分</span></div>
+            <div class="trow" style="--c:#FF6B6B"><span class="td"></span><span class="tt">19:00 夜跑 · 打卡</span><span class="du">30分</span></div>
+            <div class="trow" style="--c:#2EC4B6"><span class="td"></span><span class="tt">20:30 纪录片 · 一集</span><span class="du">45分</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="ask">
+        <b>计划变了？</b>
+        <svg viewBox="0 0 30 36"><path d="M6 30C6 16 12 8 24 6"/><path d="M18 3l7 3-4 6"/></svg>
+      </div>
+    </div>
+
+    <!-- 拖拽虚影（飞越两列） -->
+    <div id="ghost"><i></i>实验报告 · 数据整理<s>拖拽中 · 松手吸附</s></div>
+
+    <!-- 定格 -->
+    <div id="wm">SNAP</div>
+    <div id="punch">
+      <div class="l1">轻重缓急</div>
+      <div class="l1 l2">一拖即排<em>。</em></div>
+      <span class="ruled"></span>
+      <div class="pen">PRIORITIZE · DRAG · SNAP 15 MIN</div>
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">04 / 四象限与时间块</div>
+  <div class="corner" id="src">界面参数取自 src/views/timeblock.js · v0.76.0</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 4-1 · 四象限与一条时间轴 · 24.1s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=24100;                       /* 第 4 幕：1:15.027–1:39.133（voice-timeline.json） */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue —— 第 4 幕 四象限与时间块（成片 1:15.027–1:39.133）
+   cue 毫秒 = 该句首字序号 × 147ms + 700ms 起播偏移（voice 16.018s · 约 109 字）
+   「」内为口播原句（不上屏，仅对齐），括注 = 成片绝对时间
+   ──────────────────────────────────────────────── */
+const b6=$('#b6');
+/* 小时刻度 07–24：真实参数 DAY_START=420 · 62px/小时 · 内容顶距 10px */
+(()=>{const s=$('#tscroll');for(let h=7;h<=24;h++){const d=document.createElement('div');d.className='hlab';
+  d.textContent=String(h).padStart(2,'0');d.style.top=((h*60-420)*(62/60)+10)+'px';s.appendChild(d)}})();
+
+on(300,()=>camTo(0,0,1,2.2));                                   // 开场拉镜：Q1 特写 → 全景
+on(700,()=>$('#topbar').classList.add('in'));                   // 1:15.7「事一多，就得分轻重」
+on(1250,()=>$('#anno').classList.add('in'));
+/* 1:17.2「四象限把任务摊开」—— 逐格淡入，Q1 先亮 */
+on(2150,()=>$('#q1').classList.add('in'));
+on(2360,()=>$('#q2').classList.add('in'));
+on(2570,()=>$('#q3').classList.add('in'));
+on(2780,()=>$('#q4').classList.add('in'));
+on(3080,()=>{$('#annoSvg').classList.add('in');$('#pillA').classList.add('in')});   // 引线：面积 = 权重
+/* 1:18.5「点开卡片」—— Q2 卡片放大成详情抽屉（改象限只走抽屉按钮 / Alt+↑↓） */
+on(3460,()=>{$('#dSrc').classList.add('open');$('#dimA').classList.add('on');$('#drawer').classList.add('in');camFocus(1500,500,1.1,.9)});
+/* 1:19.8「排入今天」—— 抽屉主按钮按下，块今天 13:00 落轴 */
+on(4770,()=>$('#dBtn').classList.add('press'));
+on(5050,()=>{$('#dBtn').classList.remove('press');$('#dBtn').classList.add('done');$('#dBtnT').textContent='已排入今天 · 13:00'});
+on(5300,()=>{$('#drawer').classList.add('gone');$('#dimA').classList.remove('on');$('#quadL').classList.add('gone');camTo(0,0,1,1.1)});
+on(5480,()=>{$('#tabUL').style.left='84px';$('#tA').classList.remove('act');$('#tB').classList.add('act');
+  $('#segT').innerHTML='时间块 · <b>拖上去，就是一天</b>'});
+/* 1:20.8「左边是任务池」—— 时间块视图入场，块逐条落轴 */
+on(5560,()=>{$('#dayL').classList.add('in');$('#tlH').classList.add('in');$('#sumL').classList.add('in')});
+on(5680,()=>$('#b1').classList.add('in'));
+on(5760,()=>$('#b2').classList.add('in'));
+on(5830,()=>{$('#b3').classList.add('in');$('#b35').classList.add('in')});
+on(5920,()=>$('#b5').classList.add('in'));
+on(6060,()=>{$('#b4').classList.add('in','flash');$('#b4chip').classList.add('on')});   // 抽屉排入的那块，带「刚排入」章
+on(5820,()=>$('#poolH').classList.add('in'));
+[...document.querySelectorAll('.pk')].forEach((k,i)=>on(5900+i*120,()=>k.classList.add('in')));
+/* 1:22.3「拖到右边的时间轴上」—— 先虚影飞行、落点指示线追 15 分钟格、松手吸附 */
+on(7300,()=>{$('#pk2').classList.add('lift');$('#poolHint').classList.add('off')});
+on(7420,()=>{$('#ghost').classList.add('on');camFocus(880,660,1.08,1.0)});
+on(7450,()=>{fly($('#ghost'),68,436,636,827,950,72,eio,()=>$('#pkSlot').classList.add('on'));   // 落在 16:00 网格线下 19px（没对准）
+  $('#dropL').classList.add('on');fly($('#dropL'),76,420,76,568,830,0,eio)});
+on(8400,()=>$('#pk2').classList.add('gone'));
+on(8460,()=>{$('#ghost').classList.remove('on');$('#dropL').classList.remove('on');b6.classList.add('in');$('#snapL').classList.add('on');$('#snapChip').classList.add('on')});  // 咔：吸到 16:00 整
+on(8600,()=>{$('#pkN').textContent='5';$('#sumL').innerHTML='已排 <b>6.5小时</b> · <span>7 个时间块</span>';$('#b4chip').classList.remove('on')});
+on(8760,()=>{$('#snapL').classList.remove('on');$('#snapChip').classList.remove('on');$('#pkSlot').classList.remove('on')});
+/* 1:23.7「那条红线是现在」→ 1:25.2「走到哪儿就该干什么」—— 红线从左侧扫出（14:30 = 475px） */
+on(8720,()=>{$('#nowL').classList.add('on');$('#nowDot').classList.add('on');camFocus(860,712,1.16,1.0)});
+on(10200,()=>$('#nowLab').classList.add('on'));
+on(11100,()=>camTo(0,0,1,1.2));
+/* 1:26.7「后面七天什么安排」→ 1:27.7「一眼也能看到」—— 右栏三卡依次点亮 */
+on(11650,()=>{$('#ac1').classList.add('in');camFocus(1520,520,1.1,.9)});
+on(12080,()=>$('#ac2').classList.add('in'));
+on(12470,()=>$('#ac3').classList.add('in'));
+on(13150,()=>camTo(0,0,1,1.1));
+/* 1:28.4「计划变了？」→ 1:30.1「拖一下，重新排」—— 15 分钟一格一格跳（15.5px/格） */
+on(13420,()=>{$('#ask').classList.add('in');camFocus(880,780,1.13,.9)});
+on(14750,()=>b6.classList.add('grabbed'));
+on(15120,()=>{$('#b6old').classList.add('on');fly(b6,76,568,76,552.5,190,0,eio)});    // 试探上移 → 15:45
+on(15330,()=>$('#b6bm').textContent='15:45 – 16:45');
+on(15420,()=>fly(b6,76,552.5,76,583.5,190,0,eio));                                    // 下探 → 16:15
+on(15630,()=>$('#b6bm').textContent='16:15 – 17:15');
+on(15720,()=>fly(b6,76,583.5,76,614.5,190,0,eio));                                    // 再下 → 16:45
+on(15930,()=>$('#b6bm').textContent='16:45 – 17:45');
+on(16020,()=>fly(b6,76,614.5,76,630,210,0,eio));                                      // 落定 17:00–18:00
+on(16250,()=>{b6.classList.remove('grabbed');b6.classList.add('land');$('#b6bm').textContent='17:00 – 18:00';   // 定格终值锁死
+  $('#b6old').classList.remove('on');$('#ask').classList.add('gone')});
+on(16450,()=>camTo(0,0,1,1.3));
+/* 1:31.7 之后 —— 定格呼吸：整屏排好的时间轴 + 结论大字 */
+on(16720,()=>$('#wm').classList.add('in'));
+on(16900,()=>$('#punch').classList.add('in'));
+on(18100,()=>camFocus(960,540,1.05,5));                                              // Ken Burns 缓推至收尾（居中，不裁顶栏）
+
+/* ===== 音效 ===== */
+on(700,()=>__sfx.swipe(.55));                                        // 顶栏入场
+[2150,2360,2570,2780].forEach((t,i)=>on(t,()=>__sfx.pop(.55-i*.05))); // 四格逐亮
+on(3080,()=>__sfx.type(.3));on(3160,()=>__sfx.ding(.4));              // 引线 + 「面积=权重」
+on(3460,()=>__sfx.whoosh(.6));                                        // 抽屉展开
+on(4770,()=>__sfx.thud(.45));on(5050,()=>__sfx.ding(.65));            // 「排入今天」按下→落定
+on(5300,()=>__sfx.swipe(.5));                                         // 换视图
+on(5560,()=>__sfx.pop(.55));
+[5680,5760,5830,5920].forEach(t=>on(t,()=>__sfx.type(.28)));          // 块落轴
+on(6060,()=>__sfx.ding(.5));                                          // 刚排入
+for(let i=0;i<6;i++)on(5900+i*120,()=>__sfx.pop(.34));                // 任务池 6 张
+on(7300,()=>__sfx.pop(.5));on(7450,()=>__sfx.whoosh(.5));             // 抓起 → 飞行
+on(8460,()=>__sfx.thud(.55));on(8520,()=>__sfx.ding(.8));             // 吸附「咔」
+on(8720,()=>__sfx.whoosh(.65));                                       // 红线扫出
+on(10200,()=>__sfx.ding(.5));                                         // 「现在 14:30」
+[11650,12080,12470].forEach(t=>on(t,()=>__sfx.pop(.45)));             // 三卡点亮
+for(let i=0;i<4;i++)on(12550+i*70,()=>__sfx.type(.26));               // 明日预告逐行
+on(12680,()=>__sfx.ding(.45));
+on(13420,()=>__sfx.pop(.6));                                          // 「计划变了？」
+on(14750,()=>__sfx.thud(.3));                                         // 抓块
+[15120,15420,15720,16020].forEach(t=>on(t,()=>__sfx.type(.35)));      // 15 分钟连跳
+on(16250,()=>__sfx.ding(.75));                                        // 新位置落定
+on(16900,()=>__sfx.whoosh(.85));on(17020,()=>__sfx.ding(.9));         // 结论大字
+</script>
+</body>
+</html>

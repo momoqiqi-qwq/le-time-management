@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>场记板 · Le时间管理 三分钟介绍动画 · 7 幕 180.1s</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zhi+Mang+Xing&family=Bebas+Neue&family=Noto+Serif+SC:wght@400;700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;background:
+    repeating-linear-gradient(96deg,rgba(255,255,255,.018) 0 3px,transparent 3px 9px),
+    radial-gradient(1200px 700px at 50% 0%,#241d17,#15110d 62%,#0d0b08);
+  color:#f2efe6;font-family:'Noto Serif SC',serif;padding:0 0 64px;overflow-x:hidden}
+.wrap{max-width:1280px;margin:0 auto;padding:0 34px}
+
+/* ── 场记臂 ── */
+#clap{position:sticky;top:0;z-index:30;transform-origin:8% 100%;animation:clap 1.1s cubic-bezier(.3,1.5,.4,1)}
+@keyframes clap{0%{transform:rotate(-7deg)}42%{transform:rotate(1.6deg)}70%{transform:rotate(-.7deg)}100%{transform:none}}
+#clap .arm{height:58px;background:repeating-linear-gradient(104deg,#f4f1e6 0 52px,#141110 52px 104px);
+  border-top:2px solid #0a0806;box-shadow:0 8px 26px rgba(0,0,0,.55)}
+#clap .board{background:#1b1613;border-bottom:1px solid rgba(242,239,230,.16);padding:16px 0 18px}
+#clap .row{display:flex;align-items:flex-end;justify-content:space-between;gap:26px}
+#clap .prod{font-family:'Zhi Mang Xing';font-size:52px;line-height:1;letter-spacing:2px;color:#f6f2e5}
+#clap .prod i{font-style:normal;color:#ffd23f}
+#clap .sub{margin-top:7px;font-family:'JetBrains Mono';font-size:12.5px;letter-spacing:2.4px;color:rgba(242,239,230,.52)}
+#clap .meta{display:flex;gap:0;font-family:'JetBrains Mono';font-size:11.5px;letter-spacing:1.6px;text-align:right}
+#clap .meta div{padding:0 16px;border-left:1px solid rgba(242,239,230,.16);color:rgba(242,239,230,.5)}
+#clap .meta b{display:block;font-family:'Bebas Neue';font-size:27px;letter-spacing:1.5px;color:#ffd23f;margin-top:3px}
+
+/* ── 通告单 ── */
+.sheet{margin-top:34px}
+.sheet .cap{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+.sheet .cap h2{font-family:'Zhi Mang Xing';font-size:31px;font-weight:400;letter-spacing:3px;color:#f2efe6}
+.sheet .cap .hair{flex:1;height:1px;background:linear-gradient(90deg,rgba(242,239,230,.34),transparent)}
+.row{display:grid;grid-template-columns:104px 96px 1fr 210px;align-items:center;gap:22px;position:relative;
+  padding:17px 20px 17px 0;margin-bottom:11px;background:linear-gradient(90deg,rgba(255,255,255,.052),rgba(255,255,255,.016));
+  border-left:4px solid var(--ac,#666);text-decoration:none;color:inherit;
+  transition:transform .3s cubic-bezier(.16,1,.3,1),background .3s,box-shadow .3s}
+.row:hover{transform:translateX(9px);background:linear-gradient(90deg,rgba(255,255,255,.1),rgba(255,255,255,.03));box-shadow:-9px 0 0 rgba(0,0,0,.28)}
+.row .no{display:flex;flex-direction:column;align-items:center;justify-content:center;height:66px;margin-left:14px;
+  background:#f4f1e6;color:#1b1613;transform:rotate(-1.6deg);box-shadow:3px 3px 0 rgba(0,0,0,.4)}
+.row .no s{text-decoration:none;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:1.6px}
+.row .no b{font-family:'Bebas Neue';font-size:31px;line-height:.9;letter-spacing:1px}
+.row:hover .no{transform:rotate(1.2deg)}
+.row .dur{font-family:'Bebas Neue';font-size:37px;letter-spacing:1px;color:var(--ac);text-align:right;font-variant-numeric:tabular-nums}
+.row .dur s{display:block;text-decoration:none;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:1.4px;color:rgba(242,239,230,.42)}
+.row .tt{font-size:22px;font-weight:900;letter-spacing:1.5px}
+.row .tt em{font-style:normal;display:block;margin-top:5px;font-size:13.5px;font-weight:400;letter-spacing:.6px;color:rgba(242,239,230,.6)}
+.row .st{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.row .chip{font-family:'JetBrains Mono';font-size:11px;letter-spacing:1.4px;padding:4px 10px;border:1px solid var(--ac);color:var(--ac);border-radius:2px}
+.row .go{font-family:'JetBrains Mono';font-size:11px;letter-spacing:1.6px;color:rgba(242,239,230,.4)}
+.row:hover .go{color:#ffd23f}
+
+/* ── 须知胶带 ── */
+.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:38px}
+.note{position:relative;background:#efe6cf;color:#2a241c;padding:19px 21px 21px;box-shadow:0 14px 30px rgba(0,0,0,.42);
+  transform:rotate(var(--r,0deg))}
+.note::before{content:'';position:absolute;left:50%;top:-13px;width:104px;height:26px;transform:translateX(-50%) rotate(-2.4deg);
+  background:rgba(226,214,180,.62);border-left:1px dashed rgba(0,0,0,.16);border-right:1px dashed rgba(0,0,0,.16)}
+.note h3{font-family:'Zhi Mang Xing';font-size:25px;font-weight:400;letter-spacing:2px;margin-bottom:9px}
+.note p{font-size:13.5px;line-height:1.85}
+.note p+p{margin-top:7px}
+.note code{font-family:'JetBrains Mono';font-size:11.5px;background:rgba(42,36,28,.1);padding:1px 5px;border-radius:2px;word-break:break-all}
+.note b{color:#9a3a1e}
+.foot{margin-top:40px;display:flex;justify-content:space-between;gap:20px;font-family:'JetBrains Mono';font-size:11px;
+  letter-spacing:1.6px;color:rgba(242,239,230,.34);border-top:1px solid rgba(242,239,230,.12);padding-top:14px}
+@media(max-width:1080px){.row{grid-template-columns:88px 78px 1fr}.row .st{display:none}.notes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div id="clap">
+  <div class="arm"></div>
+  <div class="board"><div class="wrap row">
+    <div>
+      <div class="prod">Le时间管理 <i>·</i> 三分钟介绍动画</div>
+      <div class="sub">SCENE CALL SHEET · 分镜演示 v0.76 · 一幕一个 HTML · 全屏录屏即成片</div>
+    </div>
+    <div class="meta">
+      <div>SCENES<b>7</b></div>
+      <div>RUNTIME<b>180.1s</b></div>
+      <div>RES<b>1920×1080</b></div>
+      <div>VOICE TRACK<b>narration-180s.wav</b></div>
+    </div>
+  </div></div>
+</div>
+
+<div class="wrap sheet">
+  <div class="cap"><h2>通告单 · 七幕</h2><span class="hair"></span></div>
+
+  <a class="row" style="--ac:#c9a22f" href="shot-1-1_信息散落的一周.html">
+    <span class="no"><s>SCENE</s><b>01</b></span>
+    <span class="dur">24.6<s>SEC · 0:00–0:24.6</s></span>
+    <span class="tt">信息散落的一周<em>五十人回了「收到」，十个人没来 —— 一条通知散在四个渠道</em></span>
+    <span class="st"><span class="chip">复古报纸头条</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#e05a4e" href="shot-2-1_帷幕拉开.html">
+    <span class="no"><s>SCENE</s><b>02</b></span>
+    <span class="dur">20.8<s>SEC · 0:24.6–0:45.3</s></span>
+    <span class="tt">帷幕拉开<em>产品揭幕 · 把散在各个角落的信息，归到一条时间轴上</em></span>
+    <span class="st"><span class="chip">剧院帷幕</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#3aa0cc" href="shot-3-1_一句话过安检.html">
+    <span class="no"><s>SCENE</s><b>03</b></span>
+    <span class="dur">29.7<s>SEC · 0:45.3–1:15.0</s></span>
+    <span class="tt">一句话过安检<em>★ 全片核心 · 「明天下午3点到4点」被透视成日期 / 时段 / 区间 / 标题四层</em></span>
+    <span class="st"><span class="chip">机场安检 X 光</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#2ec4b6" href="shot-4-1_四象限与一条时间轴.html">
+    <span class="no"><s>SCENE</s><b>04</b></span>
+    <span class="dur">24.1<s>SEC · 1:15.0–1:39.1</s></span>
+    <span class="tt">四象限与一条时间轴<em>唯一忠实复刻真实界面的一幕 · 面积=权重、15 分钟吸附、红线「现在」</em></span>
+    <span class="st"><span class="chip">浅色 SaaS 仪表盘</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#b98555" href="shot-5-1_十五个盒子的货架.html">
+    <span class="no"><s>SCENE</s><b>05</b></span>
+    <span class="dur">34.4<s>SEC · 1:39.1–2:13.5</s></span>
+    <span class="tt">十五个盒子的货架<em>最长一幕 · 15 个内置插件摆满货架，一个文件夹滑进来凭空多一盒</em></span>
+    <span class="st"><span class="chip">软件货架</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#7fa6d4" href="shot-6-1_一张蓝底架构图.html">
+    <span class="no"><s>SCENE</s><b>06</b></span>
+    <span class="dur">22.7<s>SEC · 2:13.5–2:36.2</s></span>
+    <span class="tt">一张蓝底架构图<em>前端 → api.js 唯一出口 → Rust 内核 → 本机单个 JSON，红章「本机 · 不出网」</em></span>
+    <span class="st"><span class="chip">工程蓝图</span><span class="go">打开 →</span></span>
+  </a>
+
+  <a class="row" style="--ac:#a8977f" href="shot-7-1_把时间还给你.html">
+    <span class="no"><s>SCENE</s><b>07</b></span>
+    <span class="dur">23.8<s>SEC · 2:36.2–3:00.0</s></span>
+    <span class="tt">把时间还给你<em>版本胶片 v0.3→v0.76 过镜，收进哑光片尾定帧 · 与第 1 幕的旧介质首尾呼应</em></span>
+    <span class="st"><span class="chip">胶片蒙太奇 → 哑光片尾</span><span class="go">打开 →</span></span>
+  </a>
+
+  <div class="notes">
+    <div class="note" style="--r:-1.1deg">
+      <h3>录之前</h3>
+      <p>每页是<b>独立虚拟时钟</b>：打开后点「启动播放」才走带，播完底部「重播」会呼吸。七幕不能自动连播，按 SCENE 顺序逐页录，再在剪辑里拼。</p>
+      <p>窗口 <code>1920×1080</code> 起录；鼠标移到画面底部 60px 才出 HUD，录屏时别碰。</p>
+    </div>
+    <div class="note" style="--r:.8deg">
+      <h3>数字口径</h3>
+      <p>屏幕上的规模数字是<b>临场实测值</b>，这个仓库有别的会话在并发推版本 —— 录屏当天先重跑一遍核对，不一致就整批替换：</p>
+      <p><code>grep -m1 '"version"' ../../le-time-management/package.json</code></p>
+      <p><code>find ../../le-time-management/src -name '*.js' | xargs wc -l | tail -1</code></p>
+    </div>
+    <div class="note" style="--r:-.6deg">
+      <h3>配音要重录两句</h3>
+      <p>现成音轨 <code>narration-180s.wav</code> 与画面<b>有两处对不上</b>：第 5 幕口播说「十二个校园插件」，画面按实测 <b>15</b>；第 7 幕说「五十多个版本」，实际已到 <b>v0.76</b>。</p>
+      <p>第 5 幕「跟电脑实时同步」也改了口径：桌面与小程序是<b>同一份 JSON 互通</b>，不是实时同步。</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>时间基准 · ../voice-timeline.json（每幕精确到毫秒）</span>
+    <span>底盘 · video-shot-demos / 播放器 + 镜头调度 + WebAudio 音效</span>
+    <span>质检 · _qc/*.png（逐幕多时间点定格）</span>
+  </div>
+</div>
+
+</body>
+</html>

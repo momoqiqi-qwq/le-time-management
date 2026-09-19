@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 3-1 · 一句话过安检</title>
+
+<!-- [改这里] 字体：机场安检指示牌 —— Archivo 展示英文 + Noto Sans SC 中文 + Share Tech Mono 数据 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800;900&family=Noto+Sans+SC:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色/纹理 —— 安检厅：深灰地坪 + 冷顶光 + 64px 地面网格 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;font-family:'Noto Sans SC',sans-serif;
+  background:
+    repeating-linear-gradient(90deg,rgba(160,205,230,.030) 0 1px,transparent 1px 64px),
+    repeating-linear-gradient(0deg,rgba(160,205,230,.024) 0 1px,transparent 1px 64px),
+    radial-gradient(1180px 460px at 36% -6%,rgba(120,190,230,.19),transparent 72%),
+    linear-gradient(180deg,#242c33 0%,#1a2128 48%,#12181d 74%,#0d1216 100%);
+  box-shadow:inset 0 0 240px rgba(0,0,0,.82)}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：机场安检 X 光机 —— 指示牌 / 传送带 / 铅门机身 / 监视器透视 / 出口色块 / 规则条 / 定格
+   ──────────────────────────────────────────────── */
+/* 开场怼脸在吊挂指示牌特写位，300ms 后拉回全景 */
+#cam{transform:translate(-130px,-34px) scale(1.3)}
+.scene{opacity:0;transition:opacity .85s ease,transform .85s cubic-bezier(.16,1,.3,1)}
+.scene.in{opacity:1}
+#stage.faded .scene{opacity:.07;transition:opacity 1.4s ease}
+.mn{font-family:'Share Tech Mono',monospace}
+
+/* 地坪：排队引导线 + 机身落地光斑 */
+#floor{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:11}
+#floor .pool{position:absolute;left:520px;top:770px;width:720px;height:120px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(0,0,0,.55),transparent)}
+#floor .chev{position:absolute;left:60px;top:800px;width:500px;height:30px;border-top:2px solid rgba(11,111,168,.55);border-bottom:2px solid rgba(11,111,168,.3);
+  background:repeating-linear-gradient(115deg,rgba(11,111,168,.5) 0 12px,transparent 12px 30px);animation:chev 3.4s linear infinite}
+@keyframes chev{to{background-position:84px 0}}
+#floor .que{position:absolute;left:60px;top:842px;font-family:'Share Tech Mono';font-size:12px;letter-spacing:4px;color:rgba(150,186,206,.4)}
+
+/* ── 吊挂指示牌（左缘出血） ── */
+#sign{position:absolute;left:-46px;top:56px;width:748px;height:140px;z-index:14;background:#eef3f5;
+  border-bottom:7px solid #0b6fa8;box-shadow:0 18px 40px rgba(0,0,0,.55);transform:translateY(-34px)}
+#sign.in{opacity:1;transform:none}
+#sign b{position:absolute;left:92px;top:12px;font-family:'Archivo';font-weight:900;font-size:80px;line-height:1;letter-spacing:5px;color:#0f1f28}
+#sign .sg-cn{position:absolute;left:96px;top:96px;font-size:19px;font-weight:700;letter-spacing:9px;color:#3d5766}
+#sign .sg-ar{position:absolute;right:26px;top:44px;width:66px;height:44px;stroke:#0b6fa8;fill:none;stroke-width:4.2;stroke-linecap:round;stroke-linejoin:round}
+#sign .sg-tag{position:absolute;right:26px;top:98px;font-family:'Share Tech Mono';font-size:11px;letter-spacing:2px;color:#7b93a1}
+#sign .hang{position:absolute;top:-30px;width:5px;height:30px;background:linear-gradient(#7d8f99,#4b5a63)}
+#sign .hang.a{left:150px}#sign .hang.b{left:600px}
+
+/* ── 顶部吊挂状态条 ── */
+#rig{position:absolute;left:770px;top:96px;display:flex;align-items:center;gap:11px;z-index:14;
+  font-family:'Share Tech Mono';font-size:13px;letter-spacing:2px;color:rgba(180,210,228,.62);transform:translateY(-14px)}
+#rig.in{opacity:1;transform:none}
+.lamp{width:11px;height:11px;border-radius:50%;background:#2b3a44;box-shadow:inset 0 0 0 1px rgba(180,210,228,.35)}
+.lamp.on{background:#39d98a;box-shadow:0 0 12px rgba(57,217,138,.8);animation:bp 1.9s ease-in-out infinite}
+.lamp.amber{background:#ffd23f;box-shadow:0 0 12px rgba(255,210,63,.7);animation:bp 1.3s .4s ease-in-out infinite}
+.lamp.red{background:#FF6B6B;box-shadow:0 0 12px rgba(255,107,107,.7);animation:bp 2.6s .9s ease-in-out infinite}
+@keyframes bp{50%{opacity:.32}}
+
+/* ── 云端禁用（右上角） ── */
+#cloudno{position:absolute;left:1400px;top:52px;width:458px;height:84px;z-index:17;display:flex;align-items:center;gap:16px;
+  border:1px solid rgba(255,107,107,.35);background:rgba(24,30,36,.86);padding:0 18px;opacity:0;transform:translateX(26px);transition:all .6s cubic-bezier(.16,1,.3,1)}
+#cloudno.in{opacity:1;transform:none}
+#cloudno .cld{width:56px;height:38px;stroke:rgba(200,222,235,.75);fill:none;stroke-width:2.4;stroke-linecap:round;position:relative;z-index:2}
+#cloudno .slash{position:absolute;left:8px;top:50%;width:62px;height:3px;background:#FF6B6B;box-shadow:0 0 12px rgba(255,107,107,.8);
+  transform:translateY(-50%) rotate(-42deg) scaleX(0);transform-origin:left center;transition:transform .45s .35s cubic-bezier(.5,0,.2,1)}
+#cloudno.hit .slash{transform:translateY(-50%) rotate(-42deg) scaleX(1)}
+#cloudno .ctxt b{display:block;font-family:'Share Tech Mono';font-size:26px;letter-spacing:1px;color:#FF6B6B}
+#cloudno .ctxt em{display:block;font-style:normal;font-family:'Share Tech Mono';font-size:12.5px;letter-spacing:1px;color:rgba(200,222,235,.6);margin-top:3px}
+
+/* ── 传送带（一直在走） ── */
+#belt{position:absolute;left:0;top:722px;width:1164px;height:66px;z-index:12;background:linear-gradient(#333c44,#1c232a 60%,#151a1f);
+  border-top:2px solid #46525c;box-shadow:0 16px 30px rgba(0,0,0,.5)}
+#tread{position:absolute;inset:6px 0;background:repeating-linear-gradient(104deg,rgba(180,205,220,.11) 0 3px,transparent 3px 26px);
+  animation:tread 1.5s linear infinite}
+@keyframes tread{to{background-position:104px 0}}
+#belt .rail{position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,rgba(11,111,168,.15),rgba(127,216,255,.5),rgba(11,111,168,.15))}
+#belt .rollers{position:absolute;left:0;right:0;bottom:-9px;height:12px;
+  background:repeating-linear-gradient(90deg,#232c34 0 14px,transparent 14px 46px);opacity:.85}
+
+/* ── 行李层（在机身之下，滑到 x>636 即被机身挡住 = 进了铅门） ── */
+#luggage{position:absolute;inset:0;z-index:13}
+.bag{position:absolute;opacity:0;transition:opacity .5s ease,transform .5s cubic-bezier(.3,1.4,.5,1)}
+.bag.in{opacity:1;transform:none}
+#bag1{left:72px;top:626px;width:524px;height:96px;background:#f4fbf9;border-radius:16px;
+  box-shadow:0 16px 34px rgba(0,0,0,.55),inset 0 0 0 2px rgba(46,196,182,.55);transform:translateX(-40px)}
+#bag1 .wb{position:absolute;left:16px;top:-27px;font-family:'Share Tech Mono';font-size:12px;letter-spacing:1px;color:#062a2a;background:#2EC4B6;padding:4px 10px;border-radius:3px}
+#bag1 .bt{padding:24px 20px 0;font-size:21px;font-weight:700;letter-spacing:.6px;color:#12262a;line-height:1.15;position:relative;overflow:hidden}
+#bag1 .bt b{color:#0b6fa8}
+#bag1 .bt::after{content:'';position:absolute;left:-45%;top:0;width:45%;height:100%;opacity:0;
+  background:linear-gradient(90deg,transparent,rgba(46,196,182,.5),transparent)}
+#bag1.read .bt::after{animation:rdsw 1.9s ease-out}
+@keyframes rdsw{0%{opacity:1;left:-45%}100%{opacity:1;left:112%}}
+#bag1 .btm{position:absolute;right:18px;bottom:7px;font-family:'Share Tech Mono';font-size:11px;letter-spacing:1px;color:rgba(18,38,42,.42)}
+#bag1.drag{box-shadow:0 22px 44px rgba(0,0,0,.6),inset 0 0 0 2px #2EC4B6,0 0 0 6px rgba(46,196,182,.18)}
+.t1{width:316px;height:64px;top:658px;left:72px;background:#232c34;border:1px solid #48555f;border-radius:8px;padding:9px 12px 0 46px;transform:translateX(-40px)}
+.t1 svg{position:absolute;left:11px;top:14px;width:26px;height:26px;stroke:#7fd8ff;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.t1 b{display:block;font-size:16px;font-weight:700;color:#dcecf5;letter-spacing:.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t1 em{display:block;font-style:normal;font-family:'Share Tech Mono';font-size:11px;letter-spacing:.5px;color:rgba(127,216,255,.62);margin-top:3px}
+#cursor{position:absolute;left:0;top:0;width:120px;height:52px;z-index:19;opacity:0;transition:opacity .35s}
+#cursor.in{opacity:1}
+#cursor svg{width:30px;height:30px;fill:#eef3f5;stroke:#0b6fa8;stroke-width:1.6}
+#cursor span{position:absolute;left:30px;top:22px;font-family:'Share Tech Mono';font-size:12px;letter-spacing:2px;color:#7fd8ff;
+  background:rgba(12,20,26,.85);padding:2px 7px;border:1px solid rgba(127,216,255,.4)}
+
+/* ── 安检机机身 ── */
+#machine{position:absolute;left:636px;top:296px;width:428px;height:426px;z-index:16;border-radius:14px 14px 4px 4px;
+  background:linear-gradient(160deg,#2e3841,#212a31 54%,#1a2228);border:2px solid #47535d;box-shadow:0 24px 50px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06)}
+#machine .haz{position:absolute;left:0;right:0;top:0;height:13px;border-radius:12px 12px 0 0;
+  background:repeating-linear-gradient(45deg,#FF6B6B 0 13px,#1a2228 13px 26px);opacity:.85}
+#machine .mcap{position:absolute;left:0;right:0;top:26px;text-align:center}
+#machine .mcap b{display:block;font-size:20px;font-weight:900;letter-spacing:4px;color:#dbeaf3}
+#machine .mcap span{display:block;font-family:'Share Tech Mono';font-size:11px;letter-spacing:3px;color:rgba(127,216,255,.62);margin-top:4px}
+#portal{position:absolute;left:30px;top:134px;width:368px;height:292px;background:linear-gradient(#080c10,#0d151b 70%,#0a1015);
+  border:2px solid #101a21;box-shadow:inset 0 0 46px rgba(0,0,0,.95);overflow:hidden}
+#portal::before{content:'';position:absolute;left:0;right:0;bottom:0;height:16px;
+  background:linear-gradient(#1e262e,#0b1116);box-shadow:0 -1px 0 rgba(127,216,255,.18)}
+#portal .pframe{position:absolute;inset:0;border:1px solid rgba(127,216,255,.12)}
+#beam{position:absolute;left:6px;right:6px;top:10px;height:3px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,#7fd8ff 22%,#eaf9ff 50%,#7fd8ff 78%,transparent);
+  box-shadow:0 0 22px 5px rgba(127,216,255,.55);opacity:.35;animation:scan 2.7s cubic-bezier(.5,0,.5,1) infinite alternate}
+@keyframes scan{from{transform:translateY(0)}to{transform:translateY(272px)}}
+#machine.busy #beam{opacity:1;box-shadow:0 0 30px 9px rgba(127,216,255,.7)}
+#ghost{position:absolute;left:0;right:0;top:78px;text-align:center;font-family:'Share Tech Mono';font-size:19px;line-height:2;letter-spacing:2px;
+  color:rgba(127,216,255,.9);text-shadow:0 0 16px rgba(127,216,255,.7);opacity:0;transition:opacity .5s}
+#machine.busy #ghost{opacity:.92}
+#curtain,#curtain2{position:absolute;top:118px;width:64px;height:308px;z-index:3}
+#curtain{left:18px}#curtain2{left:346px}
+#curtain i,#curtain2 i{position:absolute;top:0;width:14px;height:302px;border-radius:0 0 3px 3px;transform-origin:top center;
+  background:linear-gradient(#1d262d,#0c1014 70%);box-shadow:inset 1px 0 0 rgba(160,200,225,.14);animation:sway 3.6s ease-in-out infinite alternate}
+#curtain i:nth-child(2),#curtain2 i:nth-child(2){animation-delay:.5s}
+#curtain i:nth-child(3),#curtain2 i:nth-child(3){animation-delay:1.1s}
+#curtain i:nth-child(4),#curtain2 i:nth-child(4){animation-delay:1.7s}
+#curtain i:nth-child(1){left:0}#curtain i:nth-child(2){left:16px}#curtain i:nth-child(3){left:32px}#curtain i:nth-child(4){left:48px}
+#curtain2 i:nth-child(1){left:0}#curtain2 i:nth-child(2){left:16px}#curtain2 i:nth-child(3){left:32px}#curtain2 i:nth-child(4){left:48px}
+@keyframes sway{from{transform:rotate(0)}to{transform:rotate(1.1deg)}}
+#machine.busy #curtain i,#machine.busy #curtain2 i{animation-duration:.42s}
+.mled{position:absolute;top:110px;width:12px;height:12px;border-radius:50%;background:#2b3a44;box-shadow:inset 0 0 0 1px rgba(160,200,225,.3)}
+#ledA{left:22px}#ledB{right:22px}
+#machine.busy .mled{background:#FF6B6B;box-shadow:0 0 14px rgba(255,107,107,.85);animation:bp .52s steps(2) infinite}
+#mbase{position:absolute;left:636px;top:788px;width:428px;height:20px;z-index:15;background:#161d23;border-top:1px solid #2f3a43}
+#chute{position:absolute;right:-2px;top:2px;width:78px;height:16px;background:#050809;border:1px solid rgba(255,107,107,.55);box-shadow:0 0 0 rgba(255,107,107,0)}
+#chute span{position:absolute;right:0;top:-17px;white-space:nowrap;font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:2px;color:rgba(255,107,107,.75)}
+#chute.open{box-shadow:0 0 22px rgba(255,107,107,.75);background:rgba(255,107,107,.18)}
+
+/* ── X 光监视器 ── */
+#mon{position:absolute;left:1168px;top:150px;width:690px;height:548px;z-index:15;border-radius:12px;padding:26px 22px 26px;
+  background:linear-gradient(165deg,#333e47,#232c34 58%,#1a2228);border:2px solid #4c5964;box-shadow:0 26px 60px rgba(0,0,0,.62)}
+#mon .mon-top{position:absolute;left:22px;right:22px;top:4px;display:flex;justify-content:space-between;align-items:center;
+  font-family:'Share Tech Mono';font-size:11px;letter-spacing:3px;color:rgba(180,210,228,.55)}
+#mon .mon-top .lamp{width:9px;height:9px}
+#mon .mon-foot{position:absolute;left:22px;right:22px;bottom:5px;display:flex;align-items:center;gap:9px}
+#mon .mon-foot i{width:34px;height:6px;border-radius:3px;background:#3d4a55}
+#mon .mon-foot i.a{background:#0b6fa8}
+#mon .stand{position:absolute;left:50%;bottom:-34px;width:150px;height:36px;margin-left:-75px;background:linear-gradient(#2a343c,#1a2127);clip-path:polygon(18% 0,82% 0,100% 100%,0 100%)}
+#scr{position:absolute;left:22px;top:26px;width:646px;height:496px;background:#050b10;border:1px solid #0f2634;overflow:hidden;
+  box-shadow:inset 0 0 60px rgba(0,120,180,.14)}
+#noise{position:absolute;inset:0;opacity:1;transition:opacity .6s;
+  background:repeating-radial-gradient(circle at 32% 44%,#1b3341 0 2px,#0a141b 2px 4px),
+  repeating-linear-gradient(0deg,rgba(140,200,230,.07) 0 2px,transparent 2px 5px);
+  animation:nz .34s steps(3) infinite}
+@keyframes nz{0%{background-position:0 0,0 0}33%{background-position:7px -5px,0 3px}66%{background-position:-9px 6px,0 -2px}}
+#scr.live #noise{opacity:0}
+#scr::after{content:'';position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.34) 0 1px,transparent 1px 3px);z-index:9}
+#standby{position:absolute;left:0;right:0;top:210px;text-align:center;font-family:'Share Tech Mono';font-size:15px;letter-spacing:6px;color:rgba(127,216,255,.35);
+  animation:bp 2.2s ease-in-out infinite;transition:opacity .4s}
+#scr.live #standby{opacity:0}
+#scrHd{position:absolute;left:12px;right:12px;top:6px;display:flex;justify-content:space-between;font-family:'Share Tech Mono';font-size:12px;letter-spacing:2px;
+  color:rgba(127,216,255,.55);opacity:0;transition:opacity .4s}
+#scr.live #scrHd{opacity:1}
+#tcode{color:#ffd23f;font-style:normal}
+#srcLine{position:absolute;left:12px;top:34px;width:622px;font-size:13px;color:rgba(220,236,245,.5);letter-spacing:.4px;opacity:0;transition:opacity .5s;white-space:nowrap}
+#scr.live #srcLine{opacity:1}
+#srcLine b{font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:2px;color:rgba(127,216,255,.6);margin-right:8px}
+
+/* 四层透视 */
+.lay{position:absolute;left:10px;width:626px;border:1px dashed rgba(127,216,255,.26);border-radius:3px;
+  opacity:0;transform:translateX(-14px);transition:opacity .32s ease,transform .32s cubic-bezier(.16,1,.3,1)}
+.lay.in{opacity:1;transform:none}
+.lay .lb{position:absolute;left:10px;top:9px;font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:1.6px;color:#eaf7ff;background:#0b6fa8;padding:2px 7px;border-radius:2px}
+.lay .raw{position:absolute;left:118px;top:15px;font-size:20px;font-weight:700;color:#b9d4e2;letter-spacing:.5px}
+.lay .raw b{color:#fff;background:rgba(127,216,255,.2);padding:1px 6px;border-radius:2px;box-shadow:inset 0 0 0 1px rgba(127,216,255,.55)}
+.lay .arw{position:absolute;left:336px;top:26px;width:28px;height:0;border-top:1.5px solid rgba(127,216,255,.55)}
+.lay .arw::after{content:'';position:absolute;right:-1px;top:-4px;border:3.5px solid transparent;border-left-color:#7fd8ff}
+.lay .res{position:absolute;left:374px;top:11px;font-family:'Share Tech Mono';font-size:27px;letter-spacing:1px;color:#7fd8ff;text-shadow:0 0 14px rgba(127,216,255,.45)}
+.lay .tag{position:absolute;left:374px;top:44px;font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:.6px;color:rgba(200,222,235,.44)}
+.lay .tag s{color:#FF6B6B;text-decoration-thickness:1.5px}
+#lay1{top:62px;height:64px}#lay2{top:128px;height:64px}#lay3{top:194px;height:74px;border-color:rgba(255,210,63,.4)}
+#lay3 .res{color:#ffd23f;text-shadow:0 0 14px rgba(255,210,63,.4)}
+#lay4{top:270px;height:80px}
+#lay4 .arw{display:none}
+#lay4 .res{left:118px;top:8px;font-size:23px;color:#39d98a;text-shadow:0 0 14px rgba(57,217,138,.4)}
+#lay4 .tag{left:420px;top:15px;width:200px}
+#lay4 .raw{left:118px;top:46px;width:500px;font-size:16px;font-weight:400;color:rgba(185,212,226,.8);letter-spacing:.3px}
+#lay4 .raw s{color:rgba(255,107,107,.85);text-decoration-thickness:1.5px}
+.scr-div{position:absolute;left:12px;right:12px;top:356px;border-top:1px solid rgba(127,216,255,.2);opacity:0;transition:opacity .5s}
+#scr.t2 .scr-div{opacity:1}
+#wires{position:absolute;left:0;top:0;width:646px;height:496px;z-index:6;pointer-events:none;overflow:visible}
+#wires path{fill:none;stroke:#ffd23f;stroke-width:1.4;stroke-dasharray:5 4;opacity:0;transition:opacity .45s}
+#wires.in path{opacity:.95;animation:dash 1.1s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-18}}
+#wires circle,#wires rect{opacity:0;transition:opacity .45s}
+#wires.in circle{opacity:1}
+#wires.in rect{opacity:.92}
+#wires text{font-family:'Share Tech Mono';font-size:11px;fill:#ffd23f;opacity:0;transition:opacity .4s}
+#wires.in text{opacity:1}
+
+/* 三种行李的透视行 */
+.brow{position:absolute;left:12px;width:622px;height:34px;display:flex;align-items:center;gap:10px;
+  opacity:0;transform:translateX(-10px);transition:all .4s cubic-bezier(.16,1,.3,1)}
+.brow.in{opacity:1;transform:none}
+#br1{top:364px}#br2{top:400px}#br3{top:436px}
+.brow svg{width:19px;height:19px;stroke:#7fd8ff;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.brow b{font-size:15px;font-weight:700;color:#cfe4ee;letter-spacing:.6px}
+.brow .btag{font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:1px;color:rgba(127,216,255,.72);border:1px solid rgba(127,216,255,.35);padding:1px 6px}
+.brow .no{font-family:'Share Tech Mono';font-size:10.5px;letter-spacing:1px;color:rgba(255,107,107,.8);border:1px solid rgba(255,107,107,.34);padding:1px 6px}
+.brow .ck{margin-left:auto;width:22px;height:22px;stroke:#39d98a;fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;opacity:0;transform:scale(.5);transition:all .3s cubic-bezier(.3,1.6,.5,1)}
+.brow .ck.in{opacity:1;transform:scale(1)}
+#scrCap{position:absolute;left:12px;top:472px;width:622px;font-family:'Share Tech Mono';font-size:11px;letter-spacing:.6px;color:rgba(200,222,235,.4);opacity:0;transition:opacity .6s}
+#scr.t2 #scrCap{opacity:1}
+
+/* ── 出口：托盘 + 学习色时间块 ── */
+#tray{position:absolute;left:1160px;top:806px;width:360px;height:22px;z-index:14;border-radius:3px;
+  background:linear-gradient(#2c353d,#171e24);border-top:2px solid #46525c}
+#blk{position:absolute;left:1000px;top:700px;width:320px;height:86px;z-index:18;border-radius:8px;background:linear-gradient(150deg,#12a3ce,#118AB2 60%,#0e7290);
+  box-shadow:0 16px 34px rgba(0,0,0,.55),inset 0 0 0 2px rgba(255,255,255,.18);padding:14px 0 0 20px;
+  opacity:0;transform:scale(.6) rotate(-6deg);transition:left .85s cubic-bezier(.2,.7,.3,1),top .85s cubic-bezier(.2,.7,.3,1),opacity .3s,transform .5s cubic-bezier(.3,1.5,.5,1)}
+#blk.in{opacity:1;left:1180px;top:720px;transform:none}
+#blk b{display:block;font-family:'Share Tech Mono';font-size:31px;letter-spacing:1px;color:#f2fbff;line-height:1}
+#blk span{display:block;font-size:14px;font-weight:500;letter-spacing:1.4px;color:rgba(233,248,255,.86);margin-top:6px}
+#blk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:7px;background:rgba(255,255,255,.28);border-radius:8px 0 0 8px}
+#blk.in{animation:blkbr 2.6s 1s ease-in-out infinite}
+@keyframes blkbr{50%{box-shadow:0 16px 40px rgba(17,138,178,.55),inset 0 0 0 2px rgba(255,255,255,.3)}}
+#blklab{position:absolute;left:1180px;top:838px;z-index:18;font-family:'Share Tech Mono';font-size:11.5px;letter-spacing:2px;color:rgba(127,216,255,.66);opacity:0;transition:opacity .5s}
+#blklab.in{opacity:1}
+
+/* ── 四象限小卡（只走抽屉，不画跨格拖拽） ── */
+#qcard{position:absolute;left:1530px;top:712px;width:300px;height:238px;z-index:17;background:#1c242b;border:1px solid #46525c;border-radius:8px;padding:12px 12px 0;
+  opacity:0;transform:translateY(22px);transition:all .6s cubic-bezier(.16,1,.3,1)}
+#qcard.in{opacity:1;transform:none}
+#qcard .qc-hd{font-family:'Share Tech Mono';font-size:11px;letter-spacing:2.4px;color:rgba(180,210,228,.6);margin-bottom:9px}
+#qcard .qc-grid{display:grid;grid-template-columns:1.16fr 1fr;grid-template-rows:1.16fr 1fr;gap:5px;height:158px}
+.qc{position:relative;border:1px solid rgba(160,200,225,.16);background:rgba(255,255,255,.028);padding:5px 6px;overflow:hidden}
+.qc .qn{font-family:'Archivo';font-weight:800;font-size:13px;color:rgba(180,210,228,.42)}
+.qc .qt{display:block;font-size:10px;letter-spacing:.4px;color:rgba(180,210,228,.4);margin-top:2px;line-height:1.3}
+.qc.q1{border-color:#118AB2;box-shadow:inset 0 0 0 1px rgba(17,138,178,.5);background:rgba(17,138,178,.14)}
+.qc.q1 .qn{color:#7fd8ff}
+#qchip{position:absolute;left:5px;right:5px;bottom:5px;background:#118AB2;border-radius:3px;padding:4px 6px;font-size:11.5px;font-weight:700;letter-spacing:.4px;color:#f2fbff;
+  opacity:0;transform:translateY(-12px) scale(.9);transition:all .45s cubic-bezier(.3,1.5,.5,1)}
+#qchip.in{opacity:1;transform:none}
+#qcard .qc-ft{position:absolute;left:12px;right:12px;bottom:9px;font-family:'Share Tech Mono';font-size:10px;letter-spacing:.8px;color:rgba(200,222,235,.34)}
+
+/* ── 输入方式：拖放 / 粘贴 ── */
+#dd{position:absolute;left:636px;top:816px;width:470px;height:46px;z-index:17;display:flex;align-items:center;gap:10px;
+  border:1px solid rgba(127,216,255,.28);background:rgba(20,27,33,.9);padding:0 14px;opacity:0;transform:translateY(14px);transition:all .5s cubic-bezier(.16,1,.3,1)}
+#dd.in{opacity:1;transform:none}
+#dd svg{width:22px;height:22px;stroke:#7fd8ff;fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+#dd .k{font-family:'Share Tech Mono';font-size:13.5px;letter-spacing:1.4px;color:#dbeaf3}
+#dd .k b{color:#ffd23f}
+#dd .sep{width:1px;height:20px;background:rgba(127,216,255,.28)}
+
+/* ── 规则条（角注级细节） ── */
+#rules{position:absolute;left:60px;top:872px;width:1070px;z-index:17}
+.rul{display:flex;align-items:center;gap:8px;margin-bottom:9px;opacity:0;transform:translateX(-16px);transition:all .5s cubic-bezier(.16,1,.3,1)}
+.rul.in{opacity:1;transform:none}
+.rul .rh{flex:0 0 auto;font-size:13px;font-weight:900;letter-spacing:2px;color:#dbeaf3;background:#0b6fa8;padding:4px 9px;border-radius:2px}
+.rul .ch{font-family:'Share Tech Mono';font-size:11px;letter-spacing:.6px;color:#cfe4ee;border:1px solid rgba(127,216,255,.3);background:rgba(127,216,255,.07);padding:3px 6px;border-radius:2px;
+  opacity:0;transform:translateY(6px);transition:all .3s ease}
+.rul .ch.in{opacity:1;transform:none}
+.rul .ch i{font-style:normal;color:rgba(200,222,235,.5)}
+#rules .rf{font-family:'Share Tech Mono';font-size:11px;letter-spacing:1px;color:rgba(255,107,107,.72);opacity:0;transition:opacity .6s}
+#rules .rf.in{opacity:1}
+
+/* ── 定格：追光 + 一条轴 + 大字结论 ── */
+#spot{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:19;opacity:0;transition:opacity 1.5s;pointer-events:none;
+  background:radial-gradient(760px 470px at 34% 42%,rgba(180,230,255,.14),transparent 70%)}
+#spot.in{opacity:1}
+#finale{position:absolute;left:150px;top:250px;width:1200px;z-index:20}
+#fpunch{position:absolute;left:0;top:0;font-size:118px;font-weight:900;line-height:1.04;letter-spacing:6px;color:#eaf6ff;
+  clip-path:inset(0 100% 0 0);opacity:0;transition:clip-path 1s cubic-bezier(.7,0,.25,1),opacity .3s}
+#fpunch.in{clip-path:inset(0 0 0 0);opacity:1}
+#fsub{position:absolute;left:6px;top:284px;font-family:'Share Tech Mono';font-size:14px;letter-spacing:4px;color:rgba(127,216,255,.7);opacity:0;transition:opacity .8s .4s}
+#fsub.in{opacity:1}
+#fsub em{font-style:normal;color:rgba(200,222,235,.4);margin-left:18px;letter-spacing:2px}
+#fax{position:absolute;left:0;top:350px;width:1140px;height:150px;opacity:0;transform:translateY(18px);transition:all .9s cubic-bezier(.16,1,.3,1)}
+#fax.in{opacity:1;transform:none}
+#fax .fxh{position:absolute;left:0;top:0;font-family:'Share Tech Mono';font-size:12.5px;letter-spacing:3px;color:rgba(180,210,228,.55)}
+#fax .fxl{position:absolute;left:0;right:0;top:64px;border-top:2px solid rgba(160,200,225,.34)}
+#fax .fxk{position:absolute;top:58px;width:1px;height:14px;background:rgba(160,200,225,.4)}
+#fax .fxk span{position:absolute;left:-16px;top:20px;font-family:'Share Tech Mono';font-size:11px;color:rgba(180,210,228,.5)}
+/* 定格：整机退到背景，只剩轴与结论 */
+#stage.faded #luggage,#stage.faded #blk,#stage.faded #blklab,#stage.faded #qcard,
+#stage.faded #dd,#stage.faded #rules{opacity:.06!important;transition:opacity 1.4s ease}
+#fpunch i{font-style:normal;color:#7fd8ff}
+
+/* 出口轴：07:00 → 24:00（1140px / 17 小时） */
+#fblk{position:absolute;left:536px;top:24px;width:66px;height:80px;border-radius:6px;background:linear-gradient(150deg,#12a3ce,#118AB2 60%,#0e7290);
+  box-shadow:0 14px 30px rgba(0,0,0,.5),inset 0 0 0 2px rgba(255,255,255,.22);animation:fxbr 3.1s ease-in-out infinite}
+@keyframes fxbr{50%{box-shadow:0 14px 36px rgba(17,138,178,.6),inset 0 0 0 2px rgba(255,255,255,.36)}}
+#fnote{position:absolute;left:624px;top:26px;padding-left:14px;border-left:1px dashed rgba(17,138,178,.8)}
+#fnote b{display:block;font-family:'Share Tech Mono';font-size:26px;color:#eaf6ff;line-height:1;letter-spacing:1px}
+#fnote span{display:block;font-size:15px;font-weight:500;letter-spacing:1.6px;color:rgba(200,232,248,.85);margin-top:7px}
+#fnote em{display:block;font-style:normal;font-family:'Share Tech Mono';font-size:11px;letter-spacing:1.6px;color:rgba(127,216,255,.6);margin-top:5px}
+
+/* 浅底本页不需要，压深改为「四角收边」；幕布式暗角更贴近冷光灯房 */
+#dim{background:radial-gradient(closest-side at 44% 44%,transparent 56%,rgba(0,0,0,.66) 100%)}
+#stage .corner{color:rgba(163,196,215,.5)}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- [改这里] 全部画面内容包进 #cam：机场安检 X 光机 -->
+  <div id="cam">
+
+    <!-- 地坪 -->
+    <div id="floor" class="scene">
+      <span class="pool"></span><span class="chev"></span><span class="que">QUEUE HERE · 请依次投递</span>
+    </div>
+
+    <!-- 吊挂指示牌（左缘出血） -->
+    <div id="sign" class="scene">
+      <span class="hang a"></span><span class="hang b"></span>
+      <b>CAPTURE</b>
+      <span class="sg-cn">捕获通道 · 一句话过安检</span>
+      <svg class="sg-ar" viewBox="0 0 64 40"><path d="M2 20h46M34 6l16 14-16 14"/></svg>
+      <span class="sg-tag">GATE 03 · X-RAY · RULES ON DEVICE</span>
+    </div>
+
+    <!-- 状态灯条 -->
+    <div id="rig" class="scene">
+      <i class="lamp on"></i>SCANNER ONLINE
+      <i class="lamp amber"></i>BEAM READY
+      <i class="lamp red"></i>GATE LOCK
+    </div>
+
+    <!-- 云端禁用 -->
+    <div id="cloudno" class="scene">
+      <svg class="cld" viewBox="0 0 60 40"><path d="M17 32h27a8 8 0 001.4-15.8A11.5 11.5 0 0023.5 13 9 9 0 0017 32z"/></svg>
+      <span class="slash"></span>
+      <div class="ctxt"><b>0 网络请求</b><em>断网照样用 · 规则跑在本机</em></div>
+    </div>
+
+    <!-- 传送带 -->
+    <div id="belt" class="scene"><span class="rail"></span><div id="tread"></div><span class="rollers"></span></div>
+
+    <!-- 行李 -->
+    <div id="luggage">
+      <div id="bag1" class="bag">
+        <span class="wb">WECHAT GROUP · 老师</span>
+        <div class="bt">明天<b>下午</b>3点到4点，开题组会，带上初稿。</div>
+        <span class="btm">21:07 · 群消息</span>
+      </div>
+      <div class="bag t1" id="bag2">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18l5.5-5.5L20 18"/></svg>
+        <b>开题PPT截图.png</b><em>IMAGE · 只取可见文字层</em>
+      </div>
+      <div class="bag t1" id="bag3">
+        <svg viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M11 6.5L12.8 4.8a3.6 3.6 0 015 5L16 11.6"/><path d="M13 17.5l-1.8 1.7a3.6 3.6 0 01-5-5L8 12.4"/></svg>
+        <b>notice/2026-kaiti…</b><em>URL · 不抓取网页正文</em>
+      </div>
+      <div class="bag t1" id="bag4">
+        <svg viewBox="0 0 24 24"><path d="M7 5h10M7 19h10M12 5v14"/></svg>
+        <b>周三下午交初稿</b><em>TEXT · 网页选中文字</em>
+      </div>
+          </div>
+
+    <!-- 拖拽光标（在机身之上，跟着行李进闸口） -->
+    <div id="cursor">
+      <svg viewBox="0 0 24 24"><path d="M5 3l14 9-6.2 1.6 3.2 6.4-2.8 1.4-3.2-6.4L5 19z"/></svg><span>拖入</span>
+    </div>
+
+    <!-- 安检机 -->
+    <div id="machine" class="scene">
+      <span class="haz"></span>
+      <div class="mcap"><b>Le时间管理 · 捕获窗口</b><span>DROP TARGET / PASTE TARGET</span></div>
+      <div id="portal">
+        <div id="beam"></div>
+        <div id="ghost">明天 / 下午<br>3点 → 4点<br>开题组会</div>
+        <span class="pframe"></span>
+      </div>
+      <div id="curtain"><i></i><i></i><i></i><i></i></div>
+      <div id="curtain2"><i></i><i></i><i></i><i></i></div>
+      <span class="mled" id="ledA"></span><span class="mled" id="ledB"></span>
+    </div>
+    <div id="mbase" class="scene"><div id="chute"><span>EXIT 闸门</span></div></div>
+
+    <!-- X 光监视器 -->
+    <div id="mon" class="scene">
+      <div class="mon-top"><span>X-RAY MONITOR 03 · 透视视图</span><i class="lamp on"></i></div>
+      <div id="scr">
+        <div id="noise"></div>
+        <div id="standby">STANDBY · 等待投递</div>
+        <div id="scrHd"><span>PARSE · 本机规则</span><em id="tcode">T+00.000</em></div>
+        <div id="srcLine"><b>SOURCE</b>明天下午3点到4点，开题组会，带上初稿。</div>
+
+        <div class="lay" id="lay1">
+          <span class="lb">DATE</span>
+          <span class="raw"><b>明天</b></span>
+          <span class="arw"></span>
+          <span class="res">2026-09-19</span>
+          <span class="tag">REL 级 · 7 级优先级第 1 位</span>
+        </div>
+        <div class="lay" id="lay2">
+          <span class="lb">PERIOD</span>
+          <span class="raw"><b>下午</b></span>
+          <span class="arw"></span>
+          <span class="res">12:00–18:00</span>
+          <span class="tag">时段词 12 类 · 之一</span>
+        </div>
+        <div class="lay" id="lay3">
+          <span class="lb">RANGE</span>
+          <span class="raw"><b>3点</b>到<b>4点</b></span>
+          <span class="arw"></span>
+          <span class="res">15:00–16:00</span>
+          <span class="tag">继承「下午」· 否则 <s>03:00–04:00</s></span>
+        </div>
+        <div class="lay" id="lay4">
+          <span class="lb">TITLE</span>
+          <span class="res">「开题组会 带上初稿」</span>
+          <span class="tag">命中时间词从标题剔除</span>
+          <span class="raw"><s>明天下午3点到4点</s>，开题组会，带上初稿。</span>
+        </div>
+
+        <svg id="wires" viewBox="0 0 646 496">
+          <path d="M157,174 C240,176 320,188 386,201"/>
+          <path d="M157,174 C260,180 410,190 486,201"/>
+          <circle cx="157" cy="173" r="2.6" fill="#ffd23f"/>
+          <rect x="260" y="212" width="86" height="17" fill="#050b10" opacity=".92"/>
+          <text x="264" y="225">继承时段词</text>
+        </svg>
+
+        <span class="scr-div"></span>
+        <div class="brow" id="br1">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M4 18l5.5-5.5L20 18"/></svg>
+          <b>截图 · 图片</b><span class="btag">文字层</span><span class="no">无 OCR</span>
+          <svg class="ck" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        </div>
+        <div class="brow" id="br2">
+          <svg viewBox="0 0 24 24"><path d="M9.5 14.5l5-5"/><path d="M11 6.5L12.8 4.8a3.6 3.6 0 015 5L16 11.6"/><path d="M13 17.5l-1.8 1.7a3.6 3.6 0 01-5-5L8 12.4"/></svg>
+          <b>链接 · 网页地址</b><span class="btag">文字层</span><span class="no">不抓正文</span>
+          <svg class="ck" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        </div>
+        <div class="brow" id="br3">
+          <svg viewBox="0 0 24 24"><path d="M7 5h10M7 19h10M12 5v14"/></svg>
+          <b>选中文字 · 纯文本</b><span class="btag">文字层</span>
+          <svg class="ck" viewBox="0 0 24 24"><path d="M4 12.5l5 5L20 6.5"/></svg>
+        </div>
+        <div id="scrCap">本机无 OCR · 链接不抓取正文 · 三类行李进的都是同一条文本解析管线</div>
+      </div>
+      <div class="mon-foot"><i class="a"></i><i></i><i></i></div>
+      <div class="stand"></div>
+    </div>
+
+    <!-- 出口 -->
+    <div id="tray" class="scene"></div>
+    <div id="blk"><b>15:00–16:00</b><span>明天 · 开题组会 带上初稿</span></div>
+    <div id="blklab">SCHEDULE BLOCK · 学习 · 1 小时</div>
+
+    <!-- 归档象限 -->
+    <div id="qcard">
+      <div class="qc-hd">归档 · 四象限</div>
+      <div class="qc-grid">
+        <div class="qc q1"><span class="qn">I</span><span class="qt">重要且紧急 · 立即做</span>
+          <div id="qchip">开题组会 带上初稿</div>
+        </div>
+        <div class="qc"><span class="qn">II</span><span class="qt">重要不紧急 · 排计划</span></div>
+        <div class="qc"><span class="qn">III</span><span class="qt">紧急不重要 · 少快办</span></div>
+        <div class="qc"><span class="qn">IV</span><span class="qt">不重要不紧急 · 有空再说</span></div>
+      </div>
+      <div class="qc-ft">改象限走抽屉 · 不跨格拖拽</div>
+    </div>
+
+    <!-- 输入方式 -->
+    <div id="dd">
+      <svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg>
+      <span class="k">拖放 · 文件 / 文本 / 链接</span>
+      <span class="sep"></span>
+      <span class="k"><b>Ctrl + V</b> 粘贴</span>
+    </div>
+
+    <!-- 规则条 -->
+    <div id="rules">
+      <div class="rul" id="rul1">
+        <span class="rh">日期 · 7 级严格优先级</span>
+        <span class="ch">01 REL <i>今天 明天 后天</i></span>
+        <span class="ch">02 YMD <i>2026-09-19</i></span>
+        <span class="ch">03 MD <i>9月19日</i></span>
+        <span class="ch">04 WD <i>周五 / 下周三</i></span>
+        <span class="ch">05 NMD <i>下个月8号</i></span>
+        <span class="ch">06 END <i>月底</i></span>
+        <span class="ch">07 DAY <i>19号</i></span>
+      </div>
+      <div class="rul" id="rul2">
+        <span class="rh">时段词 · 12 类</span>
+        <span class="ch">凌晨</span><span class="ch">清晨</span><span class="ch">早上</span><span class="ch">早晨</span>
+        <span class="ch">上午</span><span class="ch">中午</span><span class="ch">午后</span><span class="ch">下午</span>
+        <span class="ch">傍晚</span><span class="ch">晚上</span><span class="ch">夜里</span><span class="ch">晚</span>
+      </div>
+      <div class="rf" id="ruf">不支持「昨天 / 前天」回溯 · 无模型、无下载</div>
+    </div>
+
+    <!-- 定格 -->
+    <div id="spot"></div>
+    <div id="finale">
+      <h2 id="fpunch">拖进来，<br>就<i>排上了</i></h2>
+      <div id="fsub">一句话 → 一块时间<em>ONE SENTENCE / ONE BLOCK</em></div>
+      <div id="fax">
+        <div class="fxh">AXIS · 2026-09-19 明天 · 07:00 → 24:00</div>
+        <span class="fxl"></span>
+        <span class="fxk" style="left:0"><span>07:00</span></span>
+        <span class="fxk" style="left:335px"><span>12:00</span></span>
+        <span class="fxk" style="left:602px"><span>16:00</span></span>
+        <span class="fxk" style="left:872px"><span>20:00</span></span>
+        <span class="fxk" style="left:1139px"><span>24:00</span></span>
+        <div id="fblk"></div>
+        <div id="fnote"><b>15:00–16:00</b><span>开题组会 带上初稿</span><em>学习 · 60 分钟 · 一句话拖出来的</em></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">03 / 智能捕获 · 全片核心</div>
+  <div class="corner" id="src">解析规则实测 · v0.76.0 · 无网络请求</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 3-1 · 一句话过安检 · 29.7s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=29700;                       /* 第 3 幕：0:45.341–1:15.027（voice-timeline.json） */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue —— 第 3 幕 智能捕获（成片 0:45.341–1:15.027）★一秒别删
+   cue 毫秒 = 该句首字字符序 × 140.2ms（voice 21.597s / 154 字）+ 700ms 起播偏移
+   ──────────────────────────────────────────────── */
+const B=$('#bag1'),C2=$('#bag2'),C3=$('#bag3'),C4=$('#bag4'),CUR=$('#cursor'),MC=$('#machine'),SC=$('#scr'),TC=$('#tcode');
+/* 行李位移走 transition（无头截图直接定格在终点位，读数可靠；不用补间） */
+const ride=(el,x,d)=>{el.style.transition='left '+d+'s cubic-bezier(.35,.02,.55,1),opacity .55s ease,transform .5s';el.style.left=x+'px'};
+const rideCur=(x,y,d)=>{CUR.style.transition='left '+d+'s cubic-bezier(.35,.02,.55,1),top '+d+'s cubic-bezier(.35,.02,.55,1)';CUR.style.left=x+'px';CUR.style.top=y+'px'};
+const ch1=[...document.querySelectorAll('#rul1 .ch')],ch2=[...document.querySelectorAll('#rul2 .ch')];
+
+/* 0:46.0「来看个操作」→ 安检口全景开机 */
+on(300,()=>camTo(0,0,1,2.2));                                     // 开场拉镜：指示牌特写 → 安检口全景
+on(700,()=>$('#sign').classList.add('in'));
+on(780,()=>{$('#floor').classList.add('in');$('#belt').classList.add('in')});
+on(880,()=>{$('#machine').classList.add('in');$('#mbase').classList.add('in')});
+on(980,()=>{$('#mon').classList.add('in');$('#tray').classList.add('in')});
+on(1120,()=>$('#rig').classList.add('in'));
+/* 0:46.9「老师在微信里说」→ 微信气泡滑上传送带 */
+on(1540,()=>B.classList.add('in'));
+on(2120,()=>B.classList.add('read'));                             // 逐词扫读原句
+/* 0:49.3「明天下午3点到4点，开题组会，带上初稿」→ 履带跟拍前进 */
+on(3920,()=>{ride(B,200,2.9);camFocus(430,674,1.2,1.1)});
+on(5660,()=>ride(B,296,1.5));
+/* 0:52.3「我把这句话直接拖进 Le时间管理」→ 拖拽手势，送进铅门 */
+on(7000,()=>{B.classList.add('drag');CUR.classList.add('in');rideCur(540,690,0.6);ride(B,396,1.9);camFocus(560,674,1.2,1.1)});
+on(8560,()=>{ride(B,636,1.7);rideCur(672,690,1.7);MC.classList.add('busy');camFocus(846,560,1.2,1.0)});
+on(9100,()=>B.style.opacity='0');
+on(9400,()=>CUR.classList.remove('in'));
+/* 0:54.9「它读懂了」→ 电影黑边 + 监视器开机透视 */
+on(9300,()=>$('#stage').classList.add('letter'));
+on(9520,()=>{SC.classList.add('live');TC.textContent='T+00.000'});
+on(9900,()=>camFocus(1513,420,1.24,1.1));
+/* 0:55.6「明天 / 3点到4点」→ 四层逐行点亮，引线画出「第二个时间继承时段词」 */
+on(10120,()=>TC.textContent='T+00.538');
+on(10260,()=>$('#lay1').classList.add('in'));                      // DATE
+on(10560,()=>TC.textContent='T+00.974');
+on(10720,()=>$('#lay2').classList.add('in'));                      // PERIOD
+on(10980,()=>TC.textContent='T+01.411');
+on(11180,()=>{$('#lay3').classList.add('in');$('#wires').classList.add('in')});   // RANGE + 引线
+on(11400,()=>TC.textContent='T+01.866');
+on(11680,()=>$('#lay4').classList.add('in'));                      // TITLE
+on(11850,()=>{$('#stage').classList.remove('letter');camTo(0,0,1,1.1)});
+/* 0:57.3「一块时间就排好了」→ 闸门「叮」吐出一块学习色 */
+on(11920,()=>{TC.textContent='PARSE OK';$('#chute').classList.add('open');$('#blk').classList.add('in');MC.classList.remove('busy')});
+on(12180,()=>camFocus(1340,762,1.1,1.0));
+on(12460,()=>$('#blklab').classList.add('in'));
+/* 0:58.5「任务也归了档」→ 象限 I 落一张任务卡（改象限只走抽屉，不画跨格拖拽） */
+on(13160,()=>$('#qcard').classList.add('in'));
+on(13400,()=>{$('#qchip').classList.add('in');camFocus(1676,830,1.18,1.0)});
+on(13980,()=>camTo(0,0,1,1.0));
+/* 1:00.1「截图、链接、网页上的字」→ 三种行李依次过机，监视器逐行打勾 */
+on(14140,()=>C2.classList.add('in'));
+on(14360,()=>ride(C2,648,1.4));
+on(14620,()=>{SC.classList.add('t2');$('#br1').classList.add('in')});
+on(14760,()=>$('#br1 .ck').classList.add('in'));
+on(14840,()=>C3.classList.add('in'));
+on(15060,()=>ride(C3,648,1.4));
+on(15320,()=>$('#br2').classList.add('in'));
+on(15440,()=>{$('#br2 .ck').classList.add('in');C4.classList.add('in')});
+on(15660,()=>ride(C4,648,1.4));
+/* 1:01.2「拖进来行，粘进来也行」 */
+on(15820,()=>$('#dd').classList.add('in'));
+on(16020,()=>$('#br3').classList.add('in'));
+on(16180,()=>{$('#br3 .ck').classList.add('in');camFocus(1513,470,1.2,1.0)});
+/* 1:02.7「这套中文时间解析是纯本地的规则」→ 规则条具象成两叠等宽条款 */
+on(17120,()=>camTo(0,0,1.02,1.0));
+on(17360,()=>{camFocus(430,910,1.16,1.1);$('#rul1').classList.add('in')});
+for(let i=0;i<7;i++)on(17450+i*95,()=>ch1[i].classList.add('in'));
+on(18180,()=>$('#rul2').classList.add('in'));
+for(let i=0;i<12;i++)on(18250+i*62,()=>ch2[i].classList.add('in'));
+on(19020,()=>$('#ruf').classList.add('in'));
+/* 1:05.1「不联网，不用什么云服务，断网照样用」→ 云端图标被红斜线划掉 */
+on(19400,()=>camTo(0,0,1,1.0));
+on(19740,()=>$('#cloudno').classList.add('in','hit'));
+on(20900,()=>camTo(-26,-14,1.04,1.2));
+/* 1:07.6 之后：定格呼吸段 —— 整机退到背景，只剩一条轴与一句结论 */
+on(22300,()=>{$('#stage').classList.add('letter');$('#dim').classList.add('on');$('#spot').classList.add('in')});
+on(22660,()=>{$('#stage').classList.add('faded');
+  ['#luggage','#blk','#blklab','#qcard','#dd','#rules','#cloudno'].forEach(k=>{const e=$(k);if(e)e.style.opacity='.05'})});
+on(23060,()=>$('#fpunch').classList.add('in'));
+on(23380,()=>$('#fsub').classList.add('in'));
+on(23700,()=>$('#fax').classList.add('in'));
+on(24300,()=>camFocus(660,470,1.1,5.5));                           // 追光缓推
+
+/* ===== 音效 ===== */
+on(700,()=>__sfx.swipe(0.7));
+on(880,()=>__sfx.ding(0.32));
+on(1540,()=>__sfx.pop(0.8));
+for(let i=0;i<8;i++){const u=i/7;on(2140+900*(1-Math.pow(1-u,1/3)),()=>__sfx.type(0.26))}   // 逐词扫读（先密后疏）
+on(3920,()=>__sfx.whoosh(1.1,0.5));
+on(5660,()=>__sfx.type(0.3));
+on(7000,()=>__sfx.swipe(0.6));
+on(8560,()=>__sfx.thud(0.9));                                       // 铅门吞下进行李
+on(9300,()=>__sfx.whoosh(0.9,0.45));
+on(9520,()=>__sfx.ding(0.55));
+[10260,10720,11680].forEach(t=>on(t,()=>__sfx.type(0.5)));         // 四层逐行
+on(11180,()=>__sfx.type(0.55));                                     // RANGE + 引线
+on(11850,()=>__sfx.swipe(0.45));
+on(11920,()=>__sfx.ding(1.15));                                     // 闸门吐块「叮」
+on(12180,()=>__sfx.thud(0.6));
+on(13160,()=>__sfx.swipe(0.4));
+on(13400,()=>__sfx.ding(0.7));                                      // 归入象限 I
+[14140,14840,15440].forEach(t=>on(t,()=>__sfx.pop(0.5)));           // 三件行李上带
+[14760,15440,16180].forEach(t=>on(t+20,()=>__sfx.ding(0.4)));       // 监视器打勾
+on(15820,()=>__sfx.type(0.45));
+on(17360,()=>__sfx.swipe(0.5));
+for(let i=0;i<7;i++)on(17450+i*95,()=>__sfx.type(0.22));
+for(let i=0;i<12;i++)on(18250+i*62,()=>__sfx.type(0.2));            // 12 类条款连击
+on(19740,()=>__sfx.thud(1.1));                                      // 云端划掉
+on(22300,()=>__sfx.whoosh(1.4,0.55));
+on(23060,()=>__sfx.ding(1.05));
+on(23700,()=>__sfx.ding(0.45));
+</script>
+</body>
+</html>

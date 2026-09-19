@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 2-1 · 帷幕拉开</title>
+
+<!-- [改这里] 字体：剧院帷幕 —— 展示拉丁 Cormorant + 中文 Noto Serif SC + 等宽 IBM Plex Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,600;1,700&family=Noto+Serif+SC:wght@400;600;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#070305;overflow:hidden;font-family:'Noto Serif SC',serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色/纹理 —— 剧院：黑漆观众席托底，台上内容全部由 #cam 里的手绘布景负责 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:#0a0204;box-shadow:inset 0 0 300px rgba(0,0,0,.9)}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：剧院帷幕 —— 大幕 / 帷幔金流苏 / 追光 / 产品标识 / 一条时间轴 / 四个散点
+   ──────────────────────────────────────────────── */
+/* 开场怼在闭合大幕中央那道金缝上，300ms 后拉回全景 */
+#cam{transform:translate(-211px,-35px) scale(1.22)}
+
+/* ── 后幕（被大幕挡住的那面天幕：追光打亮的暖白圆心 → 四周沉进酒红） ── */
+#backwall{position:absolute;left:104px;right:104px;top:0;height:852px;z-index:1;
+  background:radial-gradient(76% 58% at 50% 38%,#f9f1df 0%,#f2e4c7 32%,#ddc69c 58%,#9d7a5b 80%,#3d1712 100%)}
+#ghost{position:absolute;right:44px;top:118px;z-index:1;font-family:'Cormorant Garamond';font-style:italic;font-weight:700;
+  font-size:560px;line-height:.7;letter-spacing:-24px;color:rgba(201,162,39,.1);animation:ghostBreathe 11s ease-in-out infinite alternate}
+@keyframes ghostBreathe{to{color:rgba(201,162,39,.16)}}
+
+/* ── 台板（木地板 + 前沿金线） ── */
+#floor{position:absolute;left:0;right:0;bottom:0;height:230px;z-index:2;
+  background:linear-gradient(180deg,#5d3521,#3a1d13 58%,#1b0d09)}
+#floor::before{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,rgba(0,0,0,.3) 0 2px,rgba(0,0,0,0) 2px 122px)}
+#floor::after{content:'';position:absolute;left:0;right:0;top:0;height:5px;background:linear-gradient(90deg,transparent,rgba(201,162,39,.55) 22%,rgba(232,200,106,.7) 50%,rgba(201,162,39,.55) 78%,transparent)}
+
+/* ── 追光：光锥 + 地面光池 + 空气里的浮尘（常驻微动效） ── */
+#spot{position:absolute;left:600px;top:118px;width:740px;height:790px;z-index:3;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,241,207,.6),rgba(255,231,179,.12) 68%,rgba(255,231,179,0));
+  clip-path:polygon(45.5% 0,54.5% 0,100% 100%,0 100%);filter:blur(11px);mix-blend-mode:screen;
+  opacity:0;transition:opacity 1.6s ease;animation:spotDrift 15s ease-in-out infinite alternate}
+#pool{position:absolute;left:516px;top:690px;width:888px;height:340px;z-index:3;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(255,238,197,.6),rgba(255,226,170,.14) 60%,rgba(255,226,170,0) 78%);
+  filter:blur(7px);mix-blend-mode:screen;opacity:0;transition:opacity 1.8s ease;animation:poolDrift 13s ease-in-out infinite alternate}
+@keyframes spotDrift{to{transform:translateX(-58px) scaleX(1.05)}}
+@keyframes poolDrift{to{transform:translate(46px,6px) scale(1.06)}}
+#dust{position:absolute;inset:0;z-index:4;pointer-events:none}
+#dust i{position:absolute;width:5px;height:5px;border-radius:50%;background:rgba(255,246,222,.72);filter:blur(1px);opacity:0;transition:opacity 1.4s}
+#stage.lit #spot,#stage.lit #pool{opacity:1}
+#stage.lit #dust i{opacity:.85;animation:mote 11s linear infinite}
+#dust i:nth-child(1){left:712px;top:430px;animation-duration:9.6s}
+#dust i:nth-child(2){left:1006px;top:560px;animation-duration:12.5s;animation-delay:-3s}
+#dust i:nth-child(3){left:858px;top:296px;animation-duration:10.5s;animation-delay:-6s}
+#dust i:nth-child(4){left:1180px;top:640px;animation-duration:14s;animation-delay:-2s}
+#dust i:nth-child(5){left:604px;top:612px;animation-duration:12s;animation-delay:-8s}
+@keyframes mote{0%{transform:translate(0,0)}50%{transform:translate(28px,-44px)}100%{transform:translate(-10px,-98px)}}
+
+/* ── 产品标识：超大「Le时间管理」，深青主操作色（跨幕颜色锁） ── */
+#logo{position:absolute;left:196px;top:270px;z-index:6;opacity:0;clip-path:inset(0 100% 0 -8%)}
+#logo.in{opacity:1;clip-path:inset(0 -2% 0 -8%);transition:clip-path 1.05s cubic-bezier(.66,0,.28,1),opacity .3s}
+#logo .mark{display:flex;align-items:baseline;gap:20px}
+#logo .le{font-family:'Cormorant Garamond';font-weight:700;font-size:178px;line-height:.78;letter-spacing:-6px;color:#0F4C5C}
+#logo .cn{font-family:'Noto Serif SC';font-weight:900;font-size:146px;line-height:.98;letter-spacing:4px;color:#123039;
+  text-shadow:0 2px 0 rgba(255,255,255,.42),0 16px 30px rgba(58,28,8,.2)}
+#logo .rule{margin-top:22px;width:544px;height:0;border-top:2px solid rgba(201,162,39,.95);box-shadow:0 4px 0 rgba(201,162,39,.3)}
+
+/* ── 副标 + 等宽小字 ── */
+#tag{position:absolute;left:200px;top:508px;z-index:6;opacity:0;transform:translateY(18px);transition:all .8s cubic-bezier(.16,1,.3,1)}
+#tag.in{opacity:1;transform:none}
+#tag .cn{font-size:44px;font-weight:700;letter-spacing:7px;color:#5d1620}
+#tag .mono{margin-top:14px;font-family:'IBM Plex Mono';font-size:15px;font-weight:500;letter-spacing:4.5px;color:#7b5a1e}
+
+/* ── 右侧节目单卡：本幕主张（非对称落点） ── */
+#bill{position:absolute;left:1246px;top:292px;width:452px;padding:26px 30px 28px;z-index:6;
+  background:linear-gradient(180deg,rgba(60,9,17,.92),rgba(34,4,9,.95));
+  border:1px solid rgba(201,162,39,.72);box-shadow:0 24px 48px rgba(16,3,5,.45),inset 0 0 0 4px rgba(201,162,39,.13);
+  opacity:0;transform:translateY(24px);transition:all .8s cubic-bezier(.16,1,.3,1)}
+#bill.in{opacity:1;transform:none}
+#bill .bh{display:block;font-family:'IBM Plex Mono','Noto Serif SC';font-size:13px;letter-spacing:5px;color:#e0b958}
+#bill .hair{display:block;height:0;margin-top:14px;border-top:1px solid rgba(201,162,39,.4)}
+#bill .l1{margin-top:15px;font-size:33px;font-weight:400;letter-spacing:2px;color:#f0dfc4}
+#bill .l2{margin-top:9px;font-size:41px;font-weight:900;letter-spacing:1px;color:#fffaf0;opacity:0;transform:translateY(12px);
+  transition:all .75s cubic-bezier(.16,1,.3,1)}
+#bill .l2 em{font-style:normal;color:#e8c86a}
+#bill.hit .l2{opacity:1;transform:none}
+
+/* ── 一条时间轴：从台板里浮起来的黄铜杆 ── */
+#axis{position:absolute;inset:0;z-index:5;opacity:0;transform:translateY(184px);transition:opacity .5s,transform 1.15s cubic-bezier(.24,.9,.28,1)}
+#axis.in{opacity:1;transform:none}
+#axis .rod{position:absolute;left:240px;right:232px;top:738px;height:5px;
+  background:linear-gradient(90deg,rgba(201,162,39,0),#c9a227 5%,#e8c86a 50%,#c9a227 95%,rgba(201,162,39,0));
+  box-shadow:0 0 26px rgba(201,162,39,.5)}
+#axis .fin{position:absolute;top:732px;width:16px;height:16px;background:#e8c86a;transform:rotate(45deg);box-shadow:0 0 16px rgba(232,200,106,.75)}
+#axis .fin.a{left:232px}#axis .fin.b{left:1688px}
+#axis .br{position:absolute;top:724px;width:2px;height:32px;background:rgba(201,162,39,.5);opacity:0;transition:opacity .5s}
+#axis .br.in{opacity:1}
+#sheen{position:absolute;left:240px;top:734px;width:120px;height:13px;opacity:0;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(255,246,214,.95),transparent)}
+#stage.gild #sheen{animation:sweep 2.6s ease-out}
+@keyframes sweep{0%{transform:translateX(0);opacity:0}18%{opacity:.95}100%{transform:translateX(1420px);opacity:0}}
+
+/* ── 四个散落信息源：徽记圆盘（跨幕颜色锁：微信群/学习通/教务/竞赛平台） ── */
+.tok{position:absolute;left:0;top:0;width:96px;height:96px;z-index:7;opacity:0;
+  transform:translate(var(--sx),var(--sy));transition:opacity .5s,transform 1.15s cubic-bezier(.3,.86,.24,1)}
+.tok.in{opacity:1}
+.tok.hold{transform:translate(var(--dx),var(--dy))}
+.tok .disc{position:absolute;inset:0;border-radius:50%;border:3px solid var(--c);display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 34% 27%,#fffaf0,#f4e8d1 58%,#e2cda4);
+  box-shadow:0 16px 30px rgba(24,6,8,.4),0 0 26px var(--glow);transform:scale(.5) rotate(-9deg);transition:transform .55s cubic-bezier(.34,1.5,.6,1)}
+.tok.in .disc{transform:scale(1) rotate(var(--r,-2deg))}
+.tok.land .disc{animation:discBounce .62s cubic-bezier(.2,1.5,.4,1)}
+@keyframes discBounce{0%{transform:scale(.84)}46%{transform:scale(1.13)}100%{transform:scale(1)}}
+.tok.bow .disc{animation:bow .95s ease-in-out}
+@keyframes bow{0%{transform:translateY(0)}30%{transform:translateY(-9px)}62%{transform:translateY(3px)}100%{transform:translateY(0)}}
+.tok .disc svg{width:44px;height:44px;stroke:var(--cd);fill:none;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}
+.tok .lab{position:absolute;left:-26px;right:-26px;bottom:100%;margin-bottom:13px;text-align:center;
+  font-size:22px;font-weight:900;letter-spacing:4px;color:#2b1a17;text-shadow:0 1px 0 rgba(255,255,255,.72)}
+
+/* ── 「明天 15:00–16:00 开题组会」时间块：自己滑到轴上落位（跨幕道具，学习色） ── */
+#blk{position:absolute;left:1505px;top:510px;width:232px;height:86px;z-index:8;padding:12px 0 0 20px;opacity:0;
+  border-radius:10px;border-top:3px solid #7fd3ec;
+  background:linear-gradient(180deg,#159ac3,#0e6d8e 62%,#0b5a76);
+  box-shadow:0 18px 34px rgba(9,32,42,.45),inset 0 1px 0 rgba(255,255,255,.3);
+  transition:opacity .45s,transform .95s cubic-bezier(.3,.9,.26,1)}
+#blk.in{opacity:1}
+#blk.sit{transform:translate(-61px,187px)}
+#blk.drop{animation:blkB .66s cubic-bezier(.2,1.45,.4,1)}
+@keyframes blkB{0%{transform:translate(-61px,187px)}40%{transform:translate(-61px,187px) scale(1.055)}100%{transform:translate(-61px,187px)}}
+#blk .t1{font-family:'IBM Plex Mono','Noto Serif SC';font-size:15px;letter-spacing:1.5px;color:#dff3f9}
+#blk .t2{margin-top:2px;font-size:27px;font-weight:900;letter-spacing:2px;color:#fff}
+#blk .dot{position:absolute;left:-7px;top:50%;width:14px;height:14px;margin-top:-7px;border-radius:50%;
+  background:#e8c86a;box-shadow:0 0 14px rgba(232,200,106,.9);opacity:0;transition:opacity .5s}
+#blk .auto{position:absolute;left:0;right:0;top:100%;margin-top:13px;text-align:center;font-family:'IBM Plex Mono','Noto Serif SC';
+  font-size:13px;letter-spacing:4px;color:rgba(232,200,106,.9);opacity:0;transition:opacity .7s}
+#blk.sit .dot,#blk.sit .auto{opacity:1}
+#blk.sit .dot{animation:pulseDot 2.2s ease-in-out infinite alternate}
+@keyframes pulseDot{to{box-shadow:0 0 24px 5px rgba(232,200,106,.75)}}
+
+/* ── 大幕：左右两片绒布 + 金色滚边 ── */
+.panel{position:absolute;top:0;width:980px;height:1080px;z-index:14;transition:transform 1.78s cubic-bezier(.62,.02,.34,1)}
+#curL{left:0}#curR{left:940px}
+#stage.open #curL{transform:translateX(-988px)}
+#stage.open #curR{transform:translateX(988px)}
+.cloth{position:absolute;inset:0;background:repeating-linear-gradient(90deg,#39060d 0 16px,#6b1520 44px,#8d2836 78px,#7d1a26 110px,#2a0408 132px,#39060d 152px);
+  animation:weave 9.4s ease-in-out infinite alternate}
+@keyframes weave{to{background-position-x:38px}}
+.cloth::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,rgba(0,0,0,.62),rgba(0,0,0,0) 26%,rgba(0,0,0,.2) 58%,rgba(0,0,0,0) 82%,rgba(0,0,0,.5)),
+  linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0) 24%,rgba(0,0,0,.55))}
+#curL .cloth{border-right:7px solid #210307}
+#curR .cloth{border-left:7px solid #210307}
+
+/* 幕缝透光：闭合时舞台唯一的光 */
+#gap{position:absolute;left:946px;top:130px;width:30px;height:950px;z-index:15;
+  box-shadow:0 0 60px 22px rgba(255,214,140,.3);transition:opacity .5s,left .7s cubic-bezier(.16,1,.3,1),width .7s cubic-bezier(.16,1,.3,1)}
+#gap.wide{left:932px;width:58px;box-shadow:0 0 84px 34px rgba(255,214,140,.42)}
+#gap i{position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,236,190,0),rgba(255,241,205,.95) 42%,#fffdf6 50%,rgba(255,241,205,.95) 58%,rgba(255,236,190,0));
+  animation:gapBreath 2.4s ease-in-out infinite alternate}
+@keyframes gapBreath{to{transform:scaleX(1.75)}}
+#stage.open #gap{opacity:0}
+
+/* ── 台口：侧柱 + 顶部帷幔 + 金流苏（常驻，拉开后仍框住画面） ── */
+#pillarL,#pillarR{position:absolute;top:0;bottom:0;width:112px;z-index:20;
+  background:repeating-linear-gradient(90deg,#2a0408 0 12px,#5c0f18 26px,#7d1a26 44px,#8d2836 58px,#5c0f18 74px,#2a0408 88px)}
+#pillarL{left:0;box-shadow:inset -20px 0 34px rgba(0,0,0,.62)}
+#pillarR{right:0;box-shadow:inset 20px 0 34px rgba(0,0,0,.62)}
+#valWrap{position:absolute;left:0;right:0;top:0;height:196px;z-index:21;transform-origin:50% 0;animation:valSway 9.2s ease-in-out infinite alternate}
+@keyframes valSway{to{transform:rotate(.2deg) translateY(3px)}}
+#valance{position:absolute;left:0;right:0;top:0;height:126px;
+  background:repeating-linear-gradient(90deg,#39060d 0 18px,#6b1520 46px,#8d2836 80px,#7d1a26 112px,#2a0408 134px,#39060d 156px);
+  border-bottom:3px solid rgba(201,162,39,.5);box-shadow:0 14px 34px rgba(0,0,0,.62)}
+#valance::after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.58),rgba(0,0,0,0) 46%,rgba(0,0,0,.3))}
+#fringe{position:absolute;left:0;right:0;top:123px;height:34px;background:radial-gradient(circle at 22px 0,#6b1520 0 21px,rgba(107,21,32,0) 22px);
+  background-size:44px 34px;background-repeat:repeat-x}
+#tassels{position:absolute;left:0;right:0;top:150px;height:44px;
+  background:repeating-linear-gradient(90deg,rgba(201,162,39,0) 0 20px,rgba(201,162,39,.92) 20px 22px,rgba(201,162,39,0) 22px 44px)}
+#tassels::after{content:'';position:absolute;left:0;right:0;top:28px;height:14px;
+  background:radial-gradient(circle at 21px 5px,#e8c86a 0 5px,rgba(232,200,106,0) 6px);background-size:44px 14px;background-repeat:repeat-x}
+
+/* 尾段图注 */
+#actline{position:absolute;right:172px;top:898px;z-index:6;font-family:'IBM Plex Mono','Noto Serif SC';font-size:16px;letter-spacing:5px;
+  color:rgba(240,214,156,.9);opacity:0;transform:translateY(10px);transition:all .9s cubic-bezier(.16,1,.3,1)}
+#actline.in{opacity:1;transform:none}
+
+/* 暗角：剧院要的是观众席压进来的黑，底盘默认那圈太重，压到绒红黑（用 #stage 前缀提高优先级才盖得住后面的底盘规则） */
+#stage #dim{background:radial-gradient(closest-side at 50% 44%,rgba(0,0,0,0) 58%,rgba(16,2,5,.6) 100%)}
+/* 角注要压在暗角之上，否则金字被 .6 黑压成看不见 */
+#stage .corner{font-family:'IBM Plex Mono','Noto Serif SC';font-size:15px;letter-spacing:2.5px;color:rgba(240,214,156,.92);z-index:31}
+
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- [改这里] 全部画面内容包进 #cam：剧院舞台 + 大幕 -->
+  <div id="cam">
+
+    <!-- 被大幕挡住的平台：天幕 / 台板 / 巨型底纹字（出血） / 追光 / 浮尘 -->
+    <div id="backwall"></div>
+    <div id="ghost">Le</div>
+    <div id="floor"></div>
+    <div id="pool"></div>
+    <div id="spot"></div>
+    <div id="dust"><i></i><i></i><i></i><i></i><i></i></div>
+
+    <!-- 产品标识 -->
+    <div id="logo">
+      <div class="mark"><span class="le">Le</span><span class="cn">时间管理</span></div>
+      <div class="rule"></div>
+    </div>
+    <div id="tag">
+      <div class="cn">本地优先的校园时间管理</div>
+      <div class="mono">TAURI 2 · NATIVE JS · NO ACCOUNT · NO CLOUD</div>
+    </div>
+
+    <!-- 本幕主张（右侧节目单，非对称落点） -->
+    <div id="bill">
+      <span class="bh">今 日 主 张 · ACT II</span>
+      <span class="hair"></span>
+      <div class="l1">散在各个角落的信息</div>
+      <div class="l2">归到<em>一条时间轴</em>上</div>
+    </div>
+
+    <!-- 一条时间轴：从台板里浮起来的黄铜杆 -->
+    <div id="axis">
+      <div class="rod"></div>
+      <div class="fin a"></div><div class="fin b"></div>
+      <div class="br" style="left:399px"></div>
+      <div class="br" style="left:719px"></div>
+      <div class="br" style="left:1039px"></div>
+      <div class="br" style="left:1359px"></div>
+      <div id="sheen"></div>
+    </div>
+
+    <!-- 四个散落信息源（跨幕颜色锁：微信群 / 学习通 / 教务 / 竞赛平台） -->
+    <div class="tok" id="tk1" style="--sx:250px;--sy:822px;--dx:352px;--dy:692px;--c:#2EC4B6;--cd:#146f68;--glow:rgba(46,196,182,.42);--r:-3deg">
+      <div class="disc"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H11l-5 4v-4H4z"/></svg></div>
+      <div class="lab">群聊</div>
+    </div>
+    <div class="tok" id="tk2" style="--sx:678px;--sy:796px;--dx:672px;--dy:692px;--c:#118AB2;--cd:#0a5f7c;--glow:rgba(17,138,178,.42);--r:2.4deg">
+      <div class="disc"><svg viewBox="0 0 24 24"><path d="M12 6.6C10.4 5.3 8.2 4.7 5 4.7v13.6c3.2 0 5.4.6 7 1.9 1.6-1.3 3.8-1.9 7-1.9V4.7c-3.2 0-5.4.6-7 1.9z"/><path d="M12 6.6v13.6"/></svg></div>
+      <div class="lab">课程</div>
+    </div>
+    <div class="tok" id="tk3" style="--sx:1056px;--sy:392px;--dx:992px;--dy:692px;--c:#E3A008;--cd:#8f6505;--glow:rgba(227,160,8,.42);--r:-1.6deg">
+      <div class="disc"><svg viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10.5h16M9 3.5v4M15 3.5v4"/></svg></div>
+      <div class="lab">校历</div>
+    </div>
+    <div class="tok" id="tk4" style="--sx:1206px;--sy:800px;--dx:1312px;--dy:692px;--c:#9B5DE5;--cd:#6231a8;--glow:rgba(155,93,229,.42);--r:3deg">
+      <div class="disc"><svg viewBox="0 0 24 24"><path d="M8 4h8v4a4 4 0 01-8 0z"/><path d="M8 5H5v2a3 3 0 003 3M16 5h3v2a3 3 0 01-3 3M12 12v4M9 20h6"/></svg></div>
+      <div class="lab">竞赛</div>
+    </div>
+
+    <!-- 会自己流到轴上的那一块 -->
+    <div id="blk">
+      <div class="t1">明天 15:00–16:00</div>
+      <div class="t2">开题组会</div>
+      <div class="dot"></div>
+      <div class="auto">自动落位 · AUTO</div>
+    </div>
+
+    <!-- 大幕两片 + 幕缝透光 -->
+    <div class="panel" id="curL"><div class="cloth"></div></div>
+    <div class="panel" id="curR"><div class="cloth"></div></div>
+    <div id="gap"><i></i></div>
+
+    <!-- 台口：侧柱 / 帷幔 / 金流苏（常驻） -->
+    <div id="pillarL"></div><div id="pillarR"></div>
+    <div id="valWrap"><div id="valance"></div><div id="fringe"></div><div id="tassels"></div></div>
+
+    <div id="actline">第 2 幕 · 方案亮相</div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">02 / 方案亮相</div>
+  <div class="corner" id="src">U-Time · 本地优先 · v0.76.0</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 2-1 · 方案亮相 · 20.8s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=20800;                       /* 第 2 幕：0:24.566–0:45.341（voice-timeline.json 的 e-s） */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue —— 第 2 幕 方案亮相（成片 0:24.566–0:45.341，DUR 20.8s）
+   cue 毫秒 = 该句首字序号 × 152.8ms/字 + 700ms 起播偏移（voice 12.686s ／ 全文 83 字）
+   注释里的绝对时间是成片时间轴。口播不上屏，画面只有标识、主张、时间轴与色块。
+   ──────────────────────────────────────────────── */
+const st=$('#stage'),gap=$('#gap'),axis=$('#axis'),blk=$('#blk');
+const toks=['#tk1','#tk2','#tk3','#tk4'].map(s=>$(s));
+const brs=[...document.querySelectorAll('#axis .br')];
+
+/* ① 闭合的大幕：整座剧院只漏一线光 */
+on(300,()=>camTo(0,0,1,2.2));                                      // 0:24.9 开场拉镜：幕缝特写 → 整个台口
+on(700,()=>gap.classList.add('wide'));                              // 0:25.3「大家好，我是中国药科大学的…」
+/* ② 大幕拉开，追光打亮产品标识，5s Ken Burns 缓推 */
+on(3300,()=>st.classList.add('open'));                              // 0:27.9「屏幕上这个，是我自己写的」
+on(3420,()=>st.classList.add('lit'));
+on(3900,()=>$('#logo').classList.add('in'));
+on(3960,()=>camFocus(620,430,1.13,5));                             // Ken Burns：5s 无感推近，20.0s 前不再动镜
+on(4300,()=>$('#dim').classList.add('on'));
+/* ③ 副标 + 等宽小字 */
+on(5280,()=>$('#tag').classList.add('in'));                          // 0:29.9「叫 Le时间管理」
+/* ④ 台板里浮出一条时间轴，先亮四个空位 */
+on(6660,()=>axis.classList.add('in'));                              // 0:31.2「我想干的事很简单」
+[0,1,2,3].forEach(i=>on(7140+200*i,()=>brs[i].classList.add('in')));
+/* ⑤ 四个散点各在一角 → 9.72s 被吸到轴上，落位各轻弹一下 */
+on(7480,()=>toks[0].classList.add('in'));                            // 0:32.0「把散在各个角落的信息」
+on(7800,()=>toks[1].classList.add('in'));
+on(8120,()=>toks[2].classList.add('in'));
+on(8440,()=>toks[3].classList.add('in'));
+on(8900,()=>camTo(0,0,1,1.3));                                     // 0:33.5 转场拉回全景，给归位腾出画面
+on(9400,()=>$('#bill').classList.add('in'));
+on(9720,()=>$('#bill').classList.add('hit'));                        // 0:34.3「归到一条时间轴上」
+on(9720,()=>toks[0].classList.add('hold'));                          // 依次吸附，别同时
+[1,2,3].forEach(i=>on(9720+210*i,()=>toks[i].classList.add('hold')));
+[0,1,2,3].forEach(i=>on(10870+210*i,()=>toks[i].classList.add('land')));
+/* ⑥ 那一块不用你动手，自己流过去落定 */
+on(11090,()=>blk.classList.add('in'));                              // 0:35.7「你不用动手记」
+on(12160,()=>blk.classList.add('sit'));                              // 0:36.7「它自己会流过去」
+on(13120,()=>blk.classList.add('drop'));
+/* ⑦ 呼吸段（13.4s → 20.8s 定格）：追光缓推、金杆上过一道光、四枚徽记谢幕致意 */
+on(13400,()=>$('#actline').classList.add('in'));                     // 0:38.0 图注
+on(14000,()=>camFocus(960,520,1.07,6));                             // 0:38.6 缓推 6s → 20.0s 定住
+on(14600,()=>st.classList.add('gild'));                             // 0:39.2 轴上掠过一道金光
+[0,1,2,3].forEach(i=>on(14760+240*i,()=>toks[i].classList.add('bow')));
+
+/* ===== 音效 ===== */
+on(700,()=>__sfx.swipe(0.55));
+on(2500,()=>__sfx.whoosh(1.1,0.42));                               // 幕布吃劲的一声
+on(3300,()=>__sfx.swipe(1.6));
+on(3380,()=>__sfx.whoosh(1.78,1));                                  // 大幕拉开
+on(3900,()=>__sfx.ding(0.95));                                      // 标识亮
+on(5280,()=>__sfx.pop(0.62));
+on(5350,()=>__sfx.type(0.34));
+on(6660,()=>__sfx.swipe(1.0));                                      // 时间轴浮出
+[0,1,2,3].forEach(i=>on(7140+200*i,()=>__sfx.type(0.26)));           // 空位轻点
+[7480,7800,8120,8440].forEach(t=>on(t,()=>__sfx.pop(0.5)));          // 四个散点
+on(9720,()=>__sfx.ding(0.55));                                       // 吸附开始
+[10870,11080,11290,11500].forEach(t=>on(t,()=>__sfx.ding(0.44)));    // 四点落位叮
+on(11150,()=>__sfx.pop(0.55));                                       // 色块浮现
+on(12160,()=>__sfx.swipe(0.8));                                      // 自己滑过去
+on(13120,()=>__sfx.ding(1.05));                                      // 落定
+on(14600,()=>__sfx.ding(0.3));                                       // 金光掠过
+</script>
+</body>
+</html>

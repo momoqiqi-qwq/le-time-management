@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 0-2 · 四象限决策台 · 工程蓝图</title>
+
+<!-- [改这里] 字体：工程蓝图 —— Space Grotesk(标注拉丁) + Noto Sans SC(中文) + Share Tech Mono(等宽) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色 —— 工程蓝图：蓝图纸 + 白色网格线 + 晒图渐晕 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  background:linear-gradient(160deg,#1d4a7e,#16406d 55%,#123862);
+  box-shadow:inset 0 0 220px rgba(3,14,30,.55)}
+#grid{position:absolute;inset:0;opacity:.5;
+  background:linear-gradient(rgba(255,255,255,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.10) 1px,transparent 1px);
+  background-size:64px 64px}
+#grid2{position:absolute;inset:0;opacity:.28;
+  background:linear-gradient(rgba(255,255,255,.14) 1.5px,transparent 1.5px),linear-gradient(90deg,rgba(255,255,255,.14) 1.5px,transparent 1.5px);
+  background-size:320px 320px}
+#sheet{position:absolute;inset:36px;border:2.5px solid rgba(255,255,255,.75);border-radius:4px;pointer-events:none}
+#sheet::before{content:'';position:absolute;inset:8px;border:1px solid rgba(255,255,255,.35);border-radius:2px}
+
+/* ===== [不动] 镜头层 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：工程蓝图 · 四象限决策台
+   ──────────────────────────────────────────────── */
+#title{position:absolute;left:84px;top:66px;opacity:0;transform:translateY(-16px);transition:all .7s cubic-bezier(.16,1,.3,1)}
+#title.show{opacity:1;transform:translateY(0)}
+#title .no{display:inline-block;font-family:'Share Tech Mono';font-size:16px;letter-spacing:3px;color:#123862;background:#cfe3ff;border-radius:6px;padding:5px 14px}
+#title h1{margin-top:14px;font-family:'Space Grotesk','Noto Sans SC';font-size:52px;font-weight:700;letter-spacing:3px;color:#f2f8ff}
+#title .en{font-family:'Share Tech Mono';font-size:15px;color:rgba(242,248,255,.6);margin-top:8px;letter-spacing:5px}
+
+/* 坐标轴（先画线后写字） */
+#axH{position:absolute;left:410px;top:560px;width:1100px;height:3px;background:#f2f8ff;transform-origin:left center;transform:scaleX(0);transition:transform .9s cubic-bezier(.7,0,.3,1);box-shadow:0 0 10px rgba(242,248,255,.5)}
+#axV{position:absolute;left:960px;top:250px;width:3px;height:620px;background:#f2f8ff;transform-origin:center top;transform:scaleY(0);transition:transform .9s cubic-bezier(.7,0,.3,1);box-shadow:0 0 10px rgba(242,248,255,.5)}
+#axH.on,#axV.on{transform:none}
+.axlab{position:absolute;font-family:'Noto Sans SC';font-weight:900;color:#ffd23f;font-size:26px;letter-spacing:4px;opacity:0;transition:opacity .6s}
+.axlab small{display:block;font-family:'Share Tech Mono';font-size:13px;color:rgba(242,248,255,.6);letter-spacing:3px;margin-top:2px}
+.axlab.on{opacity:1}
+#labU{left:980px;top:212px}
+#labE{left:1400px;top:576px}
+
+/* 四个象限（蓝图标注块） */
+.quad{position:absolute;width:472px;height:236px;border:1.5px solid rgba(255,255,255,.5);border-radius:8px;
+  opacity:0;transform:scale(.85);transition:all .55s cubic-bezier(.34,1.6,.64,1);padding:18px 24px}
+.quad.on{opacity:1;transform:scale(1)}
+.quad .rn{font-family:'Share Tech Mono';font-size:15px;color:rgba(242,248,255,.65);letter-spacing:2px}
+.quad .nm{margin-top:8px;font-size:29px;font-weight:900;color:#f2f8ff;letter-spacing:2px}
+.quad .tip{margin-top:6px;font-size:16px;font-weight:700;color:rgba(242,248,255,.75);letter-spacing:2px}
+#q1{left:984px;top:300px;border-color:rgba(255,140,110,.85);background:rgba(255,106,77,.14)}
+#q1 .rn{color:#ff9d80}
+#q2{left:434px;top:300px;border-color:rgba(255,220,120,.85);background:rgba(255,182,72,.13)}
+#q2 .rn{color:#ffd78a}
+#q3{left:984px;top:594px;border-color:rgba(130,190,255,.85);background:rgba(106,165,255,.13)}
+#q3 .rn{color:#9ec7ff}
+#q4{left:434px;top:594px;border-color:rgba(255,255,255,.45);background:rgba(255,255,255,.06)}
+
+/* 落入象限的任务卡 */
+.tcard{position:absolute;opacity:0;transform:scale(.5);transition:all .5s cubic-bezier(.34,1.6,.64,1);z-index:12}
+.tcard.pop{opacity:1;transform:scale(1)}
+.tcard .box{background:#f4f9ff;color:#123252;border-radius:10px;padding:13px 20px;font-size:21px;font-weight:900;box-shadow:0 14px 30px rgba(3,14,30,.5);display:flex;align-items:center;gap:10px}
+.tcard .box svg{flex:none}
+.tcard .stamp{position:absolute;right:-16px;top:-16px;font-family:'Share Tech Mono';font-size:13px;letter-spacing:1px;color:#fff;border-radius:6px;padding:4px 9px;transform:rotate(10deg);box-shadow:0 6px 14px rgba(3,14,30,.4)}
+#tc1{left:500px;top:436px}#tc1 .stamp{background:#ffb648}
+#tc2{left:1030px;top:436px}#tc2 .stamp{background:#ff6a4d}
+#tc3{left:560px;top:745px}#tc3 .stamp{background:#8a97ad}
+
+/* 详情抽屉（蓝图卷起的说明栏） */
+#drawer{position:absolute;right:88px;top:170px;width:400px;background:#f4f9ff;border-radius:14px;padding:26px 28px;
+  box-shadow:0 24px 60px rgba(3,14,30,.55);transform:translateX(560px);transition:transform .7s cubic-bezier(.16,1,.3,1);z-index:14}
+#drawer.in{transform:none}
+#drawer.out{transform:translateX(560px)}
+#drawer h3{font-size:25px;font-weight:900;color:#123252;letter-spacing:1px}
+#drawer .row{display:flex;align-items:center;gap:12px;margin-top:16px;font-size:18px;font-weight:700;color:#3d5f86}
+#drawer .row svg{flex:none}
+#drawer .row b{color:#123252}
+#goBtn{margin-top:22px;width:100%;text-align:center;background:#1f6fd6;color:#fff;font-size:22px;font-weight:900;letter-spacing:3px;border-radius:10px;padding:14px 0}
+#goBtn.hot{animation:btnpulse .5s ease 2}
+@keyframes btnpulse{50%{transform:scale(1.06);box-shadow:0 0 24px rgba(80,160,255,.8)}}
+#dropTag{position:absolute;right:104px;top:636px;font-family:'Share Tech Mono';font-size:16px;color:#ffd23f;letter-spacing:2px;opacity:0;transition:opacity .5s;z-index:13}
+#dropTag.on{opacity:1}
+
+/* 图框标题栏（蓝图图签） */
+#tblock{position:absolute;right:56px;bottom:56px;border:1.5px solid rgba(255,255,255,.55);display:flex;opacity:0;transition:opacity .8s}
+#tblock.on{opacity:1}
+#tblock div{padding:8px 16px;border-left:1.5px solid rgba(255,255,255,.55);font-family:'Share Tech Mono';font-size:13px;color:rgba(242,248,255,.8);letter-spacing:2px}
+#tblock div:first-child{border-left:none}
+
+/* ── 角色特写位：安安（强约束气泡模板，仅 4 配色随页） ── */
+#anan{position:absolute;left:-6px;bottom:-10px;width:390px;z-index:28;opacity:0;transition:opacity .9s ease}
+#anan.show{opacity:1}
+#anan img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
+@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#eaf3ff;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#123252;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(3,14,30,.5)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #eaf3ff}
+#anan .say b{color:#1f6fd6}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(242,248,255,.5);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#ffd23f;box-shadow:0 0 10px rgba(255,210,63,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="grid"></div><div id="grid2"></div><div id="sheet"></div>
+
+  <!-- [改这里] 全部画面内容包进 #cam -->
+  <div id="cam">
+    <div id="title">
+      <span class="no">DWG NO. UT-02</span>
+      <h1>四象限决策台</h1>
+      <div class="en">QUADRANT DECISION DESK</div>
+    </div>
+
+    <div class="quad" id="q2"><div class="rn">QUADRANT II</div><div class="nm">重要 · 不紧急</div><div class="tip">排进计划，按节奏推进</div></div>
+    <div class="quad" id="q1"><div class="rn">QUADRANT I</div><div class="nm">重要 · 紧急</div><div class="tip">现在就做</div></div>
+    <div class="quad" id="q3"><div class="rn">QUADRANT III</div><div class="nm">不重要 · 紧急</div><div class="tip">快速处理，别恋战</div></div>
+    <div class="quad" id="q4"><div class="rn">QUADRANT IV</div><div class="nm">不重要 · 不紧急</div><div class="tip">少投入</div></div>
+    <div id="axH"></div><div id="axV"></div>
+    <div class="axlab" id="labU">重要 ↑<small>IMPORTANT</small></div>
+    <div class="axlab" id="labE">紧急 →<small>URGENT</small></div>
+
+    <div class="tcard" id="tc1"><div class="box">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#1f6fd6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15.5H6.5A2.5 2.5 0 0 0 4 21z"/><path d="M4 18.5A2.5 2.5 0 0 1 6.5 16H20"/></svg>
+      模电实验报告</div><span class="stamp">PLAN</span></div>
+    <div class="tcard" id="tc2"><div class="box">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#ff6a4d" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+      下午 3 点组会</div><span class="stamp">NOW!</span></div>
+    <div class="tcard" id="tc3"><div class="box">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#8a97ad" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>
+      宿舍聚餐</div><span class="stamp">LOW</span></div>
+
+    <div id="drawer">
+      <h3>下午 3 点组会</h3>
+      <div class="row"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#1f6fd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>日期 <b>9月10日</b></div>
+      <div class="row"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#1f6fd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7l-8.5 8.5L5 9"/><path d="M20 13l-8.5 8.5L5 15" opacity=".35"/></svg>分类 <b>学习</b> · 象限 Ⅰ</div>
+      <div class="row"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#1f6fd6" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2"/><path d="M21 17l-5-5-8 7"/></svg>附件 <b>会议材料.png</b></div>
+      <div id="goBtn">排入今天 →</div>
+    </div>
+    <div id="dropTag">→ TODAY 14:00 - 16:00</div>
+
+    <div id="tblock"><div>UT-02 · 四象限</div><div>SCALE 1:1</div><div>U-TIME PROJECT</div></div>
+
+    <!-- 角色特写：安安 -->
+    <div id="anan">
+      <div class="say">放对格子，优先级就<b>自己</b>站出来了？</div>
+      <img src="anan - emotion rename/07_睁眸微张_愕然疑惑.png" alt="安安">
+    </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">02 / 四象限 · 决策台</div>
+  <div class="corner" id="src">功能与数据 · le-time-management README v0.11.4</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 0-2 · 四象限蓝图 · 26s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=26000;                       /* [改这里] = 本镜头规定时长(ms) */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue（26s）
+   口播：0:00「第一张桌面：四象限。横轴紧急，纵轴重要」
+         0:06「卡片放进哪个格子，优先级自己就站出来了」
+         0:13「点开卡片是详情抽屉——日期、分类、附件一目了然」
+         0:19「一键『排入今天』，任务直接落进时间块」
+   ──────────────────────────────────────────────── */
+on(300,()=>camTo(0,0,1,2.4));                                    // 开场拉镜
+on(400,()=>{$('#title').classList.add('show')});
+on(1800,()=>{$('#axH').classList.add('on')});                    // 口播 0:00 先画横轴
+on(2500,()=>{$('#axV').classList.add('on')});                    // 再画纵轴
+on(3300,()=>{$('#labU').classList.add('on');$('#labE').classList.add('on')});
+on(3800,()=>{$('#q2').classList.add('on')});                     // 象限块逐格亮起
+on(4400,()=>{$('#q1').classList.add('on')});
+on(5000,()=>{$('#q3').classList.add('on')});
+on(5600,()=>{$('#q4').classList.add('on')});
+on(6600,()=>camFocus(960,520,1.13,1.1));                         // 关键推近：整盘棋
+on(7400,()=>{$('#tc1').classList.add('pop')});                   // 口播 0:06 卡片入格
+on(8700,()=>{$('#tc2').classList.add('pop')});
+on(10000,()=>{$('#tc3').classList.add('pop')});
+on(11200,()=>{const a=$('#anan');a.classList.add('show');__sfx.pop(.55)});   // 安安中段快闪（43%）
+on(12100,()=>{$('#anan').classList.remove('show')});
+on(12400,()=>camTo(0,0,1,1.1));                                  // 转场拉回
+on(13400,()=>{$('#drawer').classList.add('in')});                // 口播 0:13 详情抽屉滑入
+on(14100,()=>camFocus(1480,430,1.15,1.1));                       // 推近抽屉
+on(15800,()=>{$('#goBtn').classList.add('hot')});                // 口播 0:19 一键排入今天
+on(16400,()=>{$('#dropTag').classList.add('on')});
+on(18200,()=>{$('#drawer').classList.add('out')});               // 抽屉收起
+on(18800,()=>{$('#dropTag').classList.remove('on');camTo(0,0,1,1.2)});
+on(19800,()=>{$('#tblock').classList.add('on')});                // 图签盖章式落定
+on(20700,()=>{$('#anan .say').innerHTML='四个格子，理清<b>一整天</b>';$('#anan img').src='anan - emotion rename/10_闭目含笑_恬静满足.png';$('#anan').classList.add('show')});   // 结尾定场（80%）
+on(25200,()=>$('#anan').classList.remove('show'));
+/* ===== 音效 ===== */
+on(300,()=>__sfx.swipe(0.6));
+on(500,()=>__sfx.pop(0.5));
+on(1800,()=>__sfx.type(0.6));
+on(2500,()=>__sfx.type(0.6));
+on(3300,()=>__sfx.pop(0.5));
+on(3800,()=>__sfx.pop(0.5));
+on(4400,()=>__sfx.pop(0.5));
+on(5000,()=>__sfx.pop(0.5));
+on(5600,()=>__sfx.pop(0.55));
+on(6600,()=>__sfx.whoosh(1.1,0.5));
+on(7400,()=>{__sfx.whoosh(0.7,0.6);__sfx.pop(0.5)});
+on(8700,()=>{__sfx.whoosh(0.7,0.6);__sfx.pop(0.55)});
+on(10000,()=>{__sfx.whoosh(0.7,0.55);__sfx.pop(0.5)});
+on(11200,()=>__sfx.pop(0.55));
+on(13400,()=>__sfx.whoosh(0.7,0.7));
+on(14100,()=>__sfx.whoosh(1.1,0.5));
+on(15800,()=>__sfx.thud(0.9));
+on(16400,()=>__sfx.ding(0.8));
+on(18800,()=>__sfx.whoosh(1.2,0.5));
+on(19800,()=>__sfx.thud(0.7));
+on(20700,()=>__sfx.pop(0.6));
+</script>
+</body>
+</html>

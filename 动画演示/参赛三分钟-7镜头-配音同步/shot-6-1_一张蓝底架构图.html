@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 6-1 · 一张蓝底架构图</title>
+
+<!-- [改这里] 字体：工程蓝图 —— 图名英文 Space Grotesk + 中文 Noto Sans SC + 尺寸数字 JetBrains Mono -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#071a30;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* [改这里] 舞台底色/纹理 —— 蓝图蓝纸面 + 细方格网纹（缓慢漂移）+ 四角压深 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
+  font-family:'Noto Sans SC',sans-serif;
+  background:
+    repeating-linear-gradient(0deg,rgba(154,201,240,.155) 0 1px,transparent 1px 120px),
+    repeating-linear-gradient(90deg,rgba(154,201,240,.155) 0 1px,transparent 1px 120px),
+    repeating-linear-gradient(0deg,rgba(154,201,240,.075) 0 1px,transparent 1px 24px),
+    repeating-linear-gradient(90deg,rgba(154,201,240,.075) 0 1px,transparent 1px 24px),
+    radial-gradient(1450px 1000px at 46% 40%,#164479,#123a6b 52%,#0b2749);
+  background-size:120px 120px,120px 120px,24px 24px,24px 24px,auto;
+  animation:drift 52s linear infinite alternate;box-shadow:inset 0 0 200px rgba(3,14,28,.62)}
+@keyframes drift{from{background-position:0 0,0 0,0 0,0 0,0 0}to{background-position:120px 60px,120px 60px,-24px 24px,-24px 24px,0 0}}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：工程蓝图 —— 图框 / 层次架构 / 尺寸标注 / 母线出边 / 图签栏 / 红章
+   ──────────────────────────────────────────────── */
+/* 开场特写：怼在 Rust 内核那一格，300ms 后拉回全幅 */
+#cam{transform:translate(-175px,-155px) scale(1.24)}
+#sheet{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:visible}
+/* 描边生长：pathLength=1 让每根线自成一档，不靠淡入 */
+.dl{fill:none;stroke:#eaf4ff;stroke-width:1.7;stroke-linejoin:miter;stroke-dasharray:1;stroke-dashoffset:1;
+  transition:stroke-dashoffset var(--d,.85s) cubic-bezier(.55,.05,.35,1)}
+.g.in .dl{stroke-dashoffset:0}
+.dl.thin{stroke-width:1;stroke:rgba(234,244,255,.5)}
+.dl.med{stroke-width:2.4}
+.dl.heavy{stroke-width:3.4}
+.dl.cy{stroke:#7fe3f2}
+.dl.rd{stroke:#FF6B6B}
+.dsh{fill:none;stroke:#eaf4ff;stroke-width:1.7;stroke-dasharray:8 6;stroke-dashoffset:520;transition:stroke-dashoffset 1.05s linear,opacity .2s;opacity:0}
+.g.in .dsh{stroke-dashoffset:0;opacity:1}
+.pnl{fill:rgba(15,76,92,.46);stroke:none;opacity:0;transition:opacity .55s ease}
+.g.in .pnl{opacity:1}
+.pnl.hi{fill:rgba(17,138,178,.24)}
+.sbf{fill:#eaf4ff;opacity:0;transition:opacity .5s ease .35s}
+.g.in .sbf{opacity:.5}
+.hatch{stroke:rgba(234,244,255,.2);stroke-width:1;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset 1.2s}
+.g.in .hatch{stroke-dashoffset:0}
+.g.in circle{opacity:1}
+
+/* 文字簇：整簇一起「写」出来（clip-path 从左擦除），比淡入更像落笔 */
+.cl{position:absolute;inset:0;pointer-events:none}
+.tb{position:absolute;font-family:'JetBrains Mono',monospace;color:#eaf4ff;letter-spacing:1px;opacity:0;
+  clip-path:inset(0 100% 0 0);transition:clip-path .5s cubic-bezier(.62,0,.3,1),opacity .12s}
+.cl.in .tb{opacity:1;clip-path:inset(0 0 0 0)}
+.cn{font-family:'Noto Sans SC','Noto Sans CJK SC',sans-serif}
+.sg{font-family:'Space Grotesk','Noto Sans SC',sans-serif}
+.r{letter-spacing:0}
+.cy{color:#9beaf8!important}
+.mut{color:rgba(219,236,252,.62)!important}
+.wh{color:#fff!important}
+.tt1{left:120px;top:94px;font-family:'Space Grotesk';font-weight:700;font-size:31px;letter-spacing:9px;color:#fff}
+.tt2{left:122px;top:130px;font-size:13.5px;letter-spacing:4.5px;color:#9beaf8}
+.tt3{left:122px;top:152px;font-size:11.5px;letter-spacing:2.4px;color:rgba(219,236,252,.5)}
+.zone{font-size:10px;color:rgba(219,236,252,.42);letter-spacing:2px}
+.bt{font-size:25px;font-weight:900;letter-spacing:2.5px;color:#fff}
+.bs{font-size:12.5px;letter-spacing:2px;color:rgba(219,236,252,.66)}
+.bnum{font-size:27px;font-weight:700;letter-spacing:0;color:#9beaf8}
+.bnum s{text-decoration:none;font-size:12px;letter-spacing:1.5px;color:rgba(155,234,248,.72);margin-left:3px}
+.bsub{font-size:12.5px;color:rgba(219,236,252,.66);letter-spacing:1.4px}
+.lead{font-size:11.5px;color:#9beaf8;letter-spacing:1.6px}
+.arr{font-size:11px;color:rgba(155,234,248,.78);letter-spacing:1px}
+
+/* 一套代码总括号 */
+.onecode{left:796px;top:146px;font-family:'Space Grotesk';font-size:17px;font-weight:700;letter-spacing:6px;color:#fff}
+.onecode b{font-family:'Noto Sans SC';font-weight:900;font-size:19px;letter-spacing:4px;margin-left:10px}
+
+/* 超大尺寸数字：4.8 MB（破掉蓝图的居中对称） */
+.big48{left:818px;top:238px;font-family:'Space Grotesk';font-weight:700;font-size:104px;line-height:.82;color:#fff;letter-spacing:-2px}
+.big48 em{font-style:normal;font-family:'JetBrains Mono';font-size:27px;font-weight:700;color:#9beaf8;letter-spacing:1px;margin-left:6px}
+.cap48{left:820px;top:200px;font-size:11.5px;letter-spacing:3px;color:#9beaf8}
+.sub48{left:822px;top:330px;font-size:11px;letter-spacing:1.6px;color:rgba(219,236,252,.55)}
+
+/* 未采用清单 */
+.negh{left:820px;top:418px;font-size:11.5px;letter-spacing:3px;color:rgba(219,236,252,.6)}
+.neg{font-size:16px;font-weight:700;letter-spacing:2px;color:rgba(234,244,255,.9)}
+
+/* 端点 */
+.ep{font-size:22px;font-weight:900;letter-spacing:2px;color:#fff}
+.eps{font-size:11px;letter-spacing:1.8px;color:rgba(219,236,252,.6)}
+.epnum{font-size:11px;letter-spacing:1px;color:#9beaf8}
+
+/* 磁盘 / 文件卡 */
+.fname{left:392px;top:690px;font-family:'JetBrains Mono';font-size:38px;font-weight:700;letter-spacing:0;color:#fff}
+.fpath{left:392px;top:736px;font-size:12.5px;letter-spacing:.6px;color:#9beaf8}
+.fnote{left:392px;top:762px;font-size:12px;letter-spacing:1.6px;color:rgba(219,236,252,.7)}
+.caret{display:inline-block;width:8px;height:13px;background:#9beaf8;vertical-align:-1px;animation:blink 1.05s steps(1,end) infinite}
+@keyframes blink{0%,52%{opacity:1}53%,100%{opacity:0}}
+
+/* 红章：盖在磁盘图标旁 */
+#stamp{position:absolute;left:816px;top:588px;width:196px;height:196px;mix-blend-mode:multiply;opacity:0;
+  transform:scale(2.5) rotate(-19deg);transition:opacity .18s,transform .2s cubic-bezier(.2,1.32,.35,1);z-index:12}
+#stamp.hit{opacity:.97;transform:scale(1) rotate(-11deg);animation:settle .55s .2s}
+@keyframes settle{40%{transform:scale(.955) rotate(-10.2deg)}}
+#stamp .ring{position:absolute;inset:0;border:4px solid #FF6B6B;border-radius:14px}
+#stamp .ring2{position:absolute;inset:9px;border:1.5px solid #FF6B6B;border-radius:8px}
+#stamp .txt{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#FF6B6B}
+#stamp .txt b{font-size:52px;font-weight:900;letter-spacing:5px;line-height:1}
+#stamp .txt i{font-style:normal;font-size:22px;font-weight:900;letter-spacing:7px}
+#stamp .txt span{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:2.4px}
+#stamp::after{content:'';position:absolute;inset:0;border-radius:14px;
+  background:repeating-linear-gradient(38deg,transparent 0 5px,rgba(18,58,107,.34) 5px 6px)}
+
+/* 技术要求 */
+.nh{left:120px;top:838px;font-family:'Space Grotesk';font-size:14px;font-weight:700;letter-spacing:5px;color:#fff}
+.nh s{text-decoration:none;font-family:'Noto Sans SC';font-weight:900;font-size:15px;letter-spacing:3px;margin-left:9px}
+.nl{font-size:13px;letter-spacing:1.3px;color:rgba(234,244,255,.88)}
+.nl b{font-weight:700;color:#9beaf8}
+.nlno{font-size:11px;color:rgba(155,234,248,.62);letter-spacing:0}
+
+/* 图签栏 */
+.tbh{font-size:9.5px;letter-spacing:2.4px;color:rgba(219,236,252,.5)}
+.tbv{font-size:16px;font-weight:700;letter-spacing:1.6px;color:#fff}
+.tbv.mono{font-family:'JetBrains Mono';font-size:15px;letter-spacing:.5px}
+.tbname{font-family:'Noto Sans SC';font-size:20px;font-weight:900;letter-spacing:3px;color:#fff}
+.tbbig{font-family:'Space Grotesk';font-size:22px;font-weight:700;letter-spacing:3px;color:#9beaf8}
+
+/* 比例尺：呼吸 */
+#gScale{animation:brth 6.5s ease-in-out infinite}
+@keyframes brth{0%,100%{opacity:.66}50%{opacity:1}}
+/* 内联小图标随簇一起亮起 */
+.cl>svg{opacity:0;transition:opacity .55s ease .32s}
+.cl.in>svg{opacity:1}
+.rdbar{position:absolute;left:1490px;top:104px;font-family:'Space Grotesk';font-size:13px;font-weight:700;letter-spacing:4px;color:#FF6B6B;
+  opacity:0;clip-path:inset(0 100% 0 0);transition:clip-path .7s cubic-bezier(.62,0,.3,1),opacity .2s}
+.rdbar.in{opacity:.95;clip-path:inset(0 0 0 0)}
+.rdbar b{font-family:'Noto Sans SC';font-weight:900;letter-spacing:3px;margin-left:12px;color:#FF6B6B}
+
+/* 本页是深底蓝图，底盘的角注配色是给浅底用的 —— 提高一层特异性覆盖，不动底盘行 */
+#stage .corner{color:rgba(155,234,248,.5)}
+#stage #chap::before{content:'';display:inline-block;width:22px;height:1px;background:rgba(155,234,248,.5);vertical-align:4px;margin-right:9px}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  <!-- [改这里] 全部画面内容包进 #cam：一张自绘的工程蓝图 -->
+  <div id="cam">
+
+  <svg id="sheet" viewBox="0 0 1920 1080" aria-hidden="true">
+    <!-- 箭头一律画成真实折线：SVG marker 会在描边生长前就露出来，成了孤儿元素 -->
+
+    <!-- 图框 -->
+    <g class="g" id="gFrame">
+      <path class="dl heavy" style="--d:1.5s" pathLength="1" d="M76 64 H1844 V1016 H76 Z"/>
+      <path class="dl thin" style="--d:1.3s;transition-delay:.25s" pathLength="1" d="M88 76 H1832 V1004 H88 Z"/>
+      <path class="dl thin" style="--d:.4s;transition-delay:.9s" pathLength="1" d="M88 108 V88 H108 M1812 88 H1832 V108 M88 972 V992 H108"/>
+      <path class="dl thin" style="--d:.4s;transition-delay:1s" pathLength="1" d="M306 76 V86 M524 76 V86 M742 76 V86 M960 76 V86 M1178 76 V86 M1396 76 V86 M1614 76 V86 M96 200 H106 M96 420 H106 M96 640 H106 M96 860 H106"/>
+    </g>
+
+    <!-- 「一套代码」总括号 -->
+    <g class="g" id="gOne">
+      <path class="dl cy" style="--d:.9s" pathLength="1" d="M300 172 H1490"/>
+      <path class="dl cy" style="--d:.22s;transition-delay:.86s" pathLength="1" d="M311 165 L301 172 L311 179"/>
+      <path class="dl cy" style="--d:.22s;transition-delay:.86s" pathLength="1" d="M1479 165 L1489 172 L1479 179"/>
+      <path class="dl cy thin" style="--d:.3s;transition-delay:.55s" pathLength="1" d="M300 160 V200 M1490 160 V200"/>
+    </g>
+
+    <!-- ① 前端层 -->
+    <g class="g" id="gB1">
+      <rect class="pnl" x="300" y="200" width="500" height="100"/>
+      <path class="dl med" style="--d:.9s" pathLength="1" d="M300 200 H800 V300 H300 Z"/>
+    </g>
+    <!-- ② api.js 门面（双框＝唯一出口） -->
+    <g class="g" id="gB2">
+      <rect class="pnl hi" x="300" y="340" width="500" height="100"/>
+      <path class="dl med" style="--d:.9s" pathLength="1" d="M300 340 H800 V440 H300 Z"/>
+      <path class="dl thin" style="--d:.8s;transition-delay:.3s" pathLength="1" d="M308 348 H792 V432 H308 Z"/>
+    </g>
+    <!-- ③ Rust 内核 -->
+    <g class="g" id="gB3">
+      <rect class="pnl" x="300" y="470" width="500" height="110"/>
+      <path class="dl med" style="--d:.9s" pathLength="1" d="M300 470 H800 V580 H300 Z"/>
+    </g>
+    <!-- ④ 落点：data.json（画得最重） -->
+    <g class="g" id="gB4">
+      <rect class="pnl hi" x="300" y="612" width="500" height="188"/>
+      <path class="dl heavy" style="--d:1.05s" pathLength="1" d="M300 612 H800 V800 H300 Z"/>
+      <path class="dl thin" style="--d:.6s;transition-delay:.55s" pathLength="1" d="M308 620 H792 V646 H308 Z"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.6s" d="M312 646 L338 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.66s" d="M348 646 L374 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.72s" d="M384 646 L410 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.78s" d="M420 646 L446 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.84s" d="M456 646 L482 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.9s" d="M492 646 L518 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:.96s" d="M528 646 L554 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.02s" d="M564 646 L590 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.08s" d="M600 646 L626 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.14s" d="M636 646 L662 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.2s" d="M672 646 L698 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.26s" d="M708 646 L734 616"/>
+      <path class="hatch" pathLength="1" style="--d:.3s;transition-delay:1.32s" d="M744 646 L770 616"/>
+      <path class="dl cy" style="--d:.45s;transition-delay:1.05s" pathLength="1" d="M752 760 H784"/>
+      <path class="dl cy" style="--d:.18s;transition-delay:1.45s" pathLength="1" d="M777 754 L785 760 L777 766"/>
+      <path class="dl thin cy" style="--d:.35s;transition-delay:1.5s" pathLength="1" d="M274 706 H298 M298 702 V710"/>
+    </g>
+
+    <!-- 竖向调用链 -->
+    <g class="g" id="gArr">
+      <path class="dl" style="--d:.45s" pathLength="1" d="M550 300 V336"/>
+      <path class="dl" style="--d:.2s;transition-delay:.4s" pathLength="1" d="M543 331 L550 340 L557 331"/>
+      <path class="dl" style="--d:.45s;transition-delay:.55s" pathLength="1" d="M550 440 V466"/>
+      <path class="dl" style="--d:.2s;transition-delay:.95s" pathLength="1" d="M543 461 L550 470 L557 461"/>
+      <path class="dl" style="--d:.45s;transition-delay:1.1s" pathLength="1" d="M550 580 V608"/>
+      <path class="dl" style="--d:.2s;transition-delay:1.5s" pathLength="1" d="M543 603 L550 612 L557 603"/>
+    </g>
+
+    <!-- 左侧尺寸引出线 -->
+    <g class="g" id="gDimL">
+      <path class="dl thin cy" style="--d:.35s" pathLength="1" d="M274 250 H298 M298 246 V254"/>
+      <path class="dl thin cy" style="--d:.35s;transition-delay:.55s" pathLength="1" d="M274 390 H298 M298 386 V394"/>
+      <path class="dl thin cy" style="--d:.35s;transition-delay:1.1s" pathLength="1" d="M274 525 H298 M298 521 V529"/>
+    </g>
+
+    <!-- 母线 + 四条出边 -->
+    <g class="g" id="gBus">
+      <path class="dl med" style="--d:.5s" pathLength="1" d="M800 390 H1030"/>
+      <path class="dl med" style="--d:1.1s;transition-delay:.4s" pathLength="1" d="M1030 250 V665"/>
+      <circle cx="1030" cy="390" r="3.6" fill="#eaf4ff" opacity="0" style="transition:opacity .3s .9s"/>
+      <path class="dl" style="--d:.4s;transition-delay:1.15s" pathLength="1" d="M1030 250 H1172"/>
+      <path class="dl" style="--d:.18s;transition-delay:1.5s" pathLength="1" d="M1171 243 L1180 250 L1171 257"/>
+      <path class="dl" style="--d:.4s;transition-delay:1.15s" pathLength="1" d="M1030 530 H1172"/>
+      <path class="dl" style="--d:.18s;transition-delay:1.5s" pathLength="1" d="M1171 523 L1180 530 L1171 537"/>
+      <path class="dl" style="--d:.4s;transition-delay:1.15s" pathLength="1" d="M1030 665 H1172"/>
+      <path class="dl" style="--d:.18s;transition-delay:1.5s" pathLength="1" d="M1171 658 L1180 665 L1171 672"/>
+      <path class="dl" style="--d:.4s;transition-delay:1.15s" pathLength="1" d="M1030 390 H1172"/>
+      <path class="dl" style="--d:.18s;transition-delay:1.5s" pathLength="1" d="M1171 383 L1180 390 L1171 397"/>
+    </g>
+    <g class="g" id="gE1"><rect class="pnl" x="1180" y="200" width="310" height="100"/><path class="dl med" style="--d:.7s" pathLength="1" d="M1180 200 H1490 V300 H1180 Z"/></g>
+    <g class="g" id="gE2"><rect class="pnl" x="1180" y="340" width="310" height="100"/><path class="dl med" style="--d:.7s" pathLength="1" d="M1180 340 H1490 V440 H1180 Z"/></g>
+    <g class="g" id="gE3"><rect class="pnl" x="1180" y="480" width="310" height="100"/><path class="dl med" style="--d:.7s" pathLength="1" d="M1180 480 H1490 V580 H1180 Z"/></g>
+    <g class="g" id="gE4"><rect class="pnl hi" x="1180" y="615" width="310" height="100"/><path class="dl med" style="--d:.9s" pathLength="1" stroke="#7fe3f2" d="M1180 615 H1490 V715 H1180 Z"/><path class="dl thin cy" style="--d:.6s;transition-delay:.4s" pathLength="1" d="M1188 623 H1482 V707 H1188 Z"/></g>
+
+    <!-- 右侧标注引出线 + 四端总尺寸 -->
+    <g class="g" id="gDimR">
+      <path class="dl thin cy" style="--d:.3s" pathLength="1" d="M1490 250 H1522 M1494 246 V254"/>
+      <path class="dl thin cy" style="--d:.3s;transition-delay:.6s" pathLength="1" d="M1490 390 H1522 M1494 386 V394"/>
+      <path class="dl thin cy" style="--d:.3s;transition-delay:1.2s" pathLength="1" d="M1490 530 H1522 M1494 526 V534"/>
+      <path class="dl thin cy" style="--d:.3s;transition-delay:1.8s" pathLength="1" d="M1490 665 H1522 M1494 661 V669"/>
+      <path class="dl thin" style="--d:.5s;transition-delay:2.2s" pathLength="1" d="M1180 726 V778 M1490 726 V778"/>
+      <path class="dl cy" style="--d:.7s;transition-delay:2.5s" pathLength="1" d="M1189 762 H1481"/>
+      <path class="dl cy" style="--d:.2s;transition-delay:3.1s" pathLength="1" d="M1191 755 L1180 762 L1191 769"/>
+      <path class="dl cy" style="--d:.2s;transition-delay:3.1s" pathLength="1" d="M1479 755 L1490 762 L1479 769"/>
+    </g>
+
+    <!-- 4.8 MB 尺寸面板 -->
+    <g class="g" id="g48">
+      <path class="dl" style="--d:.8s" pathLength="1" d="M820 195 H1010 V362 H820 Z"/>
+      <path class="dl cy thin" style="--d:.5s;transition-delay:.7s" pathLength="1" d="M828 362 V372 M1002 362 V372"/>
+      <path class="dl cy" style="--d:.6s;transition-delay:.85s" pathLength="1" d="M837 367 H993"/>
+      <path class="dl cy" style="--d:.2s;transition-delay:1.4s" pathLength="1" d="M839 360 L828 367 L839 374"/>
+      <path class="dl cy" style="--d:.2s;transition-delay:1.4s" pathLength="1" d="M991 360 L1002 367 L991 374"/>
+    </g>
+    <!-- 未采用清单 -->
+    <g class="g" id="gNeg">
+      <path class="dl thin" style="--d:.8s" pathLength="1" d="M820 412 H1010 V556 H820 Z"/>
+      <path class="dl rd" style="--d:.25s;transition-delay:.7s" pathLength="1" d="M836 456 L852 472 M852 456 L836 472 M882 466 H946"/>
+      <path class="dl rd" style="--d:.25s;transition-delay:.95s" pathLength="1" d="M836 490 L852 506 M852 490 L836 506 M882 500 H946"/>
+      <path class="dl rd" style="--d:.25s;transition-delay:1.2s" pathLength="1" d="M836 524 L852 540 M852 524 L836 540 M882 534 H946"/>
+    </g>
+
+    <!-- 技术要求 -->
+    <g class="g" id="gNotes">
+      <path class="dl" style="--d:1s" pathLength="1" d="M108 826 H790 V1000 H108 Z"/>
+      <path class="dl thin" style="--d:.5s;transition-delay:.75s" pathLength="1" d="M108 866 H790 M146 884 V986"/>
+    </g>
+    <!-- 比例尺 -->
+    <g class="g" id="gScale">
+      <path class="dl thin" style="--d:.7s" pathLength="1" d="M820 906 H1150 V926 H820 Z M852 906 V926 M884 906 V926 M916 906 V926 M948 906 V926 M980 906 V926 M1012 906 V926 M1044 906 V926 M1076 906 V926 M1108 906 V926"/>
+      <rect class="sbf" x="852" y="906" width="32" height="20"/>
+      <rect class="sbf" x="916" y="906" width="32" height="20"/>
+      <rect class="sbf" x="980" y="906" width="32" height="20"/>
+      <rect class="sbf" x="1044" y="906" width="32" height="20"/>
+      <rect class="sbf" x="1108" y="906" width="32" height="20"/>
+    </g>
+    <!-- 图签栏（右下角，压住图框＝出血） -->
+    <g class="g" id="gTblk">
+      <path class="dl heavy" style="--d:1.2s" pathLength="1" d="M1170 800 H1832 V1004 H1170 Z"/>
+      <path class="dl" style="--d:.7s;transition-delay:.8s" pathLength="1" d="M1170 856 H1832 M1170 912 H1832"/>
+      <path class="dl" style="--d:.5s;transition-delay:1.1s" pathLength="1" d="M1560 800 V856 M1336 856 V912 M1502 856 V912 M1670 856 V912"/>
+    </g>
+  </svg>
+
+  <!-- ① 图名 + 分区代号 -->
+  <div class="cl" id="lFrame">
+    <div class="tb tt1">ARCHITECTURE &amp; DATA PATH</div>
+    <div class="tb tt2 cn" style="transition-delay:.3s">U-TIME / LE 时间管理 · 技术架构与数据落点</div>
+    <div class="tb tt3" style="transition-delay:.5s">TAURI 2 + RUST / ONE CODEBASE / LOCAL SINGLE-FILE STORE</div>
+    <div class="tb zone" style="left:186px;top:80px;transition-delay:.9s">A</div>
+    <div class="tb zone" style="left:404px;top:80px;transition-delay:.92s">B</div>
+    <div class="tb zone" style="left:622px;top:80px;transition-delay:.94s">C</div>
+    <div class="tb zone" style="left:840px;top:80px;transition-delay:.96s">D</div>
+    <div class="tb zone" style="left:1058px;top:80px;transition-delay:.98s">E</div>
+    <div class="tb zone" style="left:1276px;top:80px;transition-delay:1s">F</div>
+    <div class="tb zone" style="left:1494px;top:80px;transition-delay:1.02s">G</div>
+    <div class="tb zone" style="left:1712px;top:80px;transition-delay:1.04s">H</div>
+  </div>
+
+  <!-- 「一套代码」总尺寸标注 -->
+  <div class="cl" id="lOne">
+    <div class="tb onecode">ONE CODEBASE<b class="cn">一套代码 · 四处可跑</b></div>
+  </div>
+
+  <!-- ② 前端层 -->
+  <div class="cl" id="lB1">
+    <div class="tb bt cn" style="left:366px;top:216px">前端层</div>
+    <div class="tb bs cn" style="left:366px;top:254px;transition-delay:.25s">原生 JS · 无框架 · 视图与状态</div>
+    <div class="tb lead r" style="left:706px;top:214px;transition-delay:.4s">01/04</div>
+    <svg style="position:absolute;left:320px;top:230px;width:30px;height:30px;stroke:#9beaf8;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round" class="ic" viewBox="0 0 24 24"><path d="M9 5 4.5 12 9 19M15 5l4.5 7L15 19"/></svg>
+  </div>
+  <!-- ② api.js 门面 -->
+  <div class="cl" id="lB2">
+    <div class="tb bt" style="left:366px;top:354px;letter-spacing:0">api.js</div>
+    <div class="tb bs cn cy" style="left:366px;top:394px;transition-delay:.25s">全图唯一跨语言出口 · 门面层</div>
+    <div class="tb lead r" style="left:706px;top:352px;transition-delay:.4s">02/04</div>
+    <svg style="position:absolute;left:320px;top:368px;width:30px;height:30px;stroke:#9beaf8;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M12 4v16M8 12h.01M16 12h.01"/></svg>
+  </div>
+  <!-- ③ Rust 内核 -->
+  <div class="cl" id="lB3">
+    <div class="tb bt cn" style="left:366px;top:486px">Rust 内核</div>
+    <div class="tb bs" style="left:366px;top:526px;transition-delay:.25s">src-tauri/ · TAURI 2</div>
+    <div class="tb lead r" style="left:706px;top:484px;transition-delay:.4s">03/04</div>
+    <svg style="position:absolute;left:320px;top:498px;width:34px;height:34px;stroke:#9beaf8;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M7 7h10v10H7z"/><path d="M10 10h4v4h-4z"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
+  </div>
+  <!-- ④ 磁盘落点 -->
+  <div class="cl" id="lB4">
+    <div class="tb bt cn" style="left:320px;top:656px;font-size:21px">本机磁盘 · 唯一持久化落点</div>
+    <div class="tb fname" style="left:320px;top:692px">data.json</div>
+    <svg style="position:absolute;left:714px;top:660px;width:52px;height:52px;stroke:#eaf4ff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M4 8c0-1.9 3.6-3.4 8-3.4S20 6.1 20 8v8c0 1.9-3.6 3.4-8 3.4S4 17.9 4 16z"/><path d="M4 8c0 1.9 3.6 3.4 8 3.4S20 9.9 20 8M4 12c0 1.9 3.6 3.4 8 3.4s8-1.5 8-3.4"/></svg>
+    <div class="tb bnum" style="left:96px;width:172px;top:686px;text-align:right;transition-delay:.9s">1</div>
+    <div class="tb bsub cn" style="left:96px;width:172px;top:718px;text-align:right;transition-delay:1.05s">个数据文件（本机）</div>
+    <div class="tb arr cn" style="left:628px;top:724px;transition-delay:.7s">写入 / 读取</div>
+  </div>
+  <!-- 真实落盘路径：2:24「就躺在你自己电脑里」 -->
+  <div class="cl" id="lPath">
+    <div class="tb fpath" style="left:320px;top:742px">C:\Users\&lt;你&gt;\AppData\Roaming\com.yile.letime\<span class="caret"></span></div>
+    <div class="tb fnote cn" style="left:320px;top:766px;transition-delay:.45s">一个文件＝全部数据 · 无数据库 · 无服务进程</div>
+  </div>
+
+  <!-- 调用链标签 -->
+  <div class="cl" id="lArr">
+    <div class="tb arr" style="left:566px;top:304px">api.*()</div>
+    <div class="tb arr" style="left:566px;top:444px;transition-delay:.4s">invoke(cmd)</div>
+    <div class="tb arr" style="left:566px;top:584px;transition-delay:.8s">load_data / save_data</div>
+  </div>
+
+  <!-- 左侧尺寸数字（实测） -->
+  <div class="cl" id="lDimL">
+    <div class="tb bnum" style="left:96px;width:172px;top:230px;text-align:right">14,934</div>
+    <div class="tb bsub cn" style="left:96px;width:172px;top:262px;text-align:right;transition-delay:.2s">前端 JS 行数 · 64 个模块</div>
+    <div class="tb bnum" style="left:96px;width:172px;top:370px;text-align:right;transition-delay:.5s">300</div>
+    <div class="tb bsub cn" style="left:96px;width:172px;top:402px;text-align:right;transition-delay:.68s">src/api.js · 300 行</div>
+    <div class="tb bsub" style="left:96px;width:172px;top:420px;text-align:right;transition-delay:.78s;color:#9beaf8;font-size:11px">其余文件 · 0 处 invoke</div>
+    <div class="tb bnum" style="left:96px;width:172px;top:505px;text-align:right;transition-delay:1s">3,428</div>
+    <div class="tb bsub cn" style="left:96px;width:172px;top:537px;text-align:right;transition-delay:1.18s">Rust 行数 · 7 个 .rs</div>
+  </div>
+
+  <!-- 四个端点 -->
+  <div class="cl" id="lE1">
+    <div class="tb ep sg" style="left:1240px;top:220px">Windows</div>
+    <div class="tb eps cn" style="left:1240px;top:258px">Tauri 2 · NSIS + MSI</div>
+    <svg style="position:absolute;left:1200px;top:232px;width:28px;height:28px;stroke:#eaf4ff;fill:none;stroke-width:2.2;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M4 6.4 11 5.4v5.1H4zM12.6 5.2 20.5 4v6.5h-7.9zM4 12.1h7v5.1l-7-1zM12.6 12.1h7.9v6.5l-7.9-1.2z"/></svg>
+  </div>
+  <div class="cl" id="lE2">
+    <div class="tb ep sg" style="left:1240px;top:360px">Linux</div>
+    <div class="tb eps cn" style="left:1240px;top:398px">Tauri 2 · webkit2gtk</div>
+    <svg style="position:absolute;left:1200px;top:372px;width:28px;height:28px;stroke:#eaf4ff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M3 4.5h18v15H3z"/><path d="M3 8.5h18M6.5 12l2.5 2-2.5 2M11.5 16h6"/></svg>
+  </div>
+  <div class="cl" id="lE3">
+    <div class="tb ep sg" style="left:1240px;top:500px">Android</div>
+    <div class="tb eps cn" style="left:1240px;top:538px">Tauri Android · 同一内核</div>
+    <svg style="position:absolute;left:1200px;top:512px;width:28px;height:28px;stroke:#eaf4ff;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M6 10.5h12v6.5a1.8 1.8 0 0 1-1.8 1.8H7.8A1.8 1.8 0 0 1 6 17z"/><path d="M6.5 10.5a5.5 5.5 0 0 1 11 0"/><path d="M7.6 5.6 9.3 8.3M16.4 5.6 14.7 8.3"/><path d="M9.6 13.4h.01M14.4 13.4h.01"/></svg>
+  </div>
+  <div class="cl" id="lE4">
+    <div class="tb ep cn" style="left:1240px;top:634px">微信小程序</div>
+    <div class="tb eps" style="left:1240px;top:672px">MINI PROGRAM · NO TAURI</div>
+    <svg style="position:absolute;left:1200px;top:646px;width:28px;height:28px;stroke:#7fe3f2;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M4 6h16v11h-8l-4.6 3.4V17H4z"/><path d="M8.4 11.5h.01M12 11.5h.01M15.6 11.5h.01"/></svg>
+  </div>
+
+  <!-- 右侧标注 -->
+  <div class="cl" id="lDimR">
+    <div class="tb bsub cn" style="left:1528px;top:238px">用系统 WebView2 · 不打包浏览器</div>
+    <div class="tb bsub cn" style="left:1528px;top:378px;transition-delay:.6s">同一份 Rust 源码重编</div>
+    <div class="tb bsub cn" style="left:1528px;top:518px;transition-delay:1.2s">复用同一前端资产</div>
+    <div class="tb bsub cn" style="left:1528px;top:636px;transition-delay:1.8s;color:#9beaf8;font-size:15px;font-weight:700">同一套逻辑 · 换运行时</div>
+    <div class="tb bsub cn" style="left:1528px;top:666px;transition-delay:1.95s">不走 Tauri · 小程序原生 API</div>
+    <div class="tb lead" style="left:1246px;top:736px;transition-delay:2.6s;color:#9beaf8">4 RUNTIMES</div>
+  </div>
+
+  <!-- 4.8 MB -->
+  <div class="cl" id="l48">
+    <div class="tb cap48 cn">Windows 安装器 · 实测</div>
+    <div class="tb big48" style="transition-delay:.25s">4.8<em>MB</em></div>
+    <div class="tb sub48" style="transition-delay:.55s">4,752,058 B</div>
+  </div>
+  <!-- 未采用 -->
+  <div class="cl" id="lNeg">
+    <div class="tb negh cn">未采用 · NOT USED</div>
+    <div class="tb neg cn" style="left:882px;top:452px;transition-delay:.6s">账号体系</div>
+    <div class="tb neg cn" style="left:882px;top:486px;transition-delay:.85s">数据上传</div>
+    <div class="tb neg cn" style="left:882px;top:520px;transition-delay:1.1s">云数据库</div>
+  </div>
+
+  <!-- 技术要求 -->
+  <div class="cl" id="lNotes">
+    <div class="tb nh">GENERAL NOTES<s class="cn">技术要求</s></div>
+    <div class="tb nlno" style="left:118px;top:882px">01</div>
+    <div class="tb nl cn" style="left:158px;top:880px;transition-delay:.2s">核心数据<b>不上传</b>：一个本机 JSON 文件读写</div>
+    <div class="tb nlno" style="left:118px;top:912px">02</div>
+    <div class="tb nl cn" style="left:158px;top:910px;transition-delay:.4s"><b>15</b> 个内置插件与宿主同一 JS 运行时 · <b>12</b> 个权限位 · 能力契约</div>
+    <div class="tb nlno" style="left:118px;top:942px">03</div>
+    <div class="tb nl cn" style="left:158px;top:940px;transition-delay:.6s">出厂自检脚本 <b>61</b> 个 · 每次发版全跑</div>
+    <div class="tb nlno" style="left:118px;top:972px">04</div>
+    <div class="tb nl cn" style="left:158px;top:970px;transition-delay:.8s">图中尺寸数字均取自仓库实测 · 非按图量取</div>
+  </div>
+
+  <!-- 比例尺 -->
+  <div class="cl" id="lScale">
+    <div class="tb cap48 cn" style="left:820px;top:864px">比例尺 · SCALE 1:1</div>
+    <div class="tb" style="left:816px;top:932px;font-size:10px;color:rgba(219,236,252,.6)">0</div>
+    <div class="tb" style="left:975px;top:932px;font-size:10px;color:rgba(219,236,252,.6)">500</div>
+    <div class="tb" style="left:1120px;top:932px;font-size:10px;color:rgba(219,236,252,.6)">1000</div>
+    <div class="tb" style="left:820px;top:956px;font-size:12px;letter-spacing:2px;color:#9beaf8">SHEET 6-1 / 7<span class="caret"></span></div>
+  </div>
+
+  <!-- 图签栏 -->
+  <div class="cl" id="lTblk">
+    <div class="tb tbh" style="left:1182px;top:808px">DRAWING TITLE</div>
+    <div class="tb tbname" style="left:1182px;top:826px;transition-delay:.2s">U-TIME 技术架构与数据落点</div>
+    <div class="tb tbh" style="left:1574px;top:808px;transition-delay:.35s">DWG No.</div>
+    <div class="tb tbbig" style="left:1574px;top:826px;transition-delay:.4s">UT-A-006</div>
+    <div class="tb tbh" style="left:1182px;top:864px;transition-delay:.5s">SCALE 比例</div>
+    <div class="tb tbv mono" style="left:1182px;top:882px;transition-delay:.55s">1 : 1</div>
+    <div class="tb tbh" style="left:1350px;top:864px;transition-delay:.65s">DATE 日期</div>
+    <div class="tb tbv mono" style="left:1350px;top:882px;transition-delay:.7s">2026-09</div>
+    <div class="tb tbh" style="left:1516px;top:864px;transition-delay:.8s">REV 版本</div>
+    <div class="tb tbv mono" style="left:1516px;top:882px;transition-delay:.85s">v0.76.0</div>
+    <div class="tb tbh" style="left:1684px;top:864px;transition-delay:.95s">BY 制图</div>
+    <div class="tb tbv" style="left:1684px;top:882px;transition-delay:1s">U-Time</div>
+    <div class="tb tbh" style="left:1182px;top:920px;transition-delay:1.05s">NOTES 说明</div>
+    <div class="tb" style="left:1182px;top:940px;font-size:11px;letter-spacing:.6px;color:rgba(234,244,255,.8);transition-delay:1.1s">数据来源：仓库 v0.76.0 · 2026-09-20 实测（前端 14,934 行 / Rust 3,428 行）</div>
+    <div class="tb cn" style="left:1182px;top:962px;font-size:11px;letter-spacing:1px;color:rgba(219,236,252,.62);transition-delay:1.2s">本图不表示网络拓扑 · 仅示软件构件与其数据落点</div>
+    <div class="tb" style="left:1690px;top:940px;font-size:10px;letter-spacing:2px;color:rgba(155,234,248,.7);transition-delay:1.3s">A1 · 1/1</div>
+  </div>
+
+  <!-- LOCAL-FIRST 红线 -->
+  <div class="cl"><div class="tb rdbar" id="rdbar">LOCAL-FIRST<b>数据不出本机</b></div></div>
+
+  <!-- 红章 -->
+  <div id="stamp"><div class="ring"></div><div class="ring2"></div>
+    <div class="txt"><b>本机</b><i class="cn">不 出 网</i><span>LOCAL ONLY · data.json</span></div>
+  </div>
+  </div>
+
+  <div id="dim"></div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">06 / 技术与隐私</div>
+  <div class="corner" id="src">规模数字实测 · v0.76.0 · 2026-09-20</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 6-1 · 一张蓝底架构图 · 22.7s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=22700;                       /* 第 6 幕：2:13.534–2:36.197（voice-timeline.json） */
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* ────────────────────────────────────────────────
+   [改这里] 本镜头的叙事 cue —— 第 6 幕 技术与隐私（成片 2:13.534–2:36.197）
+   cue 毫秒 = 该句首字字符序 / 110 字 × 14575ms（voice）+ 700ms 起播偏移 ≈ 132.5ms/字
+   落图方式：整张图纸「逐笔落线」——SVG 描边生长（.g.in）+ 标注成簇擦出（.cl.in）
+   ──────────────────────────────────────────────── */
+const E=i=>document.getElementById(i);
+const sh=(k,t)=>on(t,()=>{const g=E('g'+k),l=E('l'+k);if(g)g.classList.add('in');if(l)l.classList.add('in')});
+/* TnE 缓出连击：先密后疏，末击对齐该段结束 */
+const TnE=(t,span,n,v)=>{for(let i=0;i<n;i++){const u=i/(n-1);on(t+span*(1-Math.pow(1-u,1/3)),()=>__sfx.type(v))}};
+
+on(300,()=>camTo(0,0,1,2.2));                                   // 开场拉镜：内核特写 → 整张图纸
+/* 2:14「技术上是 Tauri 2 加 Rust」→ 图框落笔，三层构件自下而上成图 */
+sh('Frame',700);
+sh('B3',1150);                                                   // ③ Rust 内核（口播点名的那一层先画）
+sh('B2',1700);                                                   // ② api.js 门面（双框）
+sh('B1',2150);                                                   // ① 前端层
+sh('Arr',2500);                                                  // 三条竖向调用链
+sh('DimL',2800);                                                 // 左侧尺寸引出线
+/* 2:17「一套代码」→ 跨四端的总括号 */
+sh('One',3350);
+/* 2:17「Windows、Linux、Android、微信小程序」→ 母线 + 四条出边逐个落端点 */
+sh('Bus',4000);
+on(4050,()=>camFocus(980,455,1.04,1.2));                         // 轻推向四端，左侧尺寸数字仍留在画内
+sh('DimR',4200);
+sh('E1',4300);                                                   // Windows
+sh('E2',4900);                                                   // Linux
+sh('E3',5500);                                                   // Android
+sh('E4',6100);                                                   // 微信小程序（青框 · 换运行时）
+on(6400,()=>{const g=E('gDimR');if(g)g.classList.add('in')});    // 四端总尺寸线
+/* 2:21 口播讲安装包体积 → 画面只标 Windows 安装器实测 4.8 MB（该体积宣称只对 Windows 成立）*/
+sh('48',7400);
+on(7450,()=>camFocus(915,278,1.16,.9));                          // 关键推近：超大尺寸数字
+on(8450,()=>camTo(0,0,1,1));
+/* 2:22「你的数据就是一个 JSON 文件」→ ④ 落点，全图最重一笔 */
+sh('B4',8800);
+on(8850,()=>camFocus(560,706,1.14,1));
+on(10200,()=>camTo(0,0,1,1.2));
+/* 2:24「就躺在你自己电脑里」→ 真实路径逐字写出（光标常驻闪烁） */
+sh('Path',10800);
+/* 2:26「没有账号，不用上传」→ 未采用清单一一划掉 */
+sh('Neg',12100);
+/* 2:27「数据从来没离开过你的机器」→ 红章盖在磁盘旁 */
+on(13500,()=>{$('#stamp').classList.add('hit');camFocus(914,686,1.27,.5)});
+on(14650,()=>camTo(0,0,1,1.3));
+/* ── 15.3s 之后：口播收束，图纸签落款 + 定格呼吸 ── */
+on(15300,()=>$('#rdbar').classList.add('in'));                   // LOCAL-FIRST 红线
+sh('Notes',15900);                                               // 技术要求
+sh('Tblk',17000);                                                // 图签栏逐格填写
+sh('Scale',18200);                                               // 比例尺（此后常驻呼吸）
+on(18800,()=>camFocus(960,548,1.05,4.5));                        // Ken Burns 缓推到定格（对准偏下，图纸下沿不致压住角注）
+
+/* ===== 音效 ===== */
+on(700,()=>__sfx.swipe(0.7));
+on(1150,()=>__sfx.pop(0.7));
+on(1700,()=>__sfx.pop(0.6));
+on(2150,()=>__sfx.pop(0.6));
+on(2500,()=>__sfx.ding(0.35));
+TnE(2850,1250,7,0.3);                                            // 三组尺寸数字落笔
+on(3350,()=>__sfx.ding(1));                                      // 「一套代码」
+on(4000,()=>__sfx.whoosh(0.9,0.6));
+[4300,4900,5500,6100].forEach((t,i)=>on(t,()=>__sfx.pop(i===3?0.65:0.55)));   // 四端逐个落定
+on(6400,()=>__sfx.ding(0.4));
+on(7400,()=>__sfx.ding(1.1));                                    // 4.8 MB 揭晓
+on(7580,()=>__sfx.type(0.4));
+on(8800,()=>__sfx.thud(0.8));                                    // 落点：一个 JSON 文件
+TnE(10800,900,5,0.3);                                            // 路径逐字写出
+[12100,12380,12660].forEach(t=>on(t,()=>__sfx.pop(0.5)));        // 三笔划掉
+on(13500,()=>__sfx.thud(1.2));                                   // 盖章
+on(15300,()=>__sfx.ding(1));                                     // LOCAL-FIRST
+TnE(15900,2100,6,0.3);                                           // 技术要求逐条
+on(17000,()=>__sfx.swipe(0.5));
+TnE(17150,1500,5,0.28);                                          // 图签栏逐格
+on(18200,()=>__sfx.ding(0.45));
+on(19200,()=>__sfx.ding(0.75));                                  // 末笔收刀，此后静默给定格
+
+</script>
+</body>
+</html>

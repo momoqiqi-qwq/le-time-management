@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scroll-driven hinge · Le 时间管理</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #F4F3EF; color: #1A1A18;
+    font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  .stage-scroll { position: relative; }
+  .stage-sticky {
+    position: sticky; top: 0; height: 100vh;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+  }
+  /* 产品整体下移的位移由 JS 按标题淡出进度回收（见 apply()），
+     初始下移量只够让开标题（标题在 11vh，实测占约 200px） */
+  /* 纵向与横向的补偿都由 JS 按实测标定表写进 transform（见 apply()）。
+     🔴 这里的初值必须与表在 p=0 的值【逐字一致】（纵向 −8px、横向 +22px），
+        它只负责「JS 还没跑起来的第一帧」不闪。曾经这里写着 −91/+29 而 CSS 里是
+        −10/+7 —— 注释和代码各说一套，比不写注释更坏：改表的人会以为这里已经对上了。
+        每次重标定表后都要回来同步这两个数（表在 apply() 里，CX_CAL/CY_CAL 的第 0 格取反）。 */
+  .scene { transform: translateY(-8px) translateX(22px); }
+
+  /* 标题：放在产品上方，不压住机身 */
+  .headline {
+    position: absolute; z-index: 6; left: 0; right: 0; top: 11vh;
+    text-align: center; pointer-events: none; padding: 0 24px;
+    will-change: opacity, transform;
+  }
+  .headline h1 {
+    margin: 0 0 14px; font-size: clamp(38px, 6.4vw, 76px);
+    font-weight: 600; letter-spacing: -0.035em; line-height: 1.06;
+  }
+  .headline p { margin: 0; font-size: clamp(14px, 1.5vw, 17px); color: #5E5E58; }
+  .headline .cue { margin-top: 26px; font-size: 12px; color: #8A8A82; letter-spacing: .14em; }
+
+  /* ── 相机 ── */
+  .scene {
+    position: relative; z-index: 2;
+    width: min(880px, 94vw);
+    perspective: 2200px;      /* 加大透视距离 = 减少缩短，产品在屏幕上更饱满 */
+    perspective-origin: 50% 50%;
+  }
+  /* rig 高度固定，铰链线在 56% 处（从顶往下） */
+  .rig {
+    position: relative; width: 100%; height: min(520px, 60vh);
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+
+  /* ── 铰链线：所有板件绕它转 ── */
+  /* 铰链：贴在铰链线上的四段装饰条，只在「开着」的时候才该看见。
+     合拢时它们会被盖板与机身夹住、露出轮廓外一条，所以按开合度淡出。 */
+  .hinge {
+    position: absolute; left: 6%; right: 6%; top: 56%;
+    height: 0; transform-style: preserve-3d; z-index: 6;
+    opacity: 0; transition: opacity .25s ease;
+  }
+  .hinge i {
+    position: absolute; top: -4px; height: 8px; width: 15%;
+    border-radius: 3px; background: #CFCCC2; border: 0.5px solid #B5B2A8;
+  }
+  .hinge i:nth-child(1) { left: 0; }
+  .hinge i:nth-child(2) { left: 28.3%; }
+  .hinge i:nth-child(3) { left: 56.6%; }
+  .hinge i:nth-child(4) { right: 0; }
+
+  /* ── 机身（键盘侧）：平放不动 ──
+     🔴 与盖板的关系是这套几何的核心，先看清这三条：
+        ① 铰链线在 rig 的 56% 处（从顶往下），两块板都以它为轴。
+        ② 机身【平放且不参与开合】（固定 rotateX(-90deg)），盖板负责倒下来压住它。
+        ③ 机身的前后长度必须【等于盖板平放时的长度】，合拢才盖得住。
+           曾经机身给 40%、盖板给 54%，结果盖板平放只到 y=594、机身前端到 y=637
+           —— 键盘从盖板前缘伸出去 23px，截图里整排键帽露在外面，看着像盖板没盖上。
+           🔴 注意别再靠「枚举盖板高度」去凑：实测盖板 bottom 恒为 594（bottom:44%
+              把近端钉死在铰链线上），改高度只让远端往上长，永远够不到机身前端。
+              要盖住只能从【机身长度】下手 —— 它才是决定前缘在哪的那个。
+     实测标定（rigH=520 / perspective 2200 / 相机 rx=16°）：
+        机身长度 = 0.40 × rigH  ⇒ 投影 524→637（113px 纵深）
+        盖板平放（-90°）       ⇒ 投影 435→594（159px 纵深）
+     盖板的平放纵深远大于机身，所以机身长度本身没问题；真正露馅的是【盖板近端
+     钉在 594、机身近端在 524】—— 两者不共线。修法：机身改为以铰链线为【前端】锚点
+     向后延伸，即 top 从 56% 改成能把它摆到与盖板平放范围重合的位置。 */
+  .base {
+    position: absolute;
+    left: 6%; right: 6%;
+    /* 🔴 为什么是 56%/40%（原值）：机身平放后，相机（rx 6~16°）几乎与桌面齐平，
+       平板的投影高度 = 深度 × sin(相机俯角)，非常敏感：
+         56%/40% ⇒ 打开态投影高约 113px（看得出是键盘面）
+         46%/38% ⇒ 打开态投影高只剩 41px（键盘几乎看不见，实测截图里只剩几道细条）
+       所以【不能】为了「合拢时盖住键盘」去压机身 —— 那会把打开态毁掉。
+       合拢时的遮挡交给 .lid-backdrop（见下），不要再动机身尺寸。
+       56%/40% 的代价是合拢时键盘前端露出 23px，这个由遮挡层处理。 */
+    top: 56%; height: 40%;
+    transform-origin: 50% 0%;
+    transform: rotateX(-90deg);   /* 只把板子放平，不参与开合动作 */
+    border-radius: 4px 4px 12px 12px;
+    background: #E7E5DE;
+    border: 0.5px solid #C7C4BA;
+    /* 平放后机身只剩约 69px 高（相机俯角只有 6°），轮廓很薄 ⇒ 靠投影把它「垫」起来，
+       否则在浅色背景上会读成一条灰带。偏移量小、模糊大，是接触阴影不是漂浮阴影。 */
+    box-shadow: 0 6px 14px -6px rgba(60,58,52,.30), 0 1px 0 rgba(255,255,255,.7) inset;
+    transform-style: preserve-3d;
+    backface-visibility: visible;
+  }
+  .keys {
+    position: absolute; left: 8%; right: 8%; top: 10%; height: 52%;
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+  }
+  .keys i { border-radius: 2px; background: #D9D6CD; border: 0.5px solid #C2BFB5; }
+  .trackpad {
+    position: absolute; left: 36%; right: 36%; bottom: 9%; height: 17%;
+    border-radius: 3px; background: #D9D6CD; border: 0.5px solid #C2BFB5;
+  }
+
+  /* ── 盖板：从铰链线向上延伸 ──
+     bottom 对齐铰链线；origin 底边。
+     🔴 基准仍是「竖直 = 0」：0deg 立起、负值向前倒（合拢）、正值向后仰。
+        合拢要倒到 -92deg（略过水平），这样它落在机身【上方】而不是与之重叠
+        —— 机身被单独摆成水平（.base 的 -90deg），盖板再压上去才有「盖子」的层次。
+        不越过 -100：再过去盖板会越过机身轮廓、在相机下翻到机身后面。
+     🔴 本体背景必须透明：盖板是「两层壳」——正面 .screen、背面 .lid-shell，
+        本体若有不透明底色，会把背面的外壳整个挡住（实测外壳像素差 0）。
+        描边也去掉了，改由两层各自带边框。 */
+  .lid {
+    position: absolute;
+    left: 6%; right: 6%;
+    bottom: 44%;                 /* 44% 从底往上 = 铰链线在顶往下 56% */
+    height: 54%;
+    transform-origin: 50% 100%;
+    transform: rotateX(-92deg);
+    background: transparent;
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+
+  /* 屏幕：盖板子层，贴在盖板正面（朝观众那一面）。
+     🔴 不用 backface-visibility 控制显隐 —— 实测在这套几何下不可靠：
+        盖板倒到 -92° 后，屏幕法线转向「朝上」、正对相机，
+        浏览器就把它当正面渲染了，合拢时屏幕内容整个透出来。
+        ⇒ 显隐由 JS 按开合进度直接控制 opacity（见 apply() 里的 screenVisible）。 */
+  .screen {
+    position: absolute; inset: 8% 7% 9% 7%;
+    transform: translateZ(1px);
+    border-radius: 5px;
+    background: #FCFCFA;
+    border: 0.5px solid #C7C4BA;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    opacity: 0;                       /* 初始合拢：屏幕藏着，由 JS 点亮 */
+    transition: opacity .25s ease;
+  }
+
+  /* 盖板外壳（背面）：合拢时从上往下看到的就是这一面。
+     🔴 translateZ 必须比 .screen 的更大（2px > 1px）—— 两者在同一平面时，
+        谁在外侧由 translateZ 决定，不靠 DOM 顺序。
+     🔴 显隐同样由 JS 控制（与 .screen 互补），不用 backface-visibility。 */
+  .lid-shell {
+    position: absolute; inset: 0;
+    transform: rotateY(180deg) translateZ(2px);
+    border-radius: 12px 12px 4px 4px;
+    background: #E4E1D9;
+    border: 0.5px solid #C4C1B7;
+    box-shadow: inset 0 -3px 10px rgba(60,58,52,.09);
+    display: grid; place-items: center;
+    opacity: 1;                       /* 初始合拢：露出外壳 */
+    transition: opacity .25s ease;
+  }
+  /* 外壳上的商标位：一个极简圆点，让「这一面」有识别度 */
+  .lid-shell::after {
+    content: ""; width: 15px; height: 15px; border-radius: 50%;
+    border: 1px solid #B8B5AB;
+  }
+  /* 遮挡层：合拢时把机身（键盘）盖掉。
+     🔴 它必须是 .rig 的【直接子元素】，不能放在 .lid 里：
+        放进 .lid 就会继承盖板的 rotateX(-92deg)，translateZ 沿的是盖板【旋转后】
+        的局部 Z 轴（合拢时几乎水平指向观众），推不动到镜头这一侧，实测完全无效。
+        放在 .rig 下、自己单独摆成与机身同一平面（rotateX(-90deg)），
+        再沿世界 Z 轴抬 1px，就能稳稳压住键盘。
+     🔴 它的投影范围要【恰好覆盖机身】：inset 与 .base 一致（left/right 6%、top 56%、
+        height 40%），否则会露边或盖到不该盖的地方。实测两者投影完全重合
+        （backdrop 324–1094 × 525–637 == base 同值），键盘 387–1018 × 536–617 被包住。
+     🔴 颜色必须与 .lid-shell 完全一致（#E4E1D9）+ 去掉边框：两者在合拢时会重叠
+        （盖板 446–594、遮挡层 525–637），颜色或描边一旦不同就会看到一条横向接缝，
+        整个机器被切成两块板。 */
+  .lid-backdrop {
+    position: absolute;
+    left: 6%; right: 6%;
+    top: 56%; height: 40%;
+    transform-origin: 50% 0%;
+    transform: rotateX(-90deg) translateZ(1px);
+    border-radius: 4px 4px 12px 12px;
+    background: #E4E1D9;
+    border: 0;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity .25s ease;
+  }
+  .screen-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 9px; border-bottom: 0.5px solid #E4E2DA; }
+  .screen-bar .dot { width: 5px; height: 5px; border-radius: 50%; background: #1D9E75; flex: none; }
+  .screen-bar b { font-size: 10px; font-weight: 500; }
+  .screen-bar .sp { flex: 1; }
+  .screen-bar .chip { font-size: 8.5px; padding: 1px 5px; border-radius: 20px; border: 0.5px solid #DEDCD4; color: #8A8A82; }
+
+  /* 屏幕内容按屏高分配行距：撑满，不在下半部留大片空白。
+     min-height:0 让 flex 子项能正常收缩；行本身 flex:none 防被压扁。 */
+  .screen-body { flex: 1; padding: 9px; display: flex; flex-direction: column; min-height: 0; }
+  .rows { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 4px; min-height: 0; }
+  .row { flex: none; display: flex; align-items: center; gap: 6px; opacity: .15; transform: translateY(2px); transition: opacity .3s ease, transform .3s ease; }
+  .row.on { opacity: 1; transform: translateY(0); }
+  .row .tick { width: 11px; height: 11px; border-radius: 3px; flex: none; border: 0.5px solid #D5D2C9; display: grid; place-items: center; background: transparent; }
+  .row.on .tick { background: #1D9E75; border-color: #1D9E75; }
+  .row .tick i { width: 5px; height: 2.5px; border-left: 1.2px solid #fff; border-bottom: 1.2px solid #fff; transform: rotate(-45deg) translate(.3px, -.4px); opacity: 0; transition: opacity .2s ease; }
+  .row.on .tick i { opacity: 1; }
+  .row .lb { font-size: 9.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .wh { font-size: 8px; color: #9A9A92; flex: none; }
+
+  /* 底部迷你柱状图：跟着任务列表走（不 margin-top:auto 顶到底），
+     左边配一条说明，读起来像 app 里的「本周完成度」而不是孤立色块 */
+  .meter-wrap {
+    flex: none; display: flex; align-items: flex-end; gap: 8px;
+    margin-top: 4px; padding-top: 7px; border-top: 0.5px solid #EDEBE4;
+  }
+  .meter-cap { flex: none; font-size: 8.5px; color: #8A8A82; align-self: center; letter-spacing: .02em; }
+  .meter { flex: none; display: flex; align-items: flex-end; gap: 4px; height: 22px; }
+  .meter i {
+    width: 9px; flex: none;
+    border-radius: 2px 2px 0 0;
+    background: #1D9E75; opacity: .85;
+    height: calc(var(--h, 30%));
+    transform: scaleY(var(--g, 0)); transform-origin: bottom;
+    transition: transform .45s cubic-bezier(.2,.7,.3,1);
+  }
+
+  /* 接地投影：改由机身自己的 box-shadow 表达。
+     🔴 不要单独放一个不参与 3D 变换的椭圆 —— 它没有 rotateX，在相机下会浮起来
+        并且伸出机身轮廓外，视觉上像「多出来的一片板」。 */
+  .ground { display: none; }
+
+  .hud { position: absolute; left: 0; right: 0; bottom: 22px; z-index: 7; display: flex; flex-direction: column; align-items: center; gap: 9px; pointer-events: none; }
+  .hud .nm { font-size: 12px; color: #5E5E58; min-height: 17px; }
+  .hud .tr { width: min(280px, 58vw); height: 2px; background: rgba(0,0,0,.12); border-radius: 2px; overflow: hidden; }
+  .hud .tr i { display: block; height: 100%; width: 0%; background: #1D9E75; }
+
+  .ruler { position: absolute; right: 20px; top: 50%; transform: translateY(-50%); z-index: 7; display: flex; flex-direction: column; gap: 13px; pointer-events: none; }
+  .ruler span { font-size: 10px; writing-mode: vertical-rl; letter-spacing: .1em; color: #9A9A92; opacity: .4; transition: opacity .3s ease, color .3s ease; }
+  .ruler span.on { opacity: 1; color: #1D9E75; }
+
+  .after { max-width: 620px; margin: 0 auto; padding: 68px 24px 92px; }
+  .after h2 { font-size: 15px; font-weight: 500; margin: 0 0 12px; }
+  .after p { font-size: 13px; line-height: 1.65; color: #5E5E58; margin: 0 0 14px; }
+  .after code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; padding: 1px 4px; border-radius: 4px; background: #EAE8E1; }
+  .after dl { margin: 26px 0 0; display: grid; gap: 14px; }
+  .after dt { font-size: 13px; font-weight: 500; }
+  .after dd { font-size: 13px; line-height: 1.6; color: #5E5E58; margin: 3px 0 0; }
+  .fallback-note { display: none; }
+
+  /* ── 降级：静态分层 ──
+     目标不是「还能转」，而是「内容照样读得到、结构不塌」。
+     🔴 关键坑：.lid 原本是绝对定位 + 百分比高度，还有 inset 百分比的 .screen 子层。
+        降级时必须给 .lid 显式高度，否则 height:auto 配绝对定位子元素 = 塌成 2px。 */
+  /* 🔴 降级态的两条入口必须与 JS 里的 degraded 完全一致：
+     `body.no-3d`（能力检测失败）与 `body.reduced`（prefers-reduced-motion）。
+     只写前者的话，开了「减少动态效果」的用户虽然在逻辑上已经 return 掉了滚动驱动，
+     但 CSS 仍按 3D 分层渲染 —— 盖板停在初始的 -92°、屏幕 opacity 还是 0，
+     页面变成「一块合着的板 + 一堆不显示的内容」，比不降级还糟。 */
+  body.no-3d .rig,
+  body.no-3d .lid,
+  body.no-3d .base,
+  body.reduced .rig,
+  body.reduced .lid,
+  body.reduced .base { transform: none !important; }
+  body.no-3d .rig,
+  body.reduced .rig { height: auto; }
+  body.no-3d .scene,
+  body.reduced .scene { transform: none !important; }
+  body.no-3d .ground,
+  body.no-3d .hinge,
+  body.no-3d .lid-backdrop,
+  body.no-3d .lid-shell,
+  body.reduced .ground,
+  body.reduced .hinge,
+  body.reduced .lid-backdrop,
+  body.reduced .lid-shell { display: none; }
+
+  body.no-3d .lid,
+  body.reduced .lid {
+    position: relative; bottom: auto; top: auto; left: auto; right: auto;
+    width: 100%; height: 300px; margin: 0 0 10px;
+  }
+  body.no-3d .base,
+  body.reduced .base {
+    position: relative; top: auto; left: auto; right: auto;
+    width: 100%; height: 168px;
+  }
+  /* 屏幕层恢复成普通盒子，内容正常排布 */
+  body.no-3d .screen,
+  body.reduced .screen { position: relative; inset: auto; height: 100%; transform: none !important; opacity: 1 !important; }
+
+  /* 🔴 DOM 顺序是「机身在前、盖板在后」（3D 下靠 transform-style 决定叠放，
+     与 DOM 顺序无关）。降级到正常流后这个顺序就错了，必须显式翻过来。 */
+  body.no-3d .rig,
+  body.reduced .rig { display: flex; flex-direction: column; }
+  body.no-3d .base,
+  body.reduced .base { order: 2; }
+  body.no-3d .lid,
+  body.reduced .lid { order: 1; }
+
+  body.no-3d .stage-scroll,
+  body.reduced .stage-scroll { height: auto !important; }
+  body.no-3d .stage-sticky,
+  body.reduced .stage-sticky {
+    position: static; height: auto; padding: 40px 24px 32px;
+    display: block; overflow: visible;
+  }
+  /* 标题回到正常流，不再绝对定位压在分层上方 */
+  body.no-3d .headline,
+  body.reduced .headline { position: static; transform: none !important; opacity: 1 !important; text-align: center; margin: 0 0 28px; }
+  body.no-3d .headline h1,
+  body.reduced .headline h1 { font-size: clamp(28px, 4.4vw, 46px); }
+  body.no-3d .headline .cue,
+  body.reduced .headline .cue { display: none; }
+  body.no-3d .hud, body.no-3d .ruler,
+  body.reduced .hud, body.reduced .ruler { display: none; }
+  body.no-3d .scene,
+  body.reduced .scene { width: min(620px, 92vw); margin: 0 auto; }
+  body.no-3d .fallback-note,
+  body.reduced .fallback-note { display: block; }
+  /* 降级态里没有滚动驱动，屏幕内容直接全亮（否则永远是 15% 透明读不清） */
+  body.no-3d .row,
+  body.reduced .row { opacity: 1 !important; transform: none !important; }
+  body.no-3d .row .tick,
+  body.reduced .row .tick { background: #1D9E75; border-color: #1D9E75; }
+  body.no-3d .row .tick i,
+  body.reduced .row .tick i { opacity: 1; }
+  body.no-3d .meter i,
+  body.reduced .meter i { transform: scaleY(1) !important; }
+
+  @media (prefers-reduced-motion: reduce) { .row, .meter i { transition: none; } }
+  @media (max-width: 620px) { .ruler { display: none; } }
+</style>
+</head>
+<body>
+<h2 class="sr-only">滚动驱动的产品开合演示：未滚动时产品合拢居中，滚动时标题淡出、盖板绕铰链轴掀开、屏幕内容点亮，随后整机旋转展示。</h2>
+
+<section class="stage-scroll" id="scroll">
+  <div class="stage-sticky">
+    <div class="headline" id="headline">
+      <h1>把一天，折进一台机器</h1>
+      <p>滚动，打开它</p>
+      <div class="cue">向下滚动 ↓</div>
+    </div>
+
+    <div class="scene" id="scene">
+      <div class="rig" id="rig">
+        <div class="ground"></div>
+
+        <div class="base">
+          <div class="keys">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+          </div>
+          <div class="trackpad"></div>
+        </div>
+
+        <!-- 合拢遮挡层：与 .base 同平面、同一投影范围，沿世界 Z 抬 1px 压住键盘。
+             🔴 必须是 .rig 的直接子元素（放进 .lid 会继承盖板旋转，translateZ 方向就错了）。 -->
+        <div class="lid-backdrop" id="lidBackdrop"></div>
+
+        <div class="lid" id="lid">
+          <div class="lid-shell"></div>
+          <div class="screen">
+            <div class="screen-bar">
+              <span class="dot"></span><b>Le 时间管理</b>
+              <span class="sp"></span><span class="chip">今天</span>
+            </div>
+            <div class="screen-body">
+              <div class="rows">
+                <div class="row" data-at="0"><span class="tick"><i></i></span><span class="lb">晨间回顾 · 排三件事</span><span class="wh">09:00</span></div>
+                <div class="row" data-at="0"><span class="tick"><i></i></span><span class="lb">高数复习 · 四象限</span><span class="wh">10:30</span></div>
+                <div class="row" data-at="1"><span class="tick"><i></i></span><span class="lb">组会 · 时间块</span><span class="wh">14:00</span></div>
+                <div class="row" data-at="1"><span class="tick"><i></i></span><span class="lb">跑步 5km</span><span class="wh">18:30</span></div>
+                <div class="row" data-at="2"><span class="tick"><i></i></span><span class="lb">复盘 · 今日达成</span><span class="wh">22:00</span></div>
+              </div>
+              <div class="meter-wrap">
+                <span class="meter-cap">本周完成度</span>
+                <div class="meter">
+                  <i style="--h:34%"></i><i style="--h:58%"></i><i style="--h:44%"></i>
+                  <i style="--h:76%"></i><i style="--h:62%"></i><i style="--h:88%"></i><i style="--h:70%"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hinge"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+
+    <div class="hud">
+      <div class="nm" id="phaseName">合拢 · 待机</div>
+      <div class="tr"><i id="hudBar"></i></div>
+    </div>
+    <div class="ruler" id="ruler"><span>合拢</span><span>开盖</span><span>点亮</span><span>旋转</span></div>
+  </div>
+</section>
+
+<section class="after">
+  <h2>这段滚动里发生了什么</h2>
+  <p>效果由一个真实的铰链轴驱动：盖板与机身的 <code>transform-origin</code> 都落在同一条铰链线上（机身顶边），所以开合是绕那条轴转，而不是各自绕元素中心翻转。屏幕是盖板的子层，跟着同一平面走，滚回顶部时严丝合缝地合拢。</p>
+  <p>滚动距离不是估的：容器高度由「视口高 + 目标滚动量」撑出来后，脚本再去量它<em>后面</em>还压着多少内容，把那部分从页面真实可滚距离里扣掉 —— 进度直接读 <code>scrollTop</code>，所以刷新、改窗口大小、手机旋转都不会错位。</p>
+  <p class="fallback-note">这个环境已切换到静态分层视图（未开启 3D 变换，或系统要求「减少动态效果」）—— 盖板与机身都是同一套真实 DOM，内容照常显示，只是不再开合旋转。</p>
+
+  <dl>
+    <dt>阶段怎么分</dt>
+    <dd>标题淡出 0 → 0.12，开盖 0.12 → 0.50，点亮 0.50 → 0.72，旋转 0.72 → 1.00。权重写在 <code>STAGES</code> 数组里，边界值就是进度百分比。</dd>
+
+    <dt>四道闸门都在实测值上</dt>
+    <dd>可滚动距离、当前进度、盖板角度、点亮行数 —— 全部在真浏览器里量过。盖板开度实测 <code>-92° → -92° → -67.8° → -6°</code>（<code>p</code> = 0 / 0.12 / 0.25 / 0.50，0 = 竖直，-92° = 合拢压在机身上），单调不回弹，滚回顶部精确复位到 -92°。合拢时盖板与机身投影会重叠，键盘从盖板边缘透出来，所以另加了一层与机身同平面的遮挡板，随开盖在 1/4 处淡出。</dd>
+
+    <dt>进度分母是怎么定的</dt>
+    <dd>不是「视口高的几倍」这种估法：先把容器撑到「视口高 + 目标滚动量」（<code>900 + 1710 = 2610px</code>），然后分母直接取<strong>「容器底边贴到视口底边」时的 scrollY</strong>，即 <code>容器底边 2610 − 视口高 900 = 1710px</code>。这样 <code>p = 1.0</code> 正好落在 sticky 结束那一刻。
+    <p style="margin:8px 0 0">这里踩过两个值得记的坑。① 分母曾经写成 <code>vh × 2.5 = 2250</code>（拍脑袋倍数），而真实行程是 1710。后果不是差几像素，而是<strong>整段动画播不完</strong> —— 产品刚好放完时进度才 0.76，旋转阶段只走了 14%，末态 <code>rotateY</code> 停在 <code>−18.4°</code> 而不是 <code>+18°</code>；等进度真到 1，产品早被推出视口了。更要命的是当时 19 条断言全绿：它们都拿「自己按行程归一化」的进度去驱动页面，绕开了页面自己的分母，等于没问过「页面以为进度到哪了」。现在补了两条端到端断言 —— 读页面自报的百分比，并检查行程末端的状态是否真的到位。
+    <br>② 改成「页面总可滚距离 − 容器之后的兄弟内容高」之后又错了一次：那里有个手写的 <code>+80</code>（注释写「加上说明区自身的上边距」），而实测 <code>文档高 = 2610 + 1544</code> 说明<strong>根本没有那 80px</strong>（外边距被折叠了）。于是分母少算 80，动画<strong>提前 80px 播完</strong>。这个偏差只有 4.7%，端到端断言照样通过（<code>clamp01</code> 把它盖住了）—— 是靠 0.025 步长的加密扫描发现「实测补偿量比标定表整体提前 0.036 个进度」才挖出来的。<strong>小偏差要靠稠密采样，端点断言查不出来。</strong></p></dd>
+
+    <dt>产品为什么会漂，以及怎么补的</dt>
+    <dd>开盖时盖板立起来、投影变宽，几何中心跟着动，产品会偏离视口中心（实测裸偏差横向上到 <code>+49px</code>、纵向上到 <code>−102px</code>）。这个偏移只由这套具体几何决定：解析式算不出来（产品关于相机轴左右对称，纯对称投影的横向偏移恒为 0），量 DOM 矩形也不可靠（3D 投影后的包围盒语义不对，试过三种反馈方案，最差发散到 113px 且不可逆），把相机轴往下挪也追不上（产品重心上移比相机快，而且构图会被压小）。最后改为<strong>离线量一次、写死成 21 点标定表</strong>，运行时按进度做分段线性插值。实测横向偏差 ≤ 8px、纵向 ≤ 4px（视口 1280×900）。补偿量是 <code>p</code> 的纯函数，不累积跨帧状态，所以正反滚完全一致（实测 21 档、10 项状态量，最大差 0.00px）。</dd>
+
+    <dt>标定表为什么要 21 个点</dt>
+    <dd>先用了 11 点（步长 0.1），中段跨度过大 —— 横向偏差在 <code>p=0.20→0.30</code> 之间要从 <code>+45px</code> 掉到 <code>+32px</code>，线性插值在区间中点就差了十几像素。加密到 21 点（步长 0.05）后残差直接减半。另外两张表必须<strong>解耦测量</strong>：量纵向时横向要走自己的补偿，否则产品被推走几十像素会改变它在扫描带里的列覆盖率，把纵向边界也带偏。
+    <p style="margin:8px 0 0">表还重标过一次，原因值得记：早先进度分母算错了 80px（见上一条），而标定是<strong>在带病页面上</strong>做的 —— 表里标着 <code>p=0.80</code> 的那格，实际记录的是页面 <code>p=0.839</code> 时的几何。分母修好之后，整张表的横轴就整体错位了，表现为「补偿量逐点都对，但产品在 <code>p≈0.80</code> 附近偏出 32px」。修法是拿实测残差反推：<code>新值 = 旧值 + 残差 / 增益</code>（增益是「补偿量每加 1px 产品实际移动多少」，实测 <code>p≤0.15</code> 只有 0.64、<code>p≥0.40</code> 才是 1.00，因为补偿加在透视容器上，近端远端位移不同）。一轮就收敛到 ≤ 8px。教训：<strong>改了任何影响进度映射的东西，标定表必须重做。</strong></p></dd>
+
+    <dt>开盖先于旋转</dt>
+    <dd>靠时间轴上的边界保证：屏幕点亮以 <code>STAGES[1]</code>（开盖结束）为起点，所以「盖板还立着屏幕就亮」在数值上不可能发生；整机 <code>rotateY</code> 在开盖全程锁在起点姿态（<code>-20°</code>），进旋转阶段才动。实测 21 档全表里不存在「盖板还立着但已转体」的采样点。</dd>
+
+    <dt>可逆是怎么验的</dt>
+    <dd>正向滚 21 档、反向滚回 21 档，逐档比对盖板角、整机角、补偿量、标题透明度、点亮行数、柱高、两面透明度共 10 项状态量。为了让这条成立，代码里<strong>刻意不放任何跨帧累积变量</strong>：曾经有一行平滑系数 <code>lastCx += (want - lastCx) * 0.35</code>，它让同一个进度从上方抵达和从下方抵达得到不同结果（实测差 10~15px），删掉后 21/21 档完全一致，偏差反而更小。</dd>
+
+    <dt>降级会怎么表现</dt>
+    <dd>有两条<strong>独立</strong>入口，都退成静态分层：① 检测不到 <code>preserve-3d</code> 支持（能力不够）；② 系统开了 <code>prefers-reduced-motion: reduce</code>（能力够，但整页滚动驱动的开合旋转正是这个偏好要挡的东西，所以主动不做）。降级后盖板在上、机身在下，内容照常排布显示，5 行任务与柱状图直接全亮，标题回到正常流 —— 只是不再有旋转与滚动驱动。降级说明文字只在降级时才出现，正常访问看不到。</dd>
+  </dl>
+</section>
+
+<script>
+(function () {
+  var scrollWrap = document.getElementById("scroll");
+  var rig = document.getElementById("rig");
+  var scene = document.getElementById("scene");
+  var lid = document.getElementById("lid");
+  var hingeEl = document.querySelector(".hinge");
+  var screenEl = document.querySelector(".screen");
+  var shellEl = document.querySelector(".lid-shell");
+  var backdropEl = document.getElementById("lidBackdrop");
+  var headline = document.getElementById("headline");
+  var phaseName = document.getElementById("phaseName");
+  var hudBar = document.getElementById("hudBar");
+  var rulerDots = Array.prototype.slice.call(document.querySelectorAll("#ruler span"));
+  var rows = Array.prototype.slice.call(document.querySelectorAll(".row"));
+  var meters = Array.prototype.slice.call(document.querySelectorAll(".meter i"));
+
+  function supports3d() {
+    if (!window.CSS || !CSS.supports) return false;
+    return CSS.supports("transform-style", "preserve-3d") && CSS.supports("perspective", "1000px");
+  }
+  /* 两条独立的降级入口，任一条成立都走静态分层：
+     ① 能力检测：没有 3D 变换支持；
+     ② 用户偏好：prefers-reduced-motion 是「减少动态效果」，这种整页滚动驱动的
+        开合旋转正是它要挡的东西 —— 能力上做得到也不该做。
+     🔴 两条都要在【脚本启动时】判完。曾经这里只写了 ①，而 ② 被写成了 CSS 侧的一句
+        `@media (prefers-reduced-motion: reduce) { .row, .meter i { transition: none; } }`
+        —— 那只关掉了两条过渡，滚动照旧驱动整机旋转，等于没降级。 */
+  var wantsReduced = false;
+  try {
+    wantsReduced = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  } catch (_) { wantsReduced = false; }
+  var noThreeD = !supports3d();
+  var degraded = noThreeD || wantsReduced;
+  if (degraded) {
+    /* 🔴 两个类都要加，且 CSS 里两组选择器必须并列写全。
+       曾经 JS 只加 no-3d 而 CSS 写了 29 条 body.reduced —— 两边对不上，
+       开了「减少动态效果」的用户拿到的是「一块合着的板 + 内容全不显示」。
+       CSS 里保持两组并列而不是「JS 只加一个类」，是为了让「因为什么降级」
+       在 DOM 上一眼可查（调试时不用去翻 matchMedia）。 */
+    document.body.classList.add("no-3d");
+    if (wantsReduced) document.body.classList.add("reduced");
+  }
+
+  var STAGES = [
+    { name: "合拢 · 待机", cum: 0.12 },
+    { name: "开盖", cum: 0.50 },
+    { name: "点亮", cum: 0.72 },
+    { name: "旋转展示", cum: 1.00 }
+  ];
+
+  /* 盖板：以「竖直」为 0 基准。
+     -92 = 合拢（向前倒过水平线，压在水平的机身之上）；
+      0 = 完全立起；打开态用 -6（立起略向后仰，更自然）。
+     🔴 合拢角不越过 -100：再过去盖板会翻到机身后面、在相机下压成一条边。
+     🔴 机身（.base）是固定水平的，不参与开合 —— 两块板若都绕同一轴转，必然重叠。 */
+  var LID_CLOSED = -92;
+  var LID_OPEN = -6;
+  var RY_START = -20, RY_END = 18;
+
+  var clamp01 = function (v) { return v < 0 ? 0 : v > 1 ? 1 : v; };
+  var lerp = function (a, b, t) { return a + (b - a) * t; };
+  var seg = function (p, from, to) { return clamp01((p - from) / (to - from)); };
+  var easeInOut = function (t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+
+  var scrollable = 0;
+  /* 🔴 这里【不该】有「上一帧补偿量」这种跨帧状态：一旦引入，同一个 p 的渲染结果
+     就依赖到达路径，可逆性直接失效（踩过，见 apply() 里 CX_CAL 的注释）。 */
+  /* 实测可滚动距离，不拍脑袋估倍数：
+     ① 容器设成「视口高 + 目标滚动量」，目标滚动量 = 视口的 1.9 倍（下限 700px）；
+     ② 分母 = 容器底边贴到视口底边时的 scrollY（见 measure() 里的推导）；
+     ③ 这样进度读的是真实滚动量，刷新 / 改窗口 / 手机旋转都不会错位。 */
+  function measure() {
+    var vh = window.innerHeight || document.documentElement.clientHeight;
+    var total = Math.max(700, vh * 1.9);
+    scrollWrap.style.height = (vh + total) + "px";
+    var realMax = document.documentElement.scrollHeight - vh;
+    /* 🔴 分母 = 【容器底边贴到视口底边】时的 scrollY，别的都别用。
+       这是唯一精确的算法：容器在文档最顶部（offsetTop = 0）时，
+       sticky 行程就是 `容器底边 − 视口高`。写成「realMax − 容器之后的内容高」
+       也能得到同一个数，但要求「之后的内容高」量得准 —— 实测那里最容易错。
+       ────────────────────────────────────────────────────────────────
+       🔴 曾经这里有一个手写的 `afterH += 80`（注释写「加上说明区自身的上边距」），
+          而实测 `docH = 2610 + 1544` 表明**根本没有那 80px**（外边距被折叠了）
+          ⇒ 分母少算 80：sticky 真实行程 1710，页面却按 1630 算，
+            动画【提前 80px 播完】，之后还有一小段滚动什么也不动。
+          这个错比之前的「vh×2.5」小得多（4.7% vs 32%），所以「滚到底进度已走满」
+          那条端到端断言**照样通过** —— clamp01 把它盖住了。是靠加密扫描
+          （_verify-dense-x.cjs，0.025 步长）发现「实测补偿量比标定表整体提前
+          约 0.036 个进度」才挖出来的。⇒ 小偏差要靠稠密采样，不能只靠端点断言。 */
+    var wrapBottom = scrollWrap.offsetTop + scrollWrap.getBoundingClientRect().height;
+    scrollable = Math.max(1, Math.min(realMax, wrapBottom - vh));
+  }
+  function progress() {
+    if (scrollable <= 0) return 0;
+    return clamp01(window.scrollY / scrollable);
+  }
+
+  function apply(p) {
+    /* 标题淡出：用 easeIn（先慢后快）而不是线性 —— 线性在滚动刚开始就掉一半，
+       观感上像「一滚标题就没了」。这里让它前段稳住、后半程才迅速退场。 */
+    var headT = seg(p, 0, STAGES[0].cum);
+    var headEase = headT * headT;                      /* 二次 easeIn */
+    headline.style.opacity = String(1 - headEase);
+    headline.style.transform = "translateY(" + (-34 * headEase).toFixed(1) + "px)";
+
+    /* 开盖：绕铰链线，从合拢(-92°)转到立起(-6°) */
+    var openT = easeInOut(seg(p, STAGES[0].cum, STAGES[1].cum));
+    var lidDeg = lerp(LID_CLOSED, LID_OPEN, openT);
+    lid.style.transform = "rotateX(" + lidDeg.toFixed(2) + "deg)";
+
+    /* 屏幕点亮：起点就是开盖结束（STAGES[1].cum），所以「盖板还立着屏幕就亮」这一种
+       穿帮在时间轴上不可能发生 —— litT 在 openT 到 1 之前恒为 0。
+       🔴 不要再加一段 `if (openT < 1) { 熄灭 }` 的二次闸门：它与 litT 的起点完全重复，
+          属于装饰性代码，只会让人误以为这里有两条独立的保护。 */
+    var litT = seg(p, STAGES[1].cum, STAGES[2].cum);
+    rows.forEach(function (r) {
+      var need = Number(r.getAttribute("data-at")) || 0;
+      r.classList.toggle("on", litT > (need + 0.35) / 3);
+    });
+    meters.forEach(function (m, i) {
+      m.style.setProperty("--g", clamp01(litT * 1.5 - i / (meters.length + 2)).toFixed(3));
+    });
+
+    /* 铰链条：盖板一掀开就露出来（合拢时藏住，免得露出轮廓外一条） */
+    hingeEl.style.opacity = String(Math.min(1, openT * 3).toFixed(3));
+
+    /* 盖板两面切换：合拢时露出外壳、打开时露出屏幕。
+       🔴 用 JS 直接切 opacity，不用 backface-visibility —— 实测那套在这套几何下不可靠
+          （盖板倒过水平后，屏幕法线转向朝上、正对相机，被浏览器当正面渲染，
+           合拢时屏幕内容会整个透出来）。切换点放在开盖 18% 处：
+           此时盖板刚离开机身，两面交叉淡入淡出不会看到「平面翻转」的瞬间。 */
+    var flipT = clamp01(openT / 0.18);
+    screenEl.style.opacity = String(easeInOut(flipT).toFixed(3));
+    shellEl.style.opacity = String((1 - easeInOut(flipT)).toFixed(3));
+    /* 遮挡层淡出比外壳快得多（1/4 处就没了）：它只是「把机身盖住」的补丁，
+       开盖一开始就不需要了。跟着外壳一起淡会看到一块悬空板跟着转。 */
+    backdropEl.style.opacity = String(clamp01(1 - openT * 4).toFixed(3));
+
+    /* 整机旋转：开盖全程只有相机抬起（rx 16→6），不左右转；
+       旋转阶段才真正绕 Y 轴转体展示。 */
+    var spinT = easeInOut(seg(p, STAGES[2].cum, STAGES[3].cum));
+    var ry = lerp(RY_START, RY_END, spinT);
+    /* 转体时相机同步抬到接近水平，否则俯视下正面朝前=看不见屏幕 */
+    var rx = lerp(lerp(16, 6, openT), 3, spinT);
+    rig.style.transform = "rotateX(" + rx.toFixed(2) + "deg) rotateY(" + ry.toFixed(2) + "deg)";
+
+    /* 标题让位的空间同步收回（纵向），并补横向偏移让产品保持视觉居中。
+       ────────────────────────────────────────────────────────────────
+       🔴 横向补偿用【实测标定表 + 线性插值】，不要再回去写任何解析式或反馈环。
+          三条路都试过，前两条是错的、第三条不划算：
+          ① 量 rig / scene 的 getBoundingClientRect() 中心当基准 —— 这两个元素带
+             rotateX/rotateY 且内部有 perspective，rect 是【被 3D 投影污染】的联合
+             包围盒；scene 的 left 还会跟着自己的 translateX 跑（自指），
+             偏差单调发散到 +113px。
+          ② 量 lid / base 的 rect 求产品中心 —— 合拢时盖板平躺远离相机、机身靠近
+             相机被放大，两者 rect 中心相差 91px，求平均是个「谁都不代表」的点。
+          ③ 解析式（对两块板做 rotateX→rotateY→透视投影再求加权中心）——
+             数学上产品关于相机轴【左右对称】，任何纯对称投影算出来的横向偏移恒为 0，
+             等于空操作。
+       ⇒ 真相是：这条偏移曲线由【盖板投影变宽】这个不对称过程产生，
+          只在具体几何下有值，解析式拿不到、反馈环追不上（有相位滞后）。
+          唯一可靠做法是【离线量一次、写死成表】。
+          🔴 换了几何（板件比例、perspective、开合角、rig 高度）都必须重新标定，
+             标定脚本：.workbuddy-ai/tmp/_gauge.cjs（含 PNG 解码 + 像素扫描）。
+       ────────────────────────────────────────────────────────────────
+       🔴 两张表都是 21 个采样点（0.00 起、步长 0.05）。
+          早先是 11 点，中段跨度太大：横向表在 p=0.20→0.30 之间要从 58px 掉到 45px，
+          线性插值在区间中点会差出好几像素。加密到 0.05 后残差直接减半。
+       插值统一走 interp()，两个轴共用，避免出现「一个轴用分段线性、另一个轴手抄
+       一份」的重复代码 —— 那种地方最容易改了一处漏了另一处。 */
+    function interp(tbl, t) {
+      /* 表长 = 采样点数 × 2（前一半是 p 生效点，后一半是裸偏差值） */
+      var n = tbl.length / 2;
+      var fi = t * (n - 1);
+      var i0 = Math.floor(fi); if (i0 > n - 2) i0 = n - 2; if (i0 < 0) i0 = 0;
+      var ft = fi - i0;
+      var a = tbl[n + i0], b = tbl[n + i0 + 1];
+      return a + (b - a) * ft;
+    }
+    /* 横向裸偏差（正 = 偏右）：产品非背景像素的横向中心 − 视口中心。
+       🔴 采样带必须排除右侧 90px：.ruler 是 absolute; right:20px 的竖排文字，
+          落在带内会把产品右边界钉死在视口右缘，让整条测量失效。 */
+    var CX_CAL = [
+      /* p 生效点 */ 0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
+      /*             */ 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00,
+      /* 裸偏差 px */ -22, -22, -20, -20, 45, 49, 32, 30, 34, 39, 41,
+      /*             */ 41, 41, 41, 41, 40, 37, 1, -5, -9, -10
+    ];
+    /* 纵向裸偏差（正 = 偏下）：把 translateY 钉死为 0、translateX 照常补偿后量得。
+       🔴 两轴必须解耦着量：把 Y 与 X 同时钉为 0 会让「量纵向时的横向偏移」恒为 0，
+          而运行时两者是叠加的，横向推走几十像素会改变产品在扫描带里的列覆盖率。
+       🔴 行判据阈值是 20 列而不是 40：盖板转到 -82° 那附近产品在屏幕上最薄，
+          顶部区域的列数会跌到 40 以下，阈值 40 时 top 从 340 直接跳到 448、
+          中心虚高 +49px（实测最大相邻跳变 108px，降到 20 后只剩 26px，
+          而扫描带外的噪声对照仍为 0，不会把抗锯齿噪点当产品）。
+       🔴 扫描带上界放到 110px 并把「标题还看得见的那些行」按实际不透明度掩掉：
+          固定写 250 会在打开态把产品的上沿整个切掉（p≥0.30 时 top 恒为 250，
+          量的是被裁过的假值 —— 早期所有纵向数据都因此系统性偏小 30px）。
+       🔴 采样带下界裁到 820px：Chrome 无头截图右下角叠着「Ctrl + 调试」浮层，
+          不裁会被当成产品行、bot 恒为 877，中心永远偏低 77px。
+       序列：+10/+10/+10/+5/−1/−32/−67/−87/−97/−98/−98/−98/−98/−98/−98/−97/−95/−97/−101/−102/−102 */
+    var CY_CAL = [
+      /* p 生效点 */ 0.00, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50,
+      /*             */ 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95, 1.00,
+      /* 裸偏差 px */ 8, 8, 8, 8, -14, -23, -58, -83, -96, -98, -98,
+      /*             */ -98, -98, -98, -98, -98, -96, -94, -97, -101, -102
+    ];
+    /* 裸偏差为正 ⇒ 需要反向推。夹到 ±110 只是防御（正常值域 ~50），不参与调参。 */
+    var cx = Math.max(-110, Math.min(110, -interp(CX_CAL, p)));
+    var cy = Math.max(-110, Math.min(110, -interp(CY_CAL, p)));
+    /* 🔴 直接取用，不做「平滑跟随」。
+       曾经这里有一行 `lastCx += (want - lastCx) * 0.35`，它让补偿量带上了历史：
+       同一个 p 从上方抵达和从下方抵达会得到不同的 translateX（实测 p=0.20 差 15px、
+       p=0.00 差 10px），【可逆】这条要求当场破掉。标定表本身已经是稠密采样后的
+       分段线性插值、曲线足够平滑，平滑系数买不到任何东西，只换来滞后与不可逆。
+       ⇒ 静态渲染只管 p 的函数关系，任何跨帧累积量都不该出现在这里。 */
+    scene.style.transform = "translateY(" + cy.toFixed(1) + "px)"
+      + " translateX(" + cx.toFixed(1) + "px)";
+
+    hudBar.style.width = (p * 100).toFixed(1) + "%";
+    var cur = 0;
+    for (var j = 0; j < STAGES.length; j++) { if (p < STAGES[j].cum) { cur = j; break; } cur = j; }
+    phaseName.textContent = STAGES[cur].name + " · " + Math.round(p * 100) + "%";
+    rulerDots.forEach(function (s, k) { s.classList.toggle("on", k <= cur && p > 0.002); });
+  }
+
+  var ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    window.requestAnimationFrame(function () { apply(progress()); ticking = false; });
+  }
+  function onResize() { measure(); apply(progress()); }
+
+  /* 🔴 降级态下整个滚动驱动都不该跑：CSS 已经把分层摆好、内容全亮，
+     再让 apply() 去写 style.opacity / transform 会把它覆盖回「滚动起点」的样子。
+     曾经这里写的是 `if (false) { return; }` + 一段注释说明「该写什么」——
+     那等于注释替代码干活，守卫从来没生效过（apply 起手就把 .row 的 opacity 写成 0.15、
+     把 .screen 写成 0、把盖板转回 -92°，降级态直接变成「一块合着的板」）。
+     判据必须与 body.no-3d 同一个来源，也就是上面那个 degraded。 */
+  if (degraded) { return; }
+
+  measure();
+  apply(progress());
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onResize);
+})();
+</script>
+</body>
+</html>

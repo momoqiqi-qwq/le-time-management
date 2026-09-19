@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!-- ============================================================
+  ◆ 分镜演示页模板底盘（复制本文件后只改"画面层"与 cue）◆
+  内置：虚拟时钟黑场播放器 / WebAudio 音效引擎 / 1920×1080 舞台
+        镜头层 camTo·camFocus / 时间轴引擎(cue+补间+暂停) / HUD
+        角色特写位 / 电影黑边（不做底部字幕条，口播以 cue 注释对齐）
+  机制说明见 Skill 的 references/ 目录，此处只标"改这里"。
+============================================================= -->
+<script>
+/* ===== [不动] 播放器引导：劫持 performance.now/rAF 成虚拟时钟 =====
+   一切动画(JS cue 与 CSS animation)都走同一虚拟时钟，
+   点击「启动播放」前时间恒为 0 —— 黑场干净起手，录屏无闪跳。 */
+(function(){
+  (function(){
+    var realRAF=window.requestAnimationFrame.bind(window);
+    var realPerf=performance.now.bind(performance);
+    var started=false,startReal=0;
+    function clock(){return started?(realPerf()-startReal):0;}
+    window.__startPlayback=function(){if(started)return;started=true;startReal=realPerf();};
+    performance.now=clock;
+    window.requestAnimationFrame=function(cb){return realRAF(function(){cb(clock());});};
+  })();
+  var css=document.createElement('style');
+  css.textContent='#introZ{position:fixed;inset:0;z-index:99999;background:#000;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity 1.4s ease}#introZ .btn{pointer-events:auto;cursor:pointer;font-family:"Cascadia Mono","Microsoft YaHei","PingFang SC",sans-serif;font-size:28px;letter-spacing:8px;color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.45);border-radius:999px;padding:16px 52px;transition:background .3s,transform .2s,opacity .4s}#introZ .btn:hover{background:rgba(255,255,255,.18)}#introZ .btn:active{transform:scale(.96)}#introZ .hint{margin-top:20px;font-family:"Cascadia Mono",Consolas,monospace;font-size:13px;color:#8a8a8a;letter-spacing:2px;opacity:.7}#hud{transition:opacity .35s ease}body.hud-off #hud{opacity:0!important;pointer-events:none}';
+  document.head.appendChild(css);
+  function boot(){
+    var z=document.createElement('div');z.id='introZ';
+    var b=document.createElement('button');b.type='button';b.className='btn';b.textContent='启 动 播 放';
+    var h=document.createElement('div');h.className='hint';h.textContent='点击开始 · 黑场渐变后播放';
+    z.appendChild(b);z.appendChild(h);document.body.appendChild(z);
+    var playing=false;
+    function showHud(){document.body.classList.remove('hud-off');}
+    function hideHud(){document.body.classList.add('hud-off');}
+    hideHud();
+    addEventListener('mousemove',function(e){if(!playing)return;if(innerHeight-e.clientY<=60)showHud();else hideHud();});
+    addEventListener('mouseleave',function(){if(playing)hideHud();});
+    b.addEventListener('click',function(){
+      if(playing)return;playing=true;   /* 本次点击同时解锁下方 AudioContext */
+      b.style.pointerEvents='none';b.style.opacity='0';h.style.opacity='0';
+      setTimeout(function(){z.style.opacity='0';z.style.pointerEvents='none';},600);
+      setTimeout(function(){window.__startPlayback();},2000);
+    });
+  }
+  if(document.body)boot();else addEventListener('DOMContentLoaded',boot);
+})();
+</script>
+
+<script>
+/* ===== [不动] SFX 引擎：WebAudio 合成音效，零音频文件 =====
+   pop(波·弹出) whoosh(呼·镜头/大幅移动,dur,vol) swipe(唰·快切)
+   type(键盘轻击) ding(叮·落定) thud(咚·撞击/盖章) */
+window.__sfx=(function(){
+  var ctx=null,master=null,noiseBuf=null;
+  function ensure(){
+    if(ctx)return ctx;
+    try{
+      var AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)return null;
+      ctx=new AC();
+      master=ctx.createGain();master.gain.value=0.24;
+      var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=6500;
+      master.connect(lp);lp.connect(ctx.destination);
+      var len=Math.floor(ctx.sampleRate*1.2);noiseBuf=ctx.createBuffer(1,len,ctx.sampleRate);
+      var d=noiseBuf.getChannelData(0);for(var i=0;i<len;i++)d[i]=Math.random()*2-1;
+    }catch(e){ctx=null}
+    return ctx;
+  }
+  addEventListener('pointerdown',function(){var c=ensure();if(c&&c.state==='suspended')c.resume();});
+  function ok(){return !!(ctx&&ctx.state==='running'&&master);}
+  function env(g,t0,a,peak,dur){g.gain.setValueAtTime(0.0001,t0);g.gain.exponentialRampToValueAtTime(peak,t0+a);g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);}
+  function pop(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';var f=330+Math.random()*90;
+    o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*2.05,t+0.09);
+    env(g,t,0.012,0.5*vol,0.16);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.2);
+  }
+  function whoosh(durS,vol){
+    if(!ok())return;var d=Math.max(0.25,Math.min(durS||1,1.8));vol=vol||0.9;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=0.9;
+    bp.frequency.setValueAtTime(330,t);bp.frequency.exponentialRampToValueAtTime(1300,t+d*0.55);bp.frequency.exponentialRampToValueAtTime(430,t+d);
+    var g=ctx.createGain();g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.3*vol,t+d*0.4);g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+d+0.05);
+  }
+  function swipe(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,src=ctx.createBufferSource();src.buffer=noiseBuf;src.loop=true;
+    var bp=ctx.createBiquadFilter();bp.type='bandpass';bp.Q.value=1.3;
+    bp.frequency.setValueAtTime(2500,t);bp.frequency.exponentialRampToValueAtTime(720,t+0.22);
+    var g=ctx.createGain();env(g,t,0.02,0.26*vol,0.26);
+    src.connect(bp);bp.connect(g);g.connect(master);src.start(t);src.stop(t+0.32);
+  }
+  function type(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='square';o.frequency.value=1400+Math.random()*900;
+    var lp=ctx.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2700;
+    env(g,t,0.004,0.1*vol,0.05);
+    o.connect(lp);lp.connect(g);g.connect(master);o.start(t);o.stop(t+0.07);
+  }
+  function ding(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime;
+    [[660,0.2],[990,0.09]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.value=p[0];
+      env(g,t,0.01,p[1]*vol,0.6);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.7);
+    });
+  }
+  function thud(vol){
+    if(!ok())return;vol=vol||1;
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(155,t);o.frequency.exponentialRampToValueAtTime(60,t+0.16);
+    env(g,t,0.008,0.5*vol,0.22);o.connect(g);g.connect(master);o.start(t);o.stop(t+0.28);
+  }
+  return {pop:pop,whoosh:whoosh,swipe:swipe,type:type,ding:ding,thud:thud};
+})();
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>镜头 S2 · 教务系统里的课表，撕下来贴进手账</title>
+
+<!-- 风格：手账拼贴日历（和纸胶带 + 格子本 + 手写课程块） -->
+<link href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Ma+Shan+Zheng&family=Noto+Sans+SC:wght@400;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
+body.paused *{animation-play-state:paused!important}
+/* 和纸本页面：米白横格 + 装订孔 + 咖啡渍 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;background:linear-gradient(180deg,#FBF7EC,#F3ECDC);box-shadow:inset 0 0 200px rgba(150,120,70,.16)}
+
+/* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
+#cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
+
+/* ────────────────────────────────────────────────
+   [改这里] 画面层：以下到「底盘区」为止全部重写
+   ──────────────────────────────────────────────── */
+/* 相机初始：搜索条特写 */
+#cam{transform:scale(1.18)}
+#paper{position:absolute;inset:0;background-image:repeating-linear-gradient(180deg,transparent 0 43px,rgba(120,110,90,.11) 43px 44px);pointer-events:none}
+#holes{position:absolute;left:44px;top:0;bottom:0;width:26px;pointer-events:none;
+  background-image:radial-gradient(circle at 13px 60px,rgba(90,80,60,.2) 7px,transparent 8px);background-size:26px 150px}
+
+/* ── 顶部：拟真的「教务导入 → 选学校」条，撕开之后才露出手账 ── */
+#import{position:absolute;left:120px;top:44px;width:1680px;height:118px;background:#fff;border:1px solid #DCDDDC;border-radius:14px;
+  box-shadow:0 12px 30px rgba(90,80,50,.13);padding:14px 18px;opacity:0;transform:translateY(-14px);
+  transition:opacity .5s ease,transform .6s cubic-bezier(.16,1,.3,1),clip-path .9s cubic-bezier(.7,0,.3,1)}
+#import.in{opacity:1;transform:none}
+#import.torn{clip-path:polygon(0 0,100% 0,100% 6%,0 14%)}
+#import .row{display:flex;align-items:center;gap:12px}
+#import .cap{font-size:12px;letter-spacing:3px;color:#9CA2A5;font-family:'IBM Plex Mono'}
+#import .sch{font-family:'Noto Sans SC';font-size:19px;font-weight:900;color:#25282A}
+#import .srch{margin-left:auto;display:flex;align-items:center;gap:8px;height:40px;width:420px;border:1.5px solid #5F8378;
+  border-radius:10px;background:#F7F7F5;padding:0 12px;font-size:15px;color:#25282A;font-weight:700}
+#import .srch span{clip-path:inset(0 100% 0 0);transition:clip-path .7s steps(3,end)}
+#import .srch span.on{clip-path:inset(0 0 0 0)}
+#import .hit{margin-top:10px;display:flex;align-items:center;gap:10px;font-size:13px;color:#6C7377}
+#import .hit b{color:#25282A;font-weight:900;font-size:15px}
+#import .pill{border-radius:7px;padding:3px 9px;background:rgba(96,125,139,.14);color:#607D8B;font-size:11px;font-weight:700}
+#arrow{position:absolute;left:960px;top:172px;width:0;height:0;opacity:0;transition:opacity .4s}
+#arrow.show{opacity:1}
+#arrow i{position:absolute;left:0;top:0;width:190px;height:5px;background:#C86A2E;border-radius:3px;transform:rotate(38deg);transform-origin:0 50%}
+#arrow i::after{content:'';position:absolute;right:-3px;top:-7px;border:9px solid transparent;border-left:13px solid #C86A2E}
+
+/* ── 手账主标题 ── */
+#title{position:absolute;left:120px;top:206px;opacity:0;transform:translateY(16px) rotate(-1.4deg);transition:all .7s cubic-bezier(.16,1,.3,1);z-index:20}
+#title.show{opacity:1;transform:rotate(-1.4deg)}
+#title h1{font-family:'Ma Shan Zheng';font-size:56px;color:#2F4858;letter-spacing:2px;line-height:1}
+#title .sub{font-family:'ZCOOL KuaiLe';font-size:19px;color:#8B7B5E;letter-spacing:2px;margin-top:8px}
+#title .sub em{font-style:normal;color:#B85E5E}
+#stamp{position:absolute;left:1520px;top:214px;width:186px;height:186px;border:6px solid rgba(184,94,94,.62);border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;color:rgba(184,94,94,.72);font-weight:900;
+  transform:rotate(-14deg) scale(2.4);opacity:0;transition:all .5s cubic-bezier(.2,1.5,.4,1);z-index:21}
+#stamp.hit{opacity:1;transform:rotate(-14deg) scale(1)}
+#stamp .a{font-size:26px;letter-spacing:3px}#stamp .b{font-size:13px;letter-spacing:2px;margin-top:5px;font-family:'IBM Plex Mono'}
+
+/* ── 周视图格子本 ── */
+#book{position:absolute;left:120px;top:326px;width:1680px;height:640px;opacity:0;transform:translateY(26px);
+  transition:opacity .6s ease,transform .8s cubic-bezier(.16,1,.3,1)}
+#book.in{opacity:1;transform:none}
+#book .sheet{position:absolute;inset:0;background:#FFFDF6;border:1.5px solid #E2D9C4;border-radius:6px;
+  box-shadow:0 16px 34px rgba(120,100,60,.13)}
+#grid{position:absolute;left:96px;top:56px;right:26px;bottom:22px;display:grid;grid-template-columns:repeat(7,1fr);gap:0 8px}
+.col{position:relative;border-left:1.5px dashed rgba(120,110,90,.24)}
+.col:first-child{border-left:0}
+.col .dh{position:absolute;left:0;right:0;top:-42px;text-align:center;font-family:'ZCOOL KuaiLe';font-size:19px;color:#6C7377;letter-spacing:2px}
+.col .dh em{font-style:normal;color:#B85E5E}
+#times{position:absolute;left:14px;top:56px;width:70px;bottom:22px}
+#times b{position:absolute;left:0;width:70px;text-align:right;font-family:'IBM Plex Mono';font-size:11px;color:#A79C86;font-weight:400}
+#times i{position:absolute;left:-84px;right:-1424px;height:1px;background:rgba(120,110,90,.13)}
+.blk{position:absolute;left:3px;right:3px;border-radius:7px;padding:7px 8px;overflow:hidden;opacity:0;transform:translateY(-10px) rotate(var(--r));
+  transition:opacity .34s ease,transform .46s cubic-bezier(.2,1.4,.4,1);box-shadow:2px 3px 0 rgba(120,100,60,.13)}
+.blk.in{opacity:1;transform:rotate(var(--r))}
+.blk b{display:block;font-size:14.5px;font-weight:900;color:#25282A;line-height:1.22;letter-spacing:.2px}
+.blk s{display:block;text-decoration:none;font-family:'IBM Plex Mono';font-size:10.5px;color:rgba(37,40,42,.6);margin-top:3px}
+.blk .tape{position:absolute;left:50%;top:-9px;width:64px;height:19px;margin-left:-32px;background:rgba(255,255,255,.5);
+  border-left:1px dashed rgba(150,140,110,.4);border-right:1px dashed rgba(150,140,110,.4);transform:rotate(-2deg)}
+.blk.hot{outline:2.5px solid #B85E5E;outline-offset:2px}
+#legend{position:absolute;left:120px;top:984px;display:flex;gap:18px;align-items:center;font-size:13px;color:#8B7B5E;font-family:'ZCOOL KuaiLe';letter-spacing:1px}
+#legend i{display:inline-block;width:13px;height:13px;border-radius:4px;background:#607D8B;margin-right:6px;vertical-align:-1px}
+#legend .n{font-family:'IBM Plex Mono';font-size:26px;font-weight:600;color:#B85E5E;letter-spacing:0}
+#note{position:absolute;left:1250px;top:978px;font-family:'Ma Shan Zheng';font-size:23px;color:#5F8378;transform:rotate(-2deg);opacity:0;transition:opacity .6s}
+#note.in{opacity:1}
+
+/* ────────────────────────────────────────────────
+   [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
+   ──────────────────────────────────────────────── */
+#lbT,#lbB{position:absolute;left:0;right:0;height:0;background:#02040a;z-index:40;transition:height .9s cubic-bezier(.7,0,.3,1)}
+#lbT{top:0}#lbB{bottom:0}
+#stage.letter #lbT,#stage.letter #lbB{height:74px}   /* 电影黑边：慢放/高潮段落加 .letter */
+#dim{position:absolute;inset:0;background:radial-gradient(closest-side at 50% 46%,transparent 52%,rgba(0,0,0,.8) 100%);opacity:0;transition:opacity 1s;z-index:30;pointer-events:none}
+#dim.on{opacity:1}
+
+.corner{position:absolute;font-family:'Share Tech Mono';font-size:15px;color:rgba(44,42,38,.55);letter-spacing:2px;z-index:9}
+#chap{left:52px;bottom:34px}
+#src{right:52px;bottom:34px}
+
+#hud{position:fixed;left:0;right:0;bottom:0;z-index:60;font-family:'Share Tech Mono';pointer-events:none}
+#track{height:5px;background:rgba(0,0,0,.15)}
+#bar{height:100%;width:0;background:#b53929;box-shadow:0 0 10px rgba(181,57,41,.6)}
+#hudrow{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:12px;background:rgba(10,8,6,.92);backdrop-filter:blur(4px)}
+#hud button{pointer-events:auto;background:transparent;border:1px solid #999;color:#ccc;font-family:inherit;font-size:12px;padding:3px 14px;margin-left:8px;border-radius:3px;cursor:pointer}
+#hud button:hover{background:rgba(255,255,255,.12)}
+#replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
+@keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+</style>
+</head>
+<body>
+<div id="stage">
+
+  
+  <div id="cam">
+    <div id="paper"></div><div id="holes"></div>
+
+    <div id="import">
+      <div class="row"><span class="cap">SCHOOL IMPORT</span><span class="sch">选择学校并登录教务</span>
+        <span class="srch">🔍 <span id="q">警察</span></span></div>
+      <div class="hit"><span class="pill">209 所 · 按拼音首字母分组</span>命中 <b>中国人民警察大学</b>
+        <span class="pill">正方教务 · 适配已就绪</span><span>登录后可一键导入当前课表</span></div>
+    </div>
+    <div id="arrow"><i></i></div>
+
+    <div id="title"><h1>我的课表 · 第 8 周</h1><div class="sub">教务导入 · <em>38 门课</em> · 20262027-1 · 周一到周日 10 节</div></div>
+    <div id="stamp"><div class="a">已导入</div><div class="b">CPPU · 2026.09</div></div>
+
+    <div id="book"><div class="sheet"></div><div id="times"></div><div id="grid"></div></div>
+    <div id="legend"><span><i></i>中国人民警察大学</span><span class="n">38</span><span>门课 · 10 个节次 · 08:00–20:40</span></div>
+    <div id="note">彩色块默认开，一眼分得清</div>
+  </div>
+  <div id="lbT"></div><div id="lbB"></div>
+
+  <div class="corner" id="chap">S2 / 课程表</div>
+  <div class="corner" id="src" style="top:56px;bottom:auto">课表数据：中国人民警察大学教务导入 · 20262027-1 学期 · 38 门课</div>
+</div>
+
+<div id="hud">
+  <div id="track"><div id="bar"></div></div>
+  <div id="hudrow"><span>镜头 S2 · 课程表 · 26s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+</div>
+
+<script>
+/* ===== [不动] 时间轴引擎 ===== */
+const DUR=26000;
+const $=s=>document.querySelector(s);
+let t0=performance.now(),paused=false,pStart=0;
+const cues=[],on=(t,f)=>cues.push({t,f,done:false});
+const tws=[],eo=p=>1-Math.pow(1-p,3),ei=p=>p*p,eio=p=>p<.5?2*p*p:1-Math.pow(-2*p+2,2)/2;
+const after=(ms,f)=>on(performance.now()-t0+ms,f);
+/* 补间：fly 抛物线飞行；cnt 数字滚动 */
+function fly(el,x1,y1,x2,y2,dur,arc,ease,done){tws.push({t:performance.now()-t0,d:dur,e:ease||eio,done,f:p=>{el.style.left=(x1+(x2-x1)*p)+'px';el.style.top=(y1+(y2-y1)*p-Math.sin(p*Math.PI)*(arc||0))+'px'}})}
+function cnt(el,from,to,dur){tws.push({t:performance.now()-t0,d:dur,e:eo,f:p=>{el.textContent=Math.round(from+(to-from)*p).toLocaleString('en-US')}})}
+function tick(now){if(paused)return;const el=now-t0;
+  for(const c of cues)if(!c.done&&el>=c.t){c.done=true;c.f()}
+  for(let i=tws.length-1;i>=0;i--){const tw=tws[i],p=(el-tw.t)/tw.d;if(p<0)continue;const q=Math.min(1,p);tw.f(tw.e?tw.e(q):q);if(q>=1){tws.splice(i,1);if(tw.done)tw.done()}}
+  $('#bar').style.width=Math.min(100,el/DUR*100)+'%';
+  const t=el/1000;$('#tc').textContent=String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0');
+  if(el<DUR+2500)requestAnimationFrame(tick);else $('#replay').classList.add('done');
+}
+requestAnimationFrame(tick);
+$('#pauseBtn').onclick=()=>{paused=!paused;document.body.classList.toggle('paused',paused);$('#pauseBtn').textContent=paused?'继续':'暂停';if(paused){pStart=performance.now()}else{t0+=performance.now()-pStart;requestAnimationFrame(tick)}};
+function fit(){const s=Math.min(innerWidth/1920,innerHeight/1080);$('#stage').style.transform=`translate(-50%,-50%) scale(${s})`}
+addEventListener('resize',fit);fit();
+
+/* ===== [不动] 镜头调度 ===== */
+const cam=$('#cam');
+function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.transform=`translate(${tx}px,${ty}px) scale(${s})`;if(window.__sfx)__sfx.whoosh(dur,0.65)}
+function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
+  tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
+
+/* 真实课表：警察大学 20262027-1 学期第 8 周（教务导入原样，节次 1-10） */
+const SECTIONS=[['08:00','08:45'],['08:55','09:40'],['10:00','10:45'],['10:55','11:40'],['14:00','14:45'],
+  ['14:55','15:40'],['16:00','16:45'],['16:55','17:40'],['19:00','19:45'],['19:55','20:40']];
+/* [星期, 起节, 止节, 课程, 教室, 教师] —— 第 8 周实际有课的行 */
+const CS=[[1,1,2,'数字电子技术','A102','刘晓军'],[1,3,4,'毛泽东思想和中国特色社会主义理论体系概论','A207','范博群'],
+ [1,5,6,'线性代数A','A103','邵红梅'],[1,7,8,'模拟电子技术','C204','雷朝军'],[1,9,10,'反邪教研究','A204','车强'],
+ [2,1,2,'机器人操控基础','消训楼411','曹琪'],[2,3,4,'C语言程序设计A','C503','邱宏'],[2,5,6,'多旋翼无人机组装与调试','消训楼410','马曙光'],
+ [2,7,8,'固定翼无人机模拟驾驶','科508','贾春雷'],[2,9,10,'"一带一路"倡议：理论、实践与安全治理','A104','王玉爽'],
+ [3,1,2,'模拟电子技术','C204','雷朝军'],[3,3,4,'复变函数与积分变换','A201','陈广雷'],[3,5,6,'数字电子技术','A102','刘晓军'],
+ [3,7,8,'马克思主义基本原理','A207','张超'],[3,9,10,'反邪教研究','A204','车强'],
+ [4,3,4,'智慧消防专业英语','535','雷蕾'],[4,5,6,'C语言程序设计A','B501','邱宏'],[4,7,8,'模拟电子技术','一实104','薛彩姣'],
+ [4,9,10,'"一带一路"倡议：理论、实践与安全治理','A104','王玉爽'],
+ [5,1,2,'马克思主义基本原理','A207','张超'],[6,5,6,'形势与政策3','一阶梯','於素兰'],[7,1,2,'多旋翼无人机组装与调试','消训楼410 库房','马曙光']];
+const DAYS=['周一','周二','周三','周四','周五','周六','周日'],TINT=['#DCE8EF','#F6E6C8','#E3DCEA','#D7E7DF','#F1DCDC','#E6E1D3','#DDE6EF'];
+const grid=$('#grid');
+grid.innerHTML=DAYS.map((d,c)=>'<div class="col"><div class="dh">'+(c===0?'<em>'+d+'</em>':d)+'</div></div>').join('');
+const cols=[...grid.children],H=584,SLOT=H/10,blocks=[];
+CS.forEach((k,i)=>{const[,s,e,nm,pos,te]=k;
+  const b=document.createElement('div');b.className='blk';
+  b.style.top=((s-1)*SLOT+2)+'px';b.style.height=((e-s+1)*SLOT-6)+'px';
+  b.style.background=TINT[(s+e)%7];b.style.setProperty('--r',(i%3-1)*.5+'deg');
+  b.innerHTML='<span class="tape"></span><b>'+nm+'</b><s>'+pos+' · '+te+'</s>';
+  cols[k[0]-1].appendChild(b);blocks.push(b)});
+$('#times').innerHTML=SECTIONS.map((t,i)=>'<b style="top:'+(i*SLOT+SLOT/2-7)+'px">'+(i+1)+'节 '+t[0]+'</b>'+
+  '<i style="top:'+(i*SLOT)+'px"></i>').join('');
+
+on(300,()=>camTo(0,0,1,2.2));                                       // 开场拉镜
+on(420,()=>$('#import').classList.add('in'));                       // 教务导入条先站住
+on(1100,()=>{$('#q').classList.add('on');__sfx.type(.4);after(120,()=>__sfx.type(.35))});  // 搜索框敲「警察」
+on(2100,()=>{camFocus(1400,100,1.16,1.0);__sfx.ding(.8)});          // 命中警察大学
+on(3300,()=>{camTo(0,0,1,1.1);$('#arrow').classList.add('show')});
+on(4100,()=>{$('#import').classList.add('torn');__sfx.swipe(.7)});  // 撕开：从教务系统撕进手账
+on(4700,()=>{$('#title').classList.add('show');$('#book').classList.add('in');__sfx.pop(.5)});
+for(let i=0;i<blocks.length;i++)on(5300+i*68,()=>{blocks[i].classList.add('in');__sfx.type(.26)});  // 38 门课逐块贴上
+on(7600,()=>{const b=blocks[0];b.classList.add('hot');__sfx.ding(.85)});   // 周一第一节高亮
+on(8400,()=>{const r=blocks[0].getBoundingClientRect(),c=cam.getBoundingClientRect(),s=c.width/1920;
+  camFocus((r.left-c.left)/s+ (r.width/s)/2,(r.top-c.top)/s+(r.height/s)/2,1.28,1.1);__sfx.whoosh(1.1,.5)});  // 推到那块课
+on(11000,()=>camFocus(500,600,1.16,1.2));                           // 顺着一列往下读
+on(13600,()=>camFocus(1200,620,1.16,1.2));                          // 摇到右边几天
+on(16200,()=>camTo(0,0,1,1.4));                                     // 拉回全景
+on(17600,()=>{$('#stamp').classList.add('hit');__sfx.thud(1)});     // 盖章：已导入
+on(19200,()=>$('#note').classList.add('in'));                       // 手写批注
+on(20600,()=>{const[x,y]=[960,650];camFocus(x,y,1.1,1.6)});         // 结尾轻推
+on(23600,()=>camTo(0,0,1,1.4));
+/* 音效 */
+on(300,()=>__sfx.swipe(.5));
+on(4700,()=>__sfx.pop(.55));
+</script>
+</body>
+</html>
