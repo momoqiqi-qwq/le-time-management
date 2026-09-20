@@ -44,7 +44,7 @@ assert.match(src, /const site = active\(\); tabMenu = null;/, '执行动作前�
 
 /* ── 四、菜单要真的渲染进 paint()，且左键点图标要收起它 ── */
 assert.match(src, /\$\{tabMenu \? tabMenuHtml\(\) : ""\}/, 'paint() 必须渲染 tabMenuHtml()');
-assert.match(src, /const chip = e\.target\.closest\("\[data-site\]"\);\s*if \(chip\) \{\s*tabMenu = null;[\s\S]{0,700}?if \(id !== activeId\) return switchSite\(id\);/,
+assert.match(src, /const chip = e\.target\.closest\("\[data-site\]"\);\s*if \(chip\) \{\s*tabMenu = null;[\s\S]{0,900}?if \(id !== activeId\) \{ sitePanel = false; return switchSite\(id\); \}/,
   '左键点站点图标要先收起右键菜单，再走「同站点切展开态 / 异站点切站点」的分支');
 assert.match(src, /const menuAct = e\.target\.closest\("\[data-tab-act\]"\); if \(menuAct\) return runTabAction\(menuAct\.dataset\.tabAct\);/,
   '菜单项点击要派发到 runTabAction');
@@ -88,13 +88,17 @@ assert.match(src, /if \(act === "login"\) \{ sitePanel = true; return openLoginC
   '右键「登录配置」要先展开卡片，登录框才看得见');
 assert.match(src, /sitePanel = true;\s*notices = \[\]; return \{ login: true/,
   '读到登录页要自动展开卡片，否则列表只剩「请先完成登录」却够不着表单');
-assert.match(src, /if \(id === activeId && sitePanel\) \{[\s\S]{0,200}?s\.loginUrl = v\.trim\(\); await save\(\); \}/,
-  '收起卡片前要把没保存的「登录网址」落盘：卡片整块重绘，不收着就凭空丢了');
+assert.match(src, /if \(sitePanel\) \{[\s\S]{0,200}?s\.loginUrl = v\.trim\(\); await save\(\); \}/,
+  '收起卡片或切换站点前要把没保存的「登录网址」落盘：卡片整块重绘，不收着就凭空丢了');
+assert.match(src, /if \(id !== activeId\) \{ sitePanel = false; return switchSite\(id\); \}\s*sitePanel = !sitePanel;/,
+  '点异站点只切换并保持设置卡片收起；只有再点当前站点才展开');
 
 hit('favHtml(x, " big") || `<span class="sn-fav big no-img"', '图标三层降级全空时要补首字母方块，别留空位');
 hit('data-site="${esc(x.id)}"', 'chip 要保留 data-site：右键菜单和「点别处收起」都靠它判定');
-assert.match(src, /\.sn-chip\.cur \.sn-chip-name\{display:inline\}/,
-  '只有当前站点那枚 chip 显示站名 —— 收起时得看得出下面列的是哪个站点');
+assert.match(src, /\.sn-chip \.sn-chip-name\{display:inline;/,
+  '所有站点 chip 都要显示站名，不能让非当前站点只剩难以辨认的图标');
+assert.doesNotMatch(src, /\.sn-chip \.sn-chip-name\{display:none\}/,
+  '站点名称不能默认隐藏');
 assert.match(src, /\.sn-chip\.cur::after\{content:"⌄"/, '收起态的当前 chip 要有向下箭头（可展开的暗示）');
 assert.match(src, /\.sn-chip\.on::after\{content:"⌃"/, '展开态的当前 chip 要翻成向上箭头');
 assert.match(src, /\.sn-site\{animation:sn-site-in/,

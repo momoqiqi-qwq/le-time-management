@@ -74,7 +74,7 @@
     s.textContent = `
       .sn{max-width:1120px;margin:0 auto;padding:12px 0 32px;color:var(--ink)}.sn-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}.sn-add{display:grid;grid-template-columns:1fr 1.35fr auto;gap:9px}.sn-in{height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:0 11px;min-width:0}.sn-btn{min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);padding:7px 13px;font-weight:650}.sn-btn.pri{background:var(--deep);border-color:var(--deep);color:white}.sn-btn:disabled{opacity:.5}.sn-note{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);line-height:1.7;margin-top:9px}
 .sn-sites{display:flex;align-items:center;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line-soft)}.sn-sites-label{flex:none;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3)}.sn-chips{display:flex;gap:7px;overflow:auto;padding:2px;min-width:0}
-.sn-chip{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 7px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink-2);font:inherit;font-size:calc(12px * var(--ui-text-scale));cursor:pointer}.sn-chip:not(.cur){padding:0 6px}.sn-chip .sn-chip-name{display:none;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.sn-chip.cur{border-color:color-mix(in srgb,var(--deep) 42%,var(--line))}.sn-chip.cur .sn-chip-name{display:inline}.sn-chip.cur::after{content:"⌄";font-size:calc(13px * var(--ui-text-scale));line-height:1;color:var(--ink-3)}.sn-chip.on{background:color-mix(in srgb,var(--deep) 10%,var(--panel));border-color:var(--deep);color:var(--deep)}.sn-chip.on::after{content:"⌃"}.sn-chip:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
+.sn-chip{flex:none;display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:0 9px;border:1px solid var(--line);border-radius:11px;background:var(--paper);color:var(--ink-2);font:inherit;font-size:calc(12px * var(--ui-text-scale));cursor:pointer}.sn-chip .sn-chip-name{display:inline;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:650}.sn-chip.cur{border-color:color-mix(in srgb,var(--deep) 42%,var(--line))}.sn-chip.cur::after{content:"⌄";font-size:calc(13px * var(--ui-text-scale));line-height:1;color:var(--ink-3)}.sn-chip.on{background:color-mix(in srgb,var(--deep) 10%,var(--panel));border-color:var(--deep);color:var(--deep)}.sn-chip.on::after{content:"⌃"}.sn-chip:focus-visible{outline:3px solid var(--mint);outline-offset:2px}
 .sn-site{animation:sn-site-in .26s cubic-bezier(.2,.78,.2,1)}@keyframes sn-site-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 .sn-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between}.sn-head>div:first-child{flex:1 1 auto;min-width:0}.sn-head h2{font-size:calc(19px * var(--ui-text-scale));margin:0 0 4px;display:flex;align-items:center;gap:8px}.sn-head h2 .sn-name{min-width:0;overflow-wrap:anywhere}.sn-fav.big{width:22px;height:22px;border-radius:6px;margin-top:0}.sn-fav.big img{width:22px;height:22px}.sn-fav.big.no-img::after{width:22px;height:22px;border-radius:6px;font-size:calc(12px * var(--ui-text-scale))}.sn-meta{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.6;overflow-wrap:anywhere}.sn-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;flex:none}.sn-login{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:14px}.sn-login-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}.sn-login-grid label{display:grid;gap:5px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2)}.sn-login-grid .wide{grid-column:1/-1}.sn-captcha{display:flex;align-items:center;gap:9px}.sn-captcha img{max-width:180px;max-height:72px;border-radius:8px;border:1px solid var(--line);background:white}.sn-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:12px 0}.sn-toolbar .sn-in{flex:1 1 240px;max-width:560px;min-width:180px}.sn-count{flex:none;white-space:nowrap}.sn-pager{flex:none;white-space:nowrap}.sn-more{display:block;margin:10px auto 0}.sn-toggle{margin-left:auto}.sn-login-url{display:block;width:min(100%,460px);margin-top:8px}
 .sn-tabmenu{position:fixed;z-index:60;min-width:168px;max-width:260px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 14px 34px rgba(34,48,58,.2);display:flex;flex-direction:column;gap:2px}
@@ -124,9 +124,8 @@
     return "";
   }
 
-  // 站点菜单图标（取代原先那行文字标签）。刻意只放图标：一行文字标签 + 一张
-  // 常驻的站点卡片要把半屏吃掉，图标行收在「添加站点」卡片里，点开了才展开卡片。
-  // 只有当前站点那枚带名字 —— 收起时下面列的是哪个站点的公告，总得有个交代。
+  // 站点菜单收在「添加站点」卡片里：名称始终显示，避免多个站点只剩下难以辨认的图标。
+  // 当前站点才显示展开箭头；设置卡片默认收起，再点一次当前站点才展开。
   // favHtml 三层降级全空时返回空串，这里补一个首字母方块，否则图标位是空的。
   function chipHtml(x, site) {
     const cur = x.id === site?.id;
@@ -669,14 +668,14 @@
         if (chip) {
           tabMenu = null;
           const id = chip.dataset.site;
-          // 卡片是整块重绘的：收起前把没保存的「登录网址」落到站点配置上，别让它凭空消失。
-          if (id === activeId && sitePanel) {
+          // 卡片是整块重绘的：收起或切站点前把没保存的「登录网址」落到当前站点，别让它凭空消失。
+          if (sitePanel) {
             const v = host.querySelector("[data-site-login-url]")?.value;
             if (v !== undefined) { const s = active(); s.loginUrl = v.trim(); await save(); }
           }
-          // 点当前站点的图标 = 展开/收起来回切；点别的站点 = 切过去并展开（列表跟着换）。
-          sitePanel = id === activeId ? !sitePanel : true;
-          if (id !== activeId) return switchSite(id);
+          // 点当前站点 = 展开/收起来回切；点别的站点 = 只切换列表，设置卡片默认收起。
+          if (id !== activeId) { sitePanel = false; return switchSite(id); }
+          sitePanel = !sitePanel;
           return paint();
         }
         if (!site) return;

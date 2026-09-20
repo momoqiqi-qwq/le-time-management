@@ -50,10 +50,14 @@ function taskCard(t) {
     scheduled ? el("span", { class: "sch" }, `已排 ${scheduled.start}`) : null,
     el("span", { class: "est" }, S.durLabel(t.estMin)),
   );
-  card.addEventListener("click", () => openTaskDrawer(t.id));
+  card.addEventListener("click", () => {
+    // 横滑结束后浏览器仍会补发 click；此时只收尾手势，不打开详情抽屉。
+    if (document.body.dataset.cardSwipe === "1") return;
+    openTaskDrawer(t.id);
+  });
   card.addEventListener("contextmenu", (e) => {
     e.preventDefault();
-    if (document.body.dataset.dragReorder === "1") return; // 长按拖拽会话中不弹菜单（触屏长按进入拖拽时浏览器会补发 contextmenu）
+    if (document.body.dataset.dragReorder === "1" || document.body.dataset.cardSwipe === "1") return;
     popmenu(e.clientX, e.clientY, [
       { label: "打开详情", icon: "▸", run: () => openTaskDrawer(t.id) },
       { label: t.done ? "标记为未完成" : "标记完成", icon: "✓", run: () => S.toggleTask(t.id) },
@@ -67,7 +71,160 @@ function taskCard(t) {
   return card;
 }
 
-/* ── v0.52.0 四象限卡片拖拽排序 ──
+/* ── 任务卡横滑曲线删除 ───────────────────────────────────────────────────────
+ * 横向位移与纵向拖拽排序仲裁：横移占优进入删除预览，纵移占优继续交给 attachListDrag；
+ * 松手未过阈值就从当前变换平滑归位，过阈值则沿二次弧线飞向当前象限的回收区。
+ * 数据删除严格发生在 exit animation.finished 之后，所以动画途中任务仍真实存在、可取消。
+ */
+function attachCardSwipeDelete(list, trash) {
+  let session = null;
+  const THRESHOLD_MIN = 92;
+  const clearBodyState = () => setTimeout(() => {
+    if (!session?.active) {
+      delete document.body.dataset.cardSwipe;
+      delete document.body.dataset.swipeSuspended;
+    }
+  }, 80);
+  const detachDocument = (st) => {
+    document.removeEventListener("pointerup", st.docUp, true);
+    document.removeEventListener("pointercancel", st.docCancel, true);
+  };
+  const resetTrash = () => {
+    trash.classList.remove("show", "armed", "left");
+    trash.querySelector("span").textContent = "滑到这里删除";
+  };
+  const resetCard = (card) => {
+    card.classList.remove("swipe-active", "swipe-deleting");
+    card.style.removeProperty("transform");
+    card.style.removeProperty("opacity");
+  };
+  const animateAndWait = async (node, keyframes, options) => {
+    if (typeof node.animate !== "function") {
+      await new Promise((resolve) => setTimeout(resolve, options.duration || 0));
+      return;
+    }
+    const animation = node.animate(keyframes, options);
+    try { await animation.finished; } catch { /* 被外部刷新取消时静默收尾 */ }
+  };
+  const returnHome = async (st) => {
+    const { card, dx } = st;
+    st.active = false;
+    await animateAndWait(card, [
+      { transform: card.style.transform || `translateX(${dx}px)`, opacity: card.style.opacity || "1" },
+      { transform: "translateX(0) rotate(0deg) scale(1)", opacity: 1 },
+    ], { duration: reducedMotion() ? 80 : 260, easing: "cubic-bezier(.2,.9,.25,1)" });
+    resetCard(card); resetTrash(); clearBodyState();
+  };
+  const deleteAlongCurve = async (st) => {
+    const { card, dx } = st;
+    st.active = false;
+    card.classList.add("swipe-deleting");
+    trash.classList.add("armed");
+    const from = card.getBoundingClientRect();
+    const to = trash.getBoundingClientRect();
+    // from 已含当前 translateX；终点变换却仍以卡片原位为坐标系，需先扣回 dx。
+    const tx = to.left + to.width / 2 - (from.left + from.width / 2 - dx);
+    const ty = to.top + to.height / 2 - (from.top + from.height / 2);
+    const turn = tx < 0 ? -1 : 1;
+    const arc = Math.min(110, Math.max(52, Math.abs(tx) * .18 + Math.abs(ty) * .12));
+    if (reducedMotion()) {
+      await animateAndWait(card, [
+        { opacity: Number(card.style.opacity || 1), transform: card.style.transform || "none" },
+        { opacity: 0, transform: "scale(.96)" },
+      ], { duration: 100, easing: "ease-out", fill: "forwards" });
+    } else {
+      await animateAndWait(card, [
+        { offset: 0, transform: card.style.transform || `translateX(${dx}px)`, opacity: Number(card.style.opacity || 1) },
+        { offset: .34, transform: `translate(${dx + (tx - dx) * .34}px, ${ty * .14 - arc}px) rotate(${turn * 7}deg) scale(.82)`, opacity: .82 },
+        { offset: .7, transform: `translate(${dx + (tx - dx) * .72}px, ${ty * .58 - arc * .48}px) rotate(${turn * 13}deg) scale(.48)`, opacity: .42 },
+        { offset: 1, transform: `translate(${tx}px, ${ty}px) rotate(${turn * 19}deg) scale(.12)`, opacity: 0 },
+      ], { duration: 440, easing: "cubic-bezier(.3,.05,.55,1)", fill: "forwards" });
+    }
+    // 必须等飞出结束后才碰数据源；这句会触发列表重绘并真正移除卡片。
+    const task = S.taskById(st.id);
+    const undo = S.deleteTaskUndoable(st.id);
+    resetTrash(); clearBodyState();
+    if (task && undo) toast(`已删除「${task.title}」`, { actionLabel: "撤销", action: undo });
+  };
+  const finish = (st, cancelled = false) => {
+    if (session !== st) return;
+    detachDocument(st);
+    session = null;
+    try { st.card.releasePointerCapture(st.pointerId); } catch { /* document 兜底 */ }
+    if (!st.active) { resetCard(st.card); resetTrash(); return; }
+    if (cancelled || !st.armed) returnHome(st);
+    else deleteAlongCurve(st);
+  };
+  const activate = (st) => {
+    st.active = true;
+    document.body.dataset.cardSwipe = "1";
+    document.body.dataset.swipeSuspended = "1";
+    st.card.classList.add("swipe-active");
+    trash.classList.add("show");
+    try { st.card.setPointerCapture(st.pointerId); } catch { /* document 兜底 */ }
+    st.docUp = (event) => { if (event.pointerId === st.pointerId) finish(st); };
+    st.docCancel = (event) => { if (event.pointerId === st.pointerId) finish(st, true); };
+    document.addEventListener("pointerup", st.docUp, true);
+    document.addEventListener("pointercancel", st.docCancel, true);
+  };
+  const paint = (st) => {
+    const limit = Math.max(THRESHOLD_MIN, Math.min(150, st.card.offsetWidth * .38));
+    const progress = Math.min(1, Math.abs(st.dx) / limit);
+    st.armed = progress >= 1;
+    const rotation = Math.max(-5, Math.min(5, st.dx / 24));
+    const scale = 1 - progress * .045;
+    st.card.style.transform = `translateX(${st.dx}px) rotate(${rotation}deg) scale(${scale})`;
+    st.card.style.opacity = String(1 - progress * .18);
+    trash.classList.toggle("left", st.dx < 0);
+    trash.classList.toggle("armed", st.armed);
+    trash.querySelector("span").textContent = st.armed ? "松开删除" : "滑到这里删除";
+    if (st.armed !== st.wasArmed) { if (st.armed) navigator.vibrate?.(12); st.wasArmed = st.armed; }
+  };
+
+  list.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (document.body.dataset.cardSwipe === "1") return;
+    const card = event.target.closest?.(".tkc");
+    if (!card || !list.contains(card) || card.classList.contains("dragging")) return;
+    session = { id: card.dataset.id, card, pointerId: event.pointerId, x: event.clientX, y: event.clientY, dx: 0, active: false, armed: false, wasArmed: false, docUp: null, docCancel: null };
+  });
+  list.addEventListener("pointermove", (event) => {
+    const st = session;
+    if (!st || event.pointerId !== st.pointerId) return;
+    st.dx = event.clientX - st.x;
+    const dy = event.clientY - st.y;
+    if (!st.active) {
+      if (Math.hypot(st.dx, dy) < 7) return;
+      if (Math.abs(st.dx) <= Math.abs(dy) * 1.15) { session = null; return; }
+      activate(st);
+    }
+    event.preventDefault();
+    paint(st);
+  });
+  list.addEventListener("pointerup", (event) => { if (session && event.pointerId === session.pointerId) finish(session); });
+  list.addEventListener("pointercancel", (event) => { if (session && event.pointerId === session.pointerId) finish(session, true); });
+  list.addEventListener("touchmove", (event) => { if (session?.active) event.preventDefault(); }, { passive: false });
+  list.addEventListener("keydown", (event) => {
+    if (event.key !== "Delete" && event.key !== "Backspace") return;
+    const card = event.target.closest?.(".tkc");
+    if (!card || event.altKey || event.ctrlKey || event.metaKey || document.body.dataset.cardSwipe === "1") return;
+    event.preventDefault();
+    const st = { id: card.dataset.id, card, dx: 0, active: true, armed: true };
+    document.body.dataset.cardSwipe = "1";
+    document.body.dataset.swipeSuspended = "1";
+    card.classList.add("swipe-active"); trash.classList.add("show", "armed");
+    trash.querySelector("span").textContent = "正在删除";
+    deleteAlongCurve(st);
+  });
+
+  return { cancel: () => {
+    const st = session; session = null;
+    if (!st) return;
+    detachDocument(st); resetCard(st.card); resetTrash(); clearBodyState();
+  } };
+}
+
+/* ── 四象限卡片拖拽排序 / 跨象限移动 ──
  * 桌面：按住卡片移动 ≥6px 即进入拖拽；触屏：长按 240ms 进入（期间移动 >8px 视为滚动意图）。
  * 拖动中幽灵卡（drag-ghost）跟随指针，其余卡片用 WAAPI FLIP 平滑让位；松手把顺序写回
  * store（moveTaskRelative 懒回填 order），新卡从幽灵落点平滑接位。
@@ -78,6 +235,30 @@ function attachListDrag(list) {
   let pd = null; // 当前按下会话
   const clearLong = (st) => { if (st.longTimer) { clearTimeout(st.longTimer); st.longTimer = null; } };
   const visibleCards = () => [...list.querySelectorAll(".tkc:not(.dragging)")];
+
+  const clearDropTarget = (st) => {
+    st.dropCell?.classList.remove("quad-drop-target");
+    st.dropCell = null;
+    st.targetQuad = st.sourceQuad;
+    st.targetOverId = null;
+  };
+
+  const updateDropTarget = (st, x, y) => {
+    const cell = document.elementFromPoint(x, y)?.closest?.(".q[data-quad]");
+    const quad = Number(cell?.dataset.quad);
+    st.dropCell?.classList.remove("quad-drop-target");
+    st.dropCell = null;
+    st.targetQuad = st.sourceQuad;
+    st.targetOverId = null;
+    if (!cell || !Number.isInteger(quad) || quad === st.sourceQuad) return;
+    st.dropCell = cell;
+    st.targetQuad = quad;
+    cell.classList.add("quad-drop-target");
+    const dragDone = st.card.classList.contains("done");
+    const candidates = [...cell.querySelectorAll(".tks > .tkc")]
+      .filter((card) => card.classList.contains("done") === dragDone);
+    st.targetOverId = candidates.find((card) => y < card.getBoundingClientRect().top + card.offsetHeight / 2)?.dataset.id || null;
+  };
 
   // document 捕获阶段兜底：setPointerCapture 失败（或环境不支持）时，指针在列表区域外
   // 松手的 pointerup/pointercancel 不会冒泡回 list，会话会挂起（幽灵卡不消失、顺序不落库）。
@@ -97,11 +278,12 @@ function attachListDrag(list) {
     detachDoc(st);
     delete document.body.dataset.dragReorder;
     // swipeSuspended 要活过 touchend（swipe 返回在 touchend 判定，而 pointerup 先发），延迟清
-    setTimeout(() => { if (!pd?.active) delete document.body.dataset.swipeSuspended; }, 80);
+    setTimeout(() => { if (!pd?.active && document.body.dataset.cardSwipe !== "1") delete document.body.dataset.swipeSuspended; }, 80);
     st.ghost?.remove();
     st.ghost = null;
     st.card?.classList.remove("dragging");
     list.classList.remove("drag-live");
+    clearDropTarget(st);
     if (st.pointerId != null && st.card) { try { st.card.releasePointerCapture(st.pointerId); } catch { /* 已释放 */ } }
     if (pd === st) pd = null;
   };
@@ -200,6 +382,23 @@ function attachListDrag(list) {
     st.active = false;
     const ghostRect = st.ghost?.getBoundingClientRect() ?? null;
     const dragId = st.id;
+    const targetQuad = st.targetQuad;
+    const targetOverId = st.targetOverId;
+    if (targetQuad !== st.sourceQuad) {
+      endSession(st);
+      S.moveTaskToQuad(dragId, targetQuad, targetOverId, true);
+      const newCard = document.querySelector(`.q[data-quad="${targetQuad}"] .tkc[data-id="${dragId}"]`);
+      if (newCard && ghostRect && !reducedMotion()) {
+        const r1 = newCard.getBoundingClientRect();
+        newCard.animate([
+          { transform: `translate(${ghostRect.left - r1.left}px, ${ghostRect.top - r1.top}px) scale(1.03)` },
+          { transform: "none" },
+        ], { duration: 220, easing: "cubic-bezier(.22,.8,.22,1)" });
+      }
+      const title = QUADS.find((q) => q.q === targetQuad)?.title || `象限 ${targetQuad}`;
+      toast(`已移到「${title}」`);
+      return;
+    }
     // 当前 DOM 序就是用户拖出的序 → 翻译成「相邻卡」写回 store
     const kids = [...list.children];
     const at = kids.indexOf(st.card);
@@ -224,7 +423,8 @@ function attachListDrag(list) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const card = e.target.closest?.(".tkc");
     if (!card || !list.contains(card)) return;
-    pd = { id: card.dataset.id, card, pointerId: e.pointerId, x: e.clientX, y: e.clientY, active: false, ghost: null, slot: -1, originOrder: null, longTimer: null };
+    const sourceQuad = Number(list.closest(".q")?.dataset.quad);
+    pd = { id: card.dataset.id, card, pointerId: e.pointerId, x: e.clientX, y: e.clientY, active: false, ghost: null, slot: -1, originOrder: null, longTimer: null, sourceQuad, targetQuad: sourceQuad, targetOverId: null, dropCell: null };
     if (e.pointerType !== "mouse") {
       // 触屏：长按 240ms 进入拖拽；期间移动 >8px 视为滚动意图，取消长按
       pd.longTimer = setTimeout(() => { if (pd && pd.card === card && !pd.active) beginDrag(pd, pd.x, pd.y); }, 240);
@@ -235,6 +435,8 @@ function attachListDrag(list) {
     if (!st || e.pointerId !== st.pointerId) return;
     if (st.active) {
       if (st.ghost) moveGhost(st, e.clientX, e.clientY);
+      updateDropTarget(st, e.clientX, e.clientY);
+      if (st.targetQuad !== st.sourceQuad) return;
       const k = computeSlot(st, e.clientY);
       if (k !== st.slot) { st.slot = k; reorderDOM(st, k); }
       return;
@@ -244,7 +446,11 @@ function attachListDrag(list) {
       if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLong(st);
       return;
     }
-    if (e.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) beginDrag(st, e.clientX, e.clientY);
+    if (e.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) {
+      // 横向手势保留给曲线删除；纵向或斜向才进入排序拖拽。
+      if (Math.abs(dx) > Math.abs(dy) * 1.15) return;
+      beginDrag(st, e.clientX, e.clientY);
+    }
   });
   list.addEventListener("pointerup", (e) => {
     const st = pd;
@@ -264,18 +470,25 @@ function attachListDrag(list) {
 
 function quadrantCell(def, matches) {
   const list = el("div", { class: "tks" });
-  const cell = el("div", { class: `q ${def.cls}` },
+  const trash = el("div", { class: "task-trash-target", "aria-hidden": "true" },
+    el("span", {}, "滑到这里删除"),
+    el("i", { "aria-hidden": "true" }, "×"),
+  );
+  const cell = el("div", { class: `q ${def.cls}`, "data-quad": def.q },
     el("span", { class: "rn" }, def.rn),
     el("div", { class: "qh" }, el("span", { class: "sq" }), el("b", {}, def.title),
       el("span", { class: "cnt" })),
     el("div", { class: "tip" }, def.tip),
-    list,
+    list, trash,
   );
 
+  // 先注册横滑，再注册拖拽：同一次 pointermove 里横向手势能优先声明所有权。
+  const swipeCtl = attachCardSwipeDelete(list, trash);
   const dragCtl = attachListDrag(list);
 
   const renderList = () => {
-    dragCtl.cancel(); // 拖拽会话中外部刷新（插件/订阅）→ 先复位再重建，防孤儿引用
+    swipeCtl.cancel();
+    dragCtl.cancel(); // 手势会话中外部刷新（插件/订阅）→ 先复位再重建，防孤儿引用
     const tasks = S.tasksOfQuad(def.q).filter(matches);
     list.replaceChildren(...tasks.map(taskCard));
     cell.querySelector(".cnt").textContent = `${tasks.filter((t) => !t.done).length} 项`;

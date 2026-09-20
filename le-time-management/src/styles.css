@@ -398,7 +398,7 @@ body.rail-resizing iframe { pointer-events: none !important; }
 .q4 { background: var(--q4-bg); } .q4 .sq { background: var(--q4); } .q4 .rn { color: var(--q4); }
 
 .tkc { background: var(--panel); border-radius: 10px; padding: 9px 13px; display: flex; align-items: flex-start; gap: 10px;
-  box-shadow: 0 1px 2px rgba(34,48,58,.06); cursor: pointer; text-align: left; width: 100%; }
+  box-shadow: 0 1px 2px rgba(34,48,58,.06); cursor: pointer; text-align: left; width: 100%; touch-action: pan-y; }
 .tkc:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(34,48,58,.12); }
 .tkc .cb { width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #C9C4B8; flex: none;
   display: flex; align-items: center; justify-content: center; font-size: calc(10px * var(--ui-text-scale)); color: var(--on-accent);
@@ -425,13 +425,37 @@ body.rail-resizing iframe { pointer-events: none !important; }
 /* 右侧徽标（已排 / 时长）随卡片变高时与首行对齐，不要被 align-items 拉到中间 */
 .tkc > .est, .tkc > .sch { align-self: flex-start; margin-top: 1px; }
 
-/* v0.52.0 四象限卡片拖拽排序：幽灵卡跟随指针（translate/scale 由 JS 内联设置），
+/* 横滑删除目的地：只在手势开始后出现，避免常驻危险操作污染象限界面；
+   越过阈值后切换为实色危险态，明确提示松手将执行删除。 */
+.task-trash-target { position: absolute; right: 14px; bottom: 12px; z-index: 2;
+  display: flex; align-items: center; gap: 8px; padding: 6px 7px 6px 11px; border-radius: 999px;
+  color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--danger) 12%, transparent);
+  opacity: 0; transform: translateY(7px) scale(.92); pointer-events: none;
+  transition: opacity .16s ease, transform .2s cubic-bezier(.2,.9,.25,1), background-color .16s ease; }
+.task-trash-target.left { left: 14px; right: auto; flex-direction: row-reverse; padding: 6px 11px 6px 7px; }
+.task-trash-target.show { opacity: .74; transform: translateY(0) scale(.96); }
+.task-trash-target.armed { color: var(--on-accent); background: var(--danger); border-color: transparent;
+  transform: translateY(0) scale(1.04); }
+.task-trash-target span { font-size: calc(10.5px * var(--ui-text-scale)); font-weight: 650; white-space: nowrap; }
+.task-trash-target i { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%;
+  font: 700 17px/1 system-ui, sans-serif; font-style: normal; color: var(--on-accent); background: var(--danger); }
+.task-trash-target.armed i { color: var(--danger); background: var(--on-accent); }
+.tkc.swipe-active { position: relative; z-index: 3; cursor: grabbing; user-select: none; -webkit-user-select: none;
+  will-change: transform, opacity; transition: none; }
+.tkc.swipe-active:hover { box-shadow: 0 7px 20px rgba(34,48,58,.14); }
+.tkc.swipe-deleting { pointer-events: none; }
+
+/* 四象限卡片拖拽：幽灵卡跟随指针（translate/scale 由 JS 内联设置），
    其余卡片让位走 WAAPI FLIP（JS animate），这里只放状态类；只动 transform，深浅主题通用 */
 .tkc.dragging { opacity: .3; cursor: grabbing; }
 .tkc.drag-ghost { position: fixed; left: 0; top: 0; z-index: 900; margin: 0; pointer-events: none;
   box-shadow: 0 14px 34px rgba(15, 23, 42, .24); opacity: .96; cursor: grabbing; }
 .tks.drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 .tks.drag-live .tkc { cursor: grabbing; }
+.q.quad-drop-target { outline: 3px solid color-mix(in srgb, var(--deep) 68%, transparent); outline-offset: -3px;
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--panel) 72%, transparent); }
 
 .q .addq { margin-top: 8px; border: 1.5px dashed rgba(34,48,58,.18); border-radius: 9px; padding: 7px;
   font-size: calc(12px * var(--ui-text-scale)); color: var(--ink-2); text-align: center; width: 100%; }
@@ -1522,6 +1546,15 @@ button.about-list-row:hover { background:color-mix(in srgb,var(--deep) 5%,transp
 .cmd-main b{font-size:calc(13px * var(--ui-text-scale));overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmd-main small{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmd-enter{width:22px;color:var(--deep);text-align:center}.cmd-empty{padding:36px 20px;text-align:center;color:var(--ink-3);font-size:calc(12px * var(--ui-text-scale))}.cmd-foot{padding:8px 14px;border-top:1px solid var(--line-soft);font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3);background:var(--paper)}.cmd-foot .foot-mobile{display:none}
+
+/* 全局搜索直达设置项：滚动结束后用一圈短暂的主题色提示准确落点，不改变控件布局。 */
+.setting-search-target { position: relative; z-index: 1; border-radius: 10px;
+  outline: 2px solid color-mix(in srgb, var(--deep) 72%, transparent); outline-offset: 4px;
+  animation: setting-search-pulse 1.8s cubic-bezier(.22,.8,.22,1) both; }
+@keyframes setting-search-pulse {
+  0%, 100% { outline-color: transparent; background-color: transparent; }
+  18%, 68% { outline-color: color-mix(in srgb, var(--deep) 72%, transparent); background-color: color-mix(in srgb, var(--deep) 7%, transparent); }
+}
 
 /* ── v0.10 · 快速捕获 ── */
 .quick-cap{position:fixed;z-index:1901;left:50%;top:calc(var(--ui-vh, 100dvh) * 0.18);transform:translateX(-50%);width:min(620px,calc(var(--ui-vw, 100vw) - 28px));background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 55px rgba(22,34,40,.22);padding:16px}
@@ -3074,12 +3107,30 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   }
 }
 
-/* v0.11.7 · 插件侧栏支持拖动排序；顺序写入 settings.pluginOrder。 */
-.plug-list .nav-dragging { opacity: .42; }
-.plug-list .nav-drop-target {
-  box-shadow: inset 3px 0 0 var(--mint);
-  background: color-mix(in srgb, var(--mint) 10%, transparent);
+/* 侧栏插件实时拖动排序：原项留在普通流中成为空槽，克隆项浮起跟随指针，
+   其余项的逐项追赶由 shell.js 的 WAAPI FLIP 完成。 */
+.plug-list > button[data-plugin-id] { cursor: grab; touch-action: pan-y; }
+.plug-list.plugin-drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.plug-list.plugin-drag-live > button[data-plugin-id] { cursor: grabbing; }
+.nav .plug-list > button.nav-dragging {
+  opacity: .18;
+  background: color-mix(in srgb, var(--deep) 7%, transparent);
+  outline: 1.5px dashed color-mix(in srgb, var(--deep) 48%, transparent);
+  outline-offset: -3px;
 }
+.plugin-nav-ghost {
+  position: fixed; left: 0; top: 0; z-index: 1200; box-sizing: border-box;
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--ink);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, .24); pointer-events: none;
+  font: inherit; font-size: calc(13px * var(--ui-text-scale)); opacity: .97; will-change: transform;
+}
+.plugin-nav-ghost .ic { width: 30px; height: 30px; flex: none; display: inline-flex; align-items: center; justify-content: center; }
+.plugin-nav-ghost .ic .app-icon { width: 22px; height: 22px; }
+.plugin-nav-ghost .lb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plugin-nav-ghost .pv-count { margin-left: auto; flex: none; font-size: calc(10px * var(--ui-text-scale)); padding: 1px 7px;
+  border-radius: 8px; background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.plugin-nav-ghost .nav-kbd { display: none; }
 
 /* Android / 窄屏插件中心：采用播放器设置式的紧凑条目。
    每个插件只保留一个总滑块；点条目本身进入插件。 */

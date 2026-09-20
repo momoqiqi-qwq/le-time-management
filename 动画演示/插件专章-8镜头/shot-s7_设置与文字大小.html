@@ -121,18 +121,16 @@ window.__sfx=(function(){
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>镜头 X-X · 【改成镜头标题】</title>
+<title>镜头 S7 · 设置里能改的，一屏念完</title>
 
-<!-- [改这里] 字体：按本页风格换 2-4 个家族（展示英文 + 中文 + 等宽数据） -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!-- 风格：浅色 SaaS 仪表盘（白卡片柔投影 + 侧栏清单） -->
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Noto+Sans+SC:wght@400;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
 body.paused *{animation-play-state:paused!important}
-/* [改这里] 舞台底色/纹理 —— 换成你这套风格的材质（纸纹/网点/扫描线/蓝图网格…） */
-#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
-  background:radial-gradient(1100px 640px at 50% 40%,#e8ddc6,#d8cbb0);box-shadow:inset 0 0 180px rgba(60,40,10,.25)}
+/* 仪表盘底：冷灰蓝渐变 + 极淡网格 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;background:linear-gradient(160deg,#F2F4F6,#E6EAEE 60%,#DFE4E9);box-shadow:inset 0 0 200px rgba(90,105,115,.14)}
 
 /* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
 #cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
@@ -140,31 +138,62 @@ body.paused *{animation-play-state:paused!important}
 /* ────────────────────────────────────────────────
    [改这里] 画面层：以下到「底盘区」为止全部重写
    ──────────────────────────────────────────────── */
-#title{position:absolute;left:64px;top:46px;opacity:0;transform:translateY(-16px);transition:all .6s cubic-bezier(.16,1,.3,1)}
-#title.show{opacity:1;transform:translateY(0)}
-#title .no{display:inline-block;font-family:'Bebas Neue';font-size:17px;letter-spacing:2px;color:#fffdf4;background:#b53929;border-radius:9px;padding:6px 16px}
-#title h1{margin-top:12px;font-size:46px;font-weight:900;letter-spacing:3px;color:#2c2a26}
-#title .en{font-family:'Share Tech Mono';font-size:15px;color:#8a8272;margin-top:6px;letter-spacing:3px}
-
-#heroCard{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%) translateY(40px);width:560px;background:#fffdf4;
-  border:3px solid #2c2a26;border-radius:18px;box-shadow:10px 10px 0 rgba(44,42,38,.18);padding:42px 46px;text-align:center;
-  opacity:0;transition:all .8s cubic-bezier(.16,1,.3,1)}
-#heroCard.in{opacity:1;transform:translate(-50%,-50%) translateY(0)}
-#heroCard .big{font-family:'Bebas Neue';font-size:96px;line-height:1;color:#b53929;letter-spacing:2px}
-#heroCard .cardcap{margin-top:10px;font-size:22px;font-weight:900;color:#2c2a26;letter-spacing:2px}
-#heroCard.slam{animation:slam .5s cubic-bezier(.2,1.5,.4,1)}
-@keyframes slam{35%{transform:translate(-50%,-50%) scale(1.08) rotate(-1.5deg)}}
-
-/* [改这里] 角色特写位：表情包图片路径按项目素材改；无素材则删掉改用纯 CSS 吉祥物 */
-#mascot{position:absolute;left:-10px;bottom:-8px;width:380px;z-index:28;opacity:0;transition:opacity .9s ease;filter:drop-shadow(0 14px 30px rgba(0,0,0,.35))}
-#mascot.show{opacity:1}
-#mascot img{width:100%;display:block;animation:bob 3.1s ease-in-out infinite alternate}
-@keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
-#mascot .say{position:absolute;right:-160px;top:90px;width:230px;background:#fff;border-radius:16px;padding:13px 17px;
-  font-size:24px;font-weight:900;color:#1a2233;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 10px 30px rgba(0,0,0,.25)}
-#mascot .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fff}
-#mascot .say b{color:#b53929}
-#mascot.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+#cam{transform:scale(1.12)}
+#head{position:absolute;left:120px;top:56px;opacity:0;transform:translateY(-14px);transition:all .6s cubic-bezier(.16,1,.3,1)}
+#head.in{opacity:1;transform:none}
+#head .k{font-family:'Manrope';font-weight:800;font-size:12px;letter-spacing:6px;color:#7E8B94}
+#head h1{font-family:'Manrope','Noto Sans SC';font-weight:800;font-size:44px;letter-spacing:1px;color:#25282A;margin-top:8px}
+#head .s{font-size:14px;color:#7E8B94;margin-top:6px;letter-spacing:1px}
+/* 左：侧栏清单 */
+#list{position:absolute;left:120px;top:210px;width:520px}
+.row{display:flex;align-items:center;gap:14px;padding:13px 16px;border-radius:14px;background:rgba(255,255,255,.62);
+  border:1px solid rgba(255,255,255,.9);margin-bottom:7px;opacity:0;transform:translateX(-22px);
+  transition:opacity .4s ease,transform .5s cubic-bezier(.16,1,.3,1),background .35s,box-shadow .35s;
+  box-shadow:0 1px 3px rgba(60,75,85,.05)}
+.row.in{opacity:1;transform:none}
+.row.on{background:#fff;box-shadow:0 8px 22px rgba(60,75,85,.13);transform:translateX(8px)}
+.row .ic{width:34px;height:34px;border-radius:10px;background:#EEF1F4;display:flex;align-items:center;justify-content:center;flex:none;transition:background .35s}
+.row.on .ic{background:#40484C}
+.row .ic svg{width:16px;height:16px;stroke:#6C7377;stroke-width:1.7;fill:none;transition:stroke .35s}
+.row.on .ic svg{stroke:#fff}
+.row .lb{font-size:15.5px;font-weight:900;color:#25282A;letter-spacing:.4px}
+.row .ht{font-family:'IBM Plex Mono';font-size:10.5px;color:#9CA2A5;margin-top:3px;letter-spacing:.4px}
+/* 右：详情大卡 */
+#detail{position:absolute;left:690px;top:210px;width:1110px;height:700px;background:#fff;border-radius:22px;
+  border:1px solid #E6E9EC;box-shadow:0 22px 50px rgba(60,75,85,.13);padding:34px 38px;opacity:0;transform:translateY(20px);
+  transition:opacity .5s ease,transform .6s cubic-bezier(.16,1,.3,1)}
+#detail.in{opacity:1;transform:none}
+#detail .dk{font-family:'Manrope';font-weight:800;font-size:11px;letter-spacing:5px;color:#9CA2A5}
+#detail h2{font-size:34px;font-weight:900;color:#25282A;margin-top:10px;letter-spacing:1px}
+#detail .dd{font-size:15px;color:#6C7377;line-height:1.9;margin-top:14px;max-width:940px}
+#detail .dd b{color:#25282A}
+#detail .swap{opacity:0;transition:opacity .3s}
+#detail .swap.in{opacity:1}
+/* 文字大小那一屏 */
+#scale{position:absolute;left:38px;right:38px;top:250px;opacity:0;transform:translateY(18px);transition:all .55s cubic-bezier(.16,1,.3,1)}
+#scale.in{opacity:1;transform:none}
+#scale .cap{display:flex;align-items:baseline;gap:12px}
+#scale .cap b{font-size:17px;font-weight:900;color:#25282A}
+#scale .cap s{text-decoration:none;font-family:'IBM Plex Mono';font-size:26px;color:#40484C;font-weight:600}
+#track2{position:relative;margin-top:26px;height:44px}
+#track2 .rail{position:absolute;left:0;right:0;top:20px;height:6px;border-radius:4px;background:#E6E9EC}
+#track2 .fill{position:absolute;left:0;top:20px;width:31%;height:6px;border-radius:4px;background:#40484C;transition:width .18s linear}
+#thumb{position:absolute;left:31%;top:12px;width:22px;height:22px;border-radius:50%;background:#fff;border:2px solid #40484C;
+  box-shadow:0 3px 10px rgba(40,48,52,.28);transition:left .18s linear}
+#ticks{position:absolute;left:0;right:0;top:40px;height:16px;font-family:'IBM Plex Mono';font-size:10.5px;color:#9CA2A5}
+#ticks span{position:absolute;transform:translateX(-50%)}
+#ticks span:first-child{transform:none}#ticks span:last-child{transform:translateX(-100%)}
+#preview{margin-top:46px;border-top:1px dashed #E6E9EC;padding-top:26px}
+#preview .pv{color:#25282A;font-weight:700;line-height:1.5;transition:font-size .2s linear}
+#preview .pv2{color:#6C7377;line-height:1.7;margin-top:12px;transition:font-size .2s linear}
+#stdBtn{position:absolute;right:0;top:0;display:flex;align-items:center;gap:8px}
+#stdBtn .cap2{font-size:11px;letter-spacing:2px;color:#9CA2A5;margin-right:4px}
+#stdBtn .p{min-height:36px;padding:6px 16px;border-radius:10px;border:1px solid #E6E9EC;background:#F7F7F5;
+  font-size:13px;font-weight:700;color:#6C7377;transition:all .35s}
+#stdBtn .p.on{background:#40484C;border-color:#40484C;color:#fff;box-shadow:0 6px 16px rgba(40,48,52,.24)}
+#foot{position:absolute;left:690px;top:930px;font-size:12.5px;color:#7E8B94;letter-spacing:1px;opacity:0;transition:opacity .5s}
+#foot.in{opacity:1}
+#foot b{color:#40484C}
 
 /* ────────────────────────────────────────────────
    [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
@@ -192,42 +221,39 @@ body.paused *{animation-play-state:paused!important}
 <body>
 <div id="stage">
 
-  <!-- [改这里] 全部画面内容包进 #cam -->
+  
   <div id="cam">
-    <div id="title">
-      <span class="no">SHOT X-X</span>
-      <h1>【镜头标题：把内容浓缩成一句话】</h1>
-      <div class="en">ENGLISH SUBTITLE / KEYWORD</div>
+    <div id="head"><div class="k">SETTINGS</div><h1>设置里能改的，一屏念完</h1>
+      <div class="s">十类配置 · 全部存在本机 · 不上传</div></div>
+    <div id="list"></div>
+    <div id="detail">
+      <div class="dk" id="dK">SECTION 01</div><h2 id="dH">界面与交互</h2>
+      <div class="dd" id="dD"></div>
+      <div id="scale">
+        <div id="stdBtn"><span class="cap2">界面缩放</span><div class="p">小</div><div class="p on" id="stdP">标准</div><div class="p">大</div></div>
+        <div class="cap"><b>文字大小</b><s id="pct">100%</s></div>
+        <div id="track2"><div class="rail"></div><div class="fill" id="fill"></div><div id="thumb"></div>
+          <div id="ticks"><span style="left:0">80%</span><span style="left:14.3%">90%</span><span style="left:28.6%">100%</span><span style="left:57.1%">120%</span><span style="left:100%">150%</span></div></div>
+        <div id="preview"><div class="pv" id="pv1">北京大学2026年招收台湾高中毕业生初审结果查询通知</div>
+          <div class="pv2" id="pv2">周一 第 1-2 节 · 数字电子技术 · A102 · 刘晓军</div></div>
+      </div>
     </div>
-
-    <div id="heroCard">
-      <div class="big" id="heroNum">0</div>
-      <div class="cardcap">【核心数字/结论的图解】</div>
-    </div>
-
-    <!-- 角色特写：开工时把 assets/examples/anan - emotion rename/ 整夹复制进输出目录，
-         按情绪速查表(references/character-reactions.md)选图后取消注释 -->
-    <!-- <div id="mascot">
-      <div class="say">吐槽/惊叹台词，<b>关键词</b>高亮</div>
-      <img src="anan - emotion rename/12_粉颊捧笺_娇羞雀跃.png" alt="安安">
-    </div> -->
+    <div id="foot">看不清就拖这里 —— <b>文字大小</b>只管字，<b>界面缩放</b>管整页</div>
   </div>
-
-  <div id="dim"></div>
   <div id="lbT"></div><div id="lbB"></div>
 
-  <div class="corner" id="chap">0X / 章节名</div>
-  <div class="corner" id="src">数据出处 · 日期</div>
+  <div class="corner" id="chap">S7 / 设置</div>
+  <div class="corner" id="src">分类与副标题取自应用内设置侧栏实际条目</div>
 </div>
 
 <div id="hud">
   <div id="track"><div id="bar"></div></div>
-  <div id="hudrow"><span>镜头 X-X · 标题 · 12s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+  <div id="hudrow"><span>镜头 S7 · 设置 · 26s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
 </div>
 
 <script>
 /* ===== [不动] 时间轴引擎 ===== */
-const DUR=12000;                       /* [改这里] = 本镜头规定时长(ms) */
+const DUR=26000;
 const $=s=>document.querySelector(s);
 let t0=performance.now(),paused=false,pStart=0;
 const cues=[],on=(t,f)=>cues.push({t,f,done:false});
@@ -254,24 +280,48 @@ function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.tran
 function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
   tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
 
-/* ────────────────────────────────────────────────
-   [改这里] 本镜头的叙事 cue（示例 12s，注释引用口播节拍）
-   ──────────────────────────────────────────────── */
-on(300,()=>camTo(0,0,1,2.2));                                   // 开场拉镜：特写 → 全景
-on(400,()=>{$('#title').classList.add('show')});
-on(1500,()=>{$('#heroCard').classList.add('in')});
-on(3000,()=>__sfx.pop(0.5));                                        // 口播第 1 句节拍（口播对齐只写 cue 注释，不做字幕条）
-on(5000,()=>{camFocus(960,540,1.22,1.0);$('#heroCard').classList.add('slam')});  // 高潮推近
-on(6800,()=>cnt($('#heroNum'),0,2436,1400));                     // 数字滚动
-on(8500,()=>camTo(0,0,1,1.2));
-on(9500,()=>{const m=$('#mascot');if(m)m.classList.add('show')});   // 角色吐槽登场（无素材时自动跳过）
-/* 音效 cue：见 references/sfx.md 记法 */
-on(300,()=>__sfx.swipe(0.6));
-on(1500,()=>__sfx.pop(0.7));
-on(5000,()=>__sfx.thud(1));
-for(let i=0;i<14;i++)on(6800+i*95,()=>__sfx.type(0.4));          // 滚动连击键音
-on(8300,()=>__sfx.ding(0.9));
-on(9500,()=>__sfx.pop(0.6));
+/* 应用内设置侧栏的真实条目（label + hint） */
+const SEC=[
+ ["界面与交互","密度 / 字号 / 缩放 / 动效 / 窗口","调<b>界面密度</b>、<b>文字大小</b>、<b>界面缩放</b>，还有动效开关、启动页、窗口大小与托盘行为。"],
+ ["主题","配色与阅读模式","六套主题配色，深浅色是<b>两个正交属性</b>：主题管颜色，深色模式管明暗。"],
+ ["任务提醒","预警时间与提示音","任务截止前多久提醒、用什么提示音，音量单独可调。"],
+ ["数据中心","备份 / 恢复 / 交换","JSON、CSV、Excel、ICS 全支持，还有自动恢复点，误删能退回去。"],
+ ["可选同步","网盘快照 / 一键配置引导","WebDAV 快照同步，换手机换电脑时一键把配置搬过去。"],
+ ["AI 与自动任务","Base / API Key / 安全边界","填模型 Base 与 Key，Key 存在系统密钥库里；自动任务的边界写得很清楚。"],
+ ["全局快捷键","命令面板 / 快速捕获 / 插件快捷键","命令面板、快速捕获，以及每个插件的字母快捷键（按拼音首字母自动分配）。"],
+ ["局域网联动","手机联动与二维码","同一 WiFi 下扫码配对，手机和桌面互传。"],
+ ["插件管理","启用 / 导入 / 导出","十五个内置插件的启停、权限，也能导入导出 ZIP。"],
+ ["关于","版本 / 软件更新 / 开源信息","当前版本、检查更新、开源框架清单。"]];
+$('#list').innerHTML=SEC.map((s,i)=>'<div class="row" id="r'+i+'"><span class="ic"><svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="2.4"/><path d="M2 6.5h12"/></svg></span>'+
+  '<span><span class="lb">'+s[0]+'</span><span class="ht">'+s[1]+'</span></span></div>').join('');
+const rows=[...document.querySelectorAll('.row')];
+function pick(i){rows.forEach((r,j)=>r.classList.toggle('on',j===i));
+  $('#dK').textContent='SECTION '+String(i+1).padStart(2,'0');
+  $('#dH').textContent=SEC[i][0];$('#dD').innerHTML=SEC[i][2]}
+pick(0);
+/* 滑杆：80% → 150% → 回到标准 100% */
+const pos=v=>(v-80)/70*100;
+function setScale(v){$('#pct').textContent=v+'%';$('#fill').style.width=pos(v)+'%';$('#thumb').style.left=pos(v)+'%';
+  $('#pv1').style.fontSize=(15*v/100)+'px';$('#pv2').style.fontSize=(13*v/100)+'px'}
+setScale(100);
+
+on(300,()=>camTo(0,0,1,2.0));                                       // 开场拉镜
+on(500,()=>$('#head').classList.add('in'));
+on(900,()=>$('#detail').classList.add('in'));
+for(let i=0;i<10;i++)on(1300+i*430,()=>{rows[i].classList.add('in');__sfx.type(.3)});  // 侧栏逐条落位
+for(let i=0;i<10;i++)on(5900+i*620,()=>{pick(i);__sfx.pop(.34)});   // 逐类念过去
+on(12300,()=>{pick(0);camFocus(1250,420,1.16,1.1);__sfx.whoosh(1.1,.5)});  // 回到「界面与交互」
+on(13400,()=>{$('#dD').innerHTML='「文字大小」这一行 —— <b>拖一下，全部文字跟着长</b>。';
+  $('#scale').classList.add('in');$('#stdP').classList.add('on')});
+on(14600,()=>{setScale(80);$('#stdP').classList.remove('on');__sfx.pop(.4)});  // 先压到最小：「标准」高亮随之取消
+[92,104,116,128,140,150].forEach((v,i)=>on(15400+i*250,()=>{setScale(v);__sfx.type(.18)}));  // 一格一格拖到 150%
+on(18600,()=>camFocus(1250,520,1.2,1.1));                           // 推到放大后的预览文字
+on(20600,()=>{$('#foot').classList.add('in');__sfx.ding(.7)});
+[132,118,106,100].forEach((v,i)=>on(21600+i*220,()=>{setScale(v);__sfx.type(.16)}));  // 拖回标准
+on(23400,()=>{setScale(100);$('#stdP').classList.add('on');__sfx.ding(.85)});
+on(24400,()=>camTo(0,0,1,1.4));                                     // 拉回全景定格
+/* 音效 */
+on(300,()=>__sfx.swipe(.5));
 </script>
 </body>
 </html>

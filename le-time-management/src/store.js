@@ -286,6 +286,32 @@ export function moveTaskRelative(dragId, overId, before = true) {
   changed();
 }
 
+// 跨象限拖放：保留任务的完成态，并按落点插入目标象限的同完成态分组。
+// overId 为 null 表示落在该分组末尾；与本象限拖放一样回填 order，不影响另一完成态分组。
+export function moveTaskToQuad(dragId, targetQuad, overId = null, before = true) {
+  const drag = state.tasks.find((t) => t.id === dragId);
+  const quad = Number(targetQuad);
+  if (!drag || !Number.isInteger(quad) || quad < 1 || quad > 4) return drag || null;
+  if (quad === drag.quad) {
+    if (overId) moveTaskRelative(dragId, overId, before);
+    return drag;
+  }
+  const over = overId ? state.tasks.find((t) => t.id === overId) : null;
+  if (overId && (!over || over.quad !== quad || over.done !== drag.done)) return drag;
+  const seq = state.tasks
+    .filter((t) => t.quad === quad && t.done === drag.done)
+    .sort((a, b) => ((a.order ?? Infinity) - (b.order ?? Infinity)) ||
+      (a.due || "9999").localeCompare(b.due || "9999"));
+  seq.forEach((t, i) => { t.order = i; });
+  const at = over ? seq.findIndex((t) => t.id === overId) : seq.length;
+  if (at < 0) return drag;
+  drag.quad = quad;
+  seq.splice(before ? at : at + 1, 0, drag);
+  seq.forEach((t, i) => { t.order = i; });
+  changed();
+  return drag;
+}
+
 /* ── 插件状态 ── */
 export function pluginState(id) {
   if (!state.plugins[id]) state.plugins[id] = { enabled: true, storage: {} };

@@ -142,7 +142,7 @@ body.paused *{animation-play-state:paused!important}
 #cam{transform:scale(1.26)}
 /* 跑马灯泡拱 */
 .bulbs{position:absolute;left:0;right:0;display:flex;justify-content:space-between;padding:0 60px;pointer-events:none}
-.bulbs i{width:16px;height:16px;border-radius:50%;background:#3a2f12;box-shadow:0 0 0 2px rgba(255,210,63,.14)}
+.bulbs i{width:16px;height:16px;border-radius:50%;background:#3a2f12;box-shadow:0 0 0 2px rgba(255,210,63,.22)}
 .bulbs.on i{animation:bulb 1s steps(1) infinite}
 .bulbs.on i:nth-child(2n){animation-delay:.25s}.bulbs.on i:nth-child(3n){animation-delay:.5s}.bulbs.on i:nth-child(4n){animation-delay:.75s}
 @keyframes bulb{0%,49%{background:#ffd23f;box-shadow:0 0 18px 4px rgba(255,210,63,.6)}50%,100%{background:#4a3c14;box-shadow:0 0 0 rgba(0,0,0,0)}}
@@ -167,7 +167,7 @@ body.paused *{animation-play-state:paused!important}
 #ring circle{fill:none;stroke-linecap:round}
 #ring .track{stroke:rgba(45,212,238,.14);stroke-width:26}
 #ring .prog{stroke:#ff4d6d;stroke-width:26;stroke-dasharray:1400;stroke-dashoffset:0;transition:stroke-dashoffset 1s linear}
-#dial{position:absolute;left:60px;top:56px;width:488px;height:488px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#dial{position:absolute;left:60px;top:56px;width:488px;height:488px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .3s}
 #dial .ms{font-family:'Share Tech Mono';font-size:104px;color:#fff;line-height:1;letter-spacing:2px;text-shadow:0 0 30px rgba(45,212,238,.55)}
 #dial .lab{font-family:'Bungee';font-size:16px;letter-spacing:7px;color:#2dd4ee;margin-top:16px}
 #dial .mode{font-size:14px;letter-spacing:4px;color:#7f93c9;margin-top:8px}
@@ -195,11 +195,12 @@ body.paused *{animation-play-state:paused!important}
   font-family:'Share Tech Mono';font-size:17px;color:#8fa3d8;letter-spacing:2px;opacity:0;transition:opacity .6s}
 #prize.in{opacity:1}
 #prize b{color:#ffd23f;font-size:30px;font-weight:400}
-#done{position:absolute;left:50%;top:47%;transform:translate(-50%,-50%) scale(.5);text-align:center;opacity:0;
+#done{position:absolute;left:704px;top:600px;transform:translate(-50%,-50%) scale(.5);text-align:center;opacity:0;
   transition:all .55s cubic-bezier(.2,1.6,.4,1);pointer-events:none;z-index:26}
 #done.in{opacity:1;transform:translate(-50%,-50%) scale(1)}
-#done .big{font-family:'Bungee';font-size:120px;color:#ffd23f;letter-spacing:6px;text-shadow:0 8px 0 #ff4d6d,0 0 60px rgba(255,210,63,.6)}
-#done .sm{font-size:22px;letter-spacing:8px;color:#fff;margin-top:14px}
+#done .big{font-family:'Bungee';font-size:88px;color:#ffd23f;letter-spacing:3px;line-height:1;
+  text-shadow:0 6px 0 #ff4d6d,0 0 50px rgba(255,210,63,.65)}
+#done .sm{font-size:17px;letter-spacing:4px;color:#fff;margin-top:16px}
 #slowtag{position:absolute;left:50%;top:236px;transform:translateX(-50%);border-radius:999px;padding:7px 20px;
   background:rgba(255,77,109,.16);border:1px solid rgba(255,77,109,.5);color:#ff9fb0;font-family:'Share Tech Mono';
   font-size:14px;letter-spacing:3px;opacity:0;transition:opacity .35s;z-index:26}
@@ -261,7 +262,7 @@ body.paused *{animation-play-state:paused!important}
   <div id="lbT"></div><div id="lbB"></div>
 
   <div class="corner" id="chap">S3 / 番茄专注</div>
-  <div class="corner" id="src" style="top:56px;bottom:auto">自定义时长精确到秒 · 最短 1 秒 · 结束音为内置提示音</div>
+  <div class="corner" id="src">自定义时长精确到秒 · 最短 1 秒 · 结束音为内置提示音</div>
 </div>
 
 <div id="hud">
@@ -316,10 +317,11 @@ on(4000,()=>{$('#startBtn').classList.remove('press');$('#slowtag').classList.ad
 on(4200,()=>{ms.textContent='0.60';prog.style.strokeDashoffset=L*.4;__sfx.type(.5)});
 on(4600,()=>{ms.textContent='0.30';prog.style.strokeDashoffset=L*.7;__sfx.type(.5)});
 on(5000,()=>{ms.textContent='0.08';prog.style.strokeDashoffset=L*.92;__sfx.type(.6)});
-on(5300,()=>{ms.textContent='0.00';prog.style.strokeDashoffset=L;                       // 归零
+on(5300,()=>{prog.style.strokeDashoffset=L;$('#dial').style.opacity='0';               // 归零：读数让位给 DING
   $('#done').classList.add('in');$('#slowtag').classList.remove('on');
   document.getElementById('stage').classList.remove('letter');
-  camFocus(960,540,1.24,.5);__sfx.ding(1.2);after(120,()=>__sfx.ding(.9));after(260,()=>__sfx.ding(.7))});
+  camFocus(960,540,1.24,.5);__sfx.ding(1.2)});
+on(5420,()=>__sfx.ding(.9));on(5560,()=>__sfx.ding(.7));                               // 提示音三连
 on(5900,()=>camFocus(960,540,1.1,1.1));                             // 冲击后拉回
 on(6600,()=>{$('#pc').textContent='10';$('#pm').textContent='5.4';$('#prize').classList.add('in');__sfx.pop(.6)});  // 奖池 +1
 on(7400,()=>{for(let i=0;i<9;i++)after(i*70,()=>__sfx.type(.3))});  // 计数连击

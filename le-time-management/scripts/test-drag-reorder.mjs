@@ -10,6 +10,7 @@
  *      且清除必须延迟（pointerup 先于 touchend 发出，立即清会漏掉同一次触摸）。
  *   ④ 长按拖拽期间不弹右键菜单（dragReorder 标志守卫 contextmenu）。
  *   ⑤ 键盘可达：Alt+↑/↓ 重排、焦点回到被移动的卡片、跨完成态边界忽略。
+ *   ⑥ 跨象限：指针落在哪个象限就移入哪个象限，并保持完成项沉底。
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -31,6 +32,8 @@ assert.match(storeJs, /over\.quad !== drag\.quad \|\| over\.done !== drag\.done/
   "moveTaskRelative 必须拒绝跨象限 / 跨完成态换位（完成沉底语义不破坏）");
 assert.match(storeJs, /seq\.forEach\(\(t, i\) => \{ t\.order = i; \}\)/,
   "moveTaskRelative 必须懒回填 order（首次拖拽才写 0..n-1，老数据无迁移）");
+assert.match(storeJs, /export function moveTaskToQuad\(dragId, targetQuad, overId = null, before = true\)/,
+  "store 必须导出跨象限移动入口 moveTaskToQuad");
 // 排序键必须与 tasksOfQuad 完全对齐：createdAt 尾键会让「插到相邻卡前面」在
 // DOM 序与 store 序里落点不同（真浏览器探针抓到：拖拽落点跳位），不许回潮
 const moveBlock = storeJs.slice(storeJs.indexOf("export function moveTaskRelative"), storeJs.indexOf("/* ── 插件状态 ── */"));
@@ -92,6 +95,10 @@ assert.match(quadrantJs, /newCard\.animate\(/,
   "松手后新卡必须从幽灵落点平滑接位（拖拽动画的收尾一拍）");
 assert.match(quadrantJs, /S\.moveTaskRelative\(dragId, next\.dataset\.id, true\)/,
   "松手必须把顺序写回 store（moveTaskRelative），不能只改 DOM");
+assert.match(quadrantJs, /document\.elementFromPoint\(x, y\)\?\.closest\?\.\("\.q\[data-quad\]"\)/,
+  "拖动时必须用指针坐标识别目标象限");
+assert.match(quadrantJs, /S\.moveTaskToQuad\(dragId, targetQuad, targetOverId, true\)/,
+  "跨象限松手必须把象限与落点写回 store");
 assert.match(quadrantJs, /import \{ reducedMotion \} from "\.\.\/motion\.js"/,
   "quadrant 必须引入 reducedMotion()");
 assert.match(quadrantJs, /if \(!reducedMotion\(\)\) \{\s*\n\s*const ghost/,
@@ -104,7 +111,7 @@ assert.match(quadrantJs, /navigator\.vibrate\?\.\(10\)/,
 /* ── ③ 手势让路：swipeSuspended ── */
 assert.match(quadrantJs, /document\.body\.dataset\.swipeSuspended = "1"/,
   "拖拽会话开始必须置 body[data-swipe-suspended=1]（滑动返回让路）");
-assert.match(quadrantJs, /setTimeout\(\(\) => \{ if \(!pd\?\.active\) delete document\.body\.dataset\.swipeSuspended; \}, 80\)/,
+assert.match(quadrantJs, /setTimeout\(\(\) => \{ if \(!pd\?\.active && document\.body\.dataset\.cardSwipe !== "1"\) delete document\.body\.dataset\.swipeSuspended; \}, 80\)/,
   "swipeSuspended 清除必须延迟 80ms：pointerup 先于 touchend 发出，立即清会把拖拽误判成滑动返回");
 const swipeAt = shellJs.indexOf("内容区左右滑动 = 返回上一页");
 assert.ok(swipeAt > -1, "shell 滑动段注释锚存在");
@@ -114,7 +121,7 @@ assert.match(swipeBlock, /document\.body\.dataset\.swipeSuspended === "1"/,
   "shell touchend 必须检查 swipeSuspended：拖拽卡片的横移满足滑动阈值，不拦会误触发返回");
 
 /* ── ④ 长按不弹菜单 ── */
-assert.match(quadrantJs, /document\.body\.dataset\.dragReorder === "1"\) return;/,
+assert.match(quadrantJs, /document\.body\.dataset\.dragReorder === "1" \|\| document\.body\.dataset\.cardSwipe === "1"\) return;/,
   "卡片 contextmenu 必须守卫 dragReorder：触屏长按进入拖拽时浏览器会补发 contextmenu");
 assert.match(quadrantJs, /document\.body\.dataset\.dragReorder = "1"/,
   "拖拽会话开始必须置 body[data-drag-reorder=1]");
@@ -133,6 +140,7 @@ assert.match(quadrantJs, /while \(j >= 0 && j < seq\.length && seq\[j\]\.done !=
 assert.match(styles, /\.tkc\.dragging \{ opacity: \.3/, "被拖卡必须有半透明占位样式");
 assert.match(styles, /\.tkc\.drag-ghost \{ position: fixed/, "幽灵卡必须是 fixed 定位跟随指针");
 assert.match(styles, /\.tks\.drag-live \{ cursor: grabbing/, "拖拽会话中列表要有 grabbing 光标");
+assert.match(styles, /\.q\.quad-drop-target \{ outline:/, "跨象限落点必须有可视高亮");
 assert.match(styles, /@keyframes plug-bulk-pop/, "批量勾选要有错落弹起动画");
 assert.match(styles, /@keyframes plug-bulk-check/, "勾选框本身也要有弹跳动画");
 assert.match(styles, /\.plug-card\.bulk-pop \{ animation: plug-bulk-pop \.42s cubic-bezier\(\.22, \.8, \.22, 1\) both; animation-delay: var\(--bi, 0ms\); \}/,
@@ -185,5 +193,13 @@ assert.deepEqual(ids(), ["tC", "tB", "tA", "tD"], "B 下移一位（插到 C 后
 // 新增任务没有 order：落回组尾（order=Infinity 兜底），不挤乱用户排好的顺序
 S.addTask({ id: "tF", title: "F（新加）", quad: 1, done: false, due: null });
 assert.deepEqual(ids(), ["tC", "tB", "tA", "tF", "tD"], "新任务必须排到未完成组尾部，已完成组不受影响");
+
+// 跨象限：A 落到象限 2 的 E 前，再把完成项 D 放到同象限；两组依然分开。
+S.moveTaskToQuad("tA", 2, "tE", true);
+assert.deepEqual(S.tasksOfQuad(2).map((t) => t.id), ["tA", "tE"], "A 应移到象限 2 并落在 E 前");
+assert.equal(S.taskById("tA").quad, 2, "跨象限必须持久化 quad");
+S.moveTaskToQuad("tD", 2);
+assert.deepEqual(S.tasksOfQuad(2).map((t) => t.id), ["tA", "tE", "tD"], "跨象限后完成项仍沉底");
+assert.deepEqual(ids(), ["tC", "tB", "tF"], "原象限不应再保留已移走的卡片");
 
 console.log("PASS: moveTaskRelative / tasksOfQuad 行为面真跑（懒回填 / 前后插 / 跨组拒绝 / 新任务沉底）");

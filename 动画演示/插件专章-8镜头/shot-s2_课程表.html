@@ -171,7 +171,7 @@ body.paused *{animation-play-state:paused!important}
 #title h1{font-family:'Ma Shan Zheng';font-size:56px;color:#2F4858;letter-spacing:2px;line-height:1}
 #title .sub{font-family:'ZCOOL KuaiLe';font-size:19px;color:#8B7B5E;letter-spacing:2px;margin-top:8px}
 #title .sub em{font-style:normal;color:#B85E5E}
-#stamp{position:absolute;left:1520px;top:214px;width:186px;height:186px;border:6px solid rgba(184,94,94,.62);border-radius:50%;
+#stamp{position:absolute;left:1424px;top:126px;width:186px;height:186px;border:6px solid rgba(184,94,94,.62);border-radius:50%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;color:rgba(184,94,94,.72);font-weight:900;
   transform:rotate(-14deg) scale(2.4);opacity:0;transition:all .5s cubic-bezier(.2,1.5,.4,1);z-index:21}
 #stamp.hit{opacity:1;transform:rotate(-14deg) scale(1)}
@@ -322,11 +322,11 @@ on(1100,()=>{$('#q').classList.add('on');__sfx.type(.4);after(120,()=>__sfx.type
 on(2100,()=>{camFocus(1400,100,1.16,1.0);__sfx.ding(.8)});          // 命中警察大学
 on(3300,()=>{camTo(0,0,1,1.1);$('#arrow').classList.add('show')});
 on(4100,()=>{$('#import').classList.add('torn');__sfx.swipe(.7)});  // 撕开：从教务系统撕进手账
+on(4500,()=>$('#arrow').classList.remove('show'));                  // 撕完收起箭头
 on(4700,()=>{$('#title').classList.add('show');$('#book').classList.add('in');__sfx.pop(.5)});
 for(let i=0;i<blocks.length;i++)on(5300+i*68,()=>{blocks[i].classList.add('in');__sfx.type(.26)});  // 38 门课逐块贴上
-on(7600,()=>{const b=blocks[0];b.classList.add('hot');__sfx.ding(.85)});   // 周一第一节高亮
-on(8400,()=>{const r=blocks[0].getBoundingClientRect(),c=cam.getBoundingClientRect(),s=c.width/1920;
-  camFocus((r.left-c.left)/s+ (r.width/s)/2,(r.top-c.top)/s+(r.height/s)/2,1.28,1.1);__sfx.whoosh(1.1,.5)});  // 推到那块课
+on(7600,()=>{blocks[0].classList.add('hot');__sfx.ding(.85)});      // 周一第一节高亮
+on(8400,()=>{camFocus(327,411,1.3,1.1);__sfx.whoosh(1.1,.5)});      // 推到那块课
 on(11000,()=>camFocus(500,600,1.16,1.2));                           // 顺着一列往下读
 on(13600,()=>camFocus(1200,620,1.16,1.2));                          // 摇到右边几天
 on(16200,()=>camTo(0,0,1,1.4));                                     // 拉回全景

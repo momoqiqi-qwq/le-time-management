@@ -726,6 +726,13 @@ export function renderShell(root) {
       // 桌面端侧栏仍保留插件直达列表；移动端底栏只留核心入口（.plug-list 被隐藏）
       const box = el("div", { class: "plug-list" }, el("div", { class: "sec" }, "插 件 视 图"));
       for (const pv of orderedPluginViews()) box.append(navBtn(`plug:${pv.id}`, true));
+      if (desktopWindow) {
+        attachPluginListDrag(box, () => {
+          S.getState().settings.pluginOrder = [...box.querySelectorAll("button[data-plugin-id]")].map((item) => item.dataset.pluginId);
+          S.persistSoon();
+          toast("插件顺序已保存，并会随同步快照一起同步");
+        });
+      }
       nav.append(box);
     }
   }
@@ -759,34 +766,9 @@ export function renderShell(root) {
       b.addEventListener("contextmenu", (event) => openNavContextMenu(event, id));
     }
     if (desktopWindow && isPlug && def.pluginView?.pluginId) {
-      b.draggable = true;
       b.dataset.pluginId = def.pluginView.pluginId;
-      b.title = `${def.title} · ${sc ? `快捷键 ${PLUGIN_SHORTCUT_MODIFIER}+${sc} · ` : ""}可拖动调整插件顺序`;
+      b.title = `${def.title} · ${sc ? `快捷键 ${PLUGIN_SHORTCUT_MODIFIER}+${sc} · ` : ""}拖动或 Alt+↑/↓ 调整插件顺序`;
       b.addEventListener("contextmenu", (event) => openPluginContextMenu(event, def.pluginView.pluginId));
-      b.addEventListener("dragstart", (e) => {
-        b.classList.add("nav-dragging");
-        e.dataTransfer?.setData("text/plugin-id", def.pluginView.pluginId);
-        if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
-      });
-      b.addEventListener("dragend", () => {
-        b.classList.remove("nav-dragging");
-        nav.querySelectorAll(".nav-drop-target").forEach((node) => node.classList.remove("nav-drop-target"));
-      });
-      b.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        b.classList.add("nav-drop-target");
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-      });
-      b.addEventListener("dragleave", () => b.classList.remove("nav-drop-target"));
-      b.addEventListener("drop", (e) => {
-        e.preventDefault();
-        b.classList.remove("nav-drop-target");
-        const source = e.dataTransfer?.getData("text/plugin-id");
-        if (movePluginBefore(source, def.pluginView.pluginId)) {
-          renderNav();
-          toast("插件顺序已保存，并会随同步快照一起同步");
-        }
-      });
     }
     return b;
   }
@@ -960,6 +942,7 @@ export function renderShell(root) {
   }
 
   function openSettingsModal(section = "") {
+    const target = arguments[1] || "";
     // v0.59.0：设置是底栏呼出态唯一的「让位」出口 —— 弹窗要占满屏，菜单先收回去。
     // 桌面宽屏下 .chrome-shown 无视觉效果，仍然门槛一下，免得 ⋮ 的 title 被无关路径改掉。
     // 这一让不是单程的：close() 里按 railShownBeforeSettings 恢复（点 ⋮ 呼出后再进设置，
@@ -992,7 +975,7 @@ export function renderShell(root) {
     panel._close = close;
     document.addEventListener("keydown", onKey);
     document.body.append(mask, panel);
-    renderSettings(panel.querySelector(".settings-modal-body"), { section });
+    renderSettings(panel.querySelector(".settings-modal-body"), { section, target });
   }
 
   function updateQuickDockToggle() {
@@ -1499,7 +1482,7 @@ export function renderShell(root) {
   // 捕获/插件可请求跳转视图
   window.addEventListener("tide:navigate", (e) => switchTo(e.detail));
   // 别处（如更新提示条的「立即更新」）可以直接点名打开设置里的某一节
-  window.addEventListener("tide:open-settings", (e) => openSettingsModal(e.detail?.section || ""));
+  window.addEventListener("tide:open-settings", (e) => openSettingsModal(e.detail?.section || "", e.detail?.target || ""));
   switchTo(activeView, undefined, { history: false });
   // Android 返回键的历史栈：必须在首屏视图定下来之后挂（readView 要读到它）。
   // 桌面端没有返回键，但浏览器/WebView 的后退（Alt+←）也走同一条逻辑。
@@ -1519,6 +1502,143 @@ export function renderShell(root) {
   window.addEventListener("popstate", syncBackButton);
   syncBackButton();
   S.subscribe(renderStat);
+}
+
+/* ── 侧栏插件拖拽重排 ─────────────────────────────────────────────────────────
+ * 被拖项仍留在 flex 流里充当明确空槽；body 上的克隆项跟随指针。激活后用 rAF
+ * 每帧按缓存的 item 高度重新推演落点，DOM 一变，其余项各自用 FLIP 追赶新位置。
+ * 指针停下时槽位不再变化，所有项自然停在当前布局，不会自动滑向列表端点。
+ */
+function attachPluginListDrag(list, onCommit) {
+  let pd = null;
+  const items = () => [...list.querySelectorAll(":scope > button[data-plugin-id]")];
+  const clearLong = (st) => { if (st.longTimer) { clearTimeout(st.longTimer); st.longTimer = null; } };
+  const detachDoc = (st) => {
+    document.removeEventListener("pointerup", st.docUp, true);
+    document.removeEventListener("pointercancel", st.docCancel, true);
+  };
+  const moveGhost = (st) => st.ghost?.style.setProperty("transform", `translate(${st.x - st.gx}px, ${st.y - st.gy}px) scale(1.025)`);
+  const stopFrame = (st) => { if (st.frame) cancelAnimationFrame(st.frame); st.frame = 0; };
+  const endSession = (st) => {
+    clearLong(st); stopFrame(st); detachDoc(st);
+    st.ghost?.remove(); st.ghost = null;
+    st.card?.classList.remove("nav-dragging");
+    list.classList.remove("plugin-drag-live");
+    try { st.card?.releasePointerCapture(st.pointerId); } catch { /* document 兜底已覆盖 */ }
+    if (st.swallowClick) setTimeout(() => document.removeEventListener("click", st.swallowClick, true), 0);
+    if (pd === st) pd = null;
+  };
+  const cancel = (st = pd) => {
+    if (!st) return;
+    if (st.active) for (const node of st.originOrder) list.append(node);
+    st.active = false;
+    endSession(st);
+  };
+  const computeSlot = (st, y) => {
+    let top = st.contentTop;
+    const mids = [];
+    for (const item of items().filter((node) => node !== st.card)) {
+      const height = st.heights[item.dataset.pluginId] || item.offsetHeight;
+      mids.push(top + height / 2);
+      top += height + st.gap;
+    }
+    return slotIndexFor(mids, y);
+  };
+  const reorderDOM = (st, slot) => {
+    const peers = items().filter((node) => node !== st.card);
+    const before = new Map(peers.map((node) => [node, node.getBoundingClientRect().top]));
+    list.insertBefore(st.card, peers[slot] ?? null);
+    if (reducedMotion()) return;
+    for (const node of peers) {
+      const dy = before.get(node) - node.getBoundingClientRect().top;
+      if (dy) node.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }],
+        { duration: 185, easing: "cubic-bezier(.22,.8,.22,1)" });
+    }
+  };
+  const frame = (st) => {
+    if (!st.active) return;
+    moveGhost(st);
+    const slot = computeSlot(st, st.y);
+    if (slot !== st.slot) { st.slot = slot; reorderDOM(st, slot); }
+    st.frame = requestAnimationFrame(() => frame(st));
+  };
+  const finish = (st) => {
+    if (!st.active) return;
+    st.active = false;
+    const ghostRect = st.ghost?.getBoundingClientRect();
+    st.card.classList.remove("nav-dragging");
+    list.classList.remove("plugin-drag-live");
+    onCommit?.();
+    if (ghostRect && !reducedMotion()) {
+      const landed = st.card.getBoundingClientRect();
+      st.card.animate([
+        { transform: `translate(${ghostRect.left - landed.left}px, ${ghostRect.top - landed.top}px) scale(1.025)` },
+        { transform: "none" },
+      ], { duration: 210, easing: "cubic-bezier(.22,.8,.22,1)" });
+    }
+    endSession(st);
+  };
+  const begin = (st) => {
+    if (!list.contains(st.card) || st.active) return;
+    st.active = true; clearLong(st);
+    st.originOrder = [...list.children];
+    const rect = st.card.getBoundingClientRect();
+    st.gx = st.x - rect.left; st.gy = st.y - rect.top;
+    st.gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+    st.contentTop = items()[0]?.getBoundingClientRect().top || list.getBoundingClientRect().top;
+    st.heights = Object.fromEntries(items().map((node) => [node.dataset.pluginId, node.offsetHeight]));
+    st.card.classList.add("nav-dragging"); list.classList.add("plugin-drag-live");
+    if (!reducedMotion()) {
+      st.ghost = st.card.cloneNode(true);
+      st.ghost.classList.remove("nav-dragging", "on");
+      st.ghost.classList.add("plugin-nav-ghost");
+      st.ghost.removeAttribute("data-plugin-id");
+      st.ghost.style.width = `${rect.width}px`; st.ghost.style.height = `${rect.height}px`;
+      document.body.append(st.ghost);
+    }
+    navigator.vibrate?.(10);
+    st.swallowClick = (event) => { event.preventDefault(); event.stopPropagation(); };
+    document.addEventListener("click", st.swallowClick, true);
+    try { st.card.setPointerCapture(st.pointerId); } catch { /* document 兜底 */ }
+    st.docUp = (event) => { if (event.pointerId === st.pointerId) finish(st); };
+    st.docCancel = (event) => { if (event.pointerId === st.pointerId) cancel(st); };
+    document.addEventListener("pointerup", st.docUp, true);
+    document.addEventListener("pointercancel", st.docCancel, true);
+    st.slot = computeSlot(st, st.y);
+    st.frame = requestAnimationFrame(() => frame(st));
+  };
+
+  list.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const card = event.target.closest?.("button[data-plugin-id]");
+    if (!card || !list.contains(card)) return;
+    pd = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false, longTimer: null, frame: 0, ghost: null, swallowClick: null, docUp: null, docCancel: null };
+    if (event.pointerType !== "mouse") pd.longTimer = setTimeout(() => { if (pd?.card === card && !pd.active) begin(pd); }, 240);
+  });
+  list.addEventListener("pointermove", (event) => {
+    const st = pd;
+    if (!st || event.pointerId !== st.pointerId) return;
+    st.x = event.clientX; st.y = event.clientY;
+    if (st.active) { event.preventDefault(); return; }
+    const dx = st.x - st.startX, dy = st.y - st.startY;
+    if (st.longTimer) { if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLong(st); return; }
+    if (event.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) begin(st);
+  });
+  list.addEventListener("pointerup", (event) => {
+    const st = pd; if (!st || event.pointerId !== st.pointerId) return;
+    if (st.active) finish(st); else endSession(st);
+  });
+  list.addEventListener("pointercancel", (event) => { if (pd && event.pointerId === pd.pointerId) cancel(pd); });
+  list.addEventListener("touchmove", (event) => { if (pd?.active) event.preventDefault(); }, { passive: false });
+  list.addEventListener("keydown", (event) => {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    const card = event.target.closest?.("button[data-plugin-id]");
+    const order = items(); const at = order.indexOf(card); const to = at + (event.key === "ArrowDown" ? 1 : -1);
+    if (at < 0 || to < 0 || to >= order.length) return;
+    event.preventDefault();
+    if (to > at) list.insertBefore(card, order[to].nextSibling); else list.insertBefore(card, order[to]);
+    onCommit?.(); card.focus();
+  });
 }
 
 /* ── v0.53.0：侧栏操作条拖拽重排 ──

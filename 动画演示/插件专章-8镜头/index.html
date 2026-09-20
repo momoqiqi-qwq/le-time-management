@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>插件专章 · 场记总览（8 镜 · 2 分 24 秒）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Noto+Serif+SC:wght@400;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100%;background:#E8E0D0;color:#2A2622;font-family:'Noto Serif SC',serif;padding:56px 0 90px}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;opacity:.5;
+  background-image:radial-gradient(rgba(42,38,34,.09) 1px,transparent 1px);background-size:22px 22px}
+.wrap{position:relative;max-width:1280px;margin:0 auto;padding:0 40px}
+/* 片头：场记板 */
+.slate{display:grid;grid-template-columns:1fr 300px;gap:28px;align-items:end;border-bottom:3px double #2A2622;padding-bottom:26px}
+.slate .k{font-family:'IBM Plex Mono';font-size:12px;letter-spacing:6px;color:#7A6E58}
+.slate h1{font-size:56px;font-weight:900;letter-spacing:2px;line-height:1.1;margin-top:10px}
+.slate h1 em{font-style:normal;color:#B53929}
+.slate .meta{font-family:'IBM Plex Mono';font-size:13px;line-height:2;color:#544A3A;text-align:right}
+.slate .meta b{color:#2A2622}
+/* 拍板条 */
+.clap{display:flex;height:34px;margin-top:-2px}
+.clap i{flex:1;background:#2A2622;transform:skewX(-32deg)}
+.clap i:nth-child(even){background:#E8E0D0;border-left:2px solid #2A2622;border-right:2px solid #2A2622}
+/* 分组标题 */
+.grp{margin:44px 0 16px;display:flex;align-items:baseline;gap:14px}
+.grp h2{font-size:15px;letter-spacing:5px;font-weight:900;color:#B53929}
+.grp s{text-decoration:none;font-family:'IBM Plex Mono';font-size:11px;color:#7A6E58;letter-spacing:2px}
+.grp::after{content:'';flex:1;height:1px;background:rgba(42,38,34,.24)}
+/* 镜头卡 */
+.shot{display:grid;grid-template-columns:96px 1fr 250px;gap:20px;align-items:start;background:#F2ECDF;
+  border:1.5px solid rgba(42,38,34,.4);padding:18px 22px;margin-bottom:12px;text-decoration:none;color:inherit;
+  box-shadow:6px 6px 0 rgba(42,38,34,.13);transition:transform .22s cubic-bezier(.16,1,.3,1),box-shadow .22s,background .22s}
+.shot:hover{transform:translate(-3px,-3px);box-shadow:11px 11px 0 rgba(181,57,41,.28);background:#FBF7EC}
+.shot .no{font-family:'Special Elite';font-size:38px;color:#B53929;line-height:1;letter-spacing:1px}
+.shot .no s{display:block;text-decoration:none;font-family:'IBM Plex Mono';font-size:11px;color:#7A6E58;letter-spacing:2px;margin-top:6px}
+.shot h3{font-size:23px;font-weight:900;letter-spacing:1px}
+.shot p{font-size:13.5px;line-height:1.8;color:#544A3A;margin-top:7px;max-width:820px}
+.shot .side{text-align:right;font-family:'IBM Plex Mono';font-size:11.5px;color:#7A6E58;line-height:1.9}
+.shot .side b{display:block;font-size:22px;color:#2A262A;font-weight:600}
+.shot .tag{display:inline-block;margin-top:8px;font-size:11px;letter-spacing:2px;padding:3px 9px;border:1px solid rgba(42,38,34,.35);border-radius:3px}
+.dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px;border:1px solid rgba(0,0,0,.25)}
+/* 录制须知 */
+.note{margin-top:46px;border:2px dashed rgba(42,38,34,.4);padding:22px 26px;background:rgba(255,255,255,.35)}
+.note h4{font-family:'Special Elite';font-size:16px;letter-spacing:3px;color:#B53929;margin-bottom:12px}
+.note ul{list-style:none;font-size:13.5px;line-height:2.05;color:#463D30}
+.note li::before{content:'▸ ';color:#B53929}
+.note code{font-family:'IBM Plex Mono';font-size:12.5px;background:rgba(42,38,34,.09);padding:1px 6px;border-radius:4px}
+.stamp{position:fixed;right:52px;bottom:44px;width:172px;height:172px;border:5px solid rgba(181,57,41,.5);border-radius:50%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;color:rgba(181,57,41,.62);
+  font-weight:900;transform:rotate(-13deg);pointer-events:none}
+.stamp .a{font-size:23px;letter-spacing:3px}.stamp .b{font-family:'IBM Plex Mono';font-size:11px;letter-spacing:1px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="slate">
+    <div>
+      <div class="k">SCENE 02 / PLUGIN TOUR / U-TIME</div>
+      <h1>插件专章 · <em>8</em> 镜分镜总览</h1>
+    </div>
+    <div class="meta">
+      总时长 <b>2 分 24 秒</b><br>
+      画幅 <b>1920 × 1080</b><br>
+      风格 <b>8 镜不重复</b><br>
+      日期 <b>2026-09-20</b>
+    </div>
+  </div>
+  <div class="clap"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+  <div class="grp"><h2>扉 页</h2><s>CHAPTER CARD</s></div>
+  <a class="shot" href="shot-s0_货架扉页.html">
+    <div class="no">S0<s>8s</s></div>
+    <div><h3>十五个插件，各管一摊消息</h3>
+      <p>包装盒逐个落上货架，上层四盒划「本专章重点」。安安与橘雪莉同框定场。</p>
+      <span class="tag">软件货架 · Baloo 2</span></div>
+    <div class="side"><b>0:00 – 0:08</b>货架 / 射灯 / 价签</div>
+  </a>
+
+  <div class="grp"><h2>重 点 四 镜</h2><s>THE FOUR WE SLOW DOWN FOR</s></div>
+  <a class="shot" href="shot-s1_学校通知.html">
+    <div class="no">S1<s>28s</s></div>
+    <div><h3><span class="dot" style="background:#B85E5E"></span>贴一个网址，公告自己排好队</h3>
+      <p>光标进「学校通知/公告网站网址」→ 粘贴北大本科招生网 → 处理中 → 适配模式：通用高校公告解析 → toast「已读取 8 条公告」→ 8 条真标题逐条落定 → 展开第一条正文 → 转为提醒。</p>
+      <span class="tag">拟真录屏 · 1:1 复刻桌面端窗口</span></div>
+    <div class="side"><b>0:08 – 0:36</b>8 条公告为实抓<br>已读 1 / 46 页</div>
+  </a>
+  <a class="shot" href="shot-s2_课程表.html">
+    <div class="no">S2<s>26s</s></div>
+    <div><h3><span class="dot" style="background:#607D8B"></span>教务系统里的课表，撕下来贴进手账</h3>
+      <p>教务导入条搜「警察」命中中国人民警察大学 → 整条撕开转场 → 和纸胶带把 22 个课块逐块贴上周视图（第 8 周实际课）→ 盖「已导入」圆章。</p>
+      <span class="tag">手账拼贴日历 · ZCOOL KuaiLe / Ma Shan Zheng</span></div>
+    <div class="side"><b>0:36 – 1:02</b>源数据 38 门课<br>节次 08:00–20:40</div>
+  </a>
+  <a class="shot" href="shot-s3_番茄专注.html">
+    <div class="no">S3<s>14s</s></div>
+    <div><h3><span class="dot" style="background:#C86A2E"></span>一秒也算一个番茄</h3>
+      <p>分/秒两个转轮拨到 0 分 1 秒 → 按下「开始」→ 黑边慢放，读数 0.60 / 0.30 / 0.08 / 0.00 → 归零瞬间 DING! 三连提示音 → 奖池已完成番茄 9 → 10。</p>
+      <span class="tag">嘉年华老虎机 · Bungee / 灯泡跑马</span></div>
+    <div class="side"><b>1:02 – 1:16</b>自定义时长最短 1 秒</div>
+  </a>
+  <a class="shot" href="shot-s4_微信推送.html">
+    <div class="no">S4<s>16s</s></div>
+    <div><h3><span class="dot" style="background:#3FA45B"></span>能推到微信的，全在这格里</h3>
+      <p>点「推送内容 ▾」→ 面板展开 → 时间块提醒 / 任务截止提醒 / 插件消息总开关逐格勾上 → 再单独勾学习通·警大门户·竞赛消息·RSS·学校通知 → 高亮「先攒 2 分钟合并成一条」→ 现场取消一个 RSS 再勾回来，证明能细到单个插件。</p>
+      <span class="tag">拟真录屏 · 勾选项取自应用内实际条目</span></div>
+    <div class="side"><b>1:16 – 1:32</b>PushPlus 通道<br>不点「发送测试消息」</div>
+  </a>
+
+  <div class="grp"><h2>一 遍 过</h2><s>MONTAGE · 这一段留给字幕</s></div>
+  <a class="shot" href="shot-s5_一遍过蒙太奇.html">
+    <div class="no">S5<s>18s</s></div>
+    <div><h3>剩下十一张卡，每张一秒</h3>
+      <p>集换式卡册逐张翻页：轮换值日 → 竞赛消息雷达 → 学习通 → 中国节假日 → 周度报告 → 网页收集 → 警大门户通知 → 考试日历 → 拖入消息收纳 → RSS 信息流 → 插件使用说明；每张带真实缓存条数，末尾合计。</p>
+      <span class="tag">集换式卡牌卡册 · 活页环 + 闪卡</span></div>
+    <div class="side"><b>1:32 – 1:50</b>无人声，靠字幕<br>安安快闪 + 定场</div>
+  </a>
+
+  <div class="grp"><h2>收 尾</h2><s>WRAP UP</s></div>
+  <a class="shot" href="shot-s6_深色模式.html">
+    <div class="no">S6<s>8s</s></div>
+    <div><h3>一句话，整套色板跟着换</h3>
+      <p>顶栏「深色模式」点两下：整窗令牌一起过渡到墨蓝，四象限的任务块跟着换色，再点回浅色。深色由浅色令牌按 WCAG 反解派生，与主题正交。</p>
+      <span class="tag">拟真录屏 · 双态换色板</span></div>
+    <div class="side"><b>1:50 – 1:58</b>纸白 #F7F7F5<br>↔ 墨蓝 #17212B</div>
+  </a>
+  <a class="shot" href="shot-s7_设置与文字大小.html">
+    <div class="no">S7<s>26s</s></div>
+    <div><h3>设置里能改的，一屏念完</h3>
+      <p>侧栏十类逐条点亮并念副标题：界面与交互、主题、任务提醒、数据中心、可选同步、AI 与自动任务、全局快捷键、局域网联动、插件管理、关于。回到「界面与交互」——「看不清就拖这里」，文字大小 80% 一格一格拖到 150%，预览文字跟着长，再拖回 100%，「标准」重新高亮。</p>
+      <span class="tag">浅色 SaaS 仪表盘 · Manrope</span></div>
+    <div class="side"><b>1:58 – 2:24</b>十类条目为应用内实际<br>文字大小只管字</div>
+  </a>
+
+  <div class="note">
+    <h4>HOW TO RECORD</h4>
+    <ul>
+      <li>逐页双击打开，点「启动播放」，2 秒黑场渐变后开演；浏览器按 <code>F11</code> 全屏，画面自适应到任意窗口大小。</li>
+      <li>HUD（进度条 / 时间码 / 暂停 / 重播）默认隐藏，鼠标移到视口底部 60px 唤出；录屏时别把鼠标移到底部。</li>
+      <li>口播只写在每页的 cue 注释里，<b>画面上没有字幕条</b>，后期压字幕不会跟画面对不上。</li>
+      <li>音效是 WebAudio 现场合成的，录屏走系统内录音；提示音在 S3 的 5.3 秒处，三连 <code>ding</code>。</li>
+      <li>质检截图用技能里的 <code>scripts/shot.js</code>：虚拟时钟可快进到任意毫秒定格，中间态穿帮一眼能看出来。</li>
+      <li>这些页面不在产品代码路径里，改它们不需要升版本号。</li>
+    </ul>
+  </div>
+</div>
+
+<div class="stamp"><div class="a">插件专章</div><div class="b">8 SHOTS · 144s</div></div>
+</body>
+</html>

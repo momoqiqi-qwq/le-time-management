@@ -121,18 +121,16 @@ window.__sfx=(function(){
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>镜头 X-X · 【改成镜头标题】</title>
+<title>镜头 S5 · 剩下十一张卡，每张一秒</title>
 
-<!-- [改这里] 字体：按本页风格换 2-4 个家族（展示英文 + 中文 + 等宽数据） -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!-- 风格：集换式卡牌卡册（活页环 + 卡槽 + 闪卡翻页） -->
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=ZCOOL+KuaiLe&family=Noto+Sans+SC:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:100%;height:100%;background:#111;overflow:hidden;font-family:'Noto Sans SC',sans-serif}
 body.paused *{animation-play-state:paused!important}
-/* [改这里] 舞台底色/纹理 —— 换成你这套风格的材质（纸纹/网点/扫描线/蓝图网格…） */
-#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;
-  background:radial-gradient(1100px 640px at 50% 40%,#e8ddc6,#d8cbb0);box-shadow:inset 0 0 180px rgba(60,40,10,.25)}
+/* 卡册内页：深绿卡纸 + 压纹 + 活页环阴影 */
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform:translate(-50%,-50%);overflow:hidden;background:radial-gradient(1300px 800px at 50% 42%,#20302c,#111a18 78%);box-shadow:inset 0 0 240px rgba(0,0,0,.62)}
 
 /* ===== [不动] 镜头层：全部画面内容放进 #cam，靠 transform 推拉摇移 ===== */
 #cam{position:absolute;inset:0;transform-origin:0 0;transform:scale(1.2);transition:transform var(--cd,1.4s) cubic-bezier(.16,1,.3,1);z-index:10}
@@ -140,31 +138,62 @@ body.paused *{animation-play-state:paused!important}
 /* ────────────────────────────────────────────────
    [改这里] 画面层：以下到「底盘区」为止全部重写
    ──────────────────────────────────────────────── */
-#title{position:absolute;left:64px;top:46px;opacity:0;transform:translateY(-16px);transition:all .6s cubic-bezier(.16,1,.3,1)}
-#title.show{opacity:1;transform:translateY(0)}
-#title .no{display:inline-block;font-family:'Bebas Neue';font-size:17px;letter-spacing:2px;color:#fffdf4;background:#b53929;border-radius:9px;padding:6px 16px}
-#title h1{margin-top:12px;font-size:46px;font-weight:900;letter-spacing:3px;color:#2c2a26}
-#title .en{font-family:'Share Tech Mono';font-size:15px;color:#8a8272;margin-top:6px;letter-spacing:3px}
+#cam{transform:scale(1.16)}
+/* 卡册背板 */
+#binder{position:absolute;left:120px;top:96px;width:1680px;height:830px;border-radius:26px;
+  background:linear-gradient(150deg,#2b3d38,#1b2724 62%);border:2px solid rgba(255,255,255,.07);
+  box-shadow:0 40px 90px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.07)}
+#binder::before{content:'';position:absolute;inset:0;border-radius:26px;pointer-events:none;
+  background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.022) 0 6px,transparent 6px 12px)}
+.ring{position:absolute;left:-26px;top:150px;width:52px;height:52px;border-radius:50%;
+  border:9px solid #b9a44f;box-shadow:0 0 0 3px rgba(0,0,0,.5),0 6px 14px rgba(0,0,0,.5)}
+.ring.r2{top:390px}.ring.r3{top:630px}
+#tabs{position:absolute;left:50%;top:132px;transform:translateX(-50%);font-family:'Bungee';font-size:15px;letter-spacing:8px;color:#b9a44f}
+#cap{position:absolute;left:50%;bottom:130px;transform:translateX(-50%);text-align:center;font-family:'ZCOOL KuaiLe';
+  font-size:22px;letter-spacing:5px;color:#7f9a90}
+#cap b{color:#ffd23f;font-weight:400;font-family:'Share Tech Mono';font-size:30px;letter-spacing:1px}
 
-#heroCard{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%) translateY(40px);width:560px;background:#fffdf4;
-  border:3px solid #2c2a26;border-radius:18px;box-shadow:10px 10px 0 rgba(44,42,38,.18);padding:42px 46px;text-align:center;
-  opacity:0;transition:all .8s cubic-bezier(.16,1,.3,1)}
-#heroCard.in{opacity:1;transform:translate(-50%,-50%) translateY(0)}
-#heroCard .big{font-family:'Bebas Neue';font-size:96px;line-height:1;color:#b53929;letter-spacing:2px}
-#heroCard .cardcap{margin-top:10px;font-size:22px;font-weight:900;color:#2c2a26;letter-spacing:2px}
-#heroCard.slam{animation:slam .5s cubic-bezier(.2,1.5,.4,1)}
-@keyframes slam{35%{transform:translate(-50%,-50%) scale(1.08) rotate(-1.5deg)}}
-
-/* [改这里] 角色特写位：表情包图片路径按项目素材改；无素材则删掉改用纯 CSS 吉祥物 */
-#mascot{position:absolute;left:-10px;bottom:-8px;width:380px;z-index:28;opacity:0;transition:opacity .9s ease;filter:drop-shadow(0 14px 30px rgba(0,0,0,.35))}
-#mascot.show{opacity:1}
-#mascot img{width:100%;display:block;animation:bob 3.1s ease-in-out infinite alternate}
+/* 当前卡 */
+#card{position:absolute;left:50%;top:486px;width:520px;height:600px;margin-left:-260px;margin-top:-300px;
+  border-radius:22px;background:#f6f3ea;border:3px solid #0d1512;overflow:hidden;transform-origin:50% 50%;
+  box-shadow:0 30px 70px rgba(0,0,0,.6),inset 0 0 0 6px rgba(255,255,255,.5);
+  transform:translateX(-50%) rotateY(90deg);opacity:0;transition:transform .42s cubic-bezier(.2,1.2,.4,1),opacity .3s}
+#card.in{transform:rotateY(0);opacity:1}
+#card.out{transform:rotateY(-90deg) translateX(60px);opacity:0}
+#card .band{height:104px;background:var(--c);display:flex;align-items:center;padding:0 24px;position:relative;overflow:hidden}
+#card .band::after{content:'';position:absolute;inset:-40% -20%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);
+  transform:translateX(-70%);animation:shine 2.6s ease-in-out infinite}
+@keyframes shine{0%,55%{transform:translateX(-70%)}100%{transform:translateX(80%)}}
+#card .band .no{font-family:'Bungee';font-size:15px;letter-spacing:3px;color:rgba(0,0,0,.42)}
+#card .band .cat{margin-left:auto;font-size:12px;letter-spacing:3px;color:rgba(0,0,0,.5);font-weight:900}
+#card .glyph{height:236px;display:flex;align-items:center;justify-content:center;background:#fffdf6}
+#card .glyph svg{width:132px;height:132px;stroke:var(--c);stroke-width:5;fill:none;stroke-linecap:round;stroke-linejoin:round}
+#card .nm{font-family:'Noto Sans SC';font-size:34px;font-weight:900;color:#12211d;text-align:center;margin-top:26px;letter-spacing:1px}
+#card .fn{font-size:16px;color:#5c6b66;text-align:center;margin-top:12px;line-height:1.6;padding:0 30px}
+#card .stat{position:absolute;left:24px;right:24px;bottom:26px;display:flex;align-items:baseline;gap:10px;
+  border-top:2px dashed rgba(18,33,29,.18);padding-top:16px}
+#card .stat b{font-family:'Share Tech Mono';font-size:52px;color:var(--c);line-height:1}
+#card .stat s{text-decoration:none;font-size:14px;color:#5c6b66;letter-spacing:2px}
+#card .rarity{position:absolute;right:22px;top:120px;font-family:'Bungee';font-size:13px;letter-spacing:2px;color:#b9a44f}
+/* 身后叠着的下一批卡 */
+.stack{position:absolute;left:50%;top:486px;width:520px;height:600px;margin:-300px 0 0 -250px;border-radius:22px;
+  background:#e7e2d5;border:3px solid #0d1512;opacity:0;transition:all .5s cubic-bezier(.16,1,.3,1)}
+.stack.in{opacity:1}
+.s1{transform:translate(26px,18px) scale(.97)}.s2{transform:translate(52px,36px) scale(.94)}
+/* 计数 */
+#count{position:absolute;right:150px;top:150px;font-family:'Share Tech Mono';font-size:64px;color:#ffd23f;letter-spacing:2px;opacity:.9}
+#count s{text-decoration:none;font-size:22px;color:#7f9a90}
+/* 角色 */
+#anan{position:absolute;left:-4px;bottom:-14px;width:320px;z-index:28;opacity:0;transition:opacity .9s ease;
+  filter:drop-shadow(0 14px 30px rgba(0,0,0,.5))}
+#anan.show{opacity:1}
+#anan img{width:100%;display:block;animation:bob 3.2s ease-in-out infinite alternate}
 @keyframes bob{from{transform:translateY(0)}to{transform:translateY(-12px)}}
-#mascot .say{position:absolute;right:-160px;top:90px;width:230px;background:#fff;border-radius:16px;padding:13px 17px;
-  font-size:24px;font-weight:900;color:#1a2233;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 10px 30px rgba(0,0,0,.25)}
-#mascot .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #fff}
-#mascot .say b{color:#b53929}
-#mascot.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
+#anan .say{position:absolute;right:-200px;top:80px;width:220px;background:#1d2b27;border-radius:16px;padding:13px 17px;
+  font-size:23px;font-weight:900;color:#eef4f1;line-height:1.45;opacity:0;transform:scale(.6);transition:all .45s cubic-bezier(.34,1.6,.64,1);box-shadow:0 12px 34px rgba(0,0,0,.45)}
+#anan .say::after{content:'';position:absolute;left:24px;bottom:-18px;border:9px solid transparent;border-top:11px solid #1d2b27}
+#anan .say b{color:#ffd23f}
+#anan.show .say{opacity:1;transform:scale(1);transition-delay:.45s}
 
 /* ────────────────────────────────────────────────
    [不动] 底盘区：黑边 / 暗角 / 角注 / HUD（无字幕条）
@@ -192,42 +221,34 @@ body.paused *{animation-play-state:paused!important}
 <body>
 <div id="stage">
 
-  <!-- [改这里] 全部画面内容包进 #cam -->
+  
   <div id="cam">
-    <div id="title">
-      <span class="no">SHOT X-X</span>
-      <h1>【镜头标题：把内容浓缩成一句话】</h1>
-      <div class="en">ENGLISH SUBTITLE / KEYWORD</div>
-    </div>
-
-    <div id="heroCard">
-      <div class="big" id="heroNum">0</div>
-      <div class="cardcap">【核心数字/结论的图解】</div>
-    </div>
-
-    <!-- 角色特写：开工时把 assets/examples/anan - emotion rename/ 整夹复制进输出目录，
-         按情绪速查表(references/character-reactions.md)选图后取消注释 -->
-    <!-- <div id="mascot">
-      <div class="say">吐槽/惊叹台词，<b>关键词</b>高亮</div>
-      <img src="anan - emotion rename/12_粉颊捧笺_娇羞雀跃.png" alt="安安">
-    </div> -->
+    <div id="binder"><span class="ring"></span><span class="ring r2"></span><span class="ring r3"></span></div>
+    <div id="tabs">C O L L E C T I O N &nbsp;B O O K</div>
+    <div class="stack s2" id="stk2"></div><div class="stack s1" id="stk1"></div>
+    <div id="card"><div class="band"><span class="no" id="cno">No.01</span><span class="cat" id="ccat">消息收集</span></div>
+      <div class="rarity">COMMON</div><div class="glyph" id="cglyph"></div>
+      <div class="nm" id="cnm"></div><div class="fn" id="cfn"></div>
+      <div class="stat"><b id="cnum">0</b><s id="cunit">条消息</s></div></div>
+    <div id="count"><span id="ci">01</span><s>/11</s></div>
+    <div id="cap">十一张卡，各收各的消息 · 一共 <b id="total">0</b> 条</div>
+    <div id="anan"><div class="say">翻得比<b>手速</b>还快。</div>
+      <img src="anan - emotion rename/08_倦眼半阖_慵懒无力.png" alt="安安"></div>
   </div>
-
-  <div id="dim"></div>
   <div id="lbT"></div><div id="lbB"></div>
 
-  <div class="corner" id="chap">0X / 章节名</div>
-  <div class="corner" id="src">数据出处 · 日期</div>
+  <div class="corner" id="chap">S5 / 其余 11 个插件</div>
+  <div class="corner" id="src">条数为应用内实际缓存量 · 2026-09-20</div>
 </div>
 
 <div id="hud">
   <div id="track"><div id="bar"></div></div>
-  <div id="hudrow"><span>镜头 X-X · 标题 · 12s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+  <div id="hudrow"><span>镜头 S5 · 消息收集类插件 · 18s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
 </div>
 
 <script>
 /* ===== [不动] 时间轴引擎 ===== */
-const DUR=12000;                       /* [改这里] = 本镜头规定时长(ms) */
+const DUR=18000;
 const $=s=>document.querySelector(s);
 let t0=performance.now(),paused=false,pStart=0;
 const cues=[],on=(t,f)=>cues.push({t,f,done:false});
@@ -254,24 +275,47 @@ function camTo(tx,ty,s,dur){cam.style.setProperty('--cd',dur+'s');cam.style.tran
 function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 推近到 s 倍，自动收边 */
   tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
 
-/* ────────────────────────────────────────────────
-   [改这里] 本镜头的叙事 cue（示例 12s，注释引用口播节拍）
-   ──────────────────────────────────────────────── */
-on(300,()=>camTo(0,0,1,2.2));                                   // 开场拉镜：特写 → 全景
-on(400,()=>{$('#title').classList.add('show')});
-on(1500,()=>{$('#heroCard').classList.add('in')});
-on(3000,()=>__sfx.pop(0.5));                                        // 口播第 1 句节拍（口播对齐只写 cue 注释，不做字幕条）
-on(5000,()=>{camFocus(960,540,1.22,1.0);$('#heroCard').classList.add('slam')});  // 高潮推近
-on(6800,()=>cnt($('#heroNum'),0,2436,1400));                     // 数字滚动
-on(8500,()=>camTo(0,0,1,1.2));
-on(9500,()=>{const m=$('#mascot');if(m)m.classList.add('show')});   // 角色吐槽登场（无素材时自动跳过）
-/* 音效 cue：见 references/sfx.md 记法 */
-on(300,()=>__sfx.swipe(0.6));
-on(1500,()=>__sfx.pop(0.7));
-on(5000,()=>__sfx.thud(1));
-for(let i=0;i<14;i++)on(6800+i*95,()=>__sfx.type(0.4));          // 滚动连击键音
-on(8300,()=>__sfx.ding(0.9));
-on(9500,()=>__sfx.pop(0.6));
+/* 11 个一遍过的插件：名称 / 主色 / 收什么 / 数量 / 图标 */
+const CARDS=[
+ ["轮换值日","#5F8378","宿舍值日表自动轮到今天谁",3,"组","users","M4 20v-2a4 4 0 014-4h4a4 4 0 014 4v2M10 10a4 4 0 100-8 4 4 0 000 8M18 20v-2a4 4 0 00-3-3.9M14 3.1a4 4 0 010 7.8"],
+ ["竞赛消息雷达","#A9853B","报名截止与材料清单自动盯梢",3,"场","radar","M12 3a9 9 0 109 9M12 12l7-5M12 12a4 4 0 100 8 4 4 0 000-8"],
+ ["学习通","#3D6E9C","通知 · 作业 · 考试三类消息",239,"条","book","M3 5.5A2.5 2.5 0 015.5 3H12v18H5.5A2.5 2.5 0 013 18.5zM12 3h6.5A2.5 2.5 0 0121 5.5v13A2.5 2.5 0 0118.5 21H12"],
+ ["中国节假日","#B03A48","放假与调休提前算清",2026,"年","cal","M3 5.5A2.5 2.5 0 015.5 3h13A2.5 2.5 0 0121 5.5v13A2.5 2.5 0 0118.5 21h-13A2.5 2.5 0 013 18.5zM3 8h18M8 3v5M16 3v5"],
+ ["周度报告","#716B83","这一周的时间去哪儿了",1,"份","chart","M4 20V9M10 20V4M16 20v-8M22 20H2"],
+ ["网页收集","#2E8B8B","看到的内容折成自己的卡片",3,"张","globe","M12 3a9 9 0 100 18 9 9 0 000-18M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9S14.5 18.4 12 21c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"],
+ ["警大门户通知","#2F4858","校内门户与校园服务直达",50,"条","shield","M12 3l7 3v6c0 4.4-3 8-7 9-4-1-7-4.6-7-9V6zM9 12l2.2 2.2L15.5 10"],
+ ["考试日历","#8B6D3F","从报名到开考全程倒数",17,"场","clock","M12 3a9 9 0 100 18 9 9 0 000-18M12 7v5.4l3.6 2.2"],
+ ["拖入消息收纳","#6B7A8F","拖进来的东西都有入口",2,"件","box","M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"],
+ ["RSS 信息流","#7A5C8E","分散的更新收成一份报纸",56,"条","rss","M5 19a2 2 0 100-4 2 2 0 000 4M5 11a8 8 0 018 8M5 4c8.3 0 15 6.7 15 15"],
+ ["插件使用说明","#4C5550","每项能力都有路线图",15,"篇","doc","M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"],
+];
+const card=$('#card');
+function show(i){const c=CARDS[i];
+  card.style.setProperty('--c',c[1]);
+  $('#cno').textContent='No.'+String(i+1).padStart(2,'0');
+  $('#cnm').textContent=c[0];$('#cfn').textContent=c[2];
+  $('#cnum').textContent=c[3];$('#cunit').textContent=c[4];
+  $('#cglyph').innerHTML='<svg viewBox="0 0 24 24" aria-hidden="true"><title>'+c[5]+'</title><path d="'+c[6]+'"/></svg>';
+  $('#ci').textContent=String(i+1).padStart(2,'0')}
+show(0);
+const flipOut=()=>{card.classList.remove('in');card.classList.add('out')};
+const flipIn=i=>{show(i);card.classList.remove('out');card.classList.add('in');__sfx.swipe(.5);__sfx.pop(.4)};
+on(300,()=>camTo(0,0,1,2.0));                                       // 开场拉镜
+on(500,()=>{$('#stk1').classList.add('in');$('#stk2').classList.add('in')});
+on(700,()=>{card.classList.add('in');__sfx.pop(.6)});
+for(let i=1;i<11;i++){const t=1500+(i-1)*1400;                     // 11 张卡逐张翻
+  on(t,flipOut);on(t+220,()=>flipIn(i))}
+on(2000,()=>camFocus(960,470,1.1,1.4));
+on(7000,()=>{$('#anan .say').innerHTML='十一张卡，<br>全是<b>收消息</b>的。';
+  $('#anan img').src='anan - emotion rename/09_垂眸出神_淡然凝思.png';$('#anan').classList.remove('show')});  // 中段快闪
+on(7160,()=>{$('#anan').classList.add('show');__sfx.pop(.5)});
+on(16200,()=>{$('#anan .say').innerHTML='每张一秒，<b>够看清</b>。';
+  $('#anan img').src='anan - emotion rename/04_闭目莞尔_温柔娇羞.png';$('#anan').classList.remove('show')}); // 结尾定场
+on(16360,()=>$('#anan').classList.add('show'));
+on(16400,()=>{$('#total').textContent=CARDS.reduce((a,c)=>a+c[3],0);__sfx.ding(.9)});  // 合计条数（直接落值，不用补间）
+on(17200,()=>camTo(0,0,1,1.2));
+/* 音效 */
+on(300,()=>__sfx.swipe(.5));
 </script>
 </body>
 </html>

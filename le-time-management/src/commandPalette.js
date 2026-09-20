@@ -7,6 +7,7 @@ import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { openTaskDrawer } from "./views/drawer.js";
 import { openQuickCapture } from "./capture.js";
 import { closeLayer } from "./motion.js";
+import { SETTINGS_SEARCH_ENTRIES } from "./settingsSearchIndex.js";
 
 let modal = null;
 let input = null;
@@ -25,6 +26,7 @@ const KIND_ICONS = {
   "任务": SVG('<circle cx="12" cy="12" r="10"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>'),
   "已完成任务": SVG('<circle cx="12" cy="12" r="10"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/>'),
   "时间块": SVG('<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'),
+  "设置": SVG('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06-.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
   // 插件类条目的兜底图标（随包 PNG 加载失败 / 外来插件没有图标时）——齿轮。
   "插件": SVG('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
   "已停用插件": SVG('<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
@@ -95,6 +97,16 @@ function entries() {
     run: () => { S.getState().settings.lastDate = b.date; S.persistSoon(); navigate("timeblock"); },
   }));
 
+  const settings = SETTINGS_SEARCH_ENTRIES.map((item) => ({
+    kind: "设置",
+    title: item.title,
+    sub: `设置 · ${item.section === "ui" ? "界面与交互" : item.section === "reminders" ? "任务提醒" : item.section === "data" ? "数据中心" : item.section === "sync" ? "可选同步" : item.section === "ai" ? "AI 与自动任务" : item.section === "shortcuts" ? "全局快捷键" : item.section === "lan" ? "局域网联动" : item.section === "plugins" ? "插件管理" : item.section === "about" ? "关于" : "主题"}`,
+    keywords: item.keywords,
+    // 空查询时让命令、导航、插件和真实任务优先；一旦输入关键词，匹配分仍会把设置项顶上来。
+    priority: 4,
+    run: () => window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: item.section, target: item.title } })),
+  }));
+
   const regs = getRegistry();
   // 生效的 Alt 字母（与侧栏徽标同一套分配规则），有就亮在副标题里
   const shortcutMap = computePluginShortcutMap(pluginShortcutEntries(), getPluginShortcutCustoms());
@@ -113,7 +125,7 @@ function entries() {
       run: () => enabled && pv ? navigate(`plug:${pv.id}`) : navigate("settings"),
     };
   });
-  return [...core, ...plugins, ...tasks, ...blocks];
+  return [...core, ...settings, ...plugins, ...tasks, ...blocks];
 }
 
 function renderResults() {
@@ -166,7 +178,7 @@ export function closeCommandPalette() {
 export function openCommandPalette(initialQuery = "") {
   if (modal) { input.value = initialQuery; renderResults(); input.focus(); return; }
   const mask = el("div", { class: "cmd-mask", onclick: closeCommandPalette });
-  input = el("input", { class: "cmd-input", type: "search", placeholder: "搜索任务、时间块、插件，或输入命令…", value: initialQuery, "aria-label": "全局搜索" });
+  input = el("input", { class: "cmd-input", type: "search", placeholder: "搜索任务、时间块、插件、设置，或输入命令…", value: initialQuery, "aria-label": "全局搜索" });
   // 手机端没有 Esc 键：始终渲染一个 ✕ 关闭按钮（kbd Esc 仅桌面显示，见 CSS）。
   const closeBtn = el("button", { class: "cmd-close", type: "button", "aria-label": "关闭搜索", onclick: closeCommandPalette });
   closeBtn.innerHTML = CLOSE_ICON;

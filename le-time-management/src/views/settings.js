@@ -30,6 +30,27 @@ let navUnsub = null;
 // 但每次「打开设置」都清空 —— 一进来先给一张分类目录，不预展开任何分区（v0.49.1）。
 const settingsNavState = { query: "", filter: "all", expanded: [] };
 
+function revealSettingTarget(root, target) {
+  const wanted = String(target || "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!wanted) return;
+  const candidates = [...root.querySelectorAll([
+    ".setting-row", ".pref-presets", ".ai-field", ".sync-step", ".sync-field",
+    ".data-section-title", ".plugin-title-row", ".about-section-title", ".update-panel",
+    "h2", "h3", "label", "button", "input", "select", "[aria-label]",
+  ].join(","))];
+  const value = (node) => [node.textContent, node.getAttribute?.("aria-label"), node.getAttribute?.("placeholder"), node.getAttribute?.("title")]
+    .filter(Boolean).join(" ").trim().replace(/\s+/g, " ").toLowerCase();
+  const exact = candidates.find((node) => value(node) === wanted);
+  const matched = exact || candidates.find((node) => value(node).includes(wanted));
+  if (!matched) return;
+  const anchor = matched.closest?.(".setting-row,.pref-presets,.ai-field,.sync-step,.sync-field,.data-section-title,.plugin-title-row,.about-section-title,.update-panel") || matched;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    anchor.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    anchor.classList.add("setting-search-target");
+    setTimeout(() => anchor.classList.remove("setting-search-target"), 1800);
+  }));
+}
+
 export function renderSettings(container, opts = {}) {
   settingsNavState.expanded = [];
   // 插件是异步加载的：注册表变化（导航变化）时重渲染，避免卡片缺位。
@@ -465,7 +486,7 @@ export function renderSettings(container, opts = {}) {
     // 外部（如更新提示条的「立即更新」）可以点名要停在哪一节。
     // 放在 apply() 之后：select() 会校验 visibleIds，而那正是 apply() 填的。
     if (opts.section) settingsNavigator.select(opts.section, { animate: false });
+    if (opts.target) revealSettingTarget(content, opts.target);
   };
   render();
 }
-
