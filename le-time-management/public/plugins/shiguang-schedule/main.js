@@ -315,6 +315,7 @@
 .sg .more-menu button[data-action="today"]::before{content:"▤"}
 .sg .more-menu button[data-action="week"]::before{content:"▥"}
 .sg .more-menu button[data-action="settings"]::before{content:"◉"}
+.sg .more-menu button[data-action="edu"]::before{content:"⇩"}
 .sg .more-menu button[data-action="add"]::before{content:"＋"}
 .sg .more-menu button[data-action="tables"]::before{content:"▦"}
 .sg .more-menu button[data-action="style"]::before{content:"◑"}
@@ -518,7 +519,7 @@ const MENU_VIEWS=[['today','今日课表'],['week','课表'],['settings','我的
 function moreMenu(active,showNow=false){
   const views=MENU_VIEWS.map(([id,label])=>`<button role="menuitem" data-action="${id}"${active===id?' class="on"':''}>${label}</button>`).join('');
   const nowBtn=showNow?`<button role="menuitem" data-action="current" class="menu-now">回到本周</button>`:'';
-  return `<div class="more-wrap" data-more-wrap>${button('⋯','menu-toggle','class="more-btn" aria-label="更多菜单" aria-haspopup="menu" aria-expanded="false"')}<div class="more-menu" data-more-menu role="menu" hidden><span class="label">视图</span>${views}${nowBtn?`<span class="sep"></span>${nowBtn}`:''}<span class="sep"></span><span class="label">操作</span><button role="menuitem" data-action="add">添加课程</button><button role="menuitem" data-action="tables">切换课表</button><button role="menuitem" data-action="style">个性化配置</button></div></div>`;
+  return `<div class="more-wrap" data-more-wrap>${button('⋯','menu-toggle','class="more-btn" aria-label="更多菜单" aria-haspopup="menu" aria-expanded="false"')}<div class="more-menu" data-more-menu role="menu" hidden><span class="label">视图</span>${views}${nowBtn?`<span class="sep"></span>${nowBtn}`:''}<span class="sep"></span><span class="label">操作</span><button role="menuitem" data-action="edu">导入教务</button><button role="menuitem" data-action="add">添加课程</button><button role="menuitem" data-action="tables">切换课表</button><button role="menuitem" data-action="style">个性化配置</button></div></div>`;
 }
 function closeMore(){const menu=host?.querySelector('[data-more-menu]');if(!menu||menu.hidden)return;menu.hidden=true;host.querySelector('[data-more-wrap] .more-btn')?.setAttribute('aria-expanded','false');}
 function toggleMore(btn){const menu=btn.closest('[data-more-wrap]')?.querySelector('[data-more-menu]');if(!menu)return;const open=menu.hidden;closeMore();menu.hidden=!open;btn.setAttribute('aria-expanded',open?'true':'false');}

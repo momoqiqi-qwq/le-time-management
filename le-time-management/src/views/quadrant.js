@@ -1,16 +1,19 @@
 // 四象限视图 —— 概念稿 03「权衡」
 import * as S from "../store.js";
-import { el, QUADS, popmenu, toast } from "../ui.js";
+import { el, newBadge, QUADS, popmenu, toast } from "../ui.js";
 import { taskActions } from "../pluginHost.js";
 import { pluginDisplayName, pluginDisplayIcon } from "../pluginAppearance.js";
 import { openTaskDrawer } from "./drawer.js";
 import { reducedMotion } from "../motion.js";
+import { getKeywordHighlights, highlightedText } from "../keywordHighlights.js";
 
 // 展开状态跨重渲染保持
 const expandedCards = new Set();
 
 function taskCard(t) {
-  const scheduled = S.getState().blocks.find((b) => b.taskId === t.id);
+  const state = S.getState();
+  const scheduled = state.blocks.find((b) => b.taskId === t.id);
+  const highlightCfg = getKeywordHighlights(state.settings);
   const hasNote = !!(t.note && t.note.trim());
   // 标题现在一律换行完整显示（卡片随内容变高），不再截断，
   // 所以「可展开」只服务于备注/原始消息，不再由标题长度触发。
@@ -27,7 +30,7 @@ function taskCard(t) {
         t.sourcePlugin ? el("span", { class: "src-ic", title: `来自插件「${pluginDisplayName(t.sourcePlugin)}」的提醒` },
           pluginDisplayIcon(t.sourcePlugin, pluginDisplayName(t.sourcePlugin))) : null,
         (() => {
-          const titleSpan = el("span", { class: "t", title: t.title }, t.title);
+          const titleSpan = el("span", { class: "t", title: t.title }, highlightedText(t.title, highlightCfg), newBadge(t.isNew === true));
           if (expandable) {
             // 点标题就地展开/收起备注，不打开抽屉
             titleSpan.addEventListener("click", (e) => {
@@ -41,13 +44,13 @@ function taskCard(t) {
         })(),
         expandable ? el("span", { class: "exp" }, "⌄") : null,
       ),
-      hasNote ? el("span", { class: "tn" }, t.note) : null,
+      hasNote ? el("span", { class: "tn" }, highlightedText(t.note, highlightCfg)) : null,
       el("span", { class: "m" },
-        t.due ? `截止 ${t.due.slice(5).replace("-", "/")} ${t.dueTime || "23:59"}` : "无截止",
-        t.project ? ` · ${t.project}` : "",
+        highlightedText(t.due ? `截止 ${t.due.slice(5).replace("-", "/")} ${t.dueTime || "23:59"}` : "无截止", highlightCfg),
+        t.project ? highlightedText(` · ${t.project}`, highlightCfg) : "",
         t.attachments?.length ? " · 📷" : ""),
     ),
-    scheduled ? el("span", { class: "sch" }, `已排 ${scheduled.start}`) : null,
+    scheduled ? el("span", { class: "sch" }, highlightedText(`已排 ${scheduled.start}`, highlightCfg)) : null,
     el("span", { class: "est" }, S.durLabel(t.estMin)),
   );
   card.addEventListener("click", () => {

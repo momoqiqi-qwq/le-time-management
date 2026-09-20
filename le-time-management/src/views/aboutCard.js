@@ -12,6 +12,32 @@ function docLink(href, label) {
   return el("a", { class: "btn ghost sm about-link-btn", href, target: "_blank", rel: "noreferrer" }, label);
 }
 
+function faIcon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "fa-ic");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `/icons/fontawesome/solid.svg#${name}`);
+  svg.append(use);
+  return svg;
+}
+
+function resourceCard({ icon, title, description, url }) {
+  return el("button", {
+    class: "about-resource-card",
+    type: "button",
+    title: `打开${title}`,
+    onclick: () => api.openUrl(url),
+  },
+    el("span", { class: "about-resource-icon", "aria-hidden": "true" }, faIcon(icon)),
+    el("span", { class: "about-resource-copy" },
+      el("b", {}, title),
+      el("small", {}, description),
+    ),
+    el("span", { class: "about-resource-arrow", "aria-hidden": "true" }, faIcon("arrow-up-right-from-square")),
+  );
+}
+
 export function createAboutCard(info, registry = []) {
   const currentVersion = info?.version || "?";
   const platform = [info?.os || "?", info?.arch].filter(Boolean).join(" / ");
@@ -30,6 +56,24 @@ export function createAboutCard(info, registry = []) {
       el("div", { class: "about-meta" }, el("span", {}, "内置插件"), el("b", {}, `${builtinCount} 个`)),
       el("div", { class: "about-meta" }, el("span", {}, "数据策略"), el("b", {}, "本地保存")),
       el("div", { class: "about-meta" }, el("span", {}, "设备联动"), el("b", {}, "由用户主动开启")),
+    ),
+  );
+
+  card.append(
+    sectionTitle("项目与开发"),
+    el("div", { class: "about-resource-grid" },
+      resourceCard({
+        icon: "rocket",
+        title: "GitHub 发布页",
+        description: "下载正式版本，查看每次发布说明",
+        url: PROJECT_LINKS.releases,
+      }),
+      resourceCard({
+        icon: "code",
+        title: "插件开发文档",
+        description: "阅读插件 API、调试与发布指南",
+        url: PROJECT_LINKS.pluginDevelopment,
+      }),
     ),
   );
 

@@ -52,7 +52,7 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,styles,setStyle:(s)=>{style={...style,...s};},pickSchool:(s)=>{selectedSchool=s;},openSchoolAdapter:(a)=>openSchoolAdapter(a),adapterSources:()=>schoolAdapterSources};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,moreMenu,styles,setStyle:(s)=>{style={...style,...s};},pickSchool:(s)=>{selectedSchool=s;},openSchoolAdapter:(a)=>openSchoolAdapter(a),adapterSources:()=>schoolAdapterSources};\n tide.ui.registerView({'),uiContext);
 /* styles() 真跑一遍（v0.59.0 加的守卫）。整份课表 CSS 是**模板字符串**，注释里出现反引号
    或 ${ 会把字符串截断 —— 反引号成对时语法照样合法、vm 加载与 --check 全过，
    只有真正执行 styles() 才炸（实测 main.js 里 .app.rail-hidden 被当成属性访问，
@@ -251,6 +251,18 @@ for (const line of paletteLines) {
 
 const fx = uiContext.fixture;
 assert.equal(typeof fx.tone, 'function', 'fixture 没拿到 tone，说明 ui.js 的结构变了');
+
+/* ── v0.84.0 「⋯」菜单直接显示导入教务 ── */
+const directMenu = fx.moreMenu('week');
+assert.match(directMenu, /<span class="label">操作<\/span><button role="menuitem" data-action="edu">导入教务<\/button>/,
+  '导入教务必须直接显示在「操作」区首位');
+assert.equal((directMenu.match(/data-action="edu"/g) || []).length, 1, '更多菜单不能重复渲染教务入口');
+assert.match(ui, /\.sg \.more-menu button\[data-action="edu"\]::before\{content:"⇩"\}/,
+  '导入教务菜单项必须有与现有操作一致的前置图标');
+assert.match(ui, /case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'edu'/,
+  '菜单中的 edu 动作必须继续复用现有教务页面与返回栈');
+console.log('PASS: 课表更多菜单直接显示「导入教务」并复用现有流程');
+
 fx.setStyle({ colorful: false });
 assert.equal(fx.tone({ name: '数字电子技术', color: 0 }), 0, '非彩色模式下未调色的课仍是 tone-0，保持 v0.32 的观感');
 assert.equal(fx.tone({ name: '数字电子技术', color: 3 }), 3, '手动选过的颜色任何模式下都不该被覆盖');

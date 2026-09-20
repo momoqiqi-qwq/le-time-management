@@ -3,7 +3,7 @@ export const BUILTIN_PLUGINS = [
   {
     "id": "shiguang-schedule",
     "name": "课程表",
-    "version": "3.8.0",
+    "version": "3.9.0",
     "author": "基于 XingHeYuZhuan/shiguangschedule · U-Time适配",
     "icon": "calendar-days",
     "faIcon": "calendar-days",

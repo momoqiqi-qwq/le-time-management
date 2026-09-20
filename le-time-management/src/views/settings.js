@@ -16,6 +16,7 @@ import { createSettingsNavigator } from "./settings/navigator.js";
 import { createPluginSettingsCard, isPluginBatchBusy } from "./settings/plugins.js";
 import { createAiSettingsCard } from "./settings/ai.js";
 import { createSyncCard } from "./settings/sync.js";
+import { createKeywordHighlightsCard } from "./settings/highlights.js";
 import { toggleSwitch } from "../switchControl.js";
 import {
   getUpdateSettings, setUpdateSettings, getUpdateState, subscribeUpdateState,
@@ -68,6 +69,7 @@ export function renderSettings(container, opts = {}) {
     /* 外观与交互：拆成独立模块，避免设置主文件继续膨胀 */
     const uiCard = createInterfaceCard({ rerender: render });
     const themeCard = createThemeCard();
+    const highlightCard = createKeywordHighlightsCard();
 
     /* 任务提醒 */
     settings.taskReminder ??= JSON.parse(JSON.stringify(DEFAULT_REMINDER_SETTINGS));
@@ -188,8 +190,9 @@ export function renderSettings(container, opts = {}) {
       const st = S.getState();
       const taskIds = new Set(st.tasks.map(x => x.id));
       const blockIds = new Set(st.blocks.map(x => x.id));
-      const cleanTasks = tasks.filter(x => !taskIds.has(x.id));
-      const cleanBlocks = blocks.filter(x => !blockIds.has(x.id));
+      const now = Date.now();
+      const cleanTasks = tasks.filter(x => !taskIds.has(x.id)).map(x => ({ ...x, createdAt: x.createdAt || now, isNew: true }));
+      const cleanBlocks = blocks.filter(x => !blockIds.has(x.id)).map(x => ({ ...x, createdAt: x.createdAt || now, isNew: true }));
       const ok = window.confirm(`准备导入：任务 ${cleanTasks.length} 条，时间块 ${cleanBlocks.length} 条。\n\n将与现有数据合并，并已创建自动恢复点。是否继续？`);
       if (!ok) return;
       st.tasks.push(...cleanTasks); st.blocks.push(...cleanBlocks); await S.saveNow();
@@ -462,6 +465,7 @@ export function renderSettings(container, opts = {}) {
     const settingEntries = [
       { id: "ui", node: uiCard, label: "界面与交互", icon: "sliders", hint: "密度 / 字号 / 缩放 / 动效 / 窗口", keywords: "密度 文字 字号 缩放 界面大小 整体缩放 放大 缩小 太大 太小 看不清 动效 手势 滑动 启动页 窗口 大小 尺寸 最大化 分辨率 顶部统计 副标题 托盘 关闭 退出 最小化" },
       { id: "theme", node: themeCard, label: "主题", icon: "palette", hint: "配色与阅读模式", keywords: "颜色 夜间 深海 樱花 松林 暮光 极简" },
+      { id: "highlights", node: highlightCard, label: "关键词标注", icon: "highlighter", hint: "时间标红 / 字体 / 背景", keywords: "关键词 重点 标注 高亮 时间 日期 红色 字体 背景 颜色" },
       { id: "reminders", node: reminderCard, label: "任务提醒", icon: "bell", hint: "预警时间与提示音", keywords: "提醒 预警 音量 提示音 音频 截止" },
       { id: "data", node: dataCard, label: "数据中心", icon: "database", hint: "备份 / 恢复 / 交换", keywords: "备份 恢复 JSON CSV Excel ICS 自动恢复点 导入 导出" },
       { id: "sync", node: syncCard, label: "可选同步", icon: "cloud-arrow-up", hint: "网盘快照 / 一键配置引导", keywords: "同步 网盘 WebDAV 上传 下载 备份 恢复 坚果云 Nextcloud 应用密码 换手机 换电脑 一键配置" },
@@ -470,7 +474,7 @@ export function renderSettings(container, opts = {}) {
       { id: "lan", node: lanCard, label: "局域网联动", icon: "network-wired", hint: "手机联动与二维码", keywords: "手机 WiFi 二维码 端口 配对" },
       { id: "plugins", node: plugCard, label: "插件管理", icon: "puzzle-piece", hint: "启用 / 导入 / 导出", keywords: "插件 权限 导入 ZIP 启用 停用 开发文档" },
       // 更新入口在「关于」里（软件更新）：关键词挂这儿，搜「更新 / 升级」也能落到关于。
-      { id: "about", node: aboutCard, label: "关于", icon: "circle-info", hint: "版本 / 软件更新 / 开源信息", keywords: "版本 更新 升级 检查更新 自动更新 弹窗提示 忽略此版本 开源 框架" },
+      { id: "about", node: aboutCard, label: "关于", icon: "circle-info", hint: "版本 / 软件更新 / 开源信息", keywords: "版本 更新 升级 检查更新 自动更新 弹窗提示 忽略此版本 开源 框架 GitHub 发布 下载 Releases 插件开发 API 文档 项目仓库" },
     ];
     for (const entry of settingEntries) {
       entry.node.classList.add("settings-section");

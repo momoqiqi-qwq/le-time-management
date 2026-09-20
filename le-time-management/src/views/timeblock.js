@@ -3,7 +3,7 @@ import * as S from "../store.js";
 import { el, popmenu, toast, pointerDrag } from "../ui.js";
 import { openTaskDrawer } from "./drawer.js";
 import { previewSchedule } from "../scheduleConflict.js";
-import { closeLayer } from "../motion.js";
+import { closeLayer, reducedMotion } from "../motion.js";
 import { createTimeViewSwitcher, createTimeViewZoom, attachViewZoomGestures, renderTimeView } from "./timeViews.js";
 
 const DAY_START = 7 * 60;    // 07:00
@@ -46,7 +46,34 @@ export function renderTimeblock(container) {
   /* ── 左：任务池 ── */
   const poolList = el("div", { class: "plist" });
   const poolTitle = el("div", { class: "pt" });
-  const pool = el("div", { class: "pool" }, poolTitle, poolList);
+  const poolReturnTarget = el("div", { class: "pool-return-target", "aria-hidden": "true" },
+    el("span", { class: "pool-return-icon" }, "↩"),
+    el("b", {}, "松开移回任务池"),
+    el("small", {}, "保留任务，只取消当天排程"),
+  );
+  const pool = el("div", { class: "pool", role: "region", "aria-label": "任务池，可接收已排任务" }, poolTitle, poolList, poolReturnTarget);
+
+  const pointInPool = (x, y) => {
+    const rect = pool.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  };
+  function paintPoolReturn(active = false, ready = false) {
+    pool.classList.toggle("block-return-active", active);
+    pool.classList.toggle("block-return-ready", active && ready);
+  }
+  function animateReturnedTask(taskId, fromRect) {
+    if (reducedMotion()) return;
+    requestAnimationFrame(() => {
+      const card = [...poolList.querySelectorAll(".ptask")].find((item) => item.dataset.task === taskId);
+      if (!card?.animate) return;
+      const landed = card.getBoundingClientRect();
+      const scale = Number(getComputedStyle(document.documentElement).getPropertyValue("--ui-scale")) || 1;
+      card.animate([
+        { opacity: .35, transform: `translate(${(fromRect.left - landed.left) / scale}px, ${(fromRect.top - landed.top) / scale}px) scale(.9) rotate(1deg)` },
+        { opacity: 1, transform: "none" },
+      ], { duration: 260, easing: "cubic-bezier(.22,.8,.22,1)" });
+    });
+  }
 
   function poolCard(t) {
     const card = el("div", { class: "ptask", "data-task": t.id, title: "拖入右侧时间轴，或点击自动安排" },
@@ -211,11 +238,26 @@ export function renderTimeblock(container) {
       h > 40 ? el("div", { class: "bm" }, `${b.start} – ${S.hhmmOf(S.mmOf(b.start) + b.durMin)} · ${catLabelOf(b)}`) : null,
     );
     node.addEventListener("pointerdown", (e) => {
+      const canReturnToPool = Boolean(b.taskId && S.taskById(b.taskId));
       pointerDrag(e, { type: "block", block: b }, {
         ghostHTML: (() => { const g = el("div", { class: `block cat-block-${b.cat}`, style: `width:${node.offsetWidth}px;height:${Math.min(h, 44)}px;padding:9px 13px` }, el("div", { class: "bn" }, b.title)); return g; })(),
-        onMove: (ev) => showHint(ev, b.durMin),
+        onMove: (ev) => {
+          const overPool = canReturnToPool && pointInPool(ev.clientX, ev.clientY);
+          paintPoolReturn(canReturnToPool, overPool);
+          if (overPool) hideHint(); else showHint(ev, b.durMin);
+        },
         onDrop: (d) => {
           hideHint();
+          const returnToPool = canReturnToPool && pointInPool(d.x, d.y);
+          paintPoolReturn();
+          if (returnToPool) {
+            const fromRect = node.getBoundingClientRect();
+            const removed = S.removeBlock(b.id);
+            if (!removed) return;
+            animateReturnedTask(b.taskId, fromRect);
+            toast("已移回任务池", { actionLabel: "撤销", action: () => S.addBlock(removed) });
+            return;
+          }
           const rect = canvas.getBoundingClientRect();
           if (d.x < rect.left || d.x > rect.right || d.y < rect.top || d.y > rect.bottom) return;
           const min = Math.min(DAY_END - b.durMin, Math.max(DAY_START, minFromY(d.y, rect)));
@@ -227,7 +269,8 @@ export function renderTimeblock(container) {
           }
           S.updateBlock(b.id, { date: curDate, start: S.hhmmOf(min) });
         },
-        onClick: (ev) => { hideHint(); blockMenu(ev, b); },
+        onClick: (ev) => { hideHint(); paintPoolReturn(); blockMenu(ev, b); },
+        onCancel: () => { hideHint(); paintPoolReturn(); },
       });
     });
     node.addEventListener("contextmenu", (e) => { e.preventDefault(); blockMenu(e, b); });

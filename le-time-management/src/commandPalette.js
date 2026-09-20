@@ -100,7 +100,7 @@ function entries() {
   const settings = SETTINGS_SEARCH_ENTRIES.map((item) => ({
     kind: "设置",
     title: item.title,
-    sub: `设置 · ${item.section === "ui" ? "界面与交互" : item.section === "reminders" ? "任务提醒" : item.section === "data" ? "数据中心" : item.section === "sync" ? "可选同步" : item.section === "ai" ? "AI 与自动任务" : item.section === "shortcuts" ? "全局快捷键" : item.section === "lan" ? "局域网联动" : item.section === "plugins" ? "插件管理" : item.section === "about" ? "关于" : "主题"}`,
+    sub: `设置 · ${item.section === "ui" ? "界面与交互" : item.section === "highlights" ? "关键词标注" : item.section === "reminders" ? "任务提醒" : item.section === "data" ? "数据中心" : item.section === "sync" ? "可选同步" : item.section === "ai" ? "AI 与自动任务" : item.section === "shortcuts" ? "全局快捷键" : item.section === "lan" ? "局域网联动" : item.section === "plugins" ? "插件管理" : item.section === "about" ? "关于" : "主题"}`,
     keywords: item.keywords,
     // 空查询时让命令、导航、插件和真实任务优先；一旦输入关键词，匹配分仍会把设置项顶上来。
     priority: 4,

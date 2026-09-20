@@ -8,8 +8,8 @@
 }
 
 /* 按钮反馈：按下、释放和点击扩散使用同一套短促节奏。 */
-button:not([data-motion="off"]),
-[role="button"]:not([data-motion="off"]) {
+button:not([data-motion="off"], [data-motion="off"] *),
+[role="button"]:not([data-motion="off"], [data-motion="off"] *) {
   transform-origin: center;
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -21,7 +21,7 @@ button:not([data-motion="off"]),
     opacity var(--motion-normal) ease;
 }
 
-button.motion-ripple-host:not([data-motion="off"]) {
+button.motion-ripple-host:not([data-motion="off"], [data-motion="off"] *) {
   position: relative;
   isolation: isolate;
   overflow: clip;
@@ -42,33 +42,36 @@ button.motion-ripple-host:not([data-motion="off"]) {
   animation: motion-ripple-spread 440ms ease-out both;
 }
 
+/* 关闭标记可在按下后才出现（例如开始拖拽）；已生成的波纹也必须停下。 */
+[data-motion="off"] .motion-ripple { display: none; animation: none; }
+
 @media (hover: hover) and (pointer: fine) {
-  button:not([data-motion="off"]):not(:disabled):not([aria-disabled="true"]):hover,
-  [role="button"]:not([data-motion="off"]):not(:disabled):not([aria-disabled="true"]):hover {
+  button:not([data-motion="off"], [data-motion="off"] *):not(:disabled):not([aria-disabled="true"]):hover,
+  [role="button"]:not([data-motion="off"], [data-motion="off"] *):not(:disabled):not([aria-disabled="true"]):hover {
     transform: translateY(-1px);
   }
 }
 
-button.motion-pressing:not(:disabled),
-[role="button"].motion-pressing:not(:disabled),
-button:not([data-motion="off"]):active:not(:disabled),
-[role="button"]:not([data-motion="off"]):active:not(:disabled) {
+button.motion-pressing:not([data-motion="off"], [data-motion="off"] *):not(:disabled),
+[role="button"].motion-pressing:not([data-motion="off"], [data-motion="off"] *):not(:disabled),
+button:not([data-motion="off"], [data-motion="off"] *):active:not(:disabled),
+[role="button"]:not([data-motion="off"], [data-motion="off"] *):active:not(:disabled) {
   transform: translateY(1px) scale(.965);
   transition-duration: 70ms;
 }
 
-button.motion-clicked:not([data-motion="off"]),
-[role="button"].motion-clicked:not([data-motion="off"]) {
+button.motion-clicked:not([data-motion="off"], [data-motion="off"] *),
+[role="button"].motion-clicked:not([data-motion="off"], [data-motion="off"] *) {
   animation: motion-button-release 240ms var(--motion-spring);
 }
 
-button.motion-close-control.motion-clicked:not([data-motion="off"]),
-[role="button"].motion-close-control.motion-clicked:not([data-motion="off"]) {
+button.motion-close-control.motion-clicked:not([data-motion="off"], [data-motion="off"] *),
+[role="button"].motion-close-control.motion-clicked:not([data-motion="off"], [data-motion="off"] *) {
   animation-name: motion-close-button-release;
 }
 
-button:not([data-motion="off"]):disabled,
-[role="button"]:not([data-motion="off"])[aria-disabled="true"] {
+button:not([data-motion="off"], [data-motion="off"] *):disabled,
+[role="button"]:not([data-motion="off"], [data-motion="off"] *)[aria-disabled="true"] {
   cursor: not-allowed;
   transform: none;
 }

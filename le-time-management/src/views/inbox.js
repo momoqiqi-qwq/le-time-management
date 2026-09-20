@@ -1,12 +1,14 @@
 import * as S from '../store.js';
-import { el, toast } from '../ui.js';
+import { el, newBadge, toast } from '../ui.js';
 import { toggleSwitch } from '../switchControl.js';
 import { getLogs, undoLog, getRules, setRuleEnabled, runAutomation } from '../automation.js';
 import { createAiAutomationCard } from './aiAutomationPanel.js';
 import { pluginDisplayName, pluginDisplayIcon } from '../pluginAppearance.js';
+import { getKeywordHighlights, highlightedText } from '../keywordHighlights.js';
 
 export function renderInbox(container){
   const st=S.getState(); st.inbox??=[];
+  const highlightCfg=getKeywordHighlights(st.settings);
   const wrap=el('div',{class:'inbox-wrap'});
   const head=el('div',{class:'inbox-head'},el('div',{},el('h2',{},'收件箱与自动化'),el('p',{class:'desc'},'来自通知、考试、课程、内置规则和 AI 自动任务的待确认事项集中在这里。')),el('button',{class:'btn pri sm',onclick:async()=>{await runAutomation('manual');renderInbox(container);toast('自动化已运行');}},'立即运行'));
   const grid=el('div',{class:'inbox-grid'});
@@ -24,10 +26,10 @@ export function renderInbox(container){
     const nAtt = Array.isArray(item.attachments) ? item.attachments.length : 0;
     inboxCard.append(el('div',{class:'inbox-item'},
       el('div',{class:'inbox-item-main'},
-        el('b',{},item.title),
-        el('small',{},srcNode,item.when?el('span',{},` · ${item.when}`):null,
+        el('div',{class:'inbox-title-row'},el('b',{},highlightedText(item.title,highlightCfg)),newBadge(item.status==='new')),
+        el('small',{},srcNode,item.when?el('span',{},highlightedText(` · ${item.when}`,highlightCfg)):null,
           nAtt?el('span',{class:'inbox-att'},` · 图 ${nAtt} 张`):null),
-        item.note?el('p',{},item.note):null),
+        item.note?el('p',{},highlightedText(item.note,highlightCfg)):null),
       el('div',{class:'inbox-actions'},
         item.suggestion==='create-task'?el('button',{class:'btn pri sm',onclick:()=>{
           // ⚠️ `item.when` 是「2026-01-08 23:59」这种**拼好的展示串**，直接塞进 due 会写出

@@ -13,6 +13,7 @@ export function openTaskDrawer(taskId) {
 
   const t = S.taskById(taskId);
   if (!t) return;
+  S.markTaskSeen(taskId);
 
   const mask = el("div", { class: "drawer-mask", onclick: close });
   const body = el("div", { class: "dbody" });

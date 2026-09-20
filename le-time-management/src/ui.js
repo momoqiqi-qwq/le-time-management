@@ -1,6 +1,13 @@
 // 通用 UI 小件：toast、弹出菜单、dom 助手
 import { removeWithMotion } from "./motion.js";
 
+/** 仅让卡片自身的 Enter/Space 触发激活，不抢内部原生控件或输入法的按键。 */
+export function isSelfActivationKey(event) {
+  return Boolean(event.currentTarget && event.target === event.currentTarget
+    && !event.defaultPrevented && !event.isComposing
+    && (event.key === "Enter" || event.key === " "));
+}
+
 export function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -14,6 +21,13 @@ export function el(tag, attrs = {}, ...children) {
     node.append(c.nodeType ? c : document.createTextNode(c));
   }
   return node;
+}
+
+/** 统一的新内容标签：三处视图只决定显不显示，外观和无障碍文案保持同源。 */
+export function newBadge(visible = true) {
+  return visible
+    ? el("span", { class: "new-badge", title: "新添加", "aria-label": "新添加" }, "NEW")
+    : null;
 }
 
 /**
@@ -145,7 +159,7 @@ export function popmenu(x, y, items) {
 
 // 指针拖拽（鼠标 + 触摸通用，Android 可用）
 // onDrop({x, y, payload, targetAt}) 由调用方决定放置逻辑
-export function pointerDrag(e, payload, { ghostHTML, onMove, onDrop, onClick }) {
+export function pointerDrag(e, payload, { ghostHTML, onMove, onDrop, onClick, onCancel }) {
   if (e.button !== 0) return;
   const startX = e.clientX, startY = e.clientY;
   let ghost = null, moved = false;
@@ -159,7 +173,7 @@ export function pointerDrag(e, payload, { ghostHTML, onMove, onDrop, onClick }) 
     window.removeEventListener("pointercancel", onUp, true);
     if (raf) cancelAnimationFrame(raf);
     if (ghost) ghost.remove();
-    if (ev.type === "pointercancel") return;
+    if (ev.type === "pointercancel") { onCancel?.({ payload }); return; }
     if (moved) onDrop && onDrop({ x: ev.clientX, y: ev.clientY, payload });
     else onClick && onClick(ev);
   };

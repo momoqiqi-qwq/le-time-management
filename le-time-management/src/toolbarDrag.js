@@ -61,7 +61,8 @@ export function attachToolbarDrag(list, onCommit, {
 
   const endSession = (st) => {
     clearLong(st);
-    if (st.frame) cancelAnimationFrame(st.frame);
+    if (st.frame !== null) cancelAnimationFrame(st.frame);
+    st.frame = null;
     document.removeEventListener("pointermove", onMove, true);
     document.removeEventListener("pointerup", onUp, true);
     document.removeEventListener("pointercancel", onCancel, true);
@@ -85,16 +86,18 @@ export function attachToolbarDrag(list, onCommit, {
     if (!st) return;
     if (st.active) animateToolbarReorder(items(), () => {
       for (const node of st.originOrder) if (node.parentElement === list) list.append(node);
-    }, { scale: st.scale });
+    }, { scale: getUiScaleFactor() || 1 });
     st.active = false;
     endSession(st);
   }
 
   function update(st) {
     if (!st.active) return;
-    if (!list.contains(st.card)) { cancel(); return; }
-    st.ghost?.style.setProperty("transform", `translate(${(st.x - st.gx) / st.scale}px, ${(st.y - st.gy) / st.scale}px) scale(1.025)`);
+    if (!list.isConnected || st.card.parentElement !== list
+      || Math.abs((getUiScaleFactor() || 1) - st.scale) > .0001) { cancel(); return; }
     const order = items();
+    if (!order.includes(st.card)) { cancel(); return; }
+    st.ghost?.style.setProperty("transform", `translate(${(st.x - st.gx) / st.scale}px, ${(st.y - st.gy) / st.scale}px) scale(1.025)`);
     const slot = toolbarSlot(order, st.card, st.widths, st.left, st.gap, st.x);
     if (slot === st.slot) return;
     st.slot = slot;
@@ -102,23 +105,33 @@ export function attachToolbarDrag(list, onCommit, {
     animateToolbarReorder(peers, () => list.insertBefore(st.card, peers[slot] ?? null), { scale: st.scale });
   }
 
-  function frame(st) {
-    update(st);
-    if (pd === st && st.active) st.frame = requestAnimationFrame(() => frame(st));
+  // 只在输入改变时申请一帧；同一帧的多次 pointermove 只使用最后坐标。
+  // 不缓存参与项，保留 update 对隐藏/移除节点的检查；静止时不轮询 DOM。
+  function queueUpdate(st) {
+    if (pd !== st || !st.active || st.frame !== null) return;
+    st.frame = requestAnimationFrame(() => {
+      st.frame = null;
+      if (pd === st && st.active) update(st);
+    });
   }
 
   function beginDrag(st) {
-    if (pd !== st || st.active || !list.contains(st.card)) return;
+    if (pd !== st || st.active) return;
+    const order = items();
+    // 长按等待期间，按钮可能被隐藏或卸载，不能继续用失效的几何。
+    if (!list.isConnected || st.card.parentElement !== list || !order.includes(st.card)) { cancel(); return; }
     clearLong(st);
     st.active = true;
     st.originOrder = [...list.children];
     st.scale = getUiScaleFactor() || 1;
-    const order = items();
     st.motionAttrs = new Map(order.map((node) => [node, node.getAttribute("data-motion")]));
     list.classList.add(liveClass, "toolbar-drag-live");
     for (const node of order) {
       node.setAttribute("data-motion", "off");
-      node.classList.remove("motion-pressing", "motion-clicked");
+      for (const control of [node, ...node.querySelectorAll("button, [role='button']")]) {
+        control.classList.remove("motion-pressing", "motion-clicked");
+      }
+      for (const ripple of node.querySelectorAll(".motion-ripple")) ripple.remove();
       animations.get(node)?.cancel();
     }
     const rect = st.card.getBoundingClientRect();
@@ -134,7 +147,15 @@ export function attachToolbarDrag(list, onCommit, {
       ghost.removeAttribute("data-rail-id");
       ghost.removeAttribute("data-topbar-part");
       ghost.setAttribute("aria-hidden", "true");
+      ghost.setAttribute("inert", "");
       ghost.setAttribute("tabindex", "-1");
+      // 窗口控制组含嵌套按钮；克隆不能增加 Tab 停靠点或重复原来的 id。
+      for (const child of ghost.querySelectorAll("[id]")) child.removeAttribute("id");
+      for (const child of ghost.querySelectorAll("a[href], button, input, select, textarea, [tabindex], [contenteditable]")) {
+        child.setAttribute("tabindex", "-1");
+        child.removeAttribute("autofocus");
+        if (child.hasAttribute("contenteditable")) child.setAttribute("contenteditable", "false");
+      }
       ghost.setAttribute("data-motion", "off");
       for (const ripple of ghost.querySelectorAll(".motion-ripple")) ripple.remove();
       const css = getComputedStyle(st.card);
@@ -150,8 +171,7 @@ export function attachToolbarDrag(list, onCommit, {
     document.addEventListener("click", st.swallowClick, true);
     // 捕获到不移动的容器，避免 insertBefore 移动按钮时丢失 pointer capture。
     try { list.setPointerCapture(st.pointerId); } catch { /* document 监听兜底 */ }
-    update(st);
-    st.frame = requestAnimationFrame(() => frame(st));
+    queueUpdate(st);
   }
 
   function onDown(event) {
@@ -159,7 +179,7 @@ export function attachToolbarDrag(list, onCommit, {
     const card = event.target.closest?.(selector);
     if (!card || card.parentElement !== list || !items().includes(card) || card.disabled) return;
     pd = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-      x: event.clientX, y: event.clientY, active: false, frame: 0, longTimer: null };
+      x: event.clientX, y: event.clientY, active: false, frame: null, longTimer: null };
     if (event.pointerType !== "mouse") {
       const st = pd;
       pd.longTimer = setTimeout(() => { if (pd === st) beginDrag(st); }, 240);
@@ -177,7 +197,7 @@ export function attachToolbarDrag(list, onCommit, {
     const st = pd;
     if (!st || event.pointerId !== st.pointerId) return;
     st.x = event.clientX; st.y = event.clientY;
-    if (st.active) { event.preventDefault(); return; }
+    if (st.active) { event.preventDefault(); queueUpdate(st); return; }
     const dx = st.x - st.startX, dy = st.y - st.startY;
     if (st.longTimer) { if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLong(st); return; }
     if (event.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) beginDrag(st);
@@ -205,15 +225,21 @@ export function attachToolbarDrag(list, onCommit, {
 
   function onCancel(event) { if (pd && event.pointerId === pd.pointerId) cancel(); }
   function onEscape(event) { if (event.key === "Escape") { event.preventDefault(); cancel(); } }
-  function onLostCapture(event) { if (pd?.active && event.pointerId === pd.pointerId) cancel(); }
+  function onLostCapture(event) {
+    // 触屏从原按钮的隐式捕获切到容器时，子按钮的 lostpointercapture 会冒泡到这里。
+    // 只有容器自身丢失捕获才取消，不能把正常的捕获转移误判为中断。
+    if (event.target === list && pd?.active && event.pointerId === pd.pointerId) cancel();
+  }
   function onNativeDrag(event) { if (event.target.closest?.(selector)) event.preventDefault(); }
   function onTouchMove(event) { if (pd?.active) event.preventDefault(); }
   function onKey(event) {
-    if (pd || !event.altKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    if (pd || event.defaultPrevented || !event.altKey || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
     const card = event.target.closest?.(selector), order = items();
     const at = order.indexOf(card), to = at + (event.key === "ArrowRight" ? 1 : -1);
-    if (at < 0 || to < 0 || to >= order.length || card.disabled) return;
+    if (at < 0 || card.disabled || card.getAttribute("aria-disabled") === "true") return;
+    // 首/末项也要消费快捷键，否则 Alt+方向键会落到宿主的后退/前进。
     event.preventDefault();
+    if (to < 0 || to >= order.length) return;
     const focus = document.activeElement;
     animateToolbarReorder(order, () => list.insertBefore(card, to > at ? order[to].nextSibling : order[to]));
     onCommit?.();

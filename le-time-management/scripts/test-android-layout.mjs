@@ -320,8 +320,8 @@ const narrowBlocks = css
 const accordion = narrowBlocks.find((block) => block.includes(".settings-acc-open")) ?? "";
 assert.ok(accordion, "必须存在窄屏手风琴的媒体块");
 assert.match(accordion, /\.settings-acc-head\s*\{[^}]*display:\s*flex/, "窄屏要把分类标题行显示出来");
-assert.match(accordion, /\.settings-acc-head\s*\{[^}]*min-height:\s*52px/,
-  "标题行触控区要够高（≥44px），拇指才点得住");
+const accordionHeadHeight = Number(accordion.match(/\.settings-acc-head\s*\{[^}]*min-height:\s*(\d+)px/)?.[1] || 0);
+assert.ok(accordionHeadHeight >= 44, "标题行触控区要够高（≥44px），拇指才点得住");
 assert.match(accordion, /\.settings-acc-open \.settings-acc-arrow\s*\{[^}]*transform:\s*rotate\(180deg\)/,
   "展开时方向箭头要掉头，否则看不出可收放");
 assert.match(accordion, /\.settings-catalog\s*\{\s*display:\s*none/,

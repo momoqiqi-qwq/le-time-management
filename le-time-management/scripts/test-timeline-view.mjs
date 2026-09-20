@@ -12,12 +12,12 @@ const state = {
     { id: "t2", title: "已完成的老任务", note: "", due: "2026-09-01", dueTime: "12:00", done: true, quad: 2, project: "", tags: [] },
     { id: "t3", title: "过期未完成", note: "", due: "2026-09-10", dueTime: "08:00", done: false, quad: 3, project: "", tags: [] },
     { id: "t4", title: "无截止不上线", note: "", due: null, dueTime: "23:59", done: false, quad: 4, project: "", tags: [] },
-    { id: "t5", title: "跨年任务", note: "元旦提交终稿", due: "2027-01-03", dueTime: "09:30", done: false, quad: 2, project: "论文", tags: ["论文"] },
+    { id: "t5", title: "跨年任务", note: "元旦提交终稿", due: "2027-01-03", dueTime: "09:30", done: false, quad: 2, project: "论文", tags: ["论文"], isNew: true },
   ],
   blocks: [
     { id: "b2", date: "2026-09-18", start: "14:00", durMin: 90, title: "下午自习", taskId: "t1", cat: "study" },
     { id: "b1", date: "2026-09-18", start: "08:30", durMin: 30, title: "晨跑", taskId: null, cat: "sport" },
-    { id: "b3", date: "2026-09-20", start: "09:00", durMin: 60, title: "周会", taskId: null, cat: "work" },
+    { id: "b3", date: "2026-09-20", start: "09:00", durMin: 60, title: "周会", taskId: null, cat: "work", isNew: true },
     { id: "b4", date: "2026-09-10", start: "10:00", durMin: 45, title: "补课", taskId: null, cat: "study" },
   ],
 };
@@ -40,6 +40,9 @@ assert.equal(run.durMin, 30);
 const t1 = events.find((e) => e.id === "task:t1");
 assert.equal(t1.note, "第三章习题 1~5，交到学委邮箱", "任务正文进事件");
 assert.equal(t1.done, false);
+assert.equal(events.find((e) => e.id === "task:t5").isNew, true, "新任务标记进入时间线模型");
+assert.equal(events.find((e) => e.id === "blk:b3").isNew, true, "新时间块标记进入时间线模型");
+assert.equal(events.find((e) => e.id === "blk:b1").isNew, undefined, "旧记录不被误标成新内容");
 
 /* ── buildTimelineModel ── */
 const model = buildTimelineModel(state, TODAY);

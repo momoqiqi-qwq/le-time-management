@@ -2,7 +2,7 @@
 import * as S from "./store.js";
 import { appIcon } from "./icons.js";
 import { api } from "./api.js";
-import { appConfirm, appPrompt, bottomInsetPx, el, toast } from "./ui.js";
+import { appConfirm, appPrompt, bottomInsetPx, el, isSelfActivationKey, toast } from "./ui.js";
 import { renderQuadrant } from "./views/quadrant.js";
 import { renderTimeblock } from "./views/timeblock.js";
 import { renderTimeline } from "./views/timeline.js";
@@ -928,7 +928,10 @@ export function renderShell(root) {
     const mask = el("div", { class: "drawer-mask settings-modal-mask", onclick: close });
     const panel = el("section", { class: "settings-modal", role: "dialog", "aria-modal": "true", "aria-label": "设置" },
       el("header", { class: "settings-modal-head", "data-tauri-drag-region": dragRegion },
-        el("div", {}, el("h2", {}, "设置")),
+        el("div", {},
+          el("h2", {}, "设置"),
+          el("p", { class: "desc" }, "界面、提醒、数据与扩展"),
+        ),
         el("button", { class: "btn ghost sm", type: "button", onclick: close }, "关闭"),
       ),
       el("div", { class: "settings-modal-body" }),
@@ -1366,7 +1369,7 @@ export function renderShell(root) {
             if (pv) switchTo(`plug:${pv.id}`);
           },
           onkeydown: (e) => {
-            if (!pv || !enabled || !["Enter", " "].includes(e.key)) return;
+            if (!pv || !enabled || !isSelfActivationKey(e)) return;
             e.preventDefault();
             switchTo(`plug:${pv.id}`);
           },

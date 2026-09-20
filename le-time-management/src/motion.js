@@ -12,6 +12,11 @@ export function reducedMotion() {
   return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 }
 
+// CSS 与 JS 共用关闭语义：控件自身或祖先 off，以及系统/应用减少动效。
+function allowsControlMotion(control) {
+  return !control.closest?.('[data-motion="off"]') && !reducedMotion();
+}
+
 function isCloseControl(control) {
   const label = [control.getAttribute("aria-label"), control.title, control.textContent]
     .filter(Boolean)
@@ -21,7 +26,7 @@ function isCloseControl(control) {
 }
 
 function addRipple(control, clientX, clientY) {
-  if (reducedMotion() || control.tagName !== "BUTTON") return;
+  if (control.tagName !== "BUTTON" || !allowsControlMotion(control)) return;
   const rect = control.getBoundingClientRect();
   if (!rect.width || !rect.height) return;
   const x = Number.isFinite(clientX) && clientX > 0 ? clientX - rect.left : rect.width / 2;
@@ -47,14 +52,14 @@ export function initMotionInteractions() {
   document.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     const control = event.target?.closest?.("button, [role='button']");
-    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true") return;
+    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true" || !allowsControlMotion(control)) return;
     control.classList.add(PRESS_CLASS);
     pressedControls.add(control);
     addRipple(control, event.clientX, event.clientY);
   }, { passive: true });
   document.addEventListener("click", (event) => {
     const control = event.target?.closest?.("button, [role='button']");
-    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true") return;
+    if (!control || control.disabled || control.getAttribute("aria-disabled") === "true" || !allowsControlMotion(control)) return;
     control.classList.toggle(CLOSE_CONTROL_CLASS, isCloseControl(control));
     control.classList.remove(CLICK_CLASS);
     void control.offsetWidth;

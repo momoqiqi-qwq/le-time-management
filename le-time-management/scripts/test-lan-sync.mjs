@@ -154,6 +154,8 @@ assert.match(cardSrc, /pullBtn\.disabled = false/, '探到电脑概况后才解�
 assert.match(cardSrc, /target = null;\s*\n\s*seen = null;\s*\n\s*pullBtn\.disabled = true;\s*\n\s*pushBtn\.disabled = true/, '连接失败要把两个按钮一起锁回去');
 assert.match(cardSrc, /if \(!seen\.allowPush\)/, '电脑端没开开关时推按钮要一直灰着，并说明为什么');
 assert.match(cardSrc, /createAutoBackup\("局域网拉回前"/, '局域网覆盖本机前先存恢复点');
+assert.match(cardSrc, /createAutoBackup\("扫码自动同步前"/, '扫码自动同步覆盖本机前先存恢复点');
+assert.match(cardSrc, /await pullToLocal\(\{ fromScan: true \}\)/, '扫码配对成功后自动拉取电脑数据');
 assert.match(cardSrc, /createAutoBackup\("从网盘拉回前"/, '网盘那条同样要先存恢复点');
 assert.match(cardSrc, /lanCfg\.host = next\.base\.replace/, '只记地址');
 assert.match(cardSrc, /const scanBtn = !isDesktop && canScanQr\(\)/, '扫码按钮只在有相机的端上出现（桌面端 WebView 不是安全上下文，没有 mediaDevices）');

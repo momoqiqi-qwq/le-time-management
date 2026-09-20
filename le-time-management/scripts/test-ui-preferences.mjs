@@ -23,6 +23,8 @@ assert.equal(normalizeUiPreferences({ centerTopStats: true }).centerTopStats, tr
 assert.equal(normalizeUiPreferences({ centerTopStats: false }).centerTopStats, false);  // 显式关过的用户保持关闭
 assert.equal(normalizeUiPreferences({ centerTopStats: "true" }).centerTopStats, true);
 assert.equal(normalizeUiPreferences({ showViewSubtitle: false }).showViewSubtitle, false);
+assert.equal(normalizeUiPreferences({}).showSettingsDescriptions, true);
+assert.equal(normalizeUiPreferences({ showSettingsDescriptions: false }).showSettingsDescriptions, false);
 // 底栏高度档位：非法值回标准档，三档合法值原样保留（CSS 变量消费，见 styles.css :root[data-navbar]）
 assert.equal(normalizeUiPreferences({ navBarSize: "weird" }).navBarSize, "standard");
 for (const id of ["compact", "standard", "relaxed"]) {

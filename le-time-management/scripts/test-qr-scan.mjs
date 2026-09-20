@@ -64,6 +64,10 @@ assert.doesNotMatch(scanSrc, /alert\(|confirm\(/, '扫码层不许弹原生对�
 /* ── ④ 两条入口共用同一个连接函数 ── */
 assert.match(cardSrc, /async function connectTo\(next\)/, '连接逻辑要能复用');
 assert.match(cardSrc, /await connectTo\(parseLanTarget\(text\)\)/, '扫码成功后立刻连接：扫完还要再点一下就不叫一键');
+assert.match(cardSrc, /await pullToLocal\(\{ fromScan: true \}\)/, '扫码连接成功后必须直接进入自动拉取，不再要求用户点第二个按钮');
+assert.match(cardSrc, /const isBlank = localTasks === 0 && localBlocks === 0/, '空白手机扫码可以直接初始化');
+assert.match(cardSrc, /扫码自动同步前/, '扫码覆盖已有数据前必须创建独立命名的恢复点');
+assert.match(cardSrc, /已有数据时会先确认/, '界面必须明确说明扫码自动同步的覆盖边界');
 assert.match(cardSrc, /const connectBtn[\s\S]{0,220}await connectTo\(parseLanTarget\(linkInput\.value, tokenInput\.value\)\)/,
   '粘贴那条走的必须是同一个函数');
 assert.match(cardSrc, /const scanBtn = !isDesktop && canScanQr\(\)/, '扫码按钮只在有相机的端上出现');

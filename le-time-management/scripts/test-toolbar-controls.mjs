@@ -43,13 +43,25 @@ class Element extends Target {
   constructor(id = "", classes = "rail-dock-btn", width = 40) {
     super(); this.id = id; this.classes = new Set(classes.split(" ").filter(Boolean)); this.width = width;
     this.children = []; this.parentElement = null; this.attrs = new Map(); this.moves = []; this.position = "static";
+    this.tagName = classes.includes("rail-dock-btn") ? "BUTTON" : "DIV";
+    if (id) this.attrs.set("id", id);
     this.style = { setProperty(k, v) { this[k] = v; } };
     this.classList = { add: (...xs) => xs.forEach(x => this.classes.add(x)), remove: (...xs) => xs.forEach(x => this.classes.delete(x)), contains: x => this.classes.has(x) };
   }
-  matches(s) { return s.startsWith(".") ? this.classes.has(s.slice(1)) : s === "[data-topbar-part]" && this.attrs.has("data-topbar-part"); }
+  matches(selector) {
+    return selector.split(",").some(raw => {
+      const s = raw.trim();
+      if (s.startsWith(".")) return this.classes.has(s.slice(1));
+      if (s === "[role='button']") return this.attrs.get("role") === "button";
+      if (s.startsWith("[") && s.endsWith("]")) return this.attrs.has(s.slice(1, -1));
+      if (s === "a[href]") return this.tagName === "A" && this.attrs.has("href");
+      return this.tagName === s.toUpperCase();
+    });
+  }
   closest(s) { return this.matches(s) ? this : this.parentElement?.closest(s); }
   get nextSibling() { return this.parentElement?.children[this.parentElement.children.indexOf(this) + 1] || null; }
-  getClientRects() { return this.hidden ? [] : [this.getBoundingClientRect()]; }
+  get isConnected() { return this === doc.body || Boolean(this.parentElement?.isConnected); }
+  getClientRects() { return this.hidden || !this.isConnected ? [] : [this.getBoundingClientRect()]; }
   getBoundingClientRect() {
     let left = 100;
     if (this.parentElement) for (const node of this.parentElement.children) { if (node === this) break; left += node.width + 4; }
@@ -57,13 +69,21 @@ class Element extends Target {
   }
   getAttribute(k) { return this.attrs.get(k) ?? null; }
   setAttribute(k, v) { this.attrs.set(k, v); }
-  removeAttribute(k) { this.attrs.delete(k); }
+  hasAttribute(k) { return this.attrs.has(k); }
+  removeAttribute(k) { this.attrs.delete(k); if (k === "id") this.id = ""; }
   contains(node) { return this === node || this.children.some(child => child.contains(node)); }
   append(...nodes) { for (const node of nodes) { node.remove(); node.parentElement = this; this.children.push(node); } }
   insertBefore(node, before) { node.remove(); node.parentElement = this; const i = before ? this.children.indexOf(before) : this.children.length; this.children.splice(i, 0, node); }
   remove() { if (this.parentElement) { const p = this.parentElement; p.children.splice(p.children.indexOf(this), 1); this.parentElement = null; } }
-  cloneNode() { const copy = new Element(this.id, [...this.classes].join(" "), this.width); copy.attrs = new Map(this.attrs); return copy; }
-  querySelectorAll() { return []; }
+  cloneNode(deep = false) {
+    const copy = new Element(this.id, [...this.classes].join(" "), this.width);
+    copy.attrs = new Map(this.attrs); copy.tagName = this.tagName;
+    if (deep) copy.append(...this.children.map(node => node.cloneNode(true)));
+    return copy;
+  }
+  querySelectorAll(selector) {
+    return this.children.flatMap(child => [...(child.matches(selector) ? [child] : []), ...child.querySelectorAll(selector)]);
+  }
   setPointerCapture() {}
   releasePointerCapture() {}
   focus() { document.activeElement = this; }
@@ -78,7 +98,7 @@ let serial = 0; const frames = new Map();
 globalThis.requestAnimationFrame = fn => { frames.set(++serial, fn); return serial; };
 globalThis.cancelAnimationFrame = id => frames.delete(id);
 const tick = () => { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()); };
-const pointer = (target, x, extra = {}) => ({ target, clientX: x, clientY: 25, pointerId: 1, pointerType: "mouse", button: 0, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; }, ...extra });
+const pointer = (target, x, extra = {}) => ({ target, clientX: x, clientY: 25, pointerId: 1, pointerType: "mouse", button: 0, preventDefault() { this.prevented = true; this.defaultPrevented = true; }, stopPropagation() { this.stopped = true; }, ...extra });
 const fixture = (options) => {
   const list = new Element("list", ""); const buttons = ["a", "b", "c"].map(id => new Element(id));
   if (options?.selector) for (const button of buttons) button.setAttribute("data-topbar-part", button.id);
@@ -161,4 +181,139 @@ assert.equal(node.moves.at(-1).frames[0].transform, "translate(-40px, 0px)", "FL
 const previous = node.moves.at(-1).result;
 animateToolbarReorder([node], () => { left = 150; }, { scale: 1.5 });
 assert.ok(previous.cancelled, "连续换位必须取消旧动画，不能叠加偏移");
-console.log("✓ toolbar controls：白色深色图标 / 设置入口 / 存档兼容 / 跟手与落位 / 键盘 / 长按 / 取消 / 减少动效 / 缩放 全部通过");
+
+
+// v0.82.0: boundary keys belong to the toolbar, not browser history.
+for (const options of [undefined, { selector: "[data-topbar-part]" }]) {
+  f = fixture(options);
+  for (const [button, key] of [[f.buttons[0], "ArrowLeft"], [f.buttons[2], "ArrowRight"]]) {
+    const keyEvent = pointer(button, 120, { altKey: true, key });
+    f.list.fire("keydown", keyEvent);
+    assert.equal(keyEvent.defaultPrevented, true, "换位到边界仍须拦截 Alt+方向键");
+  }
+  assert.equal(f.commits(), 0);
+  assert.deepEqual(f.order(), ["a", "b", "c"]);
+  assert.ok(f.buttons.every(button => !button.moves.length));
+  f.buttons[1].remove(); f.buttons[2].remove();
+  const singleton = pointer(f.buttons[0], 120, { altKey: true, key: "ArrowRight" });
+  f.list.fire("keydown", singleton);
+  assert.equal(singleton.defaultPrevented, true, "单项工具栏也不能触发历史前进");
+  const outside = pointer(new Element("outside", ""), 120, { altKey: true, key: "ArrowLeft" });
+  f.list.fire("keydown", outside);
+  assert.notEqual(outside.defaultPrevented, true, "工具栏之外的后退快捷键不受影响");
+  f.buttons[0].disabled = true;
+  const disabled = pointer(f.buttons[0], 120, { altKey: true, key: "ArrowLeft" });
+  f.list.fire("keydown", disabled);
+  assert.notEqual(disabled.defaultPrevented, true);
+  f.binding.destroy(); f.list.remove();
+}
+
+// Stationary drags do zero per-frame work; many input events share a single frame.
+f = fixture();
+f.list.fire("pointerdown", pointer(f.buttons[0], 120));
+doc.fire("pointermove", pointer(f.buttons[0], 170));
+assert.equal(frames.size, 1);
+tick();
+assert.equal(frames.size, 0, "处理输入后不自行排下一帧");
+const realRects = Element.prototype.getClientRects, realStyle = globalThis.getComputedStyle;
+let rectReads = 0, styleReads = 0, transformWrites = 0;
+Element.prototype.getClientRects = function () { rectReads++; return realRects.call(this); };
+globalThis.getComputedStyle = node => { styleReads++; return realStyle(node); };
+const ghostStyle = ghosts()[0].style, realSetProperty = ghostStyle.setProperty;
+ghostStyle.setProperty = function (key, value) { if (key === "transform") transformWrites++; return realSetProperty.call(this, key, value); };
+for (let i = 0; i < 60; i++) tick();
+assert.deepEqual([rectReads, styleReads, transformWrites], [0, 0, 0], "静止 60 帧不得测量或写入 transform");
+for (let i = 0; i < 100; i++) doc.fire("pointermove", pointer(f.buttons[0], 171 + i));
+assert.equal(frames.size, 1, "高频移动最多保留一个待执行帧");
+assert.deepEqual([rectReads, styleReads, transformWrites], [0, 0, 0]);
+tick();
+assert.deepEqual([rectReads, styleReads, transformWrites], [3, 3, 1]);
+assert.deepEqual(f.order(), ["b", "c", "a"], "这一帧使用最后坐标");
+assert.equal(frames.size, 0);
+Element.prototype.getClientRects = realRects; globalThis.getComputedStyle = realStyle;
+f.binding.destroy(); f.list.remove();
+await new Promise(resolve => setTimeout(resolve, 1));
+
+// pointerup flushes the latest coordinates even before the queued frame executes.
+// RAF id 0 is valid too; cancellation must not depend on truthiness.
+serial = -1;
+f = fixture();
+f.list.fire("pointerdown", pointer(f.buttons[0], 120));
+doc.fire("pointermove", pointer(f.buttons[0], 170));
+assert.ok(frames.has(0));
+doc.fire("pointerup", pointer(f.buttons[0], 240));
+assert.deepEqual(f.order(), ["b", "c", "a"]);
+assert.equal(f.commits(), 1); assert.equal(frames.size, 0);
+tick(); assert.equal(f.commits(), 1, "残留帧不能重复提交");
+f.binding.destroy(); f.list.remove();
+await new Promise(resolve => setTimeout(resolve, 1));
+
+for (const stop of [
+  () => win.fire("resize"),
+  () => f.list.fire("lostpointercapture", pointer(f.list, 170)),
+  () => f.binding.destroy(),
+]) {
+  f = fixture();
+  f.list.fire("pointerdown", pointer(f.buttons[0], 120));
+  doc.fire("pointermove", pointer(f.buttons[0], 170));
+  stop();
+  assert.equal(frames.size, 0); assert.equal(ghosts().length, 0); assert.equal(f.commits(), 0);
+  assert.deepEqual(f.order(), ["a", "b", "c"]);
+  f.binding.destroy(); f.list.remove();
+}
+await new Promise(resolve => setTimeout(resolve, 1));
+
+for (const invalidate of [() => f.list.remove(), () => f.buttons[0].remove(), () => { f.buttons[0].hidden = true; }]) {
+  f = fixture();
+  f.list.fire("pointerdown", pointer(f.buttons[0], 120));
+  doc.fire("pointermove", pointer(f.buttons[0], 170));
+  invalidate();
+  doc.fire("pointerup", pointer(f.buttons[0], 240));
+  assert.equal(f.commits(), 0, "失效节点不能提交排序");
+  assert.equal(frames.size, 0); assert.equal(ghosts().length, 0);
+  assert.equal(doc.listeners.get("pointermove").size, 0);
+  f.binding.destroy(); f.list.remove();
+}
+await new Promise(resolve => setTimeout(resolve, 1));
+
+f = fixture();
+f.list.fire("pointerdown", pointer(f.buttons[0], 120, { pointerType: "touch" }));
+f.buttons[0].hidden = true;
+await new Promise(resolve => setTimeout(resolve, 260));
+assert.equal(ghosts().length, 0, "长按期间变为隐藏，不得启动拖拽");
+assert.equal(frames.size, 0); assert.equal(doc.listeners.get("pointermove").size, 0);
+f.binding.destroy(); f.list.remove();
+
+// A composite toolbar item must not copy focusable window controls into the Tab order.
+f = fixture({ selector: "[data-topbar-part]", ghostClass: "topbar-drag-ghost" });
+const inner = new Element("minimize", "window-control"); inner.tagName = "BUTTON";
+inner.setAttribute("autofocus", ""); inner.classList.add("motion-pressing", "motion-clicked");
+const ripple = new Element("", "motion-ripple"); inner.append(ripple);
+f.buttons[0].tagName = "DIV"; f.buttons[0].append(inner);
+f.list.fire("pointerdown", pointer(inner, 120));
+doc.fire("pointermove", pointer(inner, 170)); tick();
+const copy = ghosts()[0], copiedButton = copy.querySelectorAll("button")[0];
+assert.ok(copy.hasAttribute("inert"));
+assert.equal(copy.getAttribute("aria-hidden"), "true");
+assert.equal(copy.querySelectorAll("[id]").length, 0);
+assert.equal(copiedButton.getAttribute("tabindex"), "-1");
+assert.equal(copiedButton.hasAttribute("autofocus"), false);
+assert.equal(inner.classList.contains("motion-pressing"), false);
+assert.equal(inner.classList.contains("motion-clicked"), false);
+assert.equal(inner.querySelectorAll(".motion-ripple").length, 0);
+f.binding.destroy(); f.list.remove();
+await new Promise(resolve => setTimeout(resolve, 1));
+// Losing the child's implicit touch capture is normal when the list takes over.
+f = fixture();
+f.list.fire("pointerdown", pointer(f.buttons[0], 120));
+doc.fire("pointermove", pointer(f.buttons[0], 170));
+f.list.fire("lostpointercapture", pointer(f.buttons[0], 170));
+assert.equal(ghosts().length, 1, "子节点捕获转移不能取消容器的拖拽");
+assert.equal(frames.size, 1);
+tick();
+doc.fire("pointerup", pointer(f.list, 170));
+assert.deepEqual(f.order(), ["b", "a", "c"]);
+assert.equal(f.commits(), 1);
+f.binding.destroy(); f.list.remove();
+await new Promise(resolve => setTimeout(resolve, 1));
+console.log("PASS: toolbar controls, boundary keys, demand-driven frames, last-coordinate flush, invalidation, capture transfer, inert ghosts and prior behavior");

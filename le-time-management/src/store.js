@@ -121,7 +121,8 @@ export async function batchChanges(fn) {
 export function addTask(patch) {
   const t = {
     id: uid("t"), title: "新任务", note: "", quad: 1, done: false, estMin: 30,
-    tags: [], project: "", due: null, dueTime: "23:59", reminderEnabled: true, reminderOffsets: null, createdAt: Date.now(), ...patch,
+    tags: [], project: "", due: null, dueTime: "23:59", reminderEnabled: true, reminderOffsets: null,
+    createdAt: Date.now(), isNew: true, ...patch,
   };
   state.tasks.unshift(t); changed(); return t;
 }
@@ -146,6 +147,12 @@ export function removeTask(id) {
 export function toggleTask(id) {
   const t = state.tasks.find((x) => x.id === id);
   if (t) { t.done = !t.done; changed(); }
+  return t;
+}
+
+export function markTaskSeen(id) {
+  const t = state.tasks.find((x) => x.id === id);
+  if (t?.isNew) { t.isNew = false; changed(); }
   return t;
 }
 
@@ -220,7 +227,10 @@ export function blocksOf(dateStr) {
   return blocks.slice();
 }
 export function addBlock(patch) {
-  const b = { id: uid("b"), date: todayStr(), start: "09:00", durMin: 30, title: "新时间块", taskId: null, cat: "work", ...patch };
+  const b = {
+    id: uid("b"), date: todayStr(), start: "09:00", durMin: 30, title: "新时间块",
+    taskId: null, cat: "work", createdAt: Date.now(), isNew: true, ...patch,
+  };
   state.blocks.push(b); invalidateBlockIndex(b.date); changed(); return b;
 }
 export function updateBlock(id, patch) {
@@ -241,6 +251,12 @@ export function removeBlock(id) {
   const i = state.blocks.findIndex((x) => x.id === id);
   if (i < 0) return null;
   const [b] = state.blocks.splice(i, 1); invalidateBlockIndex(b.date); changed(); return b;
+}
+
+export function markBlockSeen(id) {
+  const b = state.blocks.find((x) => x.id === id);
+  if (b?.isNew) { b.isNew = false; changed(); }
+  return b;
 }
 
 /* ── 派生：某天的任务池（未安排且未完成） ── */

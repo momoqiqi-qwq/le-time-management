@@ -352,7 +352,7 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
     el("li", {}, "在电脑上打开 U-Time，两边连同一个 Wi-Fi（手机用流量连不上）"),
     el("li", {}, "电脑上进 设置 → 局域网联动 → 点「启动服务」，屏幕上会出现一张二维码"),
     el("li", {}, "要往电脑推的，顺手在电脑那张卡里打开「允许手机把数据推回本机」（默认关着）"),
-    el("li", {}, "回到手机这边点「扫一扫」，对准电脑上那张码 —— 连上就直接列出电脑上有多少条数据"),
+    el("li", {}, "回到手机这边点「扫码并同步」，对准电脑上那张码 —— 空白手机会直接拉取，已有数据时确认后自动备份再覆盖"),
     el("li", {}, "不方便扫码就走老路：电脑上「复制链接」发到手机，粘进上面那栏再点「连接看看电脑上有什么」"),
   );
   const howtoToggle = el("button", { class: "btn ghost sm", type: "button" }, "电脑上要怎么准备？");
@@ -388,6 +388,33 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
     paintPushState();
   }
 
+  /**
+   * 把电脑快照落到本机。扫码和手动按钮共用这一条，确保确认、恢复点与错误提示完全一致。
+   * 空白手机扫码属于无损初始化，可以直接完成；本机已有任务或时间块时仍要明确确认。
+   */
+  async function pullToLocal({ fromScan = false } = {}) {
+    if (!target) return false;
+    const snap = await lanPullSnapshot(target);
+    const n = snap.data?.tasks?.length ?? 0;
+    const m = snap.data?.blocks?.length ?? 0;
+    const mine = S.getState();
+    const localTasks = mine.tasks?.length ?? 0;
+    const localBlocks = mine.blocks?.length ?? 0;
+    const isBlank = localTasks === 0 && localBlocks === 0;
+    if (!isBlank && !window.confirm(`电脑上有 ${n} 条任务、${m} 个时间块，本机现在有 ${localTasks} 条任务、${localBlocks} 个时间块。\n\n继续会用电脑数据覆盖本机；覆盖前会自动建立恢复点。确定同步？`)) {
+      say(fromScan ? "已连接电脑，但取消了自动同步；仍可稍后手动拉取" : "已取消，本机数据没动");
+      return false;
+    }
+    say(fromScan ? "已连接，正在自动同步电脑数据…" : "正在拉取电脑数据…");
+    if (fromScan) createAutoBackup("扫码自动同步前", appVersion);
+    else createAutoBackup("局域网拉回前", appVersion);
+    S.replaceAll(snap.data);
+    await S.saveNow();
+    say(`同步完成 · ${n} 条任务、${m} 个时间块`, "is-ok");
+    toast(fromScan ? "扫码同步完成" : "已从电脑拉回本机");
+    return true;
+  }
+
   const fail = (e) => {
     target = null;
     seen = null;
@@ -418,9 +445,12 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
         // 相机里能扫到的东西多了去了（付款码、网址），要说清是「这不是配对码」而不是「连不上」。
         say(`扫到了，但那不是本程序的配对二维码：${e?.message || e}`, "is-error");
         target = null; seen = null; pullBtn.disabled = true; pushBtn.disabled = true;
+        return;
       }
+      try { await pullToLocal({ fromScan: true }); }
+      catch (e) { say(`已连接电脑，但自动同步失败：${e?.message || e}`, "is-error"); }
     },
-  }, "扫一扫电脑上的二维码") : null;
+  }, "扫码并同步电脑数据") : null;
 
   /** 推这条的可用性只能探出来，不能猜：老版本电脑根本没有 /api/push。 */
   function paintPushState() {
@@ -434,20 +464,8 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
 
   pullBtn.addEventListener("click", async () => {
     if (!target) return;
-    try {
-      const snap = await lanPullSnapshot(target);
-      const n = snap.data?.tasks?.length ?? 0;
-      const m = snap.data?.blocks?.length ?? 0;
-      if (!window.confirm(`要把电脑上的 ${n} 条任务、${m} 个时间块拉到本机，覆盖本机现在的数据。\n\n本机这份会先自动存一个恢复点（设置 → 数据中心 → 自动备份），拉错了能退回去。继续？`)) {
-        say("已取消，本机数据没动");
-        return;
-      }
-      createAutoBackup("局域网拉回前", appVersion);
-      S.replaceAll(snap.data);
-      await S.saveNow();
-      say(`已拉回本机 · ${n} 条任务、${m} 个时间块`, "is-ok");
-      toast("已从电脑拉回本机");
-    } catch (e) { say(e?.message || String(e), "is-error"); }
+    try { await pullToLocal(); }
+    catch (e) { say(e?.message || String(e), "is-error"); }
   });
 
   pushBtn.addEventListener("click", async () => {
@@ -471,7 +489,7 @@ function createLanSection(settings, { appVersion = "", os = "" } = {}) {
   return el("div", { class: "sync-lan" },
     el("div", { class: "data-section-title" }, "不用网盘：跟电脑直接传（局域网）"),
     el("p", { class: "desc" },
-      "手机和电脑在同一个 Wi-Fi 时，跳过网盘直接互传整份数据：电脑上那张二维码扫一下就能连。",
+      "手机和电脑在同一个 Wi-Fi 时，跳过网盘直接互传整份数据：扫描电脑二维码后会自动拉取；本机已有数据时会先确认。",
       el("br"),
       "拉：直接把电脑上的拿过来。推：要在那台电脑上点「接收」才算数，而且电脑端的「允许手机推回本机」默认是关的。",
       el("br"),

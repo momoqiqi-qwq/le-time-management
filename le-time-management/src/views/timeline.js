@@ -9,8 +9,9 @@
 // 数据面：collectTimelineEvents() / buildTimelineModel() 是纯函数（不碰 DOM），
 // scripts/test-timeline-view.mjs 直接对它们做单测；渲染层只消费模型。
 import * as S from "../store.js";
-import { el, QUADS } from "../ui.js";
+import { el, newBadge, QUADS } from "../ui.js";
 import { openTaskDrawer } from "./drawer.js";
+import { getKeywordHighlights, highlightedText } from "../keywordHighlights.js";
 
 /* ── 分类色（唯一事实源是 styles.css 的 --cat-*，这里只做引用）──
    不要再写死强调色令牌：那等于在 JS 里维护第二份映射，一改就漏（历史上有 4 套）。 */
@@ -36,6 +37,7 @@ export function collectTimelineEvents(state) {
       id: `blk:${b.id}`, kind: "block", date: String(b.date || "").slice(0, 10),
       time: b.start || "00:00", title: b.title || "未命名时间块",
       cat: b.cat || "work", durMin: Number(b.durMin) || 0, taskId: b.taskId || null, note: "",
+      ...(b.isNew === true ? { isNew: true } : {}),
     });
   }
   for (const t of state?.tasks || []) {
@@ -45,6 +47,7 @@ export function collectTimelineEvents(state) {
       id: `task:${t.id}`, kind: "task", date, time: t.dueTime || "23:59",
       title: t.title || "未命名任务", cat: taskCatOf(t), durMin: 0, taskId: t.id,
       note: t.note || "", done: !!t.done, quad: t.quad ?? null, project: t.project || "",
+      ...(t.isNew === true ? { isNew: true } : {}),
     });
   }
   events.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
@@ -91,6 +94,7 @@ export function renderTimeline(container) {
   // 离开视图再回来重新收起，符合「视图重进重置」的直觉）
   const expanded = new Set();
   const today = S.todayStr();
+  let highlightCfg = getKeywordHighlights(S.getState().settings);
 
   const wrap = el("div", { class: "tlv" });
   const axis = el("div", { class: "tlv-axis", "aria-hidden": "true" });
@@ -104,11 +108,11 @@ export function renderTimeline(container) {
     if (e.kind === "block") {
       const end = S.hhmmOf(S.mmOf(e.time) + e.durMin);
       parts.push(el("p", { class: "tlv-when" },
-        `${g.fullLabel} · ${e.time} – ${end} · ${S.durLabel(e.durMin)}`));
+        highlightedText(`${g.fullLabel} · ${e.time} – ${end} · ${S.durLabel(e.durMin)}`, highlightCfg)));
       const task = e.taskId ? S.taskById(e.taskId) : null;
       parts.push(el("div", { class: "tlv-note" },
         el("b", {}, `${CAT_NAME[e.cat] || e.cat} · 时间块`),
-        task ? el("span", {}, `来自任务「${task.title}」的排程`) : el("span", { class: "dim" }, "独立安排，没有正文备注"),
+        task ? el("span", {}, highlightedText(`来自任务「${task.title}」的排程`, highlightCfg)) : el("span", { class: "dim" }, "独立安排，没有正文备注"),
       ));
       if (task) {
         parts.push(el("button", { class: "btn ghost sm tlv-more", type: "button", onclick: (ev) => { ev.stopPropagation(); openTaskDrawer(task.id); } }, "任务详情"));
@@ -119,11 +123,11 @@ export function renderTimeline(container) {
       else if (g.isPast) marks.push("已过期");
       if (e.quad) marks.push(quadTitle(e.quad).split(" · ")[0]);
       if (e.project) marks.push(e.project);
-      parts.push(el("p", { class: "tlv-when" }, marks.join(" · ")));
+      parts.push(el("p", { class: "tlv-when" }, highlightedText(marks.join(" · "), highlightCfg)));
       parts.push(el("div", { class: "tlv-note" },
         el("b", {}, "正文"),
         e.note
-          ? el("span", {}, e.note)
+          ? el("span", {}, highlightedText(e.note, highlightCfg))
           : el("span", { class: "dim" }, "没有写正文备注"),
       ));
       parts.push(el("button", { class: "btn ghost sm tlv-more", type: "button", onclick: (ev) => { ev.stopPropagation(); openTaskDrawer(e.taskId); } }, "任务详情"));
@@ -141,12 +145,12 @@ export function renderTimeline(container) {
       "aria-expanded": open ? "true" : "false",
     },
       el("div", { class: "tlv-card-head" },
-        el("span", { class: "tlv-time" }, e.kind === "block" ? e.time : `${e.time} 截止`),
+        el("span", { class: "tlv-time" }, highlightedText(e.kind === "block" ? e.time : `${e.time} 截止`, highlightCfg)),
         el("span", { class: "tlv-kind" }, e.kind === "block" ? (CAT_NAME[e.cat] || "安排") : "任务"),
         e.kind === "task" && e.done ? el("span", { class: "tlv-flag done" }, "✓ 完成") : null,
         e.kind === "task" && !e.done && g.isPast ? el("span", { class: "tlv-flag overdue" }, "已过期") : null,
       ),
-      el("h3", { class: "tlv-title" }, e.title),
+      el("h3", { class: "tlv-title" }, el("span", {}, highlightedText(e.title, highlightCfg)), newBadge(e.isNew === true)),
       e.kind === "block" && e.durMin ? el("span", { class: "tlv-brief" }, S.durLabel(e.durMin)) : null,
       el("div", { class: "tlv-card-body" },
         el("div", { class: "tlv-card-body-inner" }, cardBodyInner(e, g))),
@@ -157,6 +161,10 @@ export function renderTimeline(container) {
       const nowOpen = expanded.has(e.id);
       card.classList.toggle("open", nowOpen);
       card.setAttribute("aria-expanded", nowOpen ? "true" : "false");
+      if (e.isNew) {
+        if (e.kind === "task") S.markTaskSeen(e.taskId);
+        else S.markBlockSeen(e.id.slice(4));
+      }
     };
     card.addEventListener("click", toggle);
     card.addEventListener("keydown", (ev) => {
@@ -167,7 +175,9 @@ export function renderTimeline(container) {
 
   function render() {
     const scrollTop = container.scrollTop;
-    const model = buildTimelineModel(S.getState(), today);
+    const state = S.getState();
+    highlightCfg = getKeywordHighlights(state.settings);
+    const model = buildTimelineModel(state, today);
     lane.replaceChildren();
     if (!model.groups.length) {
       lane.append(el("div", { class: "tlv-empty" },
