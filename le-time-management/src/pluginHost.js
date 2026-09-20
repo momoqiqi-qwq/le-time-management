@@ -28,7 +28,7 @@ export const PLUGIN_PERMISSION_LABELS = {
   notify: "应用内通知",
   events: "插件事件",
   http: "网络访问",
-  openUrl: "打开外部链接",
+  openUrl: "打开网页",
   timeParse: "时间语义解析",
   vault: "加密密钥库（保存密码 / 登录票据等敏感凭据）",
   schoolImport: "学校教务登录与课表脚本导入",
@@ -278,7 +278,7 @@ function makeApi(man, source) {
 
     util: {
       today: S.todayStr, addDays: S.addDays, mmOf: S.mmOf, hhmmOf: S.hhmmOf, durLabel: S.durLabel,
-      openUrl: (url) => { requirePermission(man, pid, "openUrl"); return api.openExternal(url); },
+      openUrl: (url) => { requirePermission(man, pid, "openUrl"); return api.openUrl(url); },
       parseWhen: (...args) => { requirePermission(man, pid, "timeParse"); return parseWhen(...args); },
       guessCategory: (...args) => { requirePermission(man, pid, "timeParse"); return guessCategory(...args); },
       guessQuad: (...args) => { requirePermission(man, pid, "timeParse"); return guessQuad(...args); },

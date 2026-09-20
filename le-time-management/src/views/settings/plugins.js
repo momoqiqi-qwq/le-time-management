@@ -22,12 +22,12 @@ export function createPluginSettingsCard({ rerender = () => {} } = {}) {
   const websiteLink = el("button", {
     class: "plugin-doc-link",
     title: "打开 U-Time 官方网站",
-    onclick: () => PROJECT_LINKS.website ? api.openExternal(PROJECT_LINKS.website) : toast("请先在 src/projectLinks.js 填入你的真实官网地址"),
+    onclick: () => PROJECT_LINKS.website ? api.openUrl(PROJECT_LINKS.website) : toast("请先在 src/projectLinks.js 填入你的真实官网地址"),
   }, el("span", { "aria-hidden": "true" }, "↗"), el("span", {}, "官方网站"));
   const docLink = el("button", {
     class: "plugin-doc-link",
     title: "打开 U-Time 项目仓库 / 在线开发文档",
-    onclick: () => api.openExternal(PROJECT_LINKS.repository),
+    onclick: () => api.openUrl(PROJECT_LINKS.repository),
   }, githubIcon, el("span", {}, "在线开发文档"));
   const downloadDoc = el("button", {
     class: "plugin-doc-link",

@@ -21,14 +21,18 @@ assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.q\s*\{[^}]*width:\s*100%
 assert.match(css, /@media \(max-width: 900px\)[\s\S]*?\.q \.tks\s*\{[^}]*flex:\s*none[^}]*max-height:\s*none[^}]*overflow:\s*visible/,
   "窄屏任务列表应交给页面统一滚动");
 
-// Android 没有桌面窗口概念。这些按钮显示出来只会无响应；顶栏 HTML5 draggable
-// 也可能与 WebView 触摸点击竞争，所以两者都必须由桌面运行时门控。
+// Android 没有桌面窗口概念，窗口按钮仍由桌面运行时门控。
+// v0.81.0：顶栏改用共享指针拖拽，所有平台禁用 HTML5 draggable，避免竞争触摸点击。
 assert.match(shell, /const desktopWindow = isDesktopRuntime\(\)/,
   "应用外壳必须识别桌面运行时");
 assert.match(shell, /const windowControls = desktopWindow\s*\?\s*el\(/,
   "窗口控制按钮只应在桌面端创建");
-assert.match(shell, /node\.draggable = desktopWindow/,
-  "Android 顶栏控件不能启用 HTML5 拖拽");
+assert.match(shell, /node\.draggable = false/,
+  "顶栏已改用指针拖拽，Android 与桌面均不能再启动原生 HTML5 拖拽");
+assert.doesNotMatch(shell, /node\.draggable\s*=\s*(true|desktopWindow)/,
+  "不能重新启用与共享指针拖拽冲突的 HTML5 拖拽");
+assert.match(shell, /attachToolbarDrag\(topbarActionCard/,
+  "禁用原生拖拽后必须保留可用的顶栏指针拖拽入口");
 assert.ok(shell.includes('desktopWindow ? (pinActionBtn = createQuickDockButton("thumbtack", "窗口置顶"'),
   "快捷入口中的窗口置顶必须由桌面运行时门控");
 assert.match(appearance, /desktopWindow\s*\?\s*windowRow\s*:\s*null/,

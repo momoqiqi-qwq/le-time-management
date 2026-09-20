@@ -2323,6 +2323,17 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   fill: currentColor;
   display: block;
 }
+/* v0.81.0：顶栏设置入口与现有图标键同尺寸，复用随包设置图标。 */
+.top-mini-btn.top-settings-trigger {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.top-settings-glyph { display: inline-flex; }
+.top-settings-trigger .app-icon { width: 18px; height: 18px; }
 .topbar-action-card .pill {
   background: color-mix(in srgb, var(--deep) 8%, var(--panel));
   color: var(--ink-2);
@@ -3670,24 +3681,38 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 .topbar { position: relative; }
-.topbar-sortable { position: relative; cursor: grab; }
+.topbar-sortable { position: relative; cursor: grab; touch-action: none; }
+.topbar-action-card > .topbar-sortable { flex: none; margin: 0; }
 .topbar-sortable:active { cursor: grabbing; }
-.topbar-dragging { opacity: .42; }
-.topbar-drop-before::before,
-.topbar-drop-after::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  width: 3px;
-  border-radius: 3px;
-  background: var(--mint);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--mint) 16%, transparent);
+.topbar-dragging { opacity: .3; }
+.toolbar-drag-live { user-select: none; -webkit-user-select: none; }
+.toolbar-drag-live > [data-motion="off"] { transition: none; animation: none; }
+.topbar-action-card.topbar-drag-live,
+.topbar-drag-live > .topbar-sortable { cursor: grabbing; }
+.topbar-drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1200;
+  margin: 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: 0 10px 24px rgba(8, 20, 26, .32);
+  pointer-events: none;
+  opacity: .96;
+  transform-origin: 0 0;
+  will-change: transform;
 }
-.topbar-drop-before::before { left: -6px; }
-.topbar-drop-after::after { right: -6px; }
+.topbar-drag-ghost .fa-ic { width: 15px; height: 15px; fill: currentColor; display: block; }
 :root[data-center-top-stats="on"] .topbar-action-card > .pill {
   position: absolute;
+  cursor: default;
   left: 50%;
   top: calc(50% + var(--sat, env(safe-area-inset-top, 0px)) / 2);
   z-index: 2;
@@ -3722,6 +3747,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
    几乎看不见、只剩个轮廓 —— 而 FA 的 sun 轮廓与隔壁设置键的真齿轮几乎同形，
    用户看到的就是「一个深色齿轮」。 */
 .rail-bottom > .theme-toggle-btn .ic { color: var(--ink); }
+.rail-bottom > .window-focus-btn .ic { color: var(--ink); }
 /* 缩放视图处于「已收成固定尺寸」态时给个按下去的底色，与快捷入口面板的 .on 同一套配色。
    选择器必须带上 .window-focus-btn：老 rails 上挂着一条 `.rail-bottom > button.on .ic { background: var(--sun) }`
    （3 类 1 元素），只写 .rail-dock-btn.on 压不过它，激活态会被染成太阳黄。 */
@@ -3732,6 +3758,15 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .rail-dock > .rail-dock-btn.window-focus-btn.on .ic {
   background: var(--deep);
   color: var(--paper);
+}
+/* v0.81.0：compress / expand 在深色下都用白色，包含按下态与拖拽副本。 */
+:root[data-theme-mode="dark"] .rail-dock > .rail-dock-btn.window-focus-btn .ic,
+:root[data-theme-mode="dark"] .rail-dock-ghost.window-focus-btn .ic {
+  color: #fff;
+}
+:root[data-theme-mode="dark"] .rail-dock > .rail-dock-btn.window-focus-btn.on .ic,
+:root[data-theme-mode="dark"] .rail-dock-ghost.window-focus-btn.on .ic {
+  background: color-mix(in srgb, var(--deep) 22%, var(--panel));
 }
 
 /* ── 应用内对话框（appPrompt / appConfirm，替代原生 window.prompt/confirm）── */
@@ -4097,6 +4132,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   justify-content: center;
   pointer-events: none;
   opacity: .96;
+  transform-origin: 0 0;
   will-change: transform;
 }
 .rail-dock-ghost .ic {

@@ -55,7 +55,7 @@ export function createAboutCard(info, registry = []) {
     el("button", {
       class: "about-list-row about-oss-row",
       title: `打开 ${item.name} 上游项目`,
-      onclick: () => api.openExternal(item.url),
+      onclick: () => api.openUrl(item.url),
     },
       el("div", { class: "about-list-main" }, el("b", {}, item.name), el("span", {}, item.role)),
       el("span", { class: "about-tag" }, item.license),
@@ -73,7 +73,7 @@ export function createAboutCard(info, registry = []) {
     el("div", { class: "about-actions" },
       docLink(ABOUT_DOCS.changelog, "查看更新记录"),
       docLink(ABOUT_DOCS.openSource, "完整开源说明"),
-      el("button", { class: "btn ghost sm", onclick: () => api.openExternal(PROJECT_LINKS.repository) }, "项目仓库"),
+      el("button", { class: "btn ghost sm", onclick: () => api.openUrl(PROJECT_LINKS.repository) }, "项目仓库"),
     ),
   );
   return card;

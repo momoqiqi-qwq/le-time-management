@@ -407,6 +407,10 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
       uiScaleHint,
     ),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "页面动效")), motion),
+    toggleRow("应用内打开网页", prefs.openLinksInApp, (value) => {
+      setUiPreferences({ openLinksInApp: value });
+      toast(value ? "网页将优先在 U-Time 内打开" : "网页将交给系统默认浏览器打开");
+    }),
     toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value })),
     toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value })),
     toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value })),

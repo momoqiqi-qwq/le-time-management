@@ -1298,6 +1298,33 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| format!("打开失败: {e}"))
 }
 
+/// 在 U-Time 自己的 WebView 窗口中打开普通网页。
+///
+/// 窗口 label 每次递增，避免 Android runtime 已销毁的 WebView 仍残留在注册表里；
+/// capability 只授权 `main`，因此远程页面拿不到任何 Tauri IPC 权限。
+static BROWSER_WINDOW_SEQ: AtomicU64 = AtomicU64::new(1);
+
+#[tauri::command]
+fn open_internal(app: AppHandle, url: String) -> Result<(), String> {
+    let parsed: Url = url.parse().map_err(|e| format!("网页地址无效: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("仅支持 http/https 链接".into());
+    }
+    let seq = BROWSER_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed);
+    let label = format!("browser-{seq}");
+    let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+        .title("U-Time · 网页")
+        .inner_size(1100.0, 780.0);
+    #[cfg(target_os = "android")]
+    let builder = builder.activity_name("BrowserActivity");
+    #[cfg(desktop)]
+    let builder = builder.center();
+    builder
+        .build()
+        .map_err(|e| format!("应用内打开网页失败: {e}"))?;
+    Ok(())
+}
+
 /* ── 局域网联动：手机/小程序作为遥控端 ── */
 
 struct LanHandle(Mutex<Option<lan::LanInstance>>);
@@ -1868,6 +1895,7 @@ pub fn run() {
             http_get,
             http_get_icon,
             open_external,
+            open_internal,
             des_ecb_encrypt_hex,
             http_session_new,
             http_fetch,

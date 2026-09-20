@@ -83,6 +83,7 @@ assert.equal(slotIndexFor([], 42), 0, "没有其他按钮 → 只有 0 号槽");
 
 /* ── ② shell 源码不变量 ── */
 const shellJs = read("../src/shell.js");
+const dragJs = read("../src/toolbarDrag.js");
 const styles = read("../src/styles.css");
 
 assert.match(shellJs, /import \{[^}]*registerRailAction[^}]*\} from "\.\/railActions\.js"/,
@@ -104,18 +105,20 @@ assert.match(dockCommit, /railActionOrder = normalizeRailActionOrder\(/,
 assert.ok(!/railActionOrder = \[\.\.\.railDock\.querySelectorAll/.test(dockCommit),
   "反面：落库不得把 DOM 序裸赋值（未注册 / 已注销的 id 会被一起写进 settings）");
 assert.match(shellJs, /function attachRailDockDrag\(list, onCommit\)/, "必须存在操作条拖拽模块");
-assert.match(shellJs, /slotIndexFor\(mids, x\)/, "落点判定必须复用 railActions 的 slotIndexFor");
-assert.match(shellJs, /ghost\.classList\.add\("rail-dock-ghost"\)/, "拖拽必须建幽灵卡跟随指针");
-assert.match(shellJs, /list\.insertBefore\(st\.card, vis\[k\] \?\? null\)/, "其余按钮必须实时让位（重排 DOM）");
-assert.match(shellJs, /st\.card\.classList\.add\("dragging"\)/, "被拖按钮必须留成空槽");
+assert.match(dragJs, /slotIndexFor\(mids, x\)/, "落点判定必须复用 railActions 的 slotIndexFor");
+assert.match(shellJs, /return attachToolbarDrag\(list, onCommit\)/, "侧栏必须接入共享拖拽实现");
+assert.match(dragJs, /ghostClass = "rail-dock-ghost"/, "侧栏幽灵卡样式必须保留");
+assert.match(dragJs, /ghost\.classList\.add\(ghostClass\)/, "拖拽必须建幽灵卡跟随指针");
+assert.match(dragJs, /list\.insertBefore\(st\.card, peers\[slot\] \?\? null\)/, "其余按钮必须实时让位（重排 DOM）");
+assert.match(dragJs, /st\.card\.classList\.add\(dragClass\)/, "被拖按钮必须留成空槽");
 // 吞 click：进入拖拽就挂捕获监听，且必须延迟到下一个宏任务才摘（pointerup 先于 click 派发）
-assert.match(shellJs, /st\.swallowClick = \(event\) => \{ event\.preventDefault\(\); event\.stopPropagation\(\); \}/,
+assert.match(dragJs, /st\.swallowClick = \(event\) => \{ event\.preventDefault\(\); event\.stopPropagation\(\); \}/,
   "拖拽激活后必须吞掉紧随其后的 click（否则松手会顺带触发按钮动作）");
-assert.match(shellJs, /setTimeout\(\(\) => document\.removeEventListener\("click", st\.swallowClick, true\), 0\)/,
+assert.match(dragJs, /setTimeout\(\(\) => document\.removeEventListener\("click", st\.swallowClick, true\), 0\)/,
   "吞 click 的监听必须在下一个宏任务里摘（在 pointerup 处理器里同步摘会让 click 漏过去）");
 // 触屏长按 + 桌面阈值：两种指针类型都要有入口
-assert.match(shellJs, /pd\.longTimer = setTimeout\(\(\) => \{[^}]*\}, 240\)/, "触屏必须长按 240ms 进入拖拽");
-assert.match(shellJs, /Math\.hypot\(dx, dy\) >= 6\) beginDrag/, "桌面必须移动 ≥6px 进入拖拽");
+assert.match(dragJs, /pd\.longTimer = setTimeout\(\(\) => \{[^}]*\}, 240\)/, "触屏必须长按 240ms 进入拖拽");
+assert.match(dragJs, /Math\.hypot\(dx, dy\) >= 6\) beginDrag/, "桌面必须移动 ≥6px 进入拖拽");
 // 节点复用：renderRailDock 不许 replaceChildren 重建
 const dockRender = shellJs.slice(shellJs.indexOf("function renderRailDock()"), shellJs.indexOf("renderRailDock();"));
 assert.ok(dockRender.length > 0, "没找到 renderRailDock 定义");

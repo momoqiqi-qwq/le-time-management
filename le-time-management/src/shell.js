@@ -15,13 +15,14 @@ import { hasNavOverride, navDisplayIcon, navDisplayName, resetNavOverride, setNa
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
 import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
-import { listRailActions, moveRailAction, normalizeRailActionOrder, registerRailAction, slotIndexFor } from "./railActions.js";
+import { listRailActions, normalizeRailActionOrder, registerRailAction, slotIndexFor } from "./railActions.js";
 import { closeLayer, observePluginMotion, reducedMotion, removeWithMotion } from "./motion.js";
 import { FOCUS_WINDOW_SIZE, isDesktopRuntime, isFocusWindowActive, toggleFocusWindow } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
 import { RAIL_WIDTH_LIMITS, RAIL_WIDTH_STEP, applyRailWidth, clampRailWidth, normalizeRailWidth, steppedRailWidth } from "./railWidth.js";
 import { getUiScaleFactor } from "./uiScale.js";
+import { attachToolbarDrag } from "./toolbarDrag.js";
 
 // 注意：模块导入阶段 state 还未初始化，activeView 必须延迟到 renderShell 时读取
 let activeView = null;
@@ -64,14 +65,14 @@ const PLUGIN_ICONS = {
 };
 // v0.58.0 加 "theme"（顶栏深浅色切换键，用户需求「添加深色和浅色切换按钮」）。
 // window 恒作为兜底排最后（Windows 习惯：窗口键必须贴最右），见 topbarOrderState。
-const TOPBAR_PARTS = ["search", "quick", "theme", "stats", "window"];
+const TOPBAR_PARTS = ["search", "quick", "theme", "settings", "stats", "window"];
 
 function topbarOrderState() {
   const settings = S.getState().settings;
   const saved = Array.isArray(settings.topbarOrder) ? settings.topbarOrder : [];
   // 归一化：保留存档里仍存在的部件顺序，新增部件补进尾部 —— 但**不许落在 window
   // 之后**（老存档升级时新键若直接补尾，会排到窗口键右边，违反窗口键贴最右的习惯）。
-  const order = [...saved.filter((id) => TOPBAR_PARTS.includes(id))];
+  const order = [...new Set(saved.filter((id) => TOPBAR_PARTS.includes(id)))];
   for (const id of TOPBAR_PARTS.filter((x) => !saved.includes(x))) {
     const wi = order.indexOf("window");
     if (wi >= 0) order.splice(wi, 0, id); else order.push(id);
@@ -80,13 +81,14 @@ function topbarOrderState() {
   return settings.topbarOrder;
 }
 
-function moveTopbarPart(source, target, after = false) {
-  if (!TOPBAR_PARTS.includes(source) || !TOPBAR_PARTS.includes(target) || source === target) return false;
-  const order = [...topbarOrderState()];
-  order.splice(order.indexOf(source), 1);
-  const targetIndex = order.indexOf(target);
-  order.splice(targetIndex + (after ? 1 : 0), 0, source);
-  S.getState().settings.topbarOrder = order;
+function moveTopbarPart(order) {
+  if (!Array.isArray(order)) return false;
+  const previous = [...topbarOrderState()];
+  const visible = [...new Set(order.filter((id) => TOPBAR_PARTS.includes(id)))];
+  // 未渲染的窗口键仍留在存档里；浏览器/不同平台间切换不会丢失部件。
+  const next = [...visible, ...previous.filter((id) => !visible.includes(id))];
+  if (next.length === previous.length && next.every((id, i) => id === previous[i])) return false;
+  S.getState().settings.topbarOrder = next;
   S.persistSoon();
   return true;
 }
@@ -317,7 +319,16 @@ export function renderShell(root) {
   paintTopTheme();
   new MutationObserver(paintTopTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme-mode"] });
 
-  const topbarActionCard = el("div", { class: "topbar-action-card", "aria-label": "可拖动排序的顶栏工具" });
+  const topSettings = el("button", {
+    class: "top-mini-btn top-settings-trigger",
+    title: "设置 · 拖动或 Alt+←/→ 调整位置",
+    "aria-label": "设置",
+    "aria-haspopup": "dialog",
+    type: "button",
+    onclick: () => openSettingsModal(),
+  }, el("span", { class: "top-settings-glyph", "aria-hidden": "true" }, appIcon("settings")));
+
+  const topbarActionCard = el("div", { class: "topbar-action-card", role: "toolbar", "aria-label": "可拖动排序的顶栏工具", "data-noswipe": "" });
   const topbar = el("header", { class: "topbar", "data-tauri-drag-region": dragRegion },
       el("div", { class: "topbar-title-card", "data-tauri-drag-region": dragRegion },
         // v0.39.0：小框回归（紧凑版），图标随视图切换（见 renderTitleMark）；
@@ -470,45 +481,25 @@ export function renderShell(root) {
   });
 
   function renderTopbarOrder() {
-    const parts = { search: topSearch, quick: quickDockToggle, theme: topTheme, stats: statPill, window: windowControls };
-    topbarActionCard.replaceChildren(...topbarOrderState().map((id) => parts[id]).filter(Boolean));
+    const parts = { search: topSearch, quick: quickDockToggle, theme: topTheme, settings: topSettings, stats: statPill, window: windowControls };
     for (const [id, node] of Object.entries(parts)) {
       if (!node) continue;
-      node.draggable = desktopWindow;
+      node.draggable = false; // 改用和侧栏相同的指针拖拽，不再启动浏览器原生拖放。
       node.dataset.topbarPart = id;
       node.classList.add("topbar-sortable");
-      if (!desktopWindow) continue;
-      if (node.dataset.topbarDragBound) continue;
-      node.dataset.topbarDragBound = "true";
-      node.addEventListener("dragstart", (event) => {
-        node.classList.add("topbar-dragging");
-        event.dataTransfer?.setData("text/topbar-part", id);
-        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-      });
-      node.addEventListener("dragend", () => {
-        topbarActionCard.querySelectorAll(".topbar-dragging,.topbar-drop-before,.topbar-drop-after").forEach((item) => item.classList.remove("topbar-dragging", "topbar-drop-before", "topbar-drop-after"));
-      });
-      node.addEventListener("dragover", (event) => {
-        event.preventDefault();
-        const after = event.clientX > node.getBoundingClientRect().left + node.getBoundingClientRect().width / 2;
-        node.classList.toggle("topbar-drop-before", !after);
-        node.classList.toggle("topbar-drop-after", after);
-        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-      });
-      node.addEventListener("dragleave", () => node.classList.remove("topbar-drop-before", "topbar-drop-after"));
-      node.addEventListener("drop", (event) => {
-        event.preventDefault();
-        const source = event.dataTransfer?.getData("text/topbar-part");
-        const after = node.classList.contains("topbar-drop-after");
-        node.classList.remove("topbar-drop-before", "topbar-drop-after");
-        if (moveTopbarPart(source, id, after)) {
-          renderTopbarOrder();
-          toast("顶栏顺序已保存");
-        }
-      });
     }
+    topbarActionCard.replaceChildren(...topbarOrderState().map((id) => parts[id]).filter(Boolean));
   }
   renderTopbarOrder();
+  attachToolbarDrag(topbarActionCard, () => {
+    const order = [...topbarActionCard.children].map((node) => node.dataset.topbarPart);
+    if (moveTopbarPart(order)) toast("顶栏顺序已保存");
+  }, {
+    selector: "[data-topbar-part]",
+    ghostClass: "topbar-drag-ghost",
+    dragClass: "topbar-dragging",
+    liveClass: "topbar-drag-live",
+  });
 
   // 核心页与插件的右键菜单共用一个槽位：同一时刻只可能有一个菜单开着，
   // 关闭逻辑（含全局 pointerdown / Escape）也只有一份。
@@ -892,24 +883,7 @@ export function renderShell(root) {
     S.persistSoon();
   });
 
-  // Alt+←/→ 键盘重排（与拖拽同一条持久化路径）—— 只有键盘的用户也能调整顺序。
-  railDock.addEventListener("keydown", (event) => {
-    if (!event.altKey || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
-    const btn = event.target.closest?.(".rail-dock-btn");
-    if (!btn) return;
-    const order = [...railDock.querySelectorAll(".rail-dock-btn")].map((b) => b.dataset.railId);
-    const at = order.indexOf(btn.dataset.railId);
-    const to = at + (event.key === "ArrowRight" ? 1 : -1);
-    if (at < 0 || to < 0 || to >= order.length) return;
-    const next = moveRailAction(order, order[at], order[to], event.key === "ArrowLeft");
-    if (!next) return;
-    event.preventDefault();
-    S.getState().settings.railActionOrder = next;
-    S.persistSoon();
-    renderRailDock();
-    railDock.querySelector(`[data-rail-id="${order[at]}"]`)?.focus();
-    toast("操作条顺序已保存");
-  });
+  // Alt+←/→ 键盘重排由 toolbarDrag 共享实现：同样平滑让位，并沿用上面的持久化回调。
 
   // 标题卡小框的图标跟随当前视图：插件页 → 插件自己的图标（含用户自定义覆盖），
   // 核心页 → 该视图的导航图标。图标由 pluginDisplayIcon/appIcon 每次新建，直接替换子节点即可。
@@ -1641,180 +1615,8 @@ function attachPluginListDrag(list, onCommit) {
   });
 }
 
-/* ── v0.53.0：侧栏操作条拖拽重排 ──
- * 与四象限卡片拖拽（views/quadrant.js 的 attachListDrag）同一套范式，轴向换成 X：
- *   桌面：按住按钮移动 ≥6px 即进入拖拽；触屏：长按 240ms 进入（期间移动 >8px 视为滚动意图）。
- *   拖动中幽灵卡跟随指针、原按钮留成半透明空槽，其余按钮用 WAAPI FLIP 平滑让位；
- *   松手把 DOM 序（= 用户拖出的序）交给 onCommit 落库。
- *
- * 落点判定用几何推演（offsetWidth + columnGap 递推），不读 getBoundingClientRect：
- *   让位动画进行中 rect 含残余 transform，会把槽位判定污染到动画中间态。
- *
- * ⚠️ 拖拽激活后必须吞掉紧随其后的 click：pointerup → click 是浏览器固定顺序，
- *   不拦的话松手会顺带触发按钮自己的动作（比如把主题切了）。所以进入拖拽时就挂
- *   捕获阶段的一次性拦截，并在**下一个宏任务**里摘掉 —— 在 pointerup 处理器里
- *   同步摘会让紧随其后的 click 漏过去。
- */
+// 横向工具区共用同一套跟手 / 实时让位 / 落位动画与键盘重排。
+// 保留侧栏接线入口，业务顺序与动作注册仍由 railActions 管理。
 function attachRailDockDrag(list, onCommit) {
-  let pd = null; // 当前按下会话
-  const items = () => [...list.children].filter((c) => c.classList.contains("rail-dock-btn"));
-  const clearLong = (st) => { if (st.longTimer) { clearTimeout(st.longTimer); st.longTimer = null; } };
-
-  // document 捕获阶段兜底：setPointerCapture 失败（或环境不支持）时，指针在容器外
-  // 松手的 pointerup/pointercancel 不会冒泡回 list，会话会挂起（幽灵卡不消失、顺序不落库）。
-  const detachDoc = (st) => {
-    if (st.docUp) document.removeEventListener("pointerup", st.docUp, true);
-    if (st.docCancel) document.removeEventListener("pointercancel", st.docCancel, true);
-    st.docUp = st.docCancel = null;
-  };
-
-  const moveGhost = (st, x, y) => {
-    st.ghost?.style.setProperty("transform", `translate(${x - st.gx}px, ${y - st.gy}px) scale(1.08)`);
-  };
-
-  const endSession = (st) => {
-    clearLong(st);
-    detachDoc(st);
-    st.ghost?.remove();
-    st.ghost = null;
-    st.card?.classList.remove("dragging");
-    list.classList.remove("drag-live");
-    if (st.pointerId != null && st.card) { try { st.card.releasePointerCapture(st.pointerId); } catch { /* 已释放 */ } }
-    if (st.swallowClick) setTimeout(() => document.removeEventListener("click", st.swallowClick, true), 0);
-    if (pd === st) pd = null;
-  };
-
-  const cancel = () => {
-    const st = pd;
-    if (!st) return;
-    // DOM 已被实时重排过 → 按启动时快照复原（append 移动，节点不重建）
-    if (st.active) for (const c of st.originOrder || []) list.append(c);
-    st.active = false;
-    endSession(st);
-  };
-
-  // 落点：mids 只含「非拖拽项」的中心点，与 slotIndexFor 的约定一致
-  const computeSlot = (st, x) => {
-    const mids = [];
-    let acc = list.getBoundingClientRect().left;
-    for (const c of items()) {
-      const w = st.w[c.dataset.railId] || c.offsetWidth;
-      if (c !== st.card) mids.push(acc + w / 2);
-      acc += w + st.gap;
-    }
-    return slotIndexFor(mids, x);
-  };
-
-  const reorderDOM = (st, k) => {
-    const vis = items().filter((c) => c !== st.card);
-    const before = vis.map((c) => c.getBoundingClientRect().left);
-    list.insertBefore(st.card, vis[k] ?? null);
-    if (reducedMotion()) return;
-    vis.forEach((c, i) => {
-      const dx = before[i] - c.getBoundingClientRect().left;
-      if (dx) c.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }],
-        { duration: 170, easing: "cubic-bezier(.22,.8,.22,1)" });
-    });
-  };
-
-  const beginDrag = (st, x, y) => {
-    if (!list.contains(st.card) || st.card.classList.contains("dragging")) { if (pd === st) pd = null; return; }
-    st.active = true;
-    clearLong(st);
-    list.classList.add("drag-live");
-    navigator.vibrate?.(10); // 触屏进入拖拽的触觉反馈（不支持则静默）
-    const rect = st.card.getBoundingClientRect();
-    st.gx = x - rect.left; st.gy = y - rect.top;
-    if (!reducedMotion()) {
-      const ghost = st.card.cloneNode(true);
-      ghost.classList.add("rail-dock-ghost");
-      ghost.removeAttribute("data-rail-id"); // 避免被 items()/querySelector 当成真按钮
-      ghost.style.width = `${rect.width}px`;
-      ghost.style.height = `${rect.height}px`;
-      document.body.append(ghost);
-      st.ghost = ghost;
-      moveGhost(st, x, y);
-    }
-    st.originOrder = [...list.children];
-    // 槽位推演用的宽度表：offsetWidth 不含 transform，拖拽中按钮尺寸不变
-    st.gap = parseFloat(getComputedStyle(list).columnGap) || 0;
-    st.w = {};
-    for (const c of items()) st.w[c.dataset.railId] = c.offsetWidth;
-    st.card.classList.add("dragging");
-    st.swallowClick = (event) => { event.preventDefault(); event.stopPropagation(); };
-    document.addEventListener("click", st.swallowClick, true);
-    try { st.card.setPointerCapture(st.pointerId); } catch { /* 部分环境拿不到 capture，下面有 document 兜底 */ }
-    st.docUp = (event) => {
-      if (event.pointerId !== st.pointerId) return;
-      detachDoc(st);
-      if (st.active) endDrag(st); else endSession(st);
-    };
-    st.docCancel = (event) => {
-      if (event.pointerId !== st.pointerId) return;
-      detachDoc(st);
-      cancel();
-    };
-    document.addEventListener("pointerup", st.docUp, true);
-    document.addEventListener("pointercancel", st.docCancel, true);
-    st.slot = computeSlot(st, x);
-  };
-
-  const endDrag = (st) => {
-    if (!st.active) return;
-    st.active = false;
-    const ghostRect = st.ghost?.getBoundingClientRect() ?? null;
-    st.card.classList.remove("dragging");
-    list.classList.remove("drag-live");
-    onCommit?.(); // DOM 序 = 用户拖出的序 → 落库（renderRailDock 复用节点，st.card 仍在文档里）
-    // 原按钮从幽灵落点平滑接位
-    if (ghostRect && !reducedMotion() && list.contains(st.card)) {
-      const r1 = st.card.getBoundingClientRect();
-      st.card.animate([
-        { transform: `translate(${ghostRect.left - r1.left}px, ${ghostRect.top - r1.top}px) scale(1.08)` },
-        { transform: "none" },
-      ], { duration: 200, easing: "cubic-bezier(.22,.8,.22,1)" });
-    }
-    endSession(st);
-  };
-
-  list.addEventListener("pointerdown", (event) => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    const card = event.target.closest?.(".rail-dock-btn");
-    if (!card || !list.contains(card)) return;
-    pd = { id: card.dataset.railId, card, pointerId: event.pointerId, x: event.clientX, y: event.clientY, active: false, ghost: null, slot: -1, originOrder: null, longTimer: null, swallowClick: null };
-    if (event.pointerType !== "mouse") {
-      // 触屏：长按 240ms 进入拖拽；期间移动 >8px 视为滚动意图，取消长按
-      pd.longTimer = setTimeout(() => { if (pd && pd.card === card && !pd.active) beginDrag(pd, pd.x, pd.y); }, 240);
-    }
-  });
-  list.addEventListener("pointermove", (event) => {
-    const st = pd;
-    if (!st || event.pointerId !== st.pointerId) return;
-    if (st.active) {
-      if (st.ghost) moveGhost(st, event.clientX, event.clientY);
-      const k = computeSlot(st, event.clientX);
-      if (k !== st.slot) { st.slot = k; reorderDOM(st, k); }
-      return;
-    }
-    const dx = event.clientX - st.x, dy = event.clientY - st.y;
-    if (st.longTimer) {
-      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearLong(st);
-      return;
-    }
-    if (event.pointerType === "mouse" && Math.hypot(dx, dy) >= 6) beginDrag(st, event.clientX, event.clientY);
-  });
-  list.addEventListener("pointerup", (event) => {
-    const st = pd;
-    if (!st || event.pointerId !== st.pointerId) return;
-    if (st.active) endDrag(st); else endSession(st);
-  });
-  list.addEventListener("pointercancel", (event) => {
-    const st = pd;
-    if (!st || event.pointerId !== st.pointerId) return;
-    cancel();
-  });
-  // 长按进入拖拽后浏览器可能仍尝试滚动 → 会话活跃时阻断
-  list.addEventListener("touchmove", (event) => { if (pd?.active) event.preventDefault(); }, { passive: false });
-
-  return { cancel };
+  return attachToolbarDrag(list, onCommit);
 }

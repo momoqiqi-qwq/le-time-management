@@ -406,7 +406,7 @@ export function renderSettings(container, opts = {}) {
                 el("button", {
                   class: "btn ghost sm",
                   onclick: async () => {
-                    try { await api.openExternal(lanStatus.url); }
+                    try { await api.openUrl(lanStatus.url); }
                     catch { window.open(lanStatus.url, "_blank"); }
                   },
                 }, "从浏览器打开"),

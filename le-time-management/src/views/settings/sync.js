@@ -66,7 +66,7 @@ export async function createSyncCard({ appVersion = "", os = "" } = {}) {
 
   const helpLink = el("button", {
     class: "btn ghost sm", type: "button",
-    onclick: () => { api.openExternal(preset.helpUrl).catch(() => window.open(preset.helpUrl, "_blank")); },
+    onclick: () => { api.openUrl(preset.helpUrl).catch(() => window.open(preset.helpUrl, "_blank")); },
   });
   const passRow = el("div", { class: "sync-pass-row" }, passInput, helpLink, howtoToggle);
   const accountLabel = el("span", {});

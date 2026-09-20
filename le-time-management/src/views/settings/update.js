@@ -128,7 +128,7 @@ export function createUpdateSettingsPanel({ currentVersion = "" } = {}) {
         // 而不是留一个点不动的灰色按钮。
         actions.append(el("button", {
           class: "btn pri sm", type: "button",
-          onclick: () => import("../../api.js").then(({ api }) => api.openExternal(st.info.release_url)).catch(() => toast("打不开浏览器")),
+          onclick: () => import("../../api.js").then(({ api }) => api.openUrl(st.info.release_url)).catch(() => toast("打不开网页")),
         }, "到项目仓库下载"));
       }
     }

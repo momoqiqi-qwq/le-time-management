@@ -5,6 +5,7 @@
 // `src-tauri/gen/android/` 是 Tauri 的生成目录（被 .gitignore 忽略），**重新执行一次
 // `tauri android init` 就会把它整个重建**。可手机端真正干活的 Kotlin 只活在那里：
 //   · v0.37.12 SchoolImportActivity（教务窗口 close 关不掉）
+//   · BrowserActivity（普通网页的应用内 WebView 容器）
 //   · v0.37.15 MainActivity 安全区注入（WebView 不实现 env(safe-area-inset-*)）
 //   · v0.37.17 MainActivity 返回键 handleBackNavigation + 双指缩放
 //   · v0.38.0 ApkInstallerPlugin（应用内一键升级）
@@ -20,7 +21,7 @@
 //   ① 我们拥有的文件（Kotlin 源码 + 通知小图标等资源）：整份覆盖。这部分百分之百是我们
 //      写的，没有上游模板会被盖坏的问题。清单见 SOURCES 与 RESOURCES。
 //   ② AndroidManifest.xml：**只加不删的补丁** —— 补 REQUEST_INSTALL_PACKAGES 与通知/闹钟
-//      四条权限、注册 .SchoolImportActivity 与三个提醒接收器、删 MainActivity 的 label。
+//      四条权限、注册 .SchoolImportActivity / .BrowserActivity 与三个提醒接收器、删 MainActivity 的 label。
 //      不做整份覆盖 —— 否则将来 Tauri 模板新增的 permission/provider 会被我们的旧副本吃掉。
 //      FileProvider 的 provider 块是 Tauri 模板自带的，**只校验不合成**（合成容易写错一整个块）。
 //   ③ res/xml/file_paths.xml：确保 `<cache-path>` 存在。Rust 侧把更新包暂存在
@@ -44,6 +45,7 @@ const KOTLIN_DIR = "app/src/main/java/com/yile/letime";
 const SOURCES = [
   "MainActivity.kt",
   "SchoolImportActivity.kt",
+  "BrowserActivity.kt",
   "NativeSchedulePlugin.kt",
   "ApkInstallerPlugin.kt",
   "SystemBarPlugin.kt",
@@ -195,6 +197,16 @@ const SCHOOL_IMPORT_ACTIVITY_BLOCK = `
             android:name=".SchoolImportActivity"
             android:exported="false" />`;
 
+/** 普通网页的应用内 WebView Activity；与教务专用窗口分开，避免桥接逻辑互相污染。 */
+const BROWSER_ACTIVITY_BLOCK = `
+        <!-- 普通网页应用内打开窗口：无导出、无深链，仅由 Rust open_internal 启动。 -->
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:label="@string/app_name"
+            android:launchMode="singleTop"
+            android:name=".BrowserActivity"
+            android:exported="false" />`;
+
 /**
  * 教务导入窗口必须在清单里注册，否则 `startActivity` 直接崩（它是 abstract 的
  * TauriActivity 之外唯一能承载教务页的具体 Activity）。
@@ -213,6 +225,19 @@ function ensureSchoolImportActivity(xml) {
   const anchor = "</application>";
   if (xml.includes(anchor)) {
     return { xml: xml.replace(anchor, `${SCHOOL_IMPORT_ACTIVITY_BLOCK}\n    ${anchor}`), changed: true };
+  }
+  return { xml, changed: false, anchorMissing: true };
+}
+
+function ensureBrowserActivity(xml) {
+  if (xml.includes('android:name=".BrowserActivity"')) return { xml, changed: false };
+  const school = /(<activity\b(?:(?!>).)*?android:name="\.SchoolImportActivity"(?:(?!>).)*?\/>)/s;
+  if (school.test(xml)) {
+    return { xml: xml.replace(school, (m) => `${m}\n${BROWSER_ACTIVITY_BLOCK}`), changed: true };
+  }
+  const provider = /^[ \t]*<provider\b/m;
+  if (provider.test(xml)) {
+    return { xml: xml.replace(provider, (m) => `${BROWSER_ACTIVITY_BLOCK}\n\n${m}`), changed: true };
   }
   return { xml, changed: false, anchorMissing: true };
 }
@@ -322,6 +347,8 @@ function patchManifest() {
   xml = camera.xml;
   const activity = ensureSchoolImportActivity(xml);
   xml = activity.xml;
+  const browserActivity = ensureBrowserActivity(xml);
+  xml = browserActivity.xml;
   const receivers = ensureReminderReceivers(xml);
   xml = receivers.xml;
   const label = stripMainActivityLabel(xml);
@@ -330,7 +357,7 @@ function patchManifest() {
   if (!checkFileProvider(xml)) console.log("  [缺失] AndroidManifest.xml 的 FileProvider 声明");
 
   if (xml === src) {
-    console.log(`  [已一致] AndroidManifest.xml（权限 / 相机 / 教务窗口 / 提醒接收器 / label 都已就位）`);
+    console.log(`  [已一致] AndroidManifest.xml（权限 / 相机 / 教务与网页窗口 / 提醒接收器 / label 都已就位）`);
     return;
   }
   const detail = [
@@ -338,6 +365,7 @@ function patchManifest() {
     extraPerms.length && `补通知权限（${extraPerms.join("、")}）`,
     camera.changed && "补相机声明（权限 + 非必需 feature）",
     activity.changed && "注册 SchoolImportActivity",
+    browserActivity.changed && "注册 BrowserActivity",
     receivers.changed && "注册提醒接收器",
     label.changed && "去 MainActivity label",
   ]

@@ -140,6 +140,18 @@ export const api = {
     window.open(url, "_blank");
   },
 
+  /** 普通网页统一入口：按「应用内打开网页」偏好选择内置网页窗口或系统浏览器。 */
+  async openUrl(url) {
+    // uiPreferences 每次应用设置都会同步此 dataset；api.js 不反向 import store，避免循环依赖。
+    const inApp = typeof document !== "undefined"
+      && document.documentElement.dataset.openLinksInApp === "on";
+    if (isTauri && inApp) {
+      try { return await invoke("open_internal", { url }); }
+      catch { /* 站点或平台不支持内置 WebView 时，保证链接仍然能打开 */ }
+    }
+    return api.openExternal(url);
+  },
+
   async schoolImportOpen(url, adapterScript, title) {
     if (isTauri) return invoke("school_import_open", { url, adapterScript, title });
     window.open(url, "_blank");
