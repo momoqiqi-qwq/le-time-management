@@ -1,6 +1,6 @@
 <view class="page-body" wx:if="{{t}}">
   <view class="card">
-    <input class="title-in" value="{{t.title}}" maxlength="100" bindblur="onTitleBlur" />
+    <input class="title-in" value="{{t.title}}" maxlength="-1" bindblur="onTitleBlur" />
     <view class="kv">
       <text class="k">状态</text>
       <button class="btn small {{t.done ? 'ghost' : 'pri'}}" bindtap="onToggleDone">
@@ -29,6 +29,7 @@
         <view class="pv">{{estLabels[estIndex]}} ▾</view>
       </picker>
     </view>
+    <view class="kv"><text class="k">自定义分钟</text><input class="inline-in" type="number" value="{{customEst}}" bindblur="onCustomEst" /></view>
     <view class="kv">
       <text class="k">截止</text>
       <view class="duerow">
@@ -58,34 +59,29 @@
       <text class="k">项目</text>
       <input class="inline-in" value="{{t.project}}" placeholder="无" maxlength="30" bindblur="onProjectBlur" />
     </view>
+    <view class="kv col"><text class="k">标签（逗号分隔）</text><input class="input" value="{{tagsText}}" maxlength="-1" bindblur="onTagsBlur" /></view>
     <view class="kv col">
       <text class="k">备注</text>
-      <textarea class="textarea" value="{{t.note}}" placeholder="补充说明…" maxlength="500" bindblur="onNoteBlur"></textarea>
+      <textarea class="textarea" value="{{t.note}}" placeholder="补充说明…" maxlength="16000" disabled="{{noteTooLong}}" bindblur="onNoteBlur"></textarea>
+      <view wx:if="{{noteTooLong}}" class="desc">备注较长，当前仅预览前 16000 字，不会截断原文。可导出完整文本或在桌面端编辑。</view><button class="btn ghost small" bindtap="onExportNote">导出完整备注</button>
     </view>
   </view>
 
   <view class="card" wx:if="{{sched.length}}">
     <view class="at">已 排 时 间</view>
-    <view wx:for="{{sched}}" wx:key="id" class="srow">{{item.label}}</view>
+    <view wx:for="{{sched}}" wx:key="id" class="srow"><view data-date="{{item.date}}" bindtap="onViewSchedule">{{item.label}}</view><button class="btn ghost small" data-id="{{item.id}}" bindtap="onUnschedule">移除这条排程</button></view>
   </view>
 
-  <view class="card" wx:if="{{attachments.length}}">
-    <view class="at">图 片 附 件</view>
-    <view class="atts">
-      <image
-        wx:for="{{attachments}}"
-        wx:key="*this"
-        class="att"
-        src="{{item}}"
-        mode="aspectFill"
-        data-i="{{index}}"
-        bindtap="onAttTap"
-      />
-    </view>
+  <view class="card">
+    <view class="at">图 片 附 件</view><view class="desc">照片保存在本机并随 JSON 备份互通。最多新增到 6 张，每张 512KB 内；桌面导入的已有附件保留。</view>
+    <view class="atts"><view wx:for="{{attachments}}" wx:key="index" class="attachment-cell"><image wx:if="{{item.thumb}}" class="att" src="{{item.thumb}}" mode="aspectFill" data-i="{{item.index}}" bindtap="onAttTap"/><view wx:else class="attachment-placeholder" data-i="{{item.index}}" bindtap="onAttTap">{{item.label}}</view><button class="btn ghost small" data-i="{{item.index}}" catchtap="onRemoveAttachment">移除</button></view></view>
+    <button class="btn ghost small" loading="{{addingImage}}" disabled="{{addingImage}}" bindtap="onAddAttachment">选择图片 / 拍照</button>
   </view>
+  <view class="card"><view class="kv"><text class="k">排程日期</text><picker mode="date" value="{{scheduleDate}}" bindchange="onScheduleDate"><view class="pv">{{scheduleDate}} ▾</view></picker></view><view class="desc">自动选择首个空闲时段，仅替换这一天的安排。</view></view>
 
   <view class="foot">
-    <button class="btn pri" bindtap="onScheduleToday">排入今天时间块</button>
+    <button class="btn pri" bindtap="onScheduleToday">排入选中日期</button>
     <button class="btn danger" bindtap="onDelete">删除任务</button>
   </view>
+  <view wx:if="{{undoMessage}}" class="mini-undo"><text>{{undoMessage}}</text><button class="btn ghost small" bindtap="onUndo">撤销</button></view>
 </view>

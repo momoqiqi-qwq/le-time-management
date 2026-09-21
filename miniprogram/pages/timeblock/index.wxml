@@ -1,4 +1,5 @@
 <view class="page-body tb">
+  <view class="mini-shortcuts"><button class="btn ghost small" bindtap="onSchedulePlugin">打开原生课程表</button><text class="desc">凌晨安排会自动展开全天时间轴</text></view>
   <!-- 视图切换收进展开菜单（v0.38.0）。
        原来 7 个 tab 横排 + scroll-x，一屏只看得到 4 个半，
        「卡片时间轴 / 年度甘特 / 阶段甘特」永远藏在滑动条后面。
@@ -105,7 +106,7 @@
     <movable-area class="ma">
       <movable-view
         wx:for="{{blocks}}"
-        wx:key="id"
+        wx:key="renderKey"
         class="block cat-{{item.cat}} {{item.tiny ? 'tiny' : ''}} {{item.id === dragId ? 'dragging' : ''}}"
         style="height:{{item.h}}px"
         direction="vertical"
@@ -114,8 +115,10 @@
         y="{{item.y}}"
         data-id="{{item.id}}"
         bindtouchstart="onBlockTouchStart"
+        catchtap="onBlockTap"
         bindchange="onBlockChange"
         bindtouchend="onBlockTouchEnd"
+        bindtouchcancel="onBlockTouchCancel"
       >
         <view class="bn">{{item.title}}</view>
         <view wx:if="{{item.showMeta}}" class="bm">{{item.timeLabel}} · {{item.catLabel}}</view>
@@ -134,7 +137,7 @@
     <view class="at">这 天 已 排</view>
     <view class="bigrow">
       <text class="big">{{totalLabel}}</text>
-      <text class="small">/ {{awakeLabel}} 清醒时间</text>
+      <text class="small">/ {{awakeLabel}} 时间轴范围</text>
     </view>
     <view class="meter" wx:if="{{meter.length}}">
       <view wx:for="{{meter}}" wx:key="cat" class="seg cat-{{item.cat}}" style="width:{{item.w}}%"></view>
@@ -320,4 +323,6 @@
       </view>
     </view>
   </view>
+  <view wx:if="{{blockDraft}}" class="mini-modal-mask"><view class="mini-modal card"><view class="at">编辑时间块</view><input class="input" value="{{blockDraft.title}}" data-field="title" maxlength="200" bindinput="onBlockEditInput"/><view class="mini-filters"><picker mode="date" value="{{blockDraft.date}}" data-field="date" bindchange="onBlockEditInput"><view class="pv">{{blockDraft.date}} ▾</view></picker><picker mode="time" value="{{blockDraft.start}}" data-field="start" bindchange="onBlockEditInput"><view class="pv">{{blockDraft.start}} ▾</view></picker></view><view class="desc">时长（整数分钟）</view><input class="input" type="number" value="{{blockDraft.dur}}" data-field="dur" bindinput="onBlockEditInput"/><picker range="{{catOptions}}" value="{{blockDraft.catIndex}}" data-field="catIndex" bindchange="onBlockEditInput"><view class="pv">{{catOptions[blockDraft.catIndex]}} ▾</view></picker><view class="mini-filters"><button class="btn ghost" bindtap="onCancelBlockEdit">取消</button><button class="btn pri" bindtap="onSaveBlockEdit">保存</button></view></view></view>
+  <view wx:if="{{undoMessage}}" class="mini-undo"><text>{{undoMessage}}</text><button class="btn ghost small" bindtap="onUndo">撤销</button></view>
 </view>

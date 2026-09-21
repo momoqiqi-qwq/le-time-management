@@ -222,3 +222,13 @@ page {
   background: var(--paper);
   padding: 26rpx 18rpx;
 }
+
+/* 原生增强入口 / 批量操作 / 可撤销反馈，沿用系统深浅色变量。 */
+.mini-shortcuts,.mini-filters { display:flex; flex-wrap:wrap; align-items:center; margin:12rpx -5rpx; }
+.mini-shortcuts .btn,.mini-filters .btn { margin:5rpx; }
+.mini-filters .desc { margin:8rpx; }
+.mini-undo { position:fixed; left:20rpx; right:20rpx; bottom:calc(24rpx + env(safe-area-inset-bottom)); z-index:90; background:var(--panel); color:var(--ink); border:1rpx solid var(--line); box-shadow:0 8rpx 32rpx rgba(0,0,0,.15); border-radius:20rpx; padding:16rpx 20rpx; display:flex; justify-content:space-between; align-items:center; }
+.mini-undo text { flex:1; min-width:0; padding-right:16rpx; font-size:25rpx; }
+.mini-modal-mask { position:fixed; left:0; top:0; right:0; bottom:0; z-index:120; background:rgba(0,0,0,.4); display:flex; align-items:center; justify-content:center; padding:24rpx; }
+.mini-modal { width:100%; max-height:80vh; overflow:auto; box-sizing:border-box; }
+.mini-modal .input,.mini-modal .pv { margin:14rpx 0; }

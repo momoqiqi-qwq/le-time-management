@@ -1,10 +1,11 @@
 // 任务详情页（桌面端的任务抽屉）
 const store = require("../../core/store.js");
 const reminder = require("../../core/taskReminder.js");
+const files = require("../../core/files.js");
+const undo = require("../../core/undo.js");
+const media = require("../../core/media.js");
 
 const EST = [15, 30, 45, 60, 90, 120, 180];
-const DAY_START = 7 * 60;
-const DAY_END = 24 * 60;
 
 Page({
   data: {
@@ -21,18 +22,27 @@ Page({
     reminderOffsets: [],
     customReminderMin: "",
     attachments: [],
-    sched: [],
+    sched: [], tagsText: "", customEst: "30", scheduleDate: "", undoMessage: "", addingImage: false, noteTooLong: false,
   },
 
   onLoad(options) {
     this.id = options.id;
+    if (!store.taskById(this.id)) { try { this.id = decodeURIComponent(this.id); } catch (e) {} }
+    this._preview = media.previewScope(); this._unloaded = false;
+    this.setData({ scheduleDate: store.todayStr() });
     this.refresh();
   },
-  onShow() { this.refresh(); },
+  onShow() { this.onHide(); this._unsub = store.subscribe(() => this.refresh()); this._undoUnsub = undo.bind(this); this.refresh(); },
+  onHide() { if (this._unsub) this._unsub(); if (this._undoUnsub) this._undoUnsub(); this._unsub = this._undoUnsub = null; },
+  onUnload() { this._unloaded = true; this.onHide(); if (this._preview) this._preview.dispose(); },
 
   refresh() {
     const t = store.taskById(this.id);
-    if (!t) { wx.navigateBack(); return; }
+    if (!t) { if (!this._deleting) wx.navigateBack({ fail: () => wx.switchTab({ url: "/pages/quadrant/index" }) }); return; }
+    this._estValues = [...new Set(EST.concat([Number(t.estMin) || 30]))].sort((a,b) => a-b);
+    this._tagsOriginal = (t.tags || []).join("、");
+    const attachments = Array.isArray(t.attachments) ? t.attachments : [], token = (this._previewToken || 0) + 1;
+    this._previewToken = token;
     this.setData({
       t: {
         id: t.id,
@@ -40,24 +50,30 @@ Page({
         quad: t.quad,
         done: t.done,
         project: t.project || "",
-        note: t.note || "",
+        note: String(t.note || "").slice(0, 16000),
       },
-      estIndex: Math.max(0, EST.indexOf(t.estMin || 30)),
+      estLabels: this._estValues.map(m => store.durLabel(m)),
+      estIndex: Math.max(0, this._estValues.indexOf(Number(t.estMin) || 30)),
+      customEst: String(t.estMin || 30), tagsText: this._tagsOriginal, noteTooLong: String(t.note || "").length > 16000,
       due: t.due || "",
       dueTime: t.dueTime || "23:59",
       reminderEnabled: t.reminderEnabled !== false,
       reminderOffsets: reminder.offsets(t),
       reminderOptions: reminder.PRESET_OFFSETS.map((o)=>({offset:o,label:o===0?"到点":reminder.label(o).replace("截止","") ,selected:reminder.offsets(t).includes(o)})),
       customReminderOffsets: reminder.offsets(t).filter((o)=>!reminder.PRESET_OFFSETS.includes(o)),
-      attachments: t.attachments || [],
+      attachments: attachments.map((url, i) => ({ index: i, thumb: "", label: "图片 " + (i + 1) })),
       sched: store.getState().blocks
         .filter((b) => b.taskId === t.id)
+        .sort((a,b) => (a.date+a.start).localeCompare(b.date+b.start))
         .map((b) => ({
-          id: b.id,
+          id: b.id, date: b.date,
           label: b.date.slice(5) + " " + b.start + " – " +
             store.hhmmOf(store.mmOf(b.start) + b.durMin) + " · " + b.title,
         })),
     });
+    if (this._preview) attachments.forEach((url, i) => this._preview.load(url).then(path => {
+      if (!this._unloaded && token === this._previewToken && path) this.setData({ ["attachments[" + i + "].thumb"]: path });
+    }).catch(() => {}));
   },
 
   onTitleBlur(e) {
@@ -66,10 +82,10 @@ Page({
     else this.refresh();
   },
   onQuadTap(e) {
-    store.updateTask(this.id, { quad: +e.currentTarget.dataset.q });
+    store.moveTaskToQuad(this.id, +e.currentTarget.dataset.q);
   },
   onEstChange(e) {
-    store.updateTask(this.id, { estMin: EST[+e.detail.value] });
+    store.updateTask(this.id, { estMin: this._estValues[+e.detail.value] });
   },
   onDueChange(e) {
     store.updateTask(this.id, { due: e.detail.value || null });
@@ -91,60 +107,63 @@ Page({
   onProjectBlur(e) {
     store.updateTask(this.id, { project: (e.detail.value || "").trim() });
   },
-  onNoteBlur(e) {
-    store.updateTask(this.id, { note: e.detail.value });
+  onNoteBlur(e) { if (!this.data.noteTooLong) store.updateTask(this.id, { note: e.detail.value }); },
+  onTagsBlur(e) {
+    if (e.detail.value === this._tagsOriginal) return;
+    const tags = [...new Set(String(e.detail.value || "").split(/[,，、|\n]+/).map(s => s.trim()).filter(Boolean))];
+    store.updateTask(this.id, { tags });
   },
+  onCustomEst(e) {
+    const value = Number(e.detail.value);
+    if (!Number.isInteger(value) || value < 1 || value > 1440) { wx.showToast({ title: "预估请输入 1～1440 整数分钟", icon: "none" }); this.refresh(); return; }
+    store.updateTask(this.id, { estMin: value });
+  },
+  onScheduleDate(e) { this.setData({ scheduleDate: e.detail.value }); },
+  onViewSchedule(e) { getApp().globalData.pendingTimeblockDate = e.currentTarget.dataset.date; wx.switchTab({ url: "/pages/timeblock/index" }); },
+  onUnschedule(e) { undo.offer(store.removeBlockUndoable(e.currentTarget.dataset.id), "已移除这条排程"); },
+  onUndo() { undo.run(); },
+  async onExportNote() { const task=store.taskById(this.id); if(task)try{await files.exportText("U-Time-任务备注.txt", task.note || "");}catch(e){files.notifyError(e);} },
   onToggleDone() {
     wx.vibrateShort({ type: "light" });
     store.toggleTask(this.id);
   },
 
-  // 图片附件预览：dataURL 先落成临时文件（previewImage 不支持 data URI）
-  onAttTap(e) {
-    const url = this.data.attachments[+e.currentTarget.dataset.i];
+  async onAttTap(e) {
+    const task = store.taskById(this.id), url = task && (task.attachments || [])[Number(e.currentTarget.dataset.i)];
     if (!url) return;
-    if (url.slice(0, 5) !== "data:") {
-      wx.previewImage({ urls: [url] });
-      return;
-    }
-    const m = url.match(/^data:image\/(\w+);base64,(.+)$/);
-    if (!m) { wx.showToast({ title: "图片格式不支持预览", icon: "none" }); return; }
-    const ext = m[1] === "jpeg" ? "jpg" : m[1];
-    const filePath = wx.env.USER_DATA_PATH + "/att-" + Date.now() + "." + ext;
-    wx.getFileSystemManager().writeFile({
-      filePath,
-      data: m[2],
-      encoding: "base64",
-      success: () => wx.previewImage({ urls: [filePath] }),
-      fail: () => wx.showToast({ title: "图片打开失败", icon: "none" }),
-    });
+    try {
+      const path = /^https?:\/\//i.test(url) ? url : await this._preview.load(url);
+      if (!path) throw new Error("此附件格式无法在小程序预览，请在桌面端查看");
+      wx.previewImage({ urls: [path], fail: () => files.notifyError(new Error("预览失败，可能需要配置图片域名或在桌面端查看")) });
+    } catch (error) { files.notifyError(error); }
+  },
+  async onAddAttachment() {
+    const task = store.taskById(this.id); if (!task || this.data.addingImage) return;
+    const remaining = 6 - (task.attachments || []).length;
+    if (remaining <= 0) { wx.showToast({ title: "最多新增到 6 张；已有附件不会被删除", icon: "none" }); return; }
+    this.setData({ addingImage: true });
+    try {
+      const images = await media.chooseImages(Math.min(3, remaining)), current = store.taskById(this.id);
+      if (images.length && current && !this._unloaded) store.updateTask(this.id, { attachments: (current.attachments || []).concat(images) });
+    } catch (e) { files.notifyError(e); }
+    finally { if (!this._unloaded) this.setData({ addingImage: false }); }
+  },
+  onRemoveAttachment(e) {
+    const index = Number(e.currentTarget.dataset.i);
+    wx.showModal({ title: "移除附件", content: "从本任务移除这张图片？其他附件保留。", success: r => {
+      if (!r.confirm) return; const task = store.taskById(this.id);
+      if (task) store.updateTask(this.id, { attachments: (task.attachments || []).filter((url, i) => i !== index) });
+    } });
   },
 
-  // 找今天第一个放得下的空闲时段（与桌面端 scheduleToToday 一致）
+  // 校验空闲时段后才替换所选日期的排程，不再删除其他日期。
   onScheduleToday() {
-    const t = store.taskById(this.id);
-    if (!t) return;
-    const date = store.todayStr();
-    const dur = Math.max(15, t.estMin || 30);
-    const busy = store.blocksOf(date)
-      .map((b) => [store.mmOf(b.start), store.mmOf(b.start) + b.durMin])
-      .sort((a, b) => a[0] - b[0]);
-    store.getState().blocks.filter((b) => b.taskId === t.id).forEach((b) => store.removeBlock(b.id));
-    let cursor = DAY_START;
-    for (const seg of busy) {
-      if (seg[1] <= cursor) continue;
-      if (seg[0] - cursor >= dur) break;
-      cursor = Math.max(cursor, seg[1]);
-    }
-    if (DAY_END - cursor < dur) {
-      wx.showToast({ title: "今天排不下了，试试清理时间块", icon: "none" });
-      return;
-    }
-    store.addBlock({
-      date, start: store.hhmmOf(cursor), durMin: dur,
-      title: t.title, taskId: t.id, cat: "work",
-    });
-    wx.showToast({ title: "已排入今天 " + store.hhmmOf(cursor), icon: "none" });
+    const t = store.taskById(this.id); if (!t) return;
+    try {
+      const date = this.data.scheduleDate || store.todayStr();
+      const block = store.placeTask(t, date, null, "work");
+      wx.showToast({ title: "已排入 " + date.slice(5) + " " + block.start, icon: "none" });
+    } catch (e) { files.notifyError(e); }
   },
 
   onDelete() {
@@ -155,8 +174,9 @@ Page({
       confirmColor: "#C43C3C",
       success: (r) => {
         if (!r.confirm) return;
-        store.removeTask(this.id);
-        wx.navigateBack();
+        this._deleting = true; this.onHide();
+        undo.offer(store.deleteTaskUndoable(this.id), "任务与关联排程已删除");
+        wx.navigateBack({ fail: () => wx.switchTab({ url: "/pages/quadrant/index" }) });
       },
     });
   },

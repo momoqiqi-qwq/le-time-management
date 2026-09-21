@@ -62,3 +62,7 @@
 
 /* v0.9.1 about */
 .about-head-mini{display:flex;align-items:flex-start;justify-content:space-between;gap:18rpx}.version-pill{flex:none;border:2rpx solid var(--line);border-radius:999rpx;background:var(--panel);padding:8rpx 16rpx;font-size:22rpx;font-weight:700;color:var(--deep)}.about-section{margin-top:24rpx;padding-top:20rpx;border-top:2rpx solid var(--line-soft)}.about-title{font-size:24rpx;font-weight:700;margin-bottom:10rpx}.about-item{font-size:23rpx;line-height:1.7;color:var(--ink-2);padding:3rpx 0}.about-item.dim{color:var(--ink-3)}.about-note{font-size:21rpx;line-height:1.65;color:var(--ink-3);margin-top:12rpx}
+
+.card .input { margin:14rpx 0; }
+.import-preview { background:var(--paper); border:1rpx solid var(--line); border-radius:16rpx; padding:20rpx; line-height:1.8; }
+.import-preview .pv { margin:18rpx 0; }

@@ -128,7 +128,8 @@ const manifest = JSON.parse(fs.readFileSync(new URL('../public/plugins/web-colle
 // 1.2.4 → 「应用内显示」碰到 http 明文站点不再挂一个注定空白的 iframe，改成给原因 + 出口
 //          （同一个混合内容根因的第三个受害者，见下面第七之二节）。
 // 这条断言的作用是「改了行为就必须动版本号」，所以每加一批行为就往上抬一格，别删。
-assert.equal(manifest.version, '1.2.4', '改了插件行为就必须升版本号');
+assert.equal(manifest.version, '1.3.0', '增加小程序原生收藏适配必须升版本号');
+assert.equal(manifest.platforms.miniprogram, 'native', '原生收藏管理已实现，任意网站内嵌不在适配范围');
 
 /* ── 七之二、明文 http 站点在「应用内显示」里不许挂空 iframe（v1.2.4）──
    APK 上页面来源是 https（WebViewAssetLoader 默认 scheme），http 的 iframe 会被当

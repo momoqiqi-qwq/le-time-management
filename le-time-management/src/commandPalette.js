@@ -8,6 +8,7 @@ import { openTaskDrawer } from "./views/drawer.js";
 import { openQuickCapture } from "./capture.js";
 import { closeLayer } from "./motion.js";
 import { SETTINGS_SEARCH_ENTRIES } from "./settingsSearchIndex.js";
+import { pinyinInitialsOf } from "./pinyinInitial.js";
 
 let modal = null;
 let input = null;
@@ -58,12 +59,22 @@ function navigate(view) {
 }
 
 function normalize(text) { return String(text || "").trim().toLowerCase(); }
+function searchText(entry) {
+  return `${entry.title || ""} ${entry.sub || ""} ${entry.keywords || ""}`;
+}
+function initials(entry) {
+  return pinyinInitialsOf(searchText(entry));
+}
 function score(entry, q) {
   if (!q) return entry.priority || 0;
   const title = normalize(entry.title), sub = normalize(entry.sub), keys = normalize(entry.keywords);
+  const py = initials(entry);
   if (title === q) return 1000;
   if (title.startsWith(q)) return 800;
+  if (py === q) return 760;
+  if (py.startsWith(q)) return 700;
   if (title.includes(q)) return 600;
+  if (py.includes(q)) return 520;
   if (sub.includes(q)) return 350;
   if (keys.includes(q)) return 250;
   return -1;

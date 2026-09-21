@@ -466,13 +466,15 @@ const JUYA = `<?xml version='1.0' encoding='utf-8'?>
   assert.equal(manifest.id, 'rss-reader');
   /* 版本号**故意钉死具体值**：插件内容改了（哪怕只是换一条预置源）就必须来这里确认一次。
      别把它改成 /^\d+\.\d+\.\d+$/ 之类的格式检查 —— 那样「改了内容却忘升版本」就再也拦不住了。 */
-  assert.equal(manifest.version, '1.4.0');
+  assert.equal(manifest.version, '1.5.0');
   for (const perm of ['ui', 'storage', 'notify', 'http', 'openUrl', 'tasks', 'blocks', 'timeParse', 'events']) {
     assert.ok(manifest.permissions.includes(perm), 'manifest 必须声明 ' + perm);
   }
-  /* 小程序端没有原生适配页 —— 标 unavailable，插件中心才不会出现点不开的入口
-     （web-collector 同款处理）。要改这个值，必须同时补小程序的原生实现。 */
-  assert.equal(manifest.platforms.miniprogram, 'unavailable', '小程序端未适配，必须是 unavailable');
+  /* 原生资料库与行为回归已落地；仍需服务器域名配置，不等于桌面任意网络能力。 */
+  assert.equal(manifest.platforms.miniprogram, 'native', '已提供 RSS 原生适配');
+  const miniPage = new URL('../../miniprogram/pages/library/index.js', import.meta.url);
+  assert.ok(fs.existsSync(miniPage), '标记 native 必须同时提供可打开的原生页');
+  assert.match(fs.readFileSync(miniPage, 'utf8'), /lib\.refreshFeed/, '原生页必须接入真实刷新逻辑');
   assert.equal(manifest.platforms.windows, 'full');
   assert.equal(manifest.platforms.android, 'full');
   assert.ok(Number.isFinite(Number(manifest.order)), 'order 必须是数字');

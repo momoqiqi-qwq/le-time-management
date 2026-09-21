@@ -10,7 +10,7 @@ const bad = (msg) => { console.log("✗ " + msg); err++; };
 function walk(dir, fn) {
   for (const f of fs.readdirSync(dir)) {
     const p = path.join(dir, f);
-    if (fs.statSync(p).isDirectory()) walk(p, fn);
+    if (fs.statSync(p).isDirectory()) { if (!["node_modules", ".git"].includes(f)) walk(p, fn); }
     else fn(p);
   }
 }
@@ -54,15 +54,28 @@ walk(ROOT, (p) => {
 walk(ROOT, (p) => {
   if (!p.endsWith(".js")) return;
   const s = fs.readFileSync(p, "utf8");
-  for (const m of s.matchAll(/require\("(\.[^"]+)"\)/g)) {
+  for (const m of s.matchAll(/require\(['"](\.[^'"]+)['"]\)/g)) {
     const target = path.resolve(path.dirname(p), m[1]);
     if (!fs.existsSync(target)) bad("require 找不到: " + m[1] + " (在 " + p + ")");
   }
 });
 
-// 5. 小程序版本必须与桌面 package.json 一致
+// 5. 所有 JavaScript 可解析（不执行代码，不要求真实 wx/DOM）。
+walk(ROOT, (p) => {
+  if (!p.endsWith(".js")) return;
+  try { new Function(fs.readFileSync(p,"utf8").replace(/^#![^\n]*\n/,"")); }
+  catch (e) { bad("JS 语法错误: " + p + " " + e.message); }
+});
+for (const pg of app.pages) {
+  const js = fs.readFileSync(path.join(ROOT,pg+".js"),"utf8"), wxml = fs.readFileSync(path.join(ROOT,pg+".wxml"),"utf8");
+  for (const match of wxml.matchAll(/(?:bind|catch)(?::)?[a-zA-Z]+\s*=\s*["']([A-Za-z_$][\w$]*)["']/g)) {
+    if (!new RegExp("\\b" + match[1] + "\\s*(?:\\(|:)").test(js)) bad("未找到事件处理器: " + pg + " " + match[1]);
+  }
+}
+
+// 6. 小程序版本必须与桌面 package.json 一致
 try {
-  const desktopPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "..", "01-windows", "app", "package.json"), "utf8"));
+  const desktopPkg = JSON.parse(fs.readFileSync(path.join(ROOT, "..", "le-time-management", "package.json"), "utf8"));
   const appMeta = require(path.join(ROOT, "core", "appMeta.js"));
   if (appMeta.version !== desktopPkg.version) bad("小程序版本与桌面 package.json 不一致: " + appMeta.version + " != " + desktopPkg.version);
 } catch (e) { bad("版本一致性校验失败: " + e.message); }

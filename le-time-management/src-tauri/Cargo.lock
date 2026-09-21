@@ -2169,7 +2169,7 @@ dependencies = [
 
 [[package]]
 name = "letime"
-version = "0.89.0"
+version = "0.92.0"
 dependencies = [
  "base64 0.22.1",
  "des",
@@ -2188,6 +2188,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tiny_http",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

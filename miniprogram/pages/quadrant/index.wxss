@@ -17,7 +17,7 @@
   display: flex;
   align-items: center;
 }
-.chip b { color: var(--ink); font-weight: 600; }
+.chip .count { color: var(--ink); font-weight: 600; }
 .chip.toggle { color: var(--deep); border: 2rpx solid var(--line); background: transparent; }
 .chip.toggle.on { background: var(--deep); color: var(--on-deep); border-color: var(--deep); }
 
@@ -193,3 +193,8 @@
   .formrow { flex-direction: column; align-items: stretch; gap: 14rpx; }
   .formbtns { justify-content: flex-end; }
 }
+
+.searchbar { display:flex; align-items:center; }
+.searchbar .input { flex:1; min-width:0; }
+.search-clear { flex-shrink:0; padding:16rpx; color:var(--deep); }
+.mini-bulk { position:sticky; top:0; z-index:20; border:1rpx solid var(--line); border-radius:18rpx; background:var(--panel); padding:20rpx; margin-bottom:20rpx; }

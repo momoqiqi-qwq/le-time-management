@@ -3,6 +3,7 @@
 // 预览里的日期/开始/时长/分类可直接点改，确认后创建（core/captureFlow.js）。
 const store = require("../../core/store.js");
 const flow = require("../../core/captureFlow.js");
+const files = require("../../core/files.js");
 
 const QUAD_SHORT = { 1: "I · 立即做", 2: "II · 排计划", 3: "III · 少快办", 4: "IV · 有空再说" };
 
@@ -36,6 +37,7 @@ Page({
       this.setData({ preview: { show: false } });
       return;
     }
+    this._parsedText = text; this._dateEdited = false; this._timeEdited = false;
     const cap = flow.buildCapture(text);
     this._cap = cap;
     const opt = flow.durOptions(cap.estMin);
@@ -60,8 +62,8 @@ Page({
   },
 
   /* ── 预览调整 ── */
-  onEditDate(e) { this.setData({ "edit.date": e.detail.value }); },
-  onEditStart(e) { this.setData({ "edit.start": e.detail.value }); },
+  onEditDate(e) { this._dateEdited = true; this.setData({ "edit.date": e.detail.value }); },
+  onEditStart(e) { this._timeEdited = true; this.setData({ "edit.start": e.detail.value }); },
   onEditDur(e) { this.setData({ "edit.durIndex": +e.detail.value }); },
   onEditCat(e) { this.setData({ "edit.catIndex": +e.detail.value }); },
 
@@ -92,15 +94,20 @@ Page({
     };
   },
 
+  ensureCurrent() { clearTimeout(this._pt); if ((this.data.text || "").trim() !== this._parsedText) this.parseNow(); },
   onCreate() {
+    this.ensureCurrent();
     if (!this._cap) return;
     const cap = this._cap;
     const edit = this.currentEdit();
-    flow.createFromCapture(cap, edit);
+    let made;
+    try { made = flow.createFromCapture(Object.assign({}, cap, { hasTime:cap.hasTime || this._timeEdited }), edit); } catch (error) { files.notifyError(error); return; }
+    this._cap = null; this._parsedText = "";
     let msg = "已捕获 → " + edit.date.slice(5).replace("-", "/") + " " + edit.start +
       " · " + store.durLabel(edit.durMin);
-    if (!cap.hasDate) msg = "原文未识别到日期（默认今天）· " + msg;
-    if (!cap.hasTime) msg += " · 时间默认 09:00";
+    if (!cap.hasDate) msg = "原文未识别到日期（使用预览日期）· " + msg;
+    if (!cap.hasTime && !this._timeEdited) msg += " · 时间默认 09:00";
+    if (made.blocksCount > 1) msg += " · 跨天拆为两段";
     this.setData({
       result: { show: true, msg, hasBlock: true },
       text: "",
@@ -110,22 +117,33 @@ Page({
   },
 
   onTaskOnly() {
+    this.ensureCurrent();
     if (!this._cap) return;
-    const cap = this._cap;
+    const cap = this._cap, edit = this.currentEdit();
     const task = store.addTask({
       title: cap.title,
       quad: cap.quad,
-      estMin: cap.estMin,
-      due: cap.due,
-      tags: ["捕获"],
+      estMin: edit.durMin,
+      due: cap.hasDate || this._dateEdited ? edit.date : null,
+      dueTime: cap.hasTime || this._timeEdited ? edit.start : "23:59",
+      tags: [store.catLabel(edit.cat), "捕获"],
       note: cap.note,
     });
+    this._cap = null; this._parsedText = "";
     this.setData({
       result: { show: true, msg: "已保存任务「" + task.title + "」", hasBlock: false },
       text: "",
       preview: { show: false },
     });
   },
+
+  onSaveInbox() {
+    this.ensureCurrent();if(!this._cap)return;
+    const cap=this._cap,edit=this.currentEdit(),date=cap.hasDate||this._dateEdited?edit.date:null,time=cap.hasTime||this._timeEdited?edit.start:null;
+    store.addInbox({title:cap.title,note:cap.note,date,time,when:[date,time].filter(Boolean).join(" "),source:"快捷捕获",suggestion:"create-task"});
+    this._cap=null;this._parsedText="";this.setData({text:"",preview:{show:false},result:{show:true,msg:"已存入收件箱，稍后再决定是否建任务",hasBlock:false}});
+  },
+  onInbox() { wx.navigateTo({url:"/pages/inbox/index"}); },
 
   onViewTimeblock() {
     getApp().globalData.pendingTimeblockDate = this.data.edit.date || store.todayStr();

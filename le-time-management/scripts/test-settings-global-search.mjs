@@ -10,6 +10,7 @@ const shell = read("src/shell.js");
 const settings = read("src/views/settings.js");
 const css = read("src/styles.css");
 const { SETTINGS_SEARCH_ENTRIES } = await import("../src/settingsSearchIndex.js");
+const { pinyinInitialsOf } = await import("../src/pinyinInitial.js");
 
 assert.ok(SETTINGS_SEARCH_ENTRIES.length >= 70, "设置索引必须覆盖到具体选项，不能只列十个分区");
 assert.deepEqual(new Set(SETTINGS_SEARCH_ENTRIES.map((x) => x.section)),
@@ -19,6 +20,9 @@ for (const required of ["界面与交互", "界面密度", "界面缩放", "关�
   assert.ok(SETTINGS_SEARCH_ENTRIES.some((x) => `${x.title} ${x.keywords}`.includes(required)), `全局设置索引缺少：${required}`);
 }
 assert.match(palette, /SETTINGS_SEARCH_ENTRIES\.map/, "命令面板必须从统一设置索引生成结果");
+assert.match(palette, /pinyinInitialsOf/, "命令面板必须支持中文标题和关键词的拼音首字母缩写匹配");
+assert.equal(pinyinInitialsOf("界面与交互"), "jmyjh", "全局搜索缩写 jm 必须能命中「界面」类设置项");
+assert.equal(pinyinInitialsOf("应用内打开网页"), "yyndkwy", "全局搜索缩写 yy / wy 必须能命中这类中文入口");
 assert.match(palette, /kind: "设置"/, "设置结果必须有独立类型，不能伪装成普通导航");
 assert.match(palette, /detail: \{ section: item\.section, target: item\.title \}/, "点击结果必须同时传分区和具体设置项");
 assert.match(shell, /openSettingsModal\(e\.detail\?\.section \|\| "", e\.detail\?\.target \|\| ""\)/,

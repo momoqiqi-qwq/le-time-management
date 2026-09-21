@@ -1,0 +1,61 @@
+<view class="page-body">
+  <view class="card">
+    <view class="page-heading">{{title}}</view>
+    <view class="desc">{{note}}</view>
+    <view class="library-actions">
+      <button class="btn pri small" bindtap="onAdd">{{id === 'rss-reader' ? '添加订阅' : '添加收藏'}}</button>
+      <button wx:if="{{id === 'rss-reader'}}" class="btn ghost small" bindtap="onManage">{{manage ? '收起订阅管理' : '管理订阅'}}</button>
+      <button class="btn ghost small" bindtap="onImportToggle">导入</button>
+      <button class="btn ghost small" bindtap="onExport">导出 JSON</button>
+    </view>
+    <input class="input" value="{{query}}" placeholder="搜索标题、摘要或备注" bindinput="onSearch" />
+    <view wx:if="{{id === 'rss-reader'}}" class="library-actions">
+      <picker mode="selector" range="{{feedLabels}}" value="{{feedIndex}}" bindchange="onFeedChange"><view class="picker-label">{{feedLabels[feedIndex]}} ▾</view></picker>
+      <button class="btn small {{unread ? 'pri' : 'ghost'}}" data-field="unread" bindtap="onFilter">未读</button>
+      <button class="btn small {{star ? 'pri' : 'ghost'}}" data-field="star" bindtap="onFilter">星标</button>
+      <button class="btn ghost small" loading="{{busy}}" disabled="{{busy}}" bindtap="onRefresh">刷新所选订阅</button>
+      <button class="btn ghost small" bindtap="onReadAll">当前页标为已读</button>
+    </view>
+    <view wx:if="{{error}}" class="library-error">{{error}}</view>
+  </view>
+  <view wx:if="{{form}}" class="card">
+    <view class="at">{{form.id ? '编辑记录' : '新增记录'}}</view>
+    <input class="input" value="{{form.title}}" data-field="title" placeholder="名称（可选）" maxlength="180" bindinput="onFormInput" />
+    <input class="input" value="{{form.url}}" data-field="url" placeholder="https://…" maxlength="2000" disabled="{{id === 'rss-reader' && form.id}}" bindinput="onFormInput" />
+    <textarea wx:if="{{id === 'web-collector'}}" class="textarea" value="{{form.note}}" data-field="note" placeholder="备注" maxlength="4000" bindinput="onFormInput"></textarea>
+    <view class="library-actions"><button class="btn ghost" bindtap="onFormCancel">取消</button><button class="btn pri" bindtap="onFormSave">保存</button></view>
+  </view>
+  <view wx:if="{{importOpen}}" class="card">
+    <view class="at">合并导入</view>
+    <view class="desc">支持本插件 JSON 或 U-Time 完整备份。RSS 的 XML / Atom 文件请先选中对应订阅源。不会覆盖本机的重号记录。</view>
+    <button class="btn ghost small" bindtap="onChooseFile">从聊天选择文件</button><text class="desc">{{fileName}}</text>
+    <textarea class="textarea" maxlength="80000" value="{{importText}}" placeholder="也可粘贴 JSON / RSS XML" bindinput="onImportText"></textarea>
+    <button class="btn pri" bindtap="onImport">确认合并</button>
+  </view>
+  <view wx:if="{{manage && id === 'rss-reader'}}" class="card">
+    <view class="at">订阅源</view>
+    <view wx:for="{{feeds}}" wx:key="id" class="feed-row">
+      <view class="feed-main"><text class="row-title">{{item.title}}</text><text class="muted-url">{{item.url}}</text><text wx:if="{{item.lastError}}" class="library-error">{{item.lastError}}</text></view>
+      <switch checked="{{item.enabled}}" data-id="{{item.id}}" bindchange="onFeedEnabled" />
+      <view class="library-actions"><button class="btn ghost small" data-id="{{item.id}}" bindtap="onEdit">改名</button><button class="btn danger small" data-id="{{item.id}}" bindtap="onDelete">删除</button></view>
+    </view>
+  </view>
+  <view class="list-count">共 {{total}} 条 · 第 {{pageNumber}} 页</view>
+  <view wx:for="{{items}}" wx:key="id" class="card library-row {{item.read ? 'read' : ''}}">
+    <view class="row-title">{{item.star ? '★ ' : ''}}{{item.title}}</view>
+    <view class="desc">{{item.feedName}} {{item.date}}</view>
+    <view wx:if="{{item.note}}" class="row-note">{{item.note}}</view>
+    <view class="muted-url">{{item.url}}</view>
+    <view class="library-actions">
+      <button class="btn ghost small" data-id="{{item.id}}" bindtap="onCopy">复制原文链接</button>
+      <block wx:if="{{id === 'rss-reader'}}">
+        <button class="btn ghost small" data-id="{{item.id}}" bindtap="onRead">{{item.read ? '标未读' : '标已读'}}</button>
+        <button class="btn ghost small" data-id="{{item.id}}" bindtap="onStar">{{item.star ? '取消星标' : '星标'}}</button>
+        <button class="btn pri small" data-id="{{item.id}}" bindtap="onTask">{{item.taskId ? '查看任务' : '转为任务'}}</button>
+      </block>
+      <block wx:else><button class="btn ghost small" data-id="{{item.id}}" bindtap="onEdit">编辑</button><button class="btn danger small" data-id="{{item.id}}" bindtap="onDelete">删除</button></block>
+    </view>
+  </view>
+  <view wx:if="{{!items.length}}" class="empty">{{id === 'rss-reader' ? '暂无条目。可选择订阅并刷新，或从文件导入缓存。' : '暂无收藏。添加网址或导入桌面备份后即可在这里管理。'}}</view>
+  <view class="library-actions"><button wx:if="{{hasPrev}}" class="btn ghost" bindtap="onPrevPage">上一页</button><button wx:if="{{hasNext}}" class="btn pri" bindtap="onMore">下一页</button></view>
+</view>

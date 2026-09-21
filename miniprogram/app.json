@@ -7,7 +7,10 @@
     "pages/settings/index",
     "pages/task/index",
     "pages/plugins/index",
-    "pages/plugin/index"
+    "pages/plugin/index",
+    "pages/schedule/index",
+    "pages/library/index",
+    "pages/inbox/index"
   ],
   "window": {
     "navigationBarBackgroundColor": "@navBg",

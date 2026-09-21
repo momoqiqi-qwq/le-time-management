@@ -1,4 +1,5 @@
 const store = require("../../core/store.js");
+const routes = require("../../core/pluginRoutes.js");
 const catalog = require("../../core/pluginCatalog.js");
 const runtime = require("../../core/pluginRuntime.js");
 const timeParser = require("../../core/timeParser.js");
@@ -25,7 +26,7 @@ const GUIDE_GROUPS = [
   { name: "生活与工具", ids: ["dorm-duty", "web-collector", "inbox-drop"] },
 ];
 const GUIDE_DOCS = {
-  "shiguang-schedule": ["打开课程表，先设置学期与开学日期", "可手动添加，或用“教务导入”粘贴/导入表格", "确认预览后选择合并或替换"],
+  "shiguang-schedule": ["小程序提供原生周课表、今日课程、多课表与课程编辑", "导入桌面 JSON 或教务 CSV/TSV/HTML，先解析预览再确认；Excel 请先转 CSV", "可导出 JSON/ICS 并将本周课程加入时间块；教务网页登录与 OCR 仍需桌面或 Android"],
   "school-notice": ["填写学校通知/公告网址并检测", "公开网站可直接同步；需登录时填写登录信息", "图片验证码需要本人查看后手动输入"],
   "chaoxing-notify": ["使用账号密码或 Cookie 登录学习通", "同步通知并查看完整正文", "识别到截止时间后可转为 Le 提醒"],
   "cppu-notify": ["打开插件进入智慧警大登录流程", "手动输入验证码完成 SSO 登录", "筛选通知并按需转成提醒"],
@@ -33,10 +34,10 @@ const GUIDE_DOCS = {
   "pomodoro": ["选择预设时间或输入自定义倒计时", "选择已有任务，或直接新建一个专注任务", "开始计时；完成后自动累计专注统计"],
   "weekly-report": ["打开后自动读取任务与时间块", "查看每天投入、分类占比和完成情况", "用周报复盘下一周安排"],
   "gx-news": ["设置竞赛关键词和筛选条件", "刷新获取竞赛通知", "重要消息可直接转成提醒", "切换竞赛源与自定义源需在桌面端使用（微信只放行了摩课云一个域名）"],
-  "rss-reader": ["在桌面端展开「订阅管理」，粘贴 RSS / Atom 地址或网站首页（会自动发现订阅）", "回到列表点「刷新」抓取内容，未读条目带 NEW 标记", "点标题打开原文；要跟进的条目点「提醒」转成 Le 提醒"],
+  "rss-reader": ["添加订阅并选择过滤条件，支持未读、星标与转任务", "可以导入 RSS/Atom XML 或桌面缓存，刷新需要 HTTPS 与微信合法域名配置", "联网只在主动刷新时发生；原文链接可复制到浏览器阅读"],
   "cn-holiday": ["打开即可优先读取本地节假日数据", "需要最新调整时再手动联网更新", "用于课程、计划和休息日判断"],
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
-  "web-collector": ["输入网址后点击自动识别并收藏", "检查自动识别的网站名称、favicon 和图标", "添加备注后保存，之后可搜索、刷新和一键打开"],
+  "web-collector": ["输入网址和名称进行收藏，可搜索、编辑备注和导入桌面收藏", "小程序复制原文链接后在浏览器打开；不自动抓取任意网站，也不保证网页内嵌"],
   "dorm-duty": ["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响", "选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）", "需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
   "inbox-drop": ["小程序没有系统级拖放，用「粘贴消息」把聊天里的通知复制进来，或直接手输一句话", "插件会自动认出来源平台、消息类型和其中的日期时间，认错了可以改", "确认无误后收纳；需要动起来的点「建任务」，会带着象限和截止时间进任务表", "收纳记录与桌面端共用一份存储，桌面拖进来的消息在这里也能看到"],
 };
@@ -97,6 +98,10 @@ Page({
   onLoad(options) {
     const id = decodeURIComponent((options && options.id) || "");
     const plugin = catalog.byId[id];
+    if (Object.prototype.hasOwnProperty.call(routes.SPECIAL,id) && plugin && plugin.platforms && plugin.platforms.miniprogram === "native") {
+      if (routes.enabled(id)) wx.redirectTo({ url: routes.route(id) });
+      return;
+    }
     if (!plugin || !plugin.platforms || plugin.platforms.miniprogram !== "native") {
       wx.showToast({ title: "这个插件没有小程序适配", icon: "none" });
       setTimeout(() => wx.navigateBack(), 300);

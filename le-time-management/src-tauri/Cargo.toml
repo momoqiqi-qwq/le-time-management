@@ -1,6 +1,6 @@
 [package]
 name = "letime"
-version = "0.89.0"
+version = "0.92.0"
 description = "Le时间管理 · 时间块与四象限"
 authors = ["yile"]
 edition = "2021"
@@ -32,6 +32,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [target."cfg(any(target_os = \"windows\", target_os = \"linux\", target_os = \"macos\"))".dependencies]
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
+
+[target."cfg(target_os = \"windows\")".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 # 教务导入窗口的 Android 关闭通道：JniHandle::exec 回调里调 Activity.finish()
 # （版本与 tauri 锁定的 jni 0.21 统一，避免双版本共存的类型不一致）

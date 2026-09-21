@@ -30,7 +30,8 @@
       <switch checked="{{item.enabled}}" data-id="{{item.id}}" bindchange="onToggle" color="#0F4C5C" />
     </view>
 
-    <view class="desc plugin-desc">{{item.description}}</view>
+    <view wx:if="{{showPluginDesc}}" class="desc plugin-desc">{{item.description}}</view>
+    <view wx:if="{{showPluginDesc && item.miniNote}}" class="desc">{{item.miniNote}}</view>
 
     <view class="platforms">
       <view class="plat {{p.status}}" wx:for="{{item.platforms}}" wx:for-item="p" wx:key="key">

@@ -1,0 +1,87 @@
+<view class="page-body schedule-page">
+  <view class="card">
+    <picker mode="selector" range="{{tables}}" range-key="name" value="{{tableIndex}}" bindchange="onTable"><view class="schedule-title">{{name}} ▾</view></picker>
+    <view class="desc">{{semesterLabel}} · {{courseCount}} 门课程 · 数据与 Windows / Android 课表互通</view>
+    <view class="schedule-actions"><button class="btn ghost small" bindtap="onNewTable">新建课表</button><button class="btn ghost small" bindtap="onRenameTable">改名</button><button class="btn ghost small" data-format="json" bindtap="onExport">JSON 备份</button><button class="btn ghost small" data-format="ics" bindtap="onExport">日历 ICS</button></view>
+  </view>
+  <view class="schedule-nav">
+    <button class="btn small {{mode === 'week' ? 'pri' : 'ghost'}}" data-mode="week" bindtap="onMode">周课表</button>
+    <button class="btn small {{mode === 'today' ? 'pri' : 'ghost'}}" data-mode="today" bindtap="onMode">今日</button>
+    <button class="btn small {{mode === 'manage' ? 'pri' : 'ghost'}}" data-mode="manage" bindtap="onMode">课程管理</button>
+    <button class="btn small {{mode === 'import' ? 'pri' : 'ghost'}}" data-mode="import" bindtap="onMode">导入</button>
+    <button class="btn small {{mode === 'settings' ? 'pri' : 'ghost'}}" data-mode="settings" bindtap="onMode">课表设置</button>
+  </view>
+  <view wx:if="{{error}}" class="schedule-error">{{error}}。原始数据未清空，可先到设置导出备份。</view>
+
+  <block wx:if="{{mode === 'week' || mode === 'today'}}">
+    <view class="week-control">
+      <button class="btn ghost small" bindtap="onPrev">‹</button>
+      <picker mode="selector" range="{{weekLabels}}" value="{{week - 1}}" bindchange="onWeek"><view class="week-label">第 {{week}} 周 ▾</view></picker>
+      <button class="btn ghost small" bindtap="onNext">›</button>
+      <button class="btn ghost small" bindtap="onCurrent">本周</button>
+    </view>
+    <view wx:if="{{conflictCount}}" class="schedule-warning">本周有 {{conflictCount}} 门课程时间重叠。点选日期，在下方列表查看完整课程。</view>
+    <block wx:if="{{mode === 'week'}}">
+      <view class="week-grid-head"><view class="grid-gutter"></view><view wx:for="{{gridDays}}" wx:key="day" class="grid-head-day {{selectedDay === item.day ? 'selected' : ''}}" data-day="{{item.day}}" bindtap="onDay"><text>{{item.label}}</text><text>{{item.date}}</text></view></view>
+      <view class="week-grid" style="height:{{gridHeight}}rpx">
+        <view class="grid-axis"><view wx:for="{{axis}}" wx:key="number" class="axis-label" style="top:{{item.top}}%"><text>{{item.number}}</text><text>{{item.start}}</text></view></view>
+        <view wx:for="{{gridDays}}" wx:key="day" class="grid-day {{selectedDay === item.day ? 'selected' : ''}}" data-day="{{item.day}}" bindtap="onDay">
+          <view wx:for="{{item.courses}}" wx:for-item="course" wx:key="id" class="grid-course {{course.colorClass}} {{course.conflict ? 'conflict' : ''}}" style="top:{{course.top}}%;height:{{course.height}}%"><text>{{course.name}}</text><text class="grid-position">{{course.position}}</text></view>
+        </view>
+      </view>
+      <view class="desc grid-note">点选某一天查看完整名称与地点；网格每列最多展示 40 个课程块，全部课程可在课程管理中分页检索。</view>
+      <view class="day-heading">{{weekdays[selectedDay - 1]}} · 课程明细</view>
+      <view wx:for="{{selectedCourses}}" wx:key="id" class="card course-row {{item.conflict ? 'conflict' : ''}}" data-id="{{item.id}}" bindtap="onEditCourse"><view class="course-title">{{item.name}}</view><view class="course-time">{{item.timeLabel}}</view><view class="desc">{{item.teacher}} {{item.position}}</view><text wx:if="{{item.conflict}}" class="conflict-label">时间冲突</text></view>
+      <view wx:if="{{!selectedCourses.length}}" class="empty">这一天没有课程</view>
+    </block>
+    <block wx:else>
+      <view wx:for="{{days}}" wx:key="day">
+        <view class="day-heading">{{item.date}} · {{item.label}}</view>
+        <view wx:for="{{item.courses}}" wx:for-item="course" wx:key="id" class="card course-row {{course.conflict ? 'conflict' : ''}}" data-id="{{course.id}}" bindtap="onEditCourse"><view class="course-title">{{course.name}}</view><view class="course-time">{{course.timeLabel}}</view><view class="desc">{{course.teacher}} {{course.position}}</view></view>
+        <view wx:if="{{!item.total}}" class="empty">今天没有课程</view>
+      </view>
+      <view wx:if="{{!days.length}}" class="empty">今天不在所选学期/周次，请切换课表或回到本周。</view>
+    </block>
+    <view class="schedule-actions"><button class="btn pri" bindtap="onSyncWeek">加入本周时间块</button><button class="btn ghost" bindtap="onTimeblock">查看时间块</button><button class="btn ghost" bindtap="onAddCourse">添加课程</button></view>
+  </block>
+
+  <view wx:if="{{mode === 'manage'}}">
+    <view class="card"><input class="input" value="{{query}}" placeholder="搜索课程、教师、地点、备注" bindinput="onSearch"/><view class="schedule-actions"><text class="desc">共 {{courseTotal}} 门 · 第 {{pageNumber}} 页</text><button class="btn pri small" bindtap="onAddCourse">添加课程</button></view></view>
+    <view wx:for="{{courses}}" wx:key="id" class="card"><view class="course-title">{{item.name}}</view><view class="course-time">{{item.dayLabel}} {{item.timeLabel}}</view><view class="desc">{{item.teacher}} {{item.position}}</view><view class="desc">第 {{item.weeksLabel}} 周</view><view class="schedule-actions"><button class="btn ghost small" data-id="{{item.id}}" bindtap="onEditCourse">编辑</button><button class="btn danger small" data-id="{{item.id}}" bindtap="onDeleteCourse">删除</button></view></view>
+    <view wx:if="{{!courses.length}}" class="empty">暂无课程，添加课程或导入教务文件。</view>
+    <view class="schedule-actions"><button wx:if="{{hasPrev}}" class="btn ghost" bindtap="onPrevPage">上一页</button><button wx:if="{{hasNext}}" class="btn pri" bindtap="onMore">下一页</button></view>
+  </view>
+
+  <view wx:if="{{mode === 'edit' && draft}}" class="card course-form">
+    <view class="at">{{draft.id ? '编辑课程' : '添加课程'}}</view>
+    <text class="field-label">课程名称</text><input class="input" value="{{draft.name}}" data-field="name" maxlength="120" bindinput="onCourseInput"/>
+    <text class="field-label">教师</text><input class="input" value="{{draft.teacher}}" data-field="teacher" maxlength="100" bindinput="onCourseInput"/>
+    <text class="field-label">地点</text><input class="input" value="{{draft.position}}" data-field="position" maxlength="150" bindinput="onCourseInput"/>
+    <text class="field-label">星期</text><picker range="{{weekdays}}" value="{{draft.day - 1}}" bindchange="onCourseDay"><view class="picker-row">{{weekdays[draft.day - 1]}} ▾</view></picker>
+    <text class="field-label">上课周次</text><input class="input" value="{{draft.weeks}}" data-field="weeks" placeholder="例如 1-16、1,3,5、1-16单周" maxlength="240" bindinput="onCourseInput"/>
+    <view class="switch-row"><text>自定义起止时间</text><switch checked="{{draft.isCustomTime}}" bindchange="onCustomTime"/></view>
+    <view wx:if="{{draft.isCustomTime}}" class="schedule-actions"><picker mode="time" value="{{draft.customStartTime}}" data-field="customStartTime" bindchange="onCourseInput"><view class="picker-row">开始 {{draft.customStartTime}} ▾</view></picker><picker mode="time" value="{{draft.customEndTime}}" data-field="customEndTime" bindchange="onCourseInput"><view class="picker-row">结束 {{draft.customEndTime}} ▾</view></picker></view>
+    <view wx:else class="schedule-actions"><picker range="{{sections}}" value="{{draft.startIndex}}" data-field="start" bindchange="onSection"><view class="picker-row">{{sections[draft.startIndex]}} ▾</view></picker><picker range="{{sections}}" value="{{draft.endIndex}}" data-field="end" bindchange="onSection"><view class="picker-row">至 {{sections[draft.endIndex]}} ▾</view></picker></view>
+    <view class="color-row"><view wx:for="{{colors}}" wx:for-item="color" wx:key="*this" class="color-choice course-color-{{color}} {{draft.color === color ? 'chosen' : ''}}" data-color="{{color}}" bindtap="onColor">{{draft.color === color ? '✓' : ''}}</view></view>
+    <text class="field-label">备注</text><textarea class="textarea" value="{{draft.remark}}" data-field="remark" maxlength="300" bindinput="onCourseInput"></textarea>
+    <view class="schedule-actions"><button class="btn ghost" bindtap="onCancelEdit">取消</button><button class="btn pri" bindtap="onSaveCourse">保存课程</button></view>
+  </view>
+
+  <view wx:if="{{mode === 'import'}}" class="card">
+    <view class="at">导入课程表</view>
+    <view class="desc">支持跨端课表 JSON、U-Time 全量备份中的课表，以及带表头的 CSV / TSV / TXT / HTML 教务表格。Excel 请先另存为 CSV。小程序不提供教务网页自动登录、验证码 OCR 或任意网页注入。</view>
+    <button class="btn ghost" bindtap="onChooseFile">从聊天选择课表文件</button><view class="desc">{{fileName}}</view>
+    <textarea class="textarea import-area" value="{{importText}}" maxlength="80000" placeholder="或粘贴 JSON / 含课程名称、星期、周次、节次等表头的教务表格" bindinput="onImportText"></textarea>
+    <button class="btn pri" bindtap="onPreview">解析预览</button>
+    <view wx:if="{{preview}}" class="import-preview"><view>识别 {{preview.tables}} 张课表、{{preview.count}} 门课程</view><view wx:for="{{preview.warnings}}" wx:key="*this" class="schedule-warning">{{item}}</view><view class="schedule-actions"><button class="btn pri" data-mode="append" bindtap="onApplyImport">新增课表导入</button><button wx:if="{{preview.tables === 1}}" class="btn ghost" data-mode="merge" bindtap="onApplyImport">合并到当前课表</button></view></view>
+  </view>
+
+  <view wx:if="{{mode === 'settings' && config}}" class="card course-form">
+    <view class="at">学期与节次</view>
+    <text class="field-label">开学日期</text><picker mode="date" value="{{config.start}}" data-field="start" bindchange="onConfig"><view class="picker-row">{{config.start}} ▾</view></picker>
+    <text class="field-label">总周数（1–60）</text><input class="input" type="number" value="{{config.weeks}}" data-field="weeks" bindinput="onConfig"/>
+    <text class="field-label">每周第一天</text><picker range="{{['周一开始', '周日开始']}}" value="{{config.first}}" data-field="first" bindchange="onConfig"><view class="picker-row">{{config.first == 1 ? '周日开始' : '周一开始'}} ▾</view></picker>
+    <text class="field-label">节次表</text><view class="desc">每行：节次,开始,结束。例：1,08:00,08:45。修改不能让已有课程引用不存在的节次。</view><textarea class="textarea slots-area" value="{{config.slots}}" data-field="slots" maxlength="5000" bindinput="onConfig"></textarea>
+    <button class="btn pri" bindtap="onSaveConfig">保存学期设置</button><button class="btn danger delete-table" bindtap="onDeleteTable">删除当前课表</button>
+  </view>
+</view>

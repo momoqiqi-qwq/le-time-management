@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>U-Time · 三端插件中心</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}
+    body{font-family:"Microsoft YaHei UI","PingFang SC",sans-serif;background:#eef3ef;color:#173b38}
+    .stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:
+      radial-gradient(circle at 22% 10%,rgba(246,188,114,.28),transparent 27%),
+      radial-gradient(circle at 92% 92%,rgba(81,162,152,.20),transparent 31%),
+      linear-gradient(135deg,#f8f5ed 0%,#edf5f1 54%,#e7efec 100%)}
+    .stage:before{content:"";position:absolute;inset:0;opacity:.22;background-image:
+      linear-gradient(rgba(38,92,86,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(38,92,86,.06) 1px,transparent 1px);background-size:42px 42px}
+    .headline{position:absolute;left:64px;right:64px;top:34px;display:flex;align-items:flex-end;justify-content:space-between;z-index:4}
+    .brand{display:flex;align-items:center;gap:18px}.logo{width:58px;height:58px;border-radius:18px;background:#0f4c5c;color:#fff;display:grid;place-items:center;font:800 30px/1 Georgia;box-shadow:0 12px 28px rgba(15,76,92,.22)}
+    h1{margin:0;font-size:42px;letter-spacing:-.04em}.sub{margin-top:5px;color:#607b76;font-size:17px;letter-spacing:.16em}
+    .sync{display:flex;align-items:center;gap:10px;padding:12px 18px;border:1px solid rgba(15,76,92,.15);border-radius:999px;background:rgba(255,255,255,.62);font-size:17px;font-weight:700;color:#315f58}.sync i{width:9px;height:9px;border-radius:50%;background:#29b89d;box-shadow:0 0 0 7px rgba(41,184,157,.13)}
+    .panel{position:absolute;top:150px;height:850px;background:#fbfcf8;border:1px solid rgba(32,82,76,.15);box-shadow:0 28px 70px rgba(35,67,62,.18);overflow:hidden;z-index:2}
+    .desktop{left:60px;width:1050px;border-radius:28px;transform:translateX(-1160px);animation:leftIn 1.42s cubic-bezier(.16,1,.3,1) .4s forwards}
+    .phone{width:330px;border-radius:42px;border:9px solid #173f3a;background:#f8faf6}.mini{left:1165px;transform:translateY(-1050px);animation:topIn 1.5s cubic-bezier(.16,1,.3,1) 1s forwards}.wechat{left:1530px;transform:translateY(1080px);animation:bottomIn 1.5s cubic-bezier(.16,1,.3,1) 1.5s forwards}
+    @keyframes leftIn{0%{transform:translateX(-1160px)}72%{transform:translateX(18px)}100%{transform:translateX(0)}}
+    @keyframes topIn{0%{transform:translateY(-1050px)}72%{transform:translateY(18px)}100%{transform:translateY(0)}}
+    @keyframes bottomIn{0%{transform:translateY(1080px)}72%{transform:translateY(-18px)}100%{transform:translateY(0)}}
+    .windowbar{height:66px;padding:0 24px;display:flex;align-items:center;border-bottom:1px solid #dfe8e4;background:#f4f7f3}.dots{display:flex;gap:9px}.dots b{display:block;width:12px;height:12px;border-radius:50%}.dots b:nth-child(1){background:#e67f67}.dots b:nth-child(2){background:#e9b95f}.dots b:nth-child(3){background:#58b790}.window-title{margin-left:22px;font-size:18px;font-weight:750}.window-status{margin-left:auto;color:#7a928d;font-size:14px}
+    .desktop-body{display:grid;grid-template-columns:205px 1fr;height:784px}.sidebar{padding:22px 16px;background:#123f3b;color:#d9ece7}.side-brand{font-size:24px;font-weight:850;padding:8px 14px 22px}.nav{padding:12px 15px;margin:5px 0;border-radius:12px;font-weight:650;color:#a9c9c2}.nav.on{background:#f1b86f;color:#173b38}.side-bottom{position:absolute;bottom:25px;left:24px;font-size:13px;color:#87aaa3}
+    .content{padding:25px 28px;overflow:hidden}.content-head{display:flex;align-items:flex-end;justify-content:space-between}.eyebrow{font-size:12px;letter-spacing:.24em;color:#78908b;font-weight:750}.content h2{margin:5px 0 0;font-size:30px}.search{width:260px;padding:11px 16px;border-radius:12px;background:#eef3ef;color:#8ba09c;font-size:13px}.filters{display:flex;gap:9px;margin:20px 0 18px}.chip{padding:8px 14px;border:1px solid #d8e4df;border-radius:999px;font-size:13px;color:#66817b}.chip.on{background:#0f4c5c;color:white;border-color:#0f4c5c}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{position:relative;min-height:178px;border:1px solid #dbe6e1;border-radius:18px;background:white;padding:17px;overflow:hidden;opacity:0;transform:translateY(18px);animation:cardIn .65s cubic-bezier(.2,.8,.2,1) forwards}.card:nth-child(1){animation-delay:2.2s}.card:nth-child(2){animation-delay:2.35s}.card:nth-child(3){animation-delay:2.5s}.card:nth-child(4){animation-delay:2.65s}.card:nth-child(5){animation-delay:2.8s}.card:nth-child(6){animation-delay:2.95s}@keyframes cardIn{to{opacity:1;transform:none}}
+    .cardtop{display:flex;align-items:center;gap:11px}.ico{width:42px;height:42px;border-radius:12px;background:#eef4f1;display:grid;place-items:center}.ico img{width:25px;height:25px;object-fit:contain}.name{font-weight:800;font-size:15px}.ver{font-size:11px;color:#91a29e;margin-top:2px}.toggle{margin-left:auto;width:34px;height:20px;border-radius:99px;background:#2fa98f;padding:3px}.toggle:after{content:"";display:block;margin-left:auto;width:14px;height:14px;border-radius:50%;background:white}.desc{margin:13px 0;color:#647d78;font-size:12px;line-height:1.55}.tags{display:flex;gap:6px;flex-wrap:wrap}.tag{padding:4px 7px;border-radius:7px;background:#edf6f3;color:#36776c;font-size:10px;font-weight:700}
+    .notch{position:absolute;top:0;left:50%;transform:translateX(-50%);width:116px;height:24px;background:#173f3a;border-radius:0 0 17px 17px;z-index:4}.phone-head{padding:34px 17px 13px;background:#f2f6f2;border-bottom:1px solid #e0e8e4}.phone-kicker{font-size:10px;letter-spacing:.17em;color:#77918a}.phone h3{margin:5px 0 0;font-size:22px}.phone-count{font-size:11px;color:#7a918c;margin-top:4px}.mobile-search{margin:12px 14px 8px;padding:10px 12px;border:1px solid #dce6e2;background:white;border-radius:11px;color:#91a49f;font-size:11px}.mobile-chips{display:flex;gap:6px;padding:0 14px 10px}.mobile-chips span{padding:5px 8px;border:1px solid #dde7e3;border-radius:99px;font-size:9px}.mobile-chips .on{background:#0f4c5c;color:white}.m-list{padding:0 12px}.m-card{margin-bottom:9px;padding:12px;border:1px solid #dfe8e4;background:#fff;border-radius:14px;opacity:0;animation:cardIn .55s ease forwards}.m-card:nth-child(1){animation-delay:2.6s}.m-card:nth-child(2){animation-delay:2.8s}.m-card:nth-child(3){animation-delay:3s}.m-card:nth-child(4){animation-delay:3.2s}.m-top{display:flex;align-items:center;gap:9px}.m-ico{width:34px;height:34px;border-radius:9px;background:#eef4f1;display:grid;place-items:center}.m-ico img{width:21px;height:21px}.m-name{font-size:12px;font-weight:800}.m-sub{font-size:8px;color:#8ca09b;margin-top:2px}.m-switch{margin-left:auto;width:29px;height:17px;border-radius:99px;background:#34aa91;padding:3px}.m-switch:after{content:"";display:block;margin-left:auto;width:11px;height:11px;background:white;border-radius:50%}.m-note{font-size:9px;color:#69817c;margin-top:8px;line-height:1.45}.mini .phone-head{background:#edf5f1}.wechat .phone-head{background:#eef7f0}.wechat .m-switch{background:#07c160}.wechat .mobile-chips .on{background:#07c160;border-color:#07c160}.homebar{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:105px;height:4px;border-radius:99px;background:#173f3a}
+    .beam{position:absolute;top:112px;left:-30%;width:22%;height:940px;transform:skewX(-16deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.5),transparent);filter:blur(4px);z-index:5;animation:beam 1.45s ease 4.2s forwards;pointer-events:none}@keyframes beam{to{left:118%}}
+    .caption{position:absolute;left:50%;bottom:28px;transform:translateX(-50%);padding:11px 22px;border-radius:999px;background:rgba(18,63,59,.9);color:white;font-size:15px;letter-spacing:.1em;z-index:6;opacity:0;animation:cap .7s ease 4.7s forwards}@keyframes cap{to{opacity:1}}
+    body.still .desktop,body.still .mini,body.still .wechat{animation:none;transform:none}body.still .card,body.still .m-card{animation:none;opacity:1;transform:none}body.still .beam{display:none}body.still .caption{animation:none;opacity:1}
+    body.background-only .panel,body.background-only .beam,body.background-only .caption{display:none}
+  </style>
+</head>
+<body>
+<main class="stage">
+  <header class="headline"><div class="brand"><div class="logo">U</div><div><h1>一个插件中心，三端同步</h1><div class="sub">WINDOWS · 小程序 · 微信服务</div></div></div><div class="sync"><i></i>插件状态已同步</div></header>
+  <section class="panel desktop">
+    <div class="windowbar"><div class="dots"><b></b><b></b><b></b></div><div class="window-title">U-Time · Windows</div><div class="window-status">本地优先 · 16 个插件</div></div>
+    <div class="desktop-body"><aside class="sidebar"><div class="side-brand">U-Time</div><div class="nav">◷ 时间线</div><div class="nav">◈ 四象限</div><div class="nav">▦ 时间块</div><div class="nav on">◇ 插件中心</div><div class="nav">⚙ 设置</div><div class="side-bottom">LE TIME MANAGEMENT</div></aside>
+      <div class="content"><div class="content-head"><div><div class="eyebrow">PLUGIN MARKET</div><h2>插件中心</h2></div><div class="search">⌕ 搜索插件名称 / 功能…</div></div><div class="filters"><span class="chip on">全部 16</span><span class="chip">已启用 12</span><span class="chip">学习</span><span class="chip">效率</span></div>
+      <div class="grid" id="desktopCards"></div></div></div>
+  </section>
+  <section class="panel phone mini"><div class="notch"></div><div class="phone-head"><div class="phone-kicker">WECHAT MINI PROGRAM</div><h3>小程序插件</h3><div class="phone-count">12 个原生适配 · 状态互通</div></div><div class="mobile-search">搜索插件…</div><div class="mobile-chips"><span class="on">全部</span><span>已启用</span><span>小程序可用</span></div><div class="m-list" id="miniCards"></div><div class="homebar"></div></section>
+  <section class="panel phone wechat"><div class="notch"></div><div class="phone-head"><div class="phone-kicker">WECHAT SERVICE</div><h3>微信端插件</h3><div class="phone-count">消息触达 · 随时启停</div></div><div class="mobile-search">搜索插件…</div><div class="mobile-chips"><span class="on">全部</span><span>通知</span><span>效率</span></div><div class="m-list" id="wechatCards"></div><div class="homebar"></div></section>
+  <div class="beam"></div><div class="caption">一次启用 · 三端协同</div>
+</main>
+<script>
+const root='../../le-time-management/public/icons/plugins/';
+const plugins=[['shiguang-schedule.png','课程表','v3.10.0','周视图与教务导入'],['pomodoro.png','番茄专注','v0.5.1','25 分钟专注与休息'],['chaoxing-notify.png','学习通','v2.12.0','通知、作业与考试'],['rss-reader.png','RSS 信息流','v1.5.0','聚合订阅与提醒'],['weekly-report.png','周度报告','v0.1.0','每周时间分布复盘'],['wechat-push.png','微信推送','v1.1.0','重要信息直达微信']];
+const desk=p=>`<article class="card"><div class="cardtop"><div class="ico"><img src="${root+p[0]}"></div><div><div class="name">${p[1]}</div><div class="ver">${p[2]}</div></div><div class="toggle"></div></div><div class="desc">${p[3]}</div><div class="tags"><span class="tag">Windows</span><span class="tag">Android</span><span class="tag">小程序</span></div></article>`;
+const mobile=p=>`<article class="m-card"><div class="m-top"><div class="m-ico"><img src="${root+p[0]}"></div><div><div class="m-name">${p[1]}</div><div class="m-sub">${p[2]}</div></div><div class="m-switch"></div></div><div class="m-note">${p[3]}</div></article>`;
+desktopCards.innerHTML=plugins.map(desk).join('');miniCards.innerHTML=plugins.slice(0,4).map(mobile).join('');wechatCards.innerHTML=[plugins[5],plugins[2],plugins[3],plugins[4]].map(mobile).join('');
+const mode=new URLSearchParams(location.search).get('mode');if(mode==='still')document.body.classList.add('still');if(mode==='background')document.body.classList.add('background-only');
+</script>
+</body>
+</html>

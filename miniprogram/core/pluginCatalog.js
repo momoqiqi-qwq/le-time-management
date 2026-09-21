@@ -3,7 +3,7 @@ const plugins = [
   {
     "id": "shiguang-schedule",
     "name": "课程表",
-    "version": "3.9.0",
+    "version": "3.10.0",
     "author": "基于 XingHeYuZhuan/shiguangschedule · U-Time适配",
     "icon": "calendar-days",
     "faIcon": "calendar-days",
@@ -22,13 +22,13 @@ const plugins = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {
     "id": "web-collector",
     "name": "网页收集",
-    "version": "1.2.4",
+    "version": "1.3.0",
     "author": "U-Time内置",
     "icon": "bookmark",
     "faIcon": "bookmark",
@@ -45,7 +45,7 @@ const plugins = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {
@@ -123,7 +123,7 @@ const plugins = [
   {
     "id": "rss-reader",
     "name": "RSS 信息流",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "author": "U-Time内置",
     "icon": "rss",
     "faIcon": "rss",
@@ -144,7 +144,7 @@ const plugins = [
     "platforms": {
       "windows": "full",
       "android": "full",
-      "miniprogram": "unavailable"
+      "miniprogram": "native"
     }
   },
   {

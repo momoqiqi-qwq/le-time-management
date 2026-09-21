@@ -342,6 +342,50 @@ assert.match(coursesHtml(), /<input class="cx2-search"/, '有关键词时搜索�
 state.filter.kw = '';
 assert.match(coursesHtml(), /按 2025 级入学计算/, '页面上要写明年级是本地推断');
 
+/* ── 7b. 课程页「开课时间」总览：跨学年按开课日期升序排成时间轴，同日合并，无日期的落最后 ── */
+state.filter.kw = '';
+state.course = { year: 2026, searchOpen: false, view: 'timeline' };
+const tlHtml = coursesHtml();
+assert.match(tlHtml, /data-course-view="timeline"[^>]*aria-pressed="true"/, '视图开关要点亮「开课时间」');
+assert.match(tlHtml, /共 4 门课，分布在 3 个开课时间/, '汇总行按不同开课日期计数');
+assert.match(tlHtml, /另有 1 门没有开课时间/, '没有开课时间行的课要在汇总里交代清楚');
+assert.doesNotMatch(tlHtml, /data-year="2025"/, '总览视图不再渲染学年 tab，也不受当前选中学年限制');
+assert.match(tlHtml, /cx2-tl-date"[^>]*>2025-09-01</, '2025 级那门课的开课日期要出现在时间轴上');
+assert.match(tlHtml, /cx2-tl-date"[^>]*>2026-09-01</, '当前学期的开课日期');
+assert.match(tlHtml, /cx2-tl-rel">本学期</, '当前学期那一段要标「本学期」');
+assert.match(tlHtml, /cx2-tl-date"[^>]*>无开课时间</, '没有开课时间的课归到末段，不能被时间轴吞掉');
+const tlOrder = ['2025-09-01', '2026-03-10', '2026-09-01', '无开课时间']
+  .map((d) => tlHtml.indexOf(`>${d}<`));
+assert.deepEqual(tlOrder, [...tlOrder].sort((a, b) => a - b), '时间轴必须按开课日期先后排列，无日期的排最后');
+assert.ok(tlOrder.every((i) => i >= 0), `四段都要渲染出来：${JSON.stringify(tlOrder)}`);
+state.filter.kw = '大学英语';
+assert.match(coursesHtml(), /共 1 门课，分布在 1 个开课时间/, '总览同样吃搜索词');
+assert.doesNotMatch(coursesHtml(), /高等数学/, '总览里搜索时不相关的课不该出现');
+state.filter.kw = '';
+state.course = { year: 2026, searchOpen: false };
+assert.doesNotMatch(coursesHtml(), /cx2-tl-sec/, '切回学年分组后时间轴不该残留');
+state.course = { year: null, searchOpen: false };
+
+/* ── 7c. 点击课程卡片 → 只看这一门课的开课～结课时间（默认收起，点击才占版面） ── */
+state.course = { year: 2026, searchOpen: false };
+const cardHtml = coursesHtml();
+assert.match(cardHtml, /class="cx2-course st-blue" data-course-toggle/, '卡片要带点击展开标记');
+assert.match(cardHtml, /cx2-course-more"><p><i>开课<\/i>2026-09-01 ～ 2028-09-01</, '展开区给出平台卡片原文的开课～结课区间');
+assert.match(cardHtml, /<p><i>学期<\/i>2026-2027 学年上学期 · 大二上</, '展开区写明推算出的学期与年级');
+assert.match(cardHtml, /恒为开课 \+2 年/, '要交代结课日不可用来判完成');
+assert.match(cardHtml, /点击卡片可展开/, '底部说明要提示这个入口');
+assert.match(source, /courseCard\.classList\.toggle\('open'\)/, '点击处理只切 DOM class，不整页重绘');
+assert.match(styleBlock, /\.cx2-course\.open \.cx2-course-more\{display:block\}/, '样式必须让 .open 真正把详情放出来');
+state.course.year = 0;
+assert.match(coursesHtml(), /cx2-course st-gray" data-course-toggle[\s\S]*?没有「开课时间」一行/, '无开课时间的卡片展开后要说明为什么没有');
+state.courses.push({ name: '往年开课的课', teacher: '某师', clazz: CLZ, courseid: '9', clazzid: '9', start: '2024-09-02', end: '2026-09-02' });
+state.course.year = 2024;
+const preEnroll = coursesHtml();
+assert.match(preEnroll, /入学前 · 开课 2024-09-02/, '早于入学学年的课只写「入学前」');
+assert.doesNotMatch(preEnroll, /入学前上/, '非年级文案不能拼学期后缀');
+state.courses.pop();
+state.course = { year: null, searchOpen: false };
+
 /* ── 8. 已提交未批改的作业 → 标题后加「正在批改」标签 ── */
 const iframeHtml = (workId) => {
   const payload = { attachmentType: 25, att_web: { examOrWorkId: workId, examOrWork: 'work', clazzId: 2, courseId: 1, url: `https://mooc1-api.chaoxing.com/examApi/intoexamorwork?taskrefId=${workId}&courseId=1&classId=2&workOrExam=work&enc=abc` } };

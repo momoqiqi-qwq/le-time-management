@@ -121,7 +121,7 @@ window.__sfx=(function(){
 </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>镜头 7-1 · 把时间还给你</title>
+<title>片头 · 把时间还给你 · v0.89</title>
 
 <!-- [改这里] 字体：胶片蒙太奇 —— Bebas 格数字/英文 + 思源宋正文 + 马善政手写主张 + 等宽角标 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -198,7 +198,7 @@ body.paused *{animation-play-state:paused!important}
 #gate .c{left:0;bottom:0;border-right:0;border-top:0}
 #gate .d{right:0;bottom:0;border-left:0;border-top:0}
 
-/* 计数徽章：76 个版本 */
+/* 计数徽章：89 个版本 */
 #badge{position:absolute;left:1216px;top:64px;z-index:4;text-align:right;transform:translateY(-16px) rotate(1.3deg);opacity:0;
   transition:all .6s cubic-bezier(.16,1,.3,1)}
 #badge.in{opacity:1;transform:rotate(1.3deg)}
@@ -294,14 +294,16 @@ body.paused *{animation-play-state:paused!important}
 #hud button:hover{background:rgba(255,255,255,.12)}
 #replay.done{animation:pulse 1.2s infinite;border-color:#ffd23f;color:#ffd23f}
 @keyframes pulse{50%{box-shadow:0 0 14px rgba(255,210,63,.8)}}
+html.render #hud{display:none}
 </style>
 </head>
 <body>
+<script>if(new URLSearchParams(location.search).has('render'))document.documentElement.classList.add('render')</script>
 <div id="stage">
 
   <!-- [改这里] 全部画面内容包进 #cam：胶片蒙太奇 → 哑光片尾 -->
   <div id="cam">
-    <div id="reeltag">REEL 07 · <b>版本胶片</b> · 35mm · ISO 50</div>
+    <div id="reeltag">REEL 00 · <b>版本胶片</b> · 35mm · ISO 50</div>
 
     <div id="filmworld">
       <div id="reel">
@@ -310,19 +312,19 @@ body.paused *{animation-play-state:paused!important}
         <div class="spr bot"></div>
       </div>
       <div id="gate"><i class="a"></i><i class="b"></i><i class="c"></i><i class="d"></i></div>
-      <div id="badge"><span class="k">VERSIONS</span><b id="vnum">0</b><s>个版本 · v0.3 → v0.76</s></div>
+      <div id="badge"><span class="k">VERSIONS</span><b id="vnum">0</b><s>个版本 · v0.3 → v0.89</s></div>
       <div id="say1">身边有问题</div>
       <div id="say2">就自己动手解决它</div>
     </div>
 
     <div id="matte"><div id="push">
       <div id="glow"></div>
-      <div id="brand"><h2>Le时间管理</h2><div class="en">U-TIME</div><div class="bar"></div></div>
+      <div id="brand"><h2>U-Time</h2><div class="en">LE TIME MANAGEMENT</div><div class="bar"></div></div>
       <div id="quote"><span>把</span><span>时</span><span>间</span><span>，</span><span>还</span><span>给</span><span>你</span></div>
-      <div id="chip"><span class="blk">15:00–16:00</span><span class="cap">这块时间，现在归你</span></div>
-      <div id="credit">首届全国创客比赛 · 中国药科大学</div>
-      <div id="thanks"><b>谢谢大家</b><s>THANKS</s></div>
-      <div id="seal"><b>归你</b><span>LE · 2026</span></div>
+      <div id="chip"><span class="blk">v0.89.0</span><span class="cap">WINDOWS · ANDROID · 微信小程序</span></div>
+      <div id="credit">大学生时间消息管理软件 · 中国药科大学</div>
+      <div id="thanks"><b>项目介绍</b><s>PROJECT INTRO</s></div>
+      <div id="seal"><b>89</b><span>U-TIME · 2026</span></div>
     </div></div>
 
     <div id="grain"></div>
@@ -332,18 +334,18 @@ body.paused *{animation-play-state:paused!important}
   <div id="dim"></div>
   <div id="lbT"></div><div id="lbB"></div>
 
-  <div class="corner" id="chap">07 / 收尾 · 把时间还给你</div>
-  <div class="corner" id="src">版本序列取自 docs/CHANGELOG · 末格 v0.76.0</div>
+  <div class="corner" id="chap">00 / 开场 · 把时间还给你</div>
+  <div class="corner" id="src">版本序列取自 docs/CHANGELOG · 末格 v0.89.0</div>
 </div>
 
 <div id="hud">
   <div id="track"><div id="bar"></div></div>
-  <div id="hudrow"><span>镜头 7-1 · 把时间还给你 · 23.8s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
+  <div id="hudrow"><span>片头 · 把时间还给你 · v0.89 · 23.8s</span><span><span id="tc" style="margin-right:10px">00:00</span><button id="pauseBtn">暂停</button><button id="replay" onclick="location.reload()">重播</button></span></div>
 </div>
 
 <script>
 /* ===== [不动] 时间轴引擎 ===== */
-const DUR=23800;                       /* 第 7 幕：2:36.197–3:00.0（voice-timeline.json） */
+const DUR=23800;                       /* 片头：独立 23.8 秒版本蒙太奇 */
 const $=s=>document.querySelector(s);
 let t0=performance.now(),paused=false,pStart=0;
 const cues=[],on=(t,f)=>cues.push({t,f,done:false});
@@ -371,16 +373,15 @@ function camFocus(fx,fy,s,dur){let tx=960-fx*s,ty=540-fy*s;   /* 对准 (fx,fy) 
   tx=Math.min(0,Math.max(1920-1920*s,tx));ty=Math.min(0,Math.max(1080-1080*s,ty));camTo(tx,ty,s,dur)}
 
 /* ────────────────────────────────────────────────
-   [改这里] 本镜头的叙事 cue —— 第 7 幕 收尾（成片 2:36.197–3:00.0）
-   口播 15.715s / 102 字 → 154ms/字；cue = 该句首字序号 × 154 + 700
+   [改这里] 本镜头的叙事 cue —— 片头（版本脉络更新至 v0.89.0）
    ──────────────────────────────────────────────── */
-/* 结构件：16 格版本胶片。序列取自仓库真实 docs/CHANGELOG 文件（v0.3.0–v0.76.0 共 130 份），
-   等距抽样，末格 v0.76.0（开工时 package.json 实测）；后四格功能词让位给真实用户场景 */
+/* 结构件：16 格版本胶片。序列取自仓库真实 docs/CHANGELOG，
+   末四格集中展示 v0.83–v0.89 的关键升级；末格严格停在用户指定的 v0.89.0。 */
 const REEL=[["v0.3","学习通收件箱升级"],["v0.10","插件中心上线"],["v0.11.5","设置页分类导航"],["v0.17","第十一套主题"],
   ["v0.24","课程表插件落地"],["v0.28","多校教务适配"],["v0.32.2","安卓重新出包"],["v0.36.3","顶栏并成一行"],
   ["v0.37.2","文档真正落盘"],["v0.37.10","通知卡彩色框"],["v0.38","应用内一键更新"],["v0.44","课表捏合缩放"],
-  ["v0.52","沉浸式外壳"],["v0.62","网盘搬数据"],["v0.75","索引精准失效"],["v0.76","更新包校验"]];
-const SCEN=["学姐答辩前一晚","竞赛 DDL 没漏交","组会在导师私聊里","深夜赶完的第三稿"];
+  ["v0.83","时间块拖回任务池"],["v0.87","扫码自动同步"],["v0.88","新内容标签"],["v0.89","关键词智能标注"]];
+const SCEN=["计划随时可以重排","三端迁移一张码完成","新增内容一眼可见","日期时间自动高亮"];
 const fcells=REEL.map((r,i)=>{const d=document.createElement('div');d.className='f';
   d.innerHTML=`<span class="idx">▸ ${String(i+1).padStart(2,'0')}</span><span class="rec"></span>
     <div class="ver">${r[0]}</div><div class="rule"></div>
@@ -396,9 +397,9 @@ on(700,()=>{$('#reel').classList.add('in');$('#reeltag').classList.add('in');$('
 on(2240,()=>$('#badge').classList.add('in'));
 for(let i=1;i<16;i++){const u=(i-1)/14;
   on(2240+1120*(1-Math.pow(1-u,1/3)),()=>{roll(i);__sfx.type(0.26+i*0.011)})}
-/* 计数滚动 1→76：用离散 cue 而非 cnt()，保证任意快进时刻定格值可读、末值必为 76 */
-for(let i=0;i<=15;i++)on(2240+i*75,()=>{$('#vnum').textContent=String(Math.round(76-75*Math.pow(1-i/15,3)))});
-on(3450,()=>camFocus(940,450,1.08,0.9));                          // 末格 v0.76 落定，缓推到投影门（留左边距不裁场景格）
+/* 计数滚动 1→89：用离散 cue 保证任意快进时刻定格值可读、末值必为 89 */
+for(let i=0;i<=15;i++)on(2240+i*75,()=>{$('#vnum').textContent=String(Math.round(89-88*Math.pow(1-i/15,3)))});
+on(3450,()=>camFocus(940,450,1.08,0.9));                          // 末格 v0.89 落定，缓推到投影门（留左边距不裁场景格）
 /* 3:19.6–3:22.4「每一个功能…真的需要才去做的」→ 后四格功能词换成场景短句，逐格高亮 */
 [[12,3560],[13,4480],[14,5560],[15,6330]].forEach(([k,t])=>on(t,()=>{
   fcells[k].classList.add('scen','lit');__sfx.ding(0.62)}));      // 「里面每一个功能」/「都是我自己」/「或者身边同学」/「真的需要」
@@ -407,18 +408,18 @@ on(8980,()=>$('#stage').classList.add('rough'));
 on(9000,()=>camTo(0,0,1,1.2));
 on(9900,()=>$('#say1').classList.add('in'));                      // 3:26.1「身边有问题」
 on(11300,()=>$('#say2').classList.add('in'));                     // 3:27.5「就自己动手解决它」
-/* 3:28.6「Le时间管理」→ 胶片渐隐、转哑光片尾（黑边 + 墨蓝暗角） */
+/* 版本蒙太奇落定 → 胶片渐隐、转项目片头（黑边 + 墨蓝暗角） */
 on(12400,()=>{const st=$('#stage');st.classList.remove('rough');st.classList.add('matte','letter');
   $('#filmworld').classList.add('gone');$('#matte').classList.add('in');$('#dim').classList.add('on')});
 on(12800,()=>$('#brand').classList.add('in'));                    // 标识浮现
 /* 3:29.7「把时间还给你」→ 金句逐字浮现 */
 const qch=[...document.querySelectorAll('#quote span')];
 for(let i=0;i<7;i++)on(13500+i*115,()=>{qch[i].classList.add('in');__sfx.type(0.22)});
-/* 3:30.5「谢谢大家」→ 落款：小字 + 15:00–16:00 色块 + 红章，之后定帧呼吸 */
+/* 项目信息落款：三端、v0.89.0 与开场印章，之后定帧呼吸 */
 on(14300,()=>{$('#credit').classList.add('in');$('#thanks').classList.add('in')});
 on(14400,()=>$('#chip').classList.add('in'));
 on(14460,()=>$('#seal').classList.add('in'));
-on(14700,()=>$('#push').classList.add('go'));                     // 片尾 8.6s Ken Burns 缓推
+on(14700,()=>$('#push').classList.add('go'));                     // 片头定帧 8.6s Ken Burns 缓推
 
 /* ===== 音效 ===== */
 on(700,()=>__sfx.whoosh(0.9,0.85));                               // 胶片拖入
@@ -427,9 +428,9 @@ on(3420,()=>__sfx.swipe(0.5));                                    // 功能词�
 on(8980,()=>__sfx.thud(0.6));                                     // 颗粒加重的落锤
 on(9900,()=>__sfx.pop(0.8));
 on(11300,()=>__sfx.pop(0.9));
-on(12400,()=>__sfx.whoosh(1.5,0.7));                              // 转哑光片尾
+on(12400,()=>__sfx.whoosh(1.5,0.7));                              // 转哑光项目片头
 on(12800,()=>__sfx.ding(0.7));                                    // 标识落定
-on(14300,()=>__sfx.ding(0.85));                                   // 「谢谢大家」
+on(14300,()=>__sfx.ding(0.85));                                   // 项目信息落定
 on(14480,()=>__sfx.pop(0.45));                                    // 印章盖下
 </script>
 </body>

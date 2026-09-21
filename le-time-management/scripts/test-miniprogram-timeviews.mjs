@@ -118,6 +118,8 @@ const sandbox = {
   require: (p) => {
     if (p.includes("timeParser")) return { guessCategory: () => "work" };
     if (p.includes("store")) return stubStore;
+    if (p.includes("undo")) return { bind: () => () => {}, offer() {}, run() {} };
+    if (p.includes("files")) return { notifyError() {} };
     throw new Error("意外的 require: " + p);
   },
   Page: (def) => { Object.assign(captured, def); },

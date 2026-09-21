@@ -65,3 +65,23 @@ export function pinyinInitialOf(text) {
   }
   return "";
 }
+
+/**
+ * 取整段文本的拼音首字母缩写：保留英文字母与数字，汉字转首字母，其它符号作为分隔跳过。
+ * 用在搜索匹配里，让「jm」能命中「界面」、「yy」能命中「应用」这类中文界面文案。
+ */
+export function pinyinInitialsOf(text) {
+  let out = "";
+  for (const ch of String(text ?? "")) {
+    const code = ch.codePointAt(0);
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
+      out += ch.toLowerCase();
+    } else if (code >= 48 && code <= 57) {
+      out += ch;
+    } else {
+      const letter = PY_INDEX.get(ch);
+      if (letter) out += letter.toLowerCase();
+    }
+  }
+  return out;
+}

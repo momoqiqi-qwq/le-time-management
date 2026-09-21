@@ -14,5 +14,23 @@
     "autoAudits": false,
     "ignoreUploadUnusedFiles": true
   },
-  "condition": {}
+  "condition": {},
+  "packOptions": {
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "tools"
+      },
+      {
+        "type": "file",
+        "value": "README.md"
+      }
+    ],
+    "include": [
+      {
+        "type": "folder",
+        "value": "licenses"
+      }
+    ]
+  }
 }

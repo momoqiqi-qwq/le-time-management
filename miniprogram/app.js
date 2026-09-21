@@ -1,6 +1,6 @@
 // U-Time · 微信小程序版
 // 与桌面端（Tauri）共用同一套数据结构与中文时间解析逻辑；
-// 数据保存在小程序本地存储（单 JSON），无账号、无联网。
+// 核心数据默认本地保存；联网插件/局域网同步由用户主动操作，后台不保证持续执行。
 const store = require("./core/store.js");
 const taskReminder = require("./core/taskReminder.js");
 
@@ -11,7 +11,7 @@ App({
   },
 
   onShow() { taskReminder.start(); },
-  onHide() { taskReminder.stop(); },
+  onHide() { taskReminder.stop(); store.saveNow(); },
   onLaunch() {
     store.initStore(store.seed());
   },

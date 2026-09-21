@@ -12,6 +12,7 @@ const searchIndex = read("../src/settingsSearchIndex.js");
 const api = read("../src/api.js");
 const pluginHost = read("../src/pluginHost.js");
 const rust = read("../src-tauri/src/lib.rs");
+const rustCargo = read("../src-tauri/Cargo.toml");
 const activity = read("../android/gradle/app/src/main/java/com/yile/letime/BrowserActivity.kt");
 const manifest = read("../android/gradle/app/src/main/AndroidManifest.xml");
 const syncTool = read("../../tools/sync-android-native.js");
@@ -37,8 +38,14 @@ assert.match(api, /return api\.openExternal\(url\)/,
 assert.match(pluginHost, /openUrl: \(url\) => \{ requirePermission\(man, pid, "openUrl"\); return api\.openUrl\(url\); \}/,
   "插件网页入口必须服从全局设置");
 
-assert.match(rust, /fn open_internal\(app: AppHandle, url: String\)/,
-  "Rust 必须注册应用内网页命令");
+assert.match(rust, /fn open_url_with_shell_execute\(url: &str\)/,
+  "Windows 外部打开必须走 ShellExecuteW 封装，避免经命令行启动浏览器时闪出控制台");
+assert.match(rust, /ShellExecuteW\(/,
+  "Windows 外部打开必须直接调用系统 Shell API");
+assert.match(rustCargo, /windows-sys = \{ version = "0\.61\.2", features = \["Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"\] \}/,
+  "ShellExecuteW 依赖必须只放在 Windows target 下");
+assert.match(rust, /async fn open_internal\(app: AppHandle, url: String\)/,
+  "open_internal 必须是 async 命令：同步命令在主线程的 IPC 回调里建窗，会等不到 WebView2 创建回调而死锁（白屏）");
 assert.match(rust, /if !matches!\(parsed\.scheme\(\), "http" \| "https"\)/,
   "应用内网页只允许 http/https，禁止任意 scheme");
 assert.match(rust, /WebviewWindowBuilder::new\(&app, &label, WebviewUrl::External\(parsed\)\)/,

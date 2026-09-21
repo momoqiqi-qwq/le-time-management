@@ -1,4 +1,5 @@
 <view class="page-body">
+  <view class="mini-shortcuts"><button class="btn ghost small" bindtap="onInbox">打开收件箱</button><text class="desc">捕获后可先收件，再决定是否排程</text></view>
   <!-- 输入 -->
   <view class="card">
     <view class="cap-h">把带时间的消息粘进来</view>
@@ -52,6 +53,7 @@
   <view wx:if="{{preview.show}}" class="cap-act">
     <button class="btn pri block" bindtap="onCreate">创建任务 + 时间块</button>
     <button class="btn ghost block" bindtap="onTaskOnly">仅存为任务（不排时间）</button>
+      <button class="btn ghost" bindtap="onSaveInbox">存入收件箱</button>
   </view>
 
   <!-- 结果 -->

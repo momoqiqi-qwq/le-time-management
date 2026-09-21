@@ -52,7 +52,7 @@ assert.match(nativeScheduleSource,/fallback\(container, ctx\)/,
   'missing native runtime must hand the view back to the embedded schedule UI');
 assert.match(nativeScheduleSource,/!\s*status\.available\)\s*return degrade\(\)/,
   'missing native runtime must degrade rather than stop at a placeholder message');
-vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,moreMenu,styles,setStyle:(s)=>{style={...style,...s};},pickSchool:(s)=>{selectedSchool=s;},openSchoolAdapter:(a)=>openSchoolAdapter(a),adapterSources:()=>schoolAdapterSources};\n tide.ui.registerView({'),uiContext);
+vm.runInContext(ui.replace(' tide.ui.registerView({',' globalThis.fixture={set:(t,w)=>{table=t;week=w;},blocks,tone,subHead,moreMenu,styles,setStyle:(s)=>{style={...style,...s};},pickSchool:(s)=>{selectedSchool=s;},openSchoolAdapter:(a)=>openSchoolAdapter(a),adapterSources:()=>schoolAdapterSources,render,act:(a,s)=>action(a,s),modeOf:()=>mode};\n tide.ui.registerView({'),uiContext);
 /* styles() 真跑一遍（v0.59.0 加的守卫）。整份课表 CSS 是**模板字符串**，注释里出现反引号
    或 ${ 会把字符串截断 —— 反引号成对时语法照样合法、vm 加载与 --check 全过，
    只有真正执行 styles() 才炸（实测 main.js 里 .app.rail-hidden 被当成属性访问，
@@ -259,8 +259,38 @@ assert.match(directMenu, /<span class="label">操作<\/span><button role="menuit
 assert.equal((directMenu.match(/data-action="edu"/g) || []).length, 1, '更多菜单不能重复渲染教务入口');
 assert.match(ui, /\.sg \.more-menu button\[data-action="edu"\]::before\{content:"⇩"\}/,
   '导入教务菜单项必须有与现有操作一致的前置图标');
-assert.match(ui, /case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'edu'/,
-  '菜单中的 edu 动作必须继续复用现有教务页面与返回栈');
+assert.match(ui, /case 'edu':enterMode\('schools'\);await loadSchoolIndex\(\);break;/,
+  '「导入教务」必须压栈后直达学校选择，复用同一条返回栈');
+assert.match(ui, /case 'edu-file':enterMode\('edu'\);break;/,
+  '文件 / 表格导入必须压栈进入，‹ 返回 才回得到学校列表');
+assert.ok(!ui.includes("'school-list'"),
+  'school-list 动作已被 edu 直达取代，不能留无人调用的分支（注意 .school-list 这个类名仍在用）');
+assert.ok(!ui.includes('school-hero'), 'edu 页不再混排学校卡片，school-hero 的标记与样式要一并清掉');
+assert.match(ui, /<div class="school-alt">[\s\S]{0,220}button\('用文件 \/ 表格导入','edu-file'/,
+  '学校选择页必须给出「用文件 / 表格导入」的次级入口');
+assert.match(ui, /\.sg \.school-alt>button\{flex:none\}/, '次级入口的按钮不能被 flex 压成竖排（v0.49.0 同族问题）');
+
+/* 真跑一遍 paint：入口 → 学校选择 → 文件 / 表格导入 → ‹ 返回。
+   上面那些源码正则只证明「代码写了」，证明不了「点进去看到的是这一页」——
+   而这次改的正是「点教务导入先看到哪一页」。host 用最小桩子，paint 只写 innerHTML。 */
+const prevFetch = uiContext.fetch;
+uiContext.document.addEventListener = () => {};
+uiContext.fetch = () => Promise.resolve({ ok: true, status: 200, arrayBuffer: () => Promise.resolve(fs.readFileSync(bundledIndexFile)) });
+const eduHost = { isConnected: true, innerHTML: '', addEventListener() {}, querySelector: () => null, querySelectorAll: () => [] };
+await uiContext.fixture.render(eduHost);
+await uiContext.fixture.act('edu');
+assert.equal(uiContext.fixture.modeOf(), 'schools', '「教务导入」入口必须直接落在学校选择页');
+assert.match(eduHost.innerHTML, /选择学校/, '入口页顶栏应是「选择学校」');
+assert.match(eduHost.innerHTML, /data-action="edu-file"/, '学校选择页要给出文件 / 表格导入的次级入口');
+assert.doesNotMatch(eduHost.innerHTML, /解析并预览/, '入口页不再混排文件 / 表格面板');
+await uiContext.fixture.act('edu-file');
+assert.equal(uiContext.fixture.modeOf(), 'edu', '次级入口进文件 / 表格导入页');
+assert.match(eduHost.innerHTML, /解析并预览/);
+assert.doesNotMatch(eduHost.innerHTML, /data-action="school-open"/, '表格页不再列学校');
+await uiContext.fixture.act('back');
+assert.equal(uiContext.fixture.modeOf(), 'schools', '‹ 返回 要回到学校列表，而不是直接弹出去时的页面');
+uiContext.fetch = prevFetch;
+console.log('PASS: 教务导入直达学校选择，文件 / 表格导入收进学校列表页的次级入口且返回栈正确');
 console.log('PASS: 课表更多菜单直接显示「导入教务」并复用现有流程');
 
 fx.setStyle({ colorful: false });
@@ -338,7 +368,7 @@ console.log('PASS: plugin sub-page headers put 「‹ 返回」 and the title on
    「课程管理 → 编辑课程 → 返回」会落到「我的」设置页。现在进子页压栈、返回弹栈。 */
 assert.match(ui, /function enterMode\(next\)\{if\(!MAIN_MODES\.has\(next\)&&next!==mode\)\{modeStack\.push\(mode\)/, '进子页必须压入当前页（主视图 week/today 不压栈）');
 assert.match(ui, /case 'back':mode=modeStack\.pop\(\)\|\|'week';break;/, '必须有 back 动作：弹出栈顶，栈空回周视图');
-assert.match(ui, /case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'edu':case 'courses':case 'tables':case 'style':case 'week-picker':enterMode\(a\);break;/, '菜单切子页必须走 enterMode 压栈');
+assert.match(ui, /case 'week':case 'today':case 'settings':case 'config':case 'transfer':case 'courses':case 'tables':case 'style':case 'week-picker':enterMode\(a\);break;/, '菜单切子页必须走 enterMode 压栈');
 assert.match(ui, /color:0,remark:''\};enterMode\('edit'\);break;/, '「添加课程」必须压栈后再进编辑页');
 assert.match(ui, /enterMode\('edit'\);paint\(\);/, '「课程管理 → 点课程编辑」也必须压栈');
 assert.match(ui, /enterMode\('schools'\);await loadSchoolIndex\(\);/, '「选择学校」必须压栈');

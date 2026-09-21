@@ -93,3 +93,7 @@
 }
 
 .reminder-picks{display:flex;flex-wrap:wrap;gap:12rpx}.rchip{margin:0;padding:8rpx 16rpx;min-height:58rpx;line-height:38rpx;font-size:22rpx;border:1rpx solid var(--line);border-radius:999rpx;background:var(--paper);color:var(--ink-2)}.rchip.on{background:var(--sea);color:#fff;border-color:var(--sea)}.custom-reminder{display:flex;gap:12rpx;align-items:center}.custom-reminder input{flex:1;border:2rpx solid var(--line);border-radius:12rpx;padding:12rpx 16rpx;background:var(--paper)}.custom-tag{font-size:22rpx;color:var(--ink-2)}
+
+.attachment-cell { width:140rpx; margin:12rpx; }
+.attachment-placeholder { width:128rpx; height:128rpx; border:1rpx solid var(--line); border-radius:14rpx; display:flex; align-items:center; justify-content:center; color:var(--ink-2); }
+.attachment-cell .btn { margin-top:8rpx; }

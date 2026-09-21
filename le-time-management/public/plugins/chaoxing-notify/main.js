@@ -44,7 +44,7 @@
     readOverrides: new Map(),   // id -> true(未读)/false(已读)：本机标记覆盖，不动平台状态
     tab: "inbox",
     filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部" },
-    course: { year: null, searchOpen: false },
+    course: { year: null, searchOpen: false, view: "year" },
     notice: null,
     loading: false,
     busy: "",
@@ -385,6 +385,35 @@ const CX_PY_DATA = {
       .dot-gray{background:#9ca3af}
       .cx2-search-toggle{width:40px;min-height:40px;display:inline-flex;align-items:center;justify-content:center;padding:0 11px}
       .cx2-course .cx2-termline{color:var(--ink-2)}
+      /* 卡片点击展开的详情：只把这一门课自己的开课～结课与学期摊开，默认收起不占版面。
+         用 p/i 而不是 span —— .cx2-course span 那条全局规则会把文字压成 11px 的次要色。 */
+      .cx2-course{cursor:pointer}
+      .cx2-course:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line))}
+      .cx2-course-more{display:none;margin-top:8px;padding-top:7px;border-top:1px dashed color-mix(in srgb,var(--ink) 20%,var(--line))}
+      .cx2-course.open .cx2-course-more{display:block}
+      .cx2-course-more p{margin:3px 0;font-size:calc(11.5px * var(--ui-text-scale));line-height:1.6;color:var(--ink);font-variant-numeric:tabular-nums}
+      .cx2-course-more i{display:inline-block;margin-right:7px;font-style:normal;font-size:calc(10.5px * var(--ui-text-scale));font-weight:600;color:var(--ink-2);letter-spacing:.4px}
+      .cx2-course-more .cx2-course-tip{font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-2)}
+      /* 开课时间总览：一条按开课日期升序的时间轴，同一天开课的课程并到同一节。
+         竖线用 section 的左边框串起来，圆点压在竖线上（负 left 让出竖线位置）。
+         圆点不加描边：宿主内容区底色是 --bg 而非 --paper，任何"挖洞"描边都会在部分主题下露成光圈。 */
+      .cx2-tl-sum{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2);margin:2px 0 14px}
+      .cx2-tl-sec{position:relative;margin-left:5px;padding:0 0 15px 21px;border-left:1.5px solid color-mix(in srgb,var(--ink) 13%,var(--line))}
+      .cx2-tl-sec:last-child{padding-bottom:2px;border-left-color:transparent}
+      .cx2-tl-head{position:relative;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;margin:0 0 7px;font-size:calc(13.5px * var(--ui-text-scale));font-weight:600;color:var(--ink)}
+      .cx2-tl-dot{position:absolute;left:-25.5px;top:.42em;width:9px;height:9px;border-radius:50%}
+      .cx2-tl-date{font-variant-numeric:tabular-nums;letter-spacing:.2px}
+      .cx2-tl-term{font-size:calc(11px * var(--ui-text-scale));font-weight:500;color:var(--ink-2)}
+      .cx2-tl-rel{font-size:calc(10.5px * var(--ui-text-scale));font-weight:500;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--sea) 16%,var(--panel));color:var(--deep)}
+      .cx2-tl-count{font-size:calc(11px * var(--ui-text-scale));font-weight:400;color:var(--ink-3)}
+      .cx2-tl-sec.st-red .cx2-tl-date{color:color-mix(in srgb,var(--coral) 52%,var(--ink))}
+      .cx2-tl-sec.st-blue .cx2-tl-date{color:color-mix(in srgb,var(--sea) 55%,var(--ink))}
+      .cx2-tl-sec.st-green .cx2-tl-date{color:color-mix(in srgb,var(--mint) 42%,var(--ink))}
+      .cx2-tl-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px}
+      .cx2-tl-item{display:flex;align-items:baseline;gap:8px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 10px}
+      .cx2-tl-sec.st-green .cx2-tl-item{background:var(--paper)}
+      .cx2-tl-name{flex:1;min-width:0;font-size:calc(12.5px * var(--ui-text-scale));color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      .cx2-tl-meta{font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
       .cx2-hint{margin-top:14px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2);line-height:1.7}
       .cx2-login{max-width:650px;margin:18px auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:clamp(18px,3vw,28px)}
       .cx2-login h3{margin:0 0 4px}
@@ -787,13 +816,46 @@ const CX_PY_DATA = {
     green: { label: "已完成", title: "开课学期已经过去，按本地推断为已完成" },
     gray: { label: "状态未知", title: "没有开课时间，无法推断状态" },
   };
+  // 「大二上」这样的年级+学期文案；「入学前」这类非年级值不再拼学期后缀，否则会成「入学前上」
+  function gradeTermLabel(t, enrollYear) {
+    if (!t) return "";
+    const g = gradeOf(t.year, enrollYear);
+    return !g ? "" : /^大/.test(g) ? g + t.half : g;
+  }
   function courseCardHtml(c, enrollYear, now) {
     const st = courseStatus(c, now);
     const t = termOf(c?.start);
-    const g = t ? gradeOf(t.year, enrollYear) : "";
+    const g = gradeTermLabel(t, enrollYear);
     const mark = `<span class="cx2-mark st-${st}" title="${STATUS_META[st].title}">${STATUS_META[st].label}</span>`;
-    const termLine = t ? `${g ? g + t.half : `学年 ${t.year}${t.half}`} · 开课 ${c.start}` : "无开课时间";
-    return `<div class="cx2-course st-${st}">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span></div>`;
+    const termLine = t ? `${g || `学年 ${t.year}${t.half}`} · 开课 ${c.start}` : "无开课时间";
+    const more = t
+      ? `<div class="cx2-course-more"><p><i>开课</i>${esc(c.start)} ～ ${esc(c.end || "卡片未给结课日")}</p><p><i>学期</i>${esc(t.label)}${g ? ` · ${esc(g)}` : ""}</p><p class="cx2-course-tip">结课日取自学习通卡片原文（实测恒为开课 +2 年），完成状态只按开课学期推断。</p></div>`
+      : `<div class="cx2-course-more"><p><i>开课</i>学习通这张课程卡片里没有「开课时间」一行，无法推断学期与完成状态。</p></div>`;
+    return `<div class="cx2-course st-${st}" data-course-toggle title="点击展开该课的完整开课时间">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span>${more}</div>`;
+  }
+  /* 开课时间总览：跨学年、跨状态，把课程按「开课日期」升序串成一条时间轴，同一天开课的并成一节。
+     吃当前搜索词；没有开课时间行的课程固定落在最后一段。 */
+  function courseTimelineHtml(list, enrollYear, now) {
+    const groups = new Map();
+    for (const c of list) {
+      const key = c.start || "";
+      const bucket = groups.get(key);
+      if (bucket) bucket.push(c); else groups.set(key, [c]);
+    }
+    const dates = [...groups.keys()].sort((a, b) => (!a ? 1 : 0) - (!b ? 1 : 0) || a.localeCompare(b));
+    const cur = currentTerm(now).rank;
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const secs = dates.map((d) => {
+      const items = groups.get(d);
+      const t = termOf(d);
+      const st = courseStatus({ start: d }, now);
+      const grade = gradeTermLabel(t, enrollYear) || (t ? `${t.year}-${t.year + 1} 学年${t.half}` : "");
+      let rel = "";
+      if (t && t.rank > cur) rel = `${Math.max(0, Math.round((new Date(`${d}T00:00:00`).getTime() - today) / 86400000))} 天后开课`;
+      else if (t && t.rank === cur) rel = "本学期";
+      return `<section class="cx2-tl-sec st-${st}"><h4 class="cx2-tl-head"><span class="cx2-tl-dot dot-${st}"></span><b class="cx2-tl-date" title="${esc(t ? t.label : '接口卡片里没有开课时间')}">${esc(d || "无开课时间")}</b><span class="cx2-tl-term">${esc(grade)}</span>${rel ? `<span class="cx2-tl-rel">${esc(rel)}</span>` : ""}<span class="cx2-tl-count">${items.length} 门</span></h4><div class="cx2-tl-list">${items.map((c) => `<div class="cx2-tl-item"><span class="cx2-tl-name" title="${esc(c.name)}">${esc(c.name)}</span><span class="cx2-tl-meta" title="${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '')}">${esc(c.teacher || '—')}</span></div>`).join("")}</div></section>`;
+    }).join("");
+    return `<div class="cx2-tl-sum">共 ${list.length} 门课，分布在 ${dates.filter((d) => d).length} 个开课时间${groups.has("") ? `（另有 ${groups.get("").length} 门没有开课时间）` : ""}</div>${secs || '<div class="cx2-empty">没有匹配课程。</div>'}`;
   }
   function coursesHtml() {
     const all = state.courses;
@@ -821,11 +883,16 @@ const CX_PY_DATA = {
     const search = state.course.searchOpen
       ? `<input class="cx2-search" data-search value="${esc(state.filter.kw)}" placeholder="搜索课程 / 教师 / 班级…">`
       : `<button class="cx2-search-toggle" data-search-toggle title="搜索课程 / 教师 / 班级" aria-label="展开搜索"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg></button>`;
+    const viewSwitch = `<span class="cx2-mode" role="group" aria-label="课程列表视图">${[["year", "学年分组", "按学年分标签页，学年内再按完成状态分组"], ["timeline", "开课时间", "不分学年，把全部课程的开课日期按先后排成一条时间轴"]].map(([v, label, why]) => `<button class="${(state.course.view || "year") === v ? "on" : ""}" data-course-view="${v}" title="${esc(why)}" aria-pressed="${(state.course.view || "year") === v}">${label}</button>`).join("")}</span>`;
+    const timeline = state.course.view === "timeline";
     const body = inYear.length
       ? ["red", "blue", "green", "gray"].filter((k) => groups[k].length).map((k) =>
           `<section class="cx2-status-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-${k}"></span>${STATUS_META[k].label}<span class="cx2-grade-sub">${groups[k].length} 门</span></h4><div class="cx2-courses">${groups[k].map((c) => courseCardHtml(c, enrollYear, now)).join("")}</div></section>`).join("")
       : '<div class="cx2-empty">这个学年没有匹配课程。</div>';
-    return `<div class="cx2-toolbar">${search}<span style="flex:1"></span></div>${tabs}${body}<div class="cx2-hint">每次打开默认显示最近学年。卡片底色与角标是本地按课程卡片里的「开课时间」推断的完成状态：红=未完成（开课学期在未来）、蓝=正在进行（当前学期）、绿=已完成（开课学期已结束）${enrollYear ? `；年级按 ${enrollYear} 级入学计算` : ""}。学习通接口本身不返回该状态，可能与平台显示不一致。</div>`;
+    const hint = timeline
+      ? `开课时间总览把 ${list.length} 门课（含所有学年）按开课日期先后排成一条时间轴，同一天开课的并在一节；日期右侧是本地推断的年级学期，胶囊标出「本学期 / N 天后开课」。圆点颜色即完成状态：红=未完成、蓝=正在进行、绿=已完成、灰=无开课时间。${enrollYear ? `年级按 ${enrollYear} 级入学计算；` : ""}学习通接口本身不返回这些，可能与平台显示不一致。`
+      : `每次打开默认显示最近学年；点击卡片可展开这一门课自己的完整开课～结课时间与所属学期。卡片底色与角标是本地按课程卡片里的「开课时间」推断的完成状态：红=未完成（开课学期在未来）、蓝=正在进行（当前学期）、绿=已完成（开课学期已结束）${enrollYear ? `；年级按 ${enrollYear} 级入学计算` : ""}。学习通接口本身不返回该状态，可能与平台显示不一致。`;
+    return `<div class="cx2-toolbar">${search}<span style="flex:1"></span>${viewSwitch}</div>${timeline ? courseTimelineHtml(list, enrollYear, now) : `${tabs}${body}`}<div class="cx2-hint">${esc(hint)}</div>`;
   }
   function lookupHtml() {
     const n=state.notice;
@@ -886,6 +953,8 @@ const CX_PY_DATA = {
       if(e.target.closest('[data-cookie-login]')){const c=host.querySelector('[data-cookie]').value.trim(),status=host.querySelector('[data-login-status]');state.remember=host.querySelector('[data-remember]').checked;state.creds=null;status.textContent='正在验证 Cookie…';try{await startCookieSession(c);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
       const yearBtn=e.target.closest('[data-year]');if(yearBtn){state.course.year=Number(yearBtn.dataset.year)||0;paintMain();return;}
+      const viewBtn=e.target.closest('[data-course-view]');if(viewBtn){state.course.view=viewBtn.dataset.courseView==='timeline'?'timeline':'year';paintMain();return;}
+      const courseCard=e.target.closest('[data-course-toggle]');if(courseCard){courseCard.title=courseCard.classList.toggle('open')?'点击收起该课的开课时间':'点击展开该课的完整开课时间';return;}
       if(e.target.closest('[data-search-toggle]')){state.course.searchOpen=true;paintMain();return;}
       const modeBtn=e.target.closest('[data-mode]');if(modeBtn){state.refreshMode=modeBtn.dataset.mode==='throttle'?'throttle':'auto';await tide.storage.set('refreshMode',state.refreshMode);paintMain();return;}
       if(e.target.closest('[data-refresh]')){await refreshAll();return;}

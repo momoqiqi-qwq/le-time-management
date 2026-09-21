@@ -3,6 +3,8 @@
 // 时间块用 movable-view 原生手势上下拖动，15 分钟吸附；点空白处加空白块
 const parser = require("../../core/timeParser.js");
 const store = require("../../core/store.js");
+const undo = require("../../core/undo.js");
+const files = require("../../core/files.js");
 
 const DAY_START = 7 * 60;   // 07:00
 const DAY_END = 24 * 60;    // 24:00
@@ -25,7 +27,7 @@ const CAT_COLORS = { work: "#E3A008", study: "#118AB2", sport: "#FF6B6B", life: 
 
 Page({
   data: {
-    curDate: "",
+    curDate: "", undoMessage: "", blockDraft: null, catOptions: ["工作", "学习", "运动", "生活", "休息"],
     dateLabel: "",
     sumLabel: "",
     canvasH: CANVAS_H,
@@ -68,14 +70,18 @@ Page({
 
   onLoad() {
     const saved = store.getState().settings.lastDate;
-    const mode = store.getState().settings.timeViewModeMini || "day";
+    const wanted = store.getState().settings.timeViewModeMini || "day";
+    const mode = this.data.viewTabs.some(t => t.id === wanted) ? wanted : "day";
     this.setData({ curDate: saved || store.todayStr(), viewMode: mode, viewModeLabel: this.labelOf(mode) });
   },
   onShow() {
+    if (this._unsub) this._unsub(); if (this._undoUnsub) this._undoUnsub();
+    if (this._timer) clearInterval(this._timer);
+    this._undoUnsub = undo.bind(this);
     // 捕获页「查看时间块」跳转：先定位到目标日期
     const app = getApp();
     if (app.globalData.pendingTimeblockDate) {
-      this.setData({ curDate: app.globalData.pendingTimeblockDate });
+      this.setData({ curDate: app.globalData.pendingTimeblockDate, viewMode: "day", viewModeLabel: this.labelOf("day") });
       app.globalData.pendingTimeblockDate = null;
     }
     this._unsub = store.subscribe(() => this.refresh());
@@ -85,7 +91,9 @@ Page({
   onHide() {
     if (this._unsub) { this._unsub(); this._unsub = null; }
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
-    if (this.data.placing) this.setData({ placing: null });
+    if (this._undoUnsub) { this._undoUnsub(); this._undoUnsub = null; }
+    this.drag = null;
+    this.setData({ placing: null, dragId: "", hint: { show: false, top: 0, label: "" } });
   },
   onUnload() { this.onHide(); },
 
@@ -94,26 +102,32 @@ Page({
     store.saveNow();
   },
 
+  axisStart() { return this._axisStart == null ? DAY_START : this._axisStart; },
+  onUndo() { undo.run(); },
+  onSchedulePlugin() { wx.navigateTo({ url: "/pages/schedule/index" }); },
+
   /* ── 渲染 ── */
   refresh() {
     const curDate = this.data.curDate;
     const isToday = curDate === store.todayStr();
+    // 有凌晨安排时展开到 00:00，否则保持原先 07:00 起的紧凑视图。
+    this._axisStart = store.blocksOf(curDate).some(b => store.mmOf(b.start) < DAY_START) ? 0 : DAY_START;
 
     // 时刻行
     const hours = [];
-    for (let m = DAY_START; m <= DAY_END; m += 60) {
-      hours.push({ label: store.hhmmOf(m), top: (m - DAY_START) * PX + TOP_PAD });
+    for (let m = this.axisStart(); m <= DAY_END; m += 60) {
+      hours.push({ label: m === DAY_END ? "24:00" : store.hhmmOf(m), top: (m - this.axisStart()) * PX + TOP_PAD });
     }
 
     // 时间块
     const list = store.blocksOf(curDate).map((b) => {
       const h = Math.max(24, b.durMin * PX - 3);
       return {
-        id: b.id,
+        id: b.id, renderKey: b.id + "-" + (this._layoutVersion || 0),
         title: b.title,
         cat: b.cat,
         h,
-        y: (store.mmOf(b.start) - DAY_START) * PX,
+        y: (store.mmOf(b.start) - this.axisStart()) * PX,
         tiny: b.durMin <= 25,
         showMeta: h > 44,
         timeLabel: b.start + " – " + store.hhmmOf(store.mmOf(b.start) + b.durMin),
@@ -148,7 +162,7 @@ Page({
     const byCat = {};
     for (const b of blocks) byCat[b.cat] = (byCat[b.cat] || 0) + b.durMin;
     const meter = Object.keys(byCat).map((c) => ({ cat: c, w: (byCat[c] / Math.max(total, 1)) * 100 }));
-    const legend = Object.keys(byCat).map((c) => ({ cat: c, label: CAT_NAMES[c] + " " + store.durLabel(byCat[c]) }));
+    const legend = Object.keys(byCat).map((c) => ({ cat: c, label: (CAT_NAMES[c] || c) + " " + store.durLabel(byCat[c]) }));
 
     // 近 7 天节奏
     const rhythm = [];
@@ -201,14 +215,14 @@ Page({
     this._ganttMonths = gm.months;
     this._swimCats = sm.cats;
     this.setData({
-      hours, blocks: list, pool, nowLine,
+      hours, canvasH: (DAY_END - this.axisStart()) * PX + TOP_PAD, blocks: list, pool, nowLine,
       dateLabel, sumLabel,
       daysBar,
       emptyDay: list.length === 0,
       meter, legend, rhythm, tomorrow,
       tomEmpty: tomorrow.length === 0,
       totalLabel: store.durLabel(total),
-      awakeLabel: store.durLabel(DAY_END - DAY_START),
+      awakeLabel: store.durLabel(DAY_END - this.axisStart()),
       visualEvents: visual.events,
       visualGantt: visual.gantt,
       visualSwim: visual.swim,
@@ -406,10 +420,10 @@ Page({
     if (this.data.curDate !== store.todayStr()) return { show: false, top: 0, label: "" };
     const now = new Date();
     const min = now.getHours() * 60 + now.getMinutes();
-    if (min < DAY_START || min > DAY_END) return { show: false, top: 0, label: "" };
+    if (min < this.axisStart() || min > DAY_END) return { show: false, top: 0, label: "" };
     return {
       show: true,
-      top: (min - DAY_START) * PX + TOP_PAD,
+      top: (min - this.axisStart()) * PX + TOP_PAD,
       label: "现在 " + store.hhmmOf(min),
     };
   },
@@ -439,24 +453,18 @@ Page({
   onPoolTap(e) {
     const t = store.taskById(e.currentTarget.dataset.id);
     if (!t) return;
-    const dur = Math.max(15, t.estMin || 30);
-    const min = this.findSlot(dur);
-    if (min === null) { wx.showToast({ title: "这一天已经排满了", icon: "none" }); return; }
-    // 该任务若已在别处排程，先移除，避免重复
-    store.getState().blocks.filter((b) => b.taskId === t.id).forEach((b) => store.removeBlock(b.id));
-    store.addBlock({
-      date: this.data.curDate,
-      start: store.hhmmOf(min), durMin: dur,
-      title: t.title, taskId: t.id,
-      cat: TAG_CAT[(t.tags || [])[0] || ""] || "work",
-    });
-    wx.showToast({ title: "已排入 " + store.hhmmOf(min), icon: "none" });
+    if (Date.now() < (this._ignorePoolTapUntil || 0)) return;
+    try {
+      const block = store.placeTask(t, this.data.curDate, null, TAG_CAT[(t.tags || [])[0] || ""] || "work");
+      wx.showToast({ title: "已排入 " + block.start, icon: "none" });
+    } catch (error) { files.notifyError(error); }
   },
 
   // 长按任务卡进入「点轴放置」模式：找回桌面端拖拽意图的移动端方案
   onPoolLongPress(e) {
     const t = store.taskById(e.currentTarget.dataset.id);
     if (!t) return;
+    this._ignorePoolTapUntil = Date.now() + 500;
     wx.vibrateShort({ type: "medium" });
     this.setData({ placing: { id: t.id, title: t.title, dur: Math.max(15, t.estMin || 30) } });
   },
@@ -498,7 +506,7 @@ Page({
     this.setData({
       hint: {
         show: true,
-        top: (min - DAY_START) * PX + TOP_PAD,
+        top: (min - this.axisStart()) * PX + TOP_PAD,
         label: store.hhmmOf(min) + " – " + store.hhmmOf(min + this.drag.durMin),
       },
     });
@@ -507,7 +515,9 @@ Page({
     if (this.drag) {
       if (this.drag.moved && this.drag.y !== null) {
         const min = this.snapMin(this.drag.y, this.drag.durMin);
-        store.updateBlock(this.drag.id, { date: this.data.curDate, start: store.hhmmOf(min) });
+        const moving = this.drag;
+        if (this.freeAt(this.data.curDate, min, moving.durMin, moving.id)) store.updateBlock(moving.id, { date: this.data.curDate, start: store.hhmmOf(min) });
+        else { wx.showToast({ title: "时段冲突，已还原", icon: "none" }); this._layoutVersion=(this._layoutVersion||0)+1; this.refresh(); }
       } else {
         this.blockMenu(this.drag.id);
       }
@@ -515,36 +525,49 @@ Page({
     this.drag = null;
     this.setData({ dragId: "", hint: { show: false, top: 0, label: "" } });
   },
+  onBlockTap() {}, // 点击块内部文案也不能冒泡成“点空白新建”。
+  onBlockTouchCancel() {
+    this._layoutVersion=(this._layoutVersion||0)+1;
+    this.drag = null; this.setData({ dragId: "", hint: { show: false, top: 0, label: "" } }); this.refresh();
+  },
+  freeAt(date, start, dur, excluding) {
+    return Number.isFinite(start) && Number.isFinite(dur) && start >= 0 && dur > 0 && start + dur <= DAY_END
+      && !store.blocksOf(date).some(b => b.id !== excluding && start < store.mmOf(b.start) + Number(b.durMin) && start + dur > store.mmOf(b.start));
+  },
   snapMin(y, durMin) {
-    const min = Math.round(y / PX / 15) * 15 + DAY_START;
-    return Math.min(DAY_END - durMin, Math.max(DAY_START, min));
+    const min = Math.round(y / PX / 15) * 15 + this.axisStart();
+    return Math.min(DAY_END - durMin, Math.max(this.axisStart(), min));
   },
   blockMenu(id) {
     const b = store.getState().blocks.find((x) => x.id === id);
     if (!b) return;
     const cats = ["work", "study", "sport", "life", "rest"];
-    const items = ["时长 +15 分钟", "时长 −15 分钟", "换分类"];
+    const items = ["编辑时间块", "时长 +15 分钟", "时长 −15 分钟", "换分类"];
     if (b.taskId) items.push("移回任务池");
     items.push("删除时间块");
     wx.showActionSheet({
       itemList: items,
       success: (res) => {
         const label = items[res.tapIndex];
-        if (label === "时长 +15 分钟") {
-          store.updateBlock(id, { durMin: Math.min(480, b.durMin + 15) });
+        if (label === "编辑时间块") {
+          this.setData({ blockDraft: { id:b.id,title:b.title,date:b.date,start:b.start,dur:String(b.durMin),catIndex:Math.max(0,cats.indexOf(b.cat)) } });
+        } else if (label === "时长 +15 分钟") {
+          const duration = Math.min(480, Number(b.durMin) + 15);
+          if (!this.freeAt(b.date, store.mmOf(b.start), duration, id)) { wx.showToast({ title:"与已有安排冲突或超出当天", icon:"none" }); return; }
+          store.updateBlock(id, { durMin: duration });
         } else if (label === "时长 −15 分钟") {
           store.updateBlock(id, { durMin: Math.max(15, b.durMin - 15) });
         } else if (label === "换分类") {
           store.updateBlock(id, { cat: cats[(cats.indexOf(b.cat) + 1) % cats.length] });
         } else if (label === "移回任务池") {
-          store.updateBlock(id, { taskId: null });
+          undo.offer(store.returnTaskToPool(id), "已移回任务池，其他日期保留");
         } else if (label === "删除时间块") {
           wx.showModal({
             title: "删除时间块",
             content: "「" + b.title + "」将被删除",
             confirmText: "删除",
             confirmColor: "#C43C3C",
-            success: (r) => { if (r.confirm) store.removeBlock(id); },
+            success: (r) => { if (r.confirm) undo.offer(store.removeBlockUndoable(id), "时间块已删除"); },
           });
         }
       },
@@ -557,28 +580,22 @@ Page({
     if (e.target.dataset.id) return;
     const touch = e.changedTouches && e.changedTouches[0];
     if (!touch) return;
-    const placing = this.data.placing;
+    const placing = this.data.placing, selectedDate = this.data.curDate;
     wx.createSelectorQuery().in(this)
       .select(".canvas")
       .boundingClientRect((rect) => {
-        if (!rect) return;
+        if (!rect || selectedDate !== this.data.curDate) return;
         const y = touch.clientY - rect.top - TOP_PAD;
-        if (y < -TOP_PAD || y > CANVAS_H - TOP_PAD) return;
+        if (y < -TOP_PAD || y > this.data.canvasH - TOP_PAD) return;
         const min = this.snapMin(Math.max(0, y), placing ? placing.dur : 30);
 
         if (placing) {
-          // 长按任务卡后：点时间轴即把任务放到该位置
-          store.getState().blocks.filter((b) => b.taskId === placing.id).forEach((b) => store.removeBlock(b.id));
           const t = store.taskById(placing.id);
-          store.addBlock({
-            date: this.data.curDate,
-            start: store.hhmmOf(min), durMin: placing.dur,
-            title: placing.title, taskId: placing.id,
-            cat: t ? (TAG_CAT[(t.tags || [])[0] || ""] || "work") : "work",
-          });
-          this.setData({ placing: null });
-          wx.vibrateShort({ type: "light" });
-          wx.showToast({ title: "已放到 " + store.hhmmOf(min), icon: "none" });
+          try {
+            store.placeTask(t, selectedDate, min, t ? (TAG_CAT[(t.tags || [])[0] || ""] || "work") : "work");
+            this.setData({ placing: null }); wx.vibrateShort({ type: "light" });
+            wx.showToast({ title: "已放到 " + store.hhmmOf(min), icon: "none" });
+          } catch (error) { files.notifyError(error); }
           return;
         }
 
@@ -589,6 +606,7 @@ Page({
           success: (res) => {
             if (!res.confirm) return;
             const title = (res.content || "").trim() || "空白时间";
+            if (selectedDate !== this.data.curDate || !this.freeAt(selectedDate, min, 30)) { wx.showToast({ title:"日期变化或时段冲突，请重新选择", icon:"none" }); return; }
             store.addBlock({
               date: this.data.curDate,
               start: store.hhmmOf(min), durMin: 30,
@@ -599,6 +617,21 @@ Page({
         });
       })
       .exec();
+  },
+
+  onBlockEditInput(e) {
+    const key=e.currentTarget.dataset.field;
+    if(["title","date","start","dur","catIndex"].includes(key))this.setData({["blockDraft."+key]:e.detail.value});
+  },
+  onCancelBlockEdit() { this.setData({blockDraft:null}); },
+  onSaveBlockEdit() {
+    const d=this.data.blockDraft;if(!d)return;
+    const duration=Number(d.dur), parts=String(d.date).split("-").map(Number), start=/^([01]\d|2[0-3]):[0-5]\d$/.test(d.start)?store.mmOf(d.start):NaN;
+    if(!d.title.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(d.date)||store.fmtDate(new Date(parts[0],parts[1]-1,parts[2],12))!==d.date||!Number.isInteger(duration)||!this.freeAt(d.date,start,duration,d.id)){
+      wx.showToast({title:"请检查标题、日期和时长，且避免时间冲突",icon:"none"});return;
+    }
+    const cat=["work","study","sport","life","rest"][Number(d.catIndex)]||"work";
+    this.setData({curDate:d.date,blockDraft:null});store.updateBlock(d.id,{title:d.title.trim(),date:d.date,start:d.start,durMin:duration,cat});this.persistDate();this.refresh();
   },
 
   /* ── 底部快速输入 ── */

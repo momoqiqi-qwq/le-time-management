@@ -1,0 +1,5 @@
+.inbox-title { font-size:36rpx; font-weight:700; line-height:1.5; }
+.inbox-actions { display:flex; align-items:center; flex-wrap:wrap; margin:16rpx -6rpx; }
+.inbox-actions .btn { margin:6rpx; }
+.item-title { font-size:30rpx; font-weight:650; line-height:1.6; word-break:break-word; }
+.item-note { font-size:26rpx; line-height:1.8; white-space:pre-wrap; margin-top:16rpx; }

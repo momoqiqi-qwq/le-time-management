@@ -1,30 +1,34 @@
 <view class="page-body">
+  <view class="mini-shortcuts"><button class="btn ghost small" bindtap="onInbox">收件箱 {{inboxCount}}</button><button class="btn ghost small" bindtap="onSchedulePlugin">课程表</button><button class="btn ghost small" bindtap="onPlugins">插件中心</button></view>
   <!-- 搜索 -->
   <view class="searchbar">
     <input
       class="input"
-      placeholder="搜索任务 / 备注 / 项目"
+      placeholder="搜索任务 / 备注 / 项目 / 标签"
       value="{{q}}"
       confirm-type="search"
       bindinput="onSearch"
     />
+    <text wx:if="{{q}}" class="search-clear" bindtap="onClearSearch">清除</text>
   </view>
 
   <!-- 顶部统计 + 折叠开关 -->
   <view class="chips">
-    <view class="chip">全部 <b>{{chips.all}}</b> 项</view>
-    <view class="chip">待办 <b>{{chips.open}}</b> 项</view>
-    <view class="chip">已完成 <b>{{chips.done}}</b> 项</view>
+    <view class="chip">全部 <text class="count">{{chips.all}}</text> 项</view>
+    <view class="chip">待办 <text class="count">{{chips.open}}</text> 项</view>
+    <view class="chip">已完成 <text class="count">{{chips.done}}</text> 项</view>
     <view class="chip toggle {{hideDone ? 'on' : ''}}" hover-class="press" bindtap="onHideDoneTap">
       {{hideDone ? "已隐藏已完成" : "隐藏已完成"}}
     </view>
   </view>
 
+  <view class="mini-filters"><button class="btn ghost small" data-filter="quad" bindtap="onFilterTap">本象限</button><button class="btn ghost small" data-filter="all" bindtap="onFilterTap">全部</button><button class="btn ghost small" data-filter="today" bindtap="onFilterTap">今日截止</button><button class="btn ghost small" data-filter="overdue" bindtap="onFilterTap">逾期</button><button class="btn ghost small" data-filter="pool" bindtap="onFilterTap">未排今日</button><button class="btn small {{selecting ? 'pri' : 'ghost'}}" bindtap="onSelectMode">{{selecting ? '结束选择' : '批量操作'}}</button><button class="btn ghost small" bindtap="onClearDone">清理已完成</button></view>
+  <view wx:if="{{selecting}}" class="mini-bulk"><text>已选 {{selectedCount}} 项</text><view class="mini-filters"><button class="btn ghost small" bindtap="onSelectPage">选择当前页</button><button class="btn ghost small" disabled="{{!selectedCount}}" data-done="true" bindtap="onBulkDone">完成</button><button class="btn ghost small" disabled="{{!selectedCount}}" data-done="false" bindtap="onBulkDone">未完成</button><button class="btn ghost small" disabled="{{!selectedCount}}" bindtap="onBulkMove">移动象限</button><button class="btn danger small" disabled="{{!selectedCount}}" bindtap="onBulkDelete">删除选中</button></view></view>
   <!-- 搜索结果 / 象限块 -->
   <block wx:if="{{searching}}">
     <view class="qhead">
-      <view class="qh-line"><text class="qh-title">搜索结果 · {{tasks.length}} 个</text></view>
-      <view class="qh-tip">匹配标题 / 备注 / 项目，点象限块可返回</view>
+      <view class="qh-line"><text class="qh-title">{{searchLabel}} · {{total}} 个</text></view>
+      <view class="qh-tip">支持标题 / 备注 / 项目 / 标签；长按任务可排序和移动象限</view>
     </view>
   </block>
   <block wx:else>
@@ -70,11 +74,13 @@
         data-offset="{{item.offset}}"
         hover-class="press"
         bindtap="onCardTap"
+        bindlongpress="onTaskMenu"
         bindtouchstart="onCardTouchStart"
         bindtouchmove="onCardTouchMove"
         bindtouchend="onCardTouchEnd"
+        bindtouchcancel="onCardTouchCancel"
       >
-        <view class="cb {{item.done ? 'on' : ''}}" data-id="{{item.id}}" catchtap="onCheck">{{item.done ? '✓' : ''}}</view>
+        <view class="cb {{(selecting ? item.selected : item.done) ? 'on' : ''}}" data-id="{{item.id}}" catchtap="onCheck">{{(selecting ? item.selected : item.done) ? '✓' : ''}}</view>
         <view class="tbody">
           <view class="tt">
             <text wx:if="{{searching}}" class="qb {{item.quadCls}}">{{item.quadBadge}}</text>
@@ -97,6 +103,7 @@
     <view wx:if="{{!tasks.length}}" class="empty">{{searching ? "没有匹配的任务" : "这个象限还是空的"}}</view>
   </view>
 
+  <view class="mini-filters"><button wx:if="{{hasPrev}}" class="btn ghost small" bindtap="onPrevPage">上一页</button><text class="desc">第 {{pageNumber}} 页 · 共 {{total}} 条</text><button wx:if="{{hasNext}}" class="btn ghost small" bindtap="onNextPage">下一页</button></view>
   <!-- 快速添加 -->
   <view wx:if="{{form.show}}" class="addform">
     <input
@@ -119,4 +126,5 @@
     </view>
   </view>
   <button wx:else class="btn ghost block addbtn" bindtap="onAddTap">添加到「{{cur.short}}」</button>
+  <view wx:if="{{undoMessage}}" class="mini-undo"><text>{{undoMessage}}</text><button class="btn ghost small" bindtap="onUndo">撤销</button></view>
 </view>

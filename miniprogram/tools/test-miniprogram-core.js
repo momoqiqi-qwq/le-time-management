@@ -6,8 +6,10 @@ const BASE = new Date(2026, 8, 6); // 2026-09-06，周日，保证用例确定�
 /* ── mock wx ── */
 const mem = {};
 global.wx = {
-  getStorageSync(k) { return mem[k]; },
-  setStorageSync(k, v) { mem[k] = v; },
+  getStorageSync(k) { return mem[k] === undefined ? undefined : JSON.parse(JSON.stringify(mem[k])); },
+  setStorageSync(k, v) { mem[k] = JSON.parse(JSON.stringify(v)); },
+  removeStorageSync(k) { delete mem[k]; },
+  showToast() {},
 };
 
 const store = require("../core/store.js");
@@ -22,9 +24,15 @@ function ok(name, actual, expected) {
 
 /* ── store ── */
 console.log("[store]");
-store.initStore(store.seed());
+ok("产品首启保持空数据", [store.seed().tasks.length, store.seed().blocks.length], [0, 0]);
+// 固定测试夹具不能倒灌进产品 seed。
+const fixture = Object.assign(store.seed(), {
+  tasks: Array.from({length:8}, (_,i) => ({id:"t"+(i+1),title:"测试任务"+(i+1),quad:i<3?1:2+(i-3)%3,done:i===0,estMin:30,tags:[],note:"",due:null})),
+  blocks: ["09:00","11:00","11:45"].map((start,i)=>({id:"seed-b"+i,date:store.todayStr(),start,durMin:30,title:"测试安排",taskId:null,cat:"work"})),
+});
+store.initStore(fixture);
 let st = store.getState();
-ok("种子数据 8 任务 3 时间块", [st.tasks.length, st.blocks.length], [8, 3]);
+ok("测试夹具 8 任务 3 时间块", [st.tasks.length, st.blocks.length], [8, 3]);
 
 const t = store.addTask({ title: "测试任务", quad: 2, estMin: 45, due: "2026-09-08" });
 ok("addTask 返回带 id 的新任务", [st.tasks.length, st.tasks[0].title], [9, "测试任务"]);
@@ -148,8 +156,12 @@ ok("createFromCapture 有日期建块字段一致",
 console.log("[plugins]");
 const catalog = require("../core/pluginCatalog.js");
 const pluginRuntime = require("../core/pluginRuntime.js");
-ok("内置插件清单同步为 12 个", catalog.plugins.length, 12);
-ok("小程序原生适配 4 个", catalog.plugins.filter((x) => x.platforms.miniprogram === "native").length, 4);
+const fs = require("fs"), path = require("path");
+const pluginDir = path.resolve(__dirname,"../../le-time-management/public/plugins");
+const manifests = fs.readdirSync(pluginDir).filter(id=>fs.existsSync(path.join(pluginDir,id,"manifest.json"))).map(id=>JSON.parse(fs.readFileSync(path.join(pluginDir,id,"manifest.json"),"utf8")));
+ok("插件清单逐项与桌面事实源一致", catalog.plugins.map(p=>p.id+"@"+p.version).sort(), manifests.map(p=>p.id+"@"+p.version).sort());
+const routes = require("../core/pluginRoutes.js");
+ok("每个原生插件都存在适配入口", catalog.plugins.filter(p=>p.platforms.miniprogram==="native").map(p=>p.id).sort(), routes.GENERIC.concat(Object.keys(routes.SPECIAL)).sort());
 store.setPluginEnabled("pomodoro", false);
 ok("插件启停写入与桌面相同的 plugins 字段", store.getState().plugins.pomodoro.enabled, false);
 store.setPluginEnabled("pomodoro", true);

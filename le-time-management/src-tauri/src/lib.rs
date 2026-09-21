@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewUrl, WebviewWindowBuilder};
+#[cfg(not(target_os = "windows"))]
 use tauri_plugin_opener::OpenerExt as _;
 
 mod lan;
@@ -1293,19 +1294,59 @@ fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err("仅支持 http/https 链接".into());
     }
-    app.opener()
-        .open_url(url, None::<&str>)
-        .map_err(|e| format!("打开失败: {e}"))
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        return open_url_with_shell_execute(&url);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        return app
+            .opener()
+            .open_url(url, None::<&str>)
+            .map_err(|e| format!("打开失败: {e}"));
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_url_with_shell_execute(url: &str) -> Result<(), String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let operation: Vec<u16> = OsStr::new("open").encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = OsStr::new(url).encode_wide().chain(Some(0)).collect();
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            target.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+    if result <= 32 {
+        return Err(format!("打开失败: ShellExecuteW 返回 {result}"));
+    }
+    Ok(())
 }
 
 /// 在 U-Time 自己的 WebView 窗口中打开普通网页。
 ///
 /// 窗口 label 每次递增，避免 Android runtime 已销毁的 WebView 仍残留在注册表里；
 /// capability 只授权 `main`，因此远程页面拿不到任何 Tauri IPC 权限。
+///
+/// ⚠️ **必须是 `async`**：同步命令在主线程的 IPC 回调里执行，而 `build()` 要等
+/// WebView2 控制器创建完成的回调 —— 那个回调同样只能由主线程的事件循环派发。
+/// 在主线程里再入主线程就是死锁：窗口框画出来了、内容永远是白的，整个应用一起卡住。
+/// 走 async 时命令在 worker 线程执行，`build()` 把创建请求代理给事件循环，主线程
+/// 照常泵消息。教务导入窗口（`school_import_open`）一直是这么写的，所以没踩到。
 static BROWSER_WINDOW_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[tauri::command]
-fn open_internal(app: AppHandle, url: String) -> Result<(), String> {
+async fn open_internal(app: AppHandle, url: String) -> Result<(), String> {
     let parsed: Url = url.parse().map_err(|e| format!("网页地址无效: {e}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("仅支持 http/https 链接".into());

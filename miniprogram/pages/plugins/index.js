@@ -1,4 +1,5 @@
 const store = require("../../core/store.js");
+const routes = require("../../core/pluginRoutes.js");
 const catalog = require("../../core/pluginCatalog.js");
 
 const STATUS = {
@@ -18,7 +19,7 @@ function platformText(man) {
 }
 
 Page({
-  data: { allPlugins: [], plugins: [], nativeCount: 0, pluginCount: 0, query: "", filter: "all" },
+  data: { allPlugins: [], plugins: [], nativeCount: 0, pluginCount: 0, query: "", filter: "all", showPluginDesc: false },
 
   onShow() { this.refresh(); },
 
@@ -34,6 +35,7 @@ Page({
       iconPath: `/images/plugins/${man.id}.png`,
       version: man.version,
       description: man.description,
+      miniNote: routes.NOTES[man.id] || "",
       platforms: platformText(man),
       miniNative: man.platforms && man.platforms.miniprogram === "native",
       enabled: store.isPluginEnabled(man.id),
@@ -45,6 +47,7 @@ Page({
     });
     this.setData({
       allPlugins: plugins,
+      showPluginDesc: !!(state.settings && state.settings.showPluginDesc),
       nativeCount: plugins.filter((x) => x.miniNative).length,
       pluginCount: plugins.length,
     }, () => this.applyFilter());
@@ -88,6 +91,6 @@ Page({
       });
       return;
     }
-    wx.navigateTo({ url: "/pages/plugin/index?id=" + encodeURIComponent(id) });
+    wx.navigateTo({ url: routes.route(id) });
   },
 });

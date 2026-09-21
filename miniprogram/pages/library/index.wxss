@@ -1,0 +1,13 @@
+.page-heading { font-size:38rpx; font-weight:700; margin-bottom:16rpx; }
+.library-actions { display:flex; flex-wrap:wrap; align-items:center; margin:16rpx -6rpx 6rpx; }
+.library-actions .btn { margin:6rpx; }
+.picker-label { padding:14rpx 12rpx; color:var(--deep); }
+.card .input { margin-bottom:16rpx; }
+.library-error { display:block; color:var(--danger-ink); line-height:1.65; font-size:24rpx; margin-top:12rpx; word-break:break-all; }
+.feed-row { border-top:1rpx solid var(--line); padding:20rpx 0; }
+.feed-main text { display:block; }
+.row-title { font-size:30rpx; font-weight:650; line-height:1.6; word-break:break-word; }
+.row-note { white-space:pre-wrap; font-size:26rpx; line-height:1.8; margin:12rpx 0; }
+.muted-url { display:block; color:var(--ink-2); font-size:22rpx; word-break:break-all; line-height:1.7; }
+.list-count { color:var(--ink-2); font-size:24rpx; margin:20rpx 0; }
+.library-row.read .row-title { color:var(--ink-2); }

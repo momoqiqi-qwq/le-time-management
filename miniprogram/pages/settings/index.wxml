@@ -2,7 +2,7 @@
   <!-- 数据 -->
   <view class="card">
     <view class="at">数 据</view>
-    <view class="desc">所有数据保存在小程序本地存储中，不上传任何服务器。备份 JSON 与桌面端（Tauri / Android 版）格式一致，可互相导入恢复。</view>
+    <view class="desc">核心任务默认保存在本机。只有你主动使用联网插件、文件分享或局域网传输时才会联网/传出数据。JSON 备份与 Windows / Android 互通，可能含插件登录态和配对码，请妥善保管。</view>
     <view class="statrow">
       <view class="stat"><text class="n">{{stats.tasks}}</text><text class="l">任务</text></view>
       <view class="stat"><text class="n">{{stats.open}}</text><text class="l">待办</text></view>
@@ -11,22 +11,27 @@
       <view class="stat"><text class="n">{{stats.kb}}</text><text class="l">KB</text></view>
     </view>
     <view wx:if="{{stats.warn}}" class="warn">
-      存储占用偏高（本机共 {{stats.total}} KB / 10MB，主数据 {{stats.kb}} KB / 单 key 上限 1MB）。接近上限会保存失败，建议删除带图片附件的旧任务或先导出备份。
+      存储占用偏高（{{stats.total}} / {{stats.limit}} KB）。大快照自动分块，但仍受微信总容量限制；写入需要临时空间，建议先导出备份并清理旧缓存/附件。
     </view>
-    <view class="setbtns">
-      <button class="btn pri" bindtap="onExport">导出备份（复制 JSON）</button>
-    </view>
+    <view wx:if="{{storageError}}" class="warn">{{locked ? '原存档已进入保护状态，不会用空数据覆盖。' : '最近保存未完成：'}} {{storageError}}</view>
+    <view class="setbtns"><button class="btn pri" data-kind="backup" bindtap="onExportFile">导出 JSON 文件</button><button class="btn ghost" bindtap="onExport">复制 JSON</button></view>
+    <view class="mini-filters"><button class="btn ghost small" data-kind="tasks" bindtap="onExportFile">任务 CSV</button><button class="btn ghost small" data-kind="blocks" bindtap="onExportFile">时间块 CSV</button><button class="btn ghost small" data-kind="ics" bindtap="onExportFile">日历 ICS</button></view>
+    <view class="desc">JSON 完整保留任务、附件、收件箱、插件和额外设置；CSV 用于表格互通。导入前先预览，保存失败不会替换原数据。</view>
     <view class="imp">
       <textarea
         class="textarea"
-        placeholder="把备份 JSON 粘贴到这里，点下方按钮导入…"
+        placeholder="短备份可粘贴 JSON；较大备份请通过文件导入"
         value="{{importText}}"
-        maxlength="-1"
+        maxlength="80000"
         bindinput="onImportText"
       ></textarea>
-      <button class="btn ghost block" bindtap="onImport">导入备份</button>
+      <view class="mini-filters"><button class="btn ghost" bindtap="onChooseBackup">选择 JSON / 任务 CSV</button><button class="btn ghost" bindtap="onImport">解析预览</button></view><view class="desc">{{fileName}}</view>
+      <view wx:if="{{preview}}" class="import-preview"><view>备份预览：{{preview.tasks}} 个任务 · {{preview.blocks}} 个时间块 · {{preview.inbox}} 条收件箱 · {{preview.plugins}} 个插件配置</view><picker range="{{restoreOptions}}" value="{{restoreMode}}" bindchange="onRestoreMode"><view class="pv">{{restoreOptions[restoreMode]}} ▾</view></picker><button class="btn pri block" bindtap="onConfirmImport">确认导入</button></view>
     </view>
   </view>
+
+  <view class="card"><view class="at">局域网直连电脑</view><view class="desc">电脑端先开启“设置 → 局域网联动”，两端使用同一可信 Wi-Fi。粘贴电脑复制的配对链接。HTTP 局域网传输不加密，请勿在公共网络使用；若微信限制本地网络，请改用备份文件互传。</view><input class="input" value="{{lanAddress}}" data-field="lanAddress" placeholder="192.168.1.5:27123 或电脑配对链接" bindinput="onLanInput"/><input class="input" password value="{{lanToken}}" data-field="lanToken" placeholder="配对码（完整链接会自动提取）" bindinput="onLanInput"/><view class="mini-filters"><button class="btn ghost small" disabled="{{lanBusy}}" bindtap="onLanInfo">测试连接</button><button class="btn pri small" disabled="{{lanBusy}}" bindtap="onLanPull">拉取并预览</button><button class="btn ghost small" disabled="{{lanBusy || locked}}" bindtap="onLanPush">提交到电脑待确认</button><button wx:if="{{pushId}}" class="btn ghost small" disabled="{{lanBusy}}" bindtap="onLanStatus">查询接收结果</button></view><view class="desc">{{lanMessage}}</view></view>
+  <view class="card"><view class="at">收件箱</view><view class="desc">处理跨端通知和捕获草稿，保留结构化截止时间与附件。桌面 AI / 后台自动化配置随备份保留，但不会在小程序中自动执行。</view><button class="btn pri" bindtap="onInbox">打开收件箱</button></view>
 
   <!-- 任务提醒 -->
   <view class="card">
@@ -43,6 +48,8 @@
   <view class="card">
     <view class="at">插 件</view>
     <view class="desc">三端共用同一插件清单与启停状态。Windows / Android 运行完整插件宿主；小程序对可移植插件提供原生适配。</view>
+    <view class="setting-line"><text>插件中心显示描述</text><switch checked="{{showPluginDesc}}" bindchange="onShowPluginDesc" /></view>
+    <view class="desc">默认关闭，插件卡片只显示名称、版本与平台标签，列表更短。开启后显示每个插件的功能说明与小程序适配边界；关闭时搜索仍然会匹配描述文字。</view>
     <view class="setbtns plugins-entry">
       <button class="btn pri block" bindtap="onPlugins">打开插件中心</button>
     </view>
@@ -76,7 +83,7 @@
 
     <view class="about-note">{{about.edition}} · 插件清单与启停状态三端同步；部分插件因小程序运行时限制仅在 Windows / Android 可用。</view>
     <view class="danger-zone">
-      <button class="btn danger" bindtap="onResetSeed">恢复示例数据（清空当前）</button>
+      <button class="btn danger" bindtap="onResetSeed">清空当前数据</button>
     </view>
   </view>
 </view>
