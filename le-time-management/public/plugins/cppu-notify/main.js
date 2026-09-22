@@ -20,7 +20,13 @@
   const CARD_HOME = CARD_ORIGIN + "/campus-card/?appId=2&loginFrom=h5&type=app";
   const CARD_RECHARGE = CARD_ORIGIN + "/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app";
   const CARD_CENTER = CARD_ORIGIN + "/campus-card/userCenter?name=userCenter&appId=2&loginFrom=h5&type=app";
-  const CARD_LEDGER_KEY = "cardRechargeLedger";
+  const CARD_BILLING = CARD_ORIGIN + "/campus-card/billing/list?name=billList&appId=24&loginFrom=h5&type=app";
+  const CARD_AUTH_URL = CARD_ORIGIN + "/berserker-auth/oauth/token";
+  const CARD_BILLS_URL = CARD_ORIGIN + "/berserker-search/search/personal/turnover";
+  const CARD_BASIC_AUTH = "Basic bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm06bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm1fc2VjcmV0";
+  const CARD_VAULT_KEY = "cardSecret";
+  const CARD_CACHE_KEY = "cardRechargeCache";
+  const CARD_PAGE_SIZE = 100, CARD_MAX_PAGES = 50;
   const PAGES_MAX = 10, PAGE_SIZE = 50, CHUNK = 15;
   const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
@@ -388,8 +394,11 @@
       .yk-total small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
       .yk-total b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
       .yk-total span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
-      .yk-form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:140px 130px 1fr auto;gap:8px;align-items:center}
-      .yk-form input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}
+      .yk-login{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:minmax(140px,1fr) minmax(160px,1fr) auto;gap:8px;align-items:center}
+      .yk-login input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}
+      .yk-login small{grid-column:1/-1;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));line-height:1.7}
+      .yk-account{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale))}
+      .yk-account b{color:var(--ink)}
       .yk-groups{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
       .yk-group-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
       .yk-group-head b{font-size:calc(12.5px * var(--ui-text-scale));color:var(--deep)}
@@ -398,7 +407,7 @@
       .yk-bar i{display:block;height:9px;border-radius:99px;background:linear-gradient(90deg,#2EC4B6,#0F4C5C);min-width:2px}
       .yk-bar span:last-child{text-align:right;color:var(--deep);font-weight:650}
       .yk-ledger{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
-      .yk-ledger-row{display:grid;grid-template-columns:100px 1fr auto auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft);font-size:calc(11.5px * var(--ui-text-scale))}
+      .yk-ledger-row{display:grid;grid-template-columns:100px 1fr auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft);font-size:calc(11.5px * var(--ui-text-scale))}
       .yk-ledger-row:first-child{border-top:0}
       .yk-ledger-row b{color:var(--deep)}
       .yk-empty{color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale));line-height:1.7}
@@ -427,12 +436,11 @@
         .pp-side-txt b,.pp-side-txt small{max-width:96px}
         .pp-side-note{display:none}
         .yk-stat{grid-template-columns:1fr}
-        .yk-form{grid-template-columns:1fr 1fr}
-        .yk-form input[data-card-note]{grid-column:1/-1}
-        .yk-form .pp-btn{grid-column:1/-1;min-height:44px}
+        .yk-login{grid-template-columns:1fr}
+        .yk-login small{grid-column:auto}
+        .yk-login .pp-btn{min-height:44px}
         .yk-bar{grid-template-columns:78px 1fr 76px}
         .yk-ledger-row{grid-template-columns:86px 1fr auto}
-        .yk-ledger-row .pp-btn{grid-column:1/-1}
         .yk-frame-shell{height:calc(100vh - 230px);min-height:520px}
       }
       @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail,.pp-side,.pp-side-inner,.pp-side-toggle{transition-duration:.01ms!important}}
@@ -2060,10 +2068,9 @@
     return () => { jwMounted.delete(cfg.id); };
   }
 
-  const cardState = { rows: [], mode: "month" };
-  const cardToday = () => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const cardState = {
+    rows: [], mode: "month", sid: null, username: "", password: "", accessToken: "",
+    tokenType: "bearer", refreshToken: "", expiresAt: 0, loading: false, syncedAt: 0, error: "",
   };
   const cardMoney = (n) => `¥${(Number(n) || 0).toFixed(2)}`;
   const cardPeriodKey = (date, mode) => {
@@ -2086,12 +2093,30 @@
   };
   function cardCleanRows(rows) {
     return (Array.isArray(rows) ? rows : []).map((r) => ({
-      id: String(r.id || `${r.date || cardToday()}-${Math.random().toString(36).slice(2)}`),
-      date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || "")) ? String(r.date) : cardToday(),
+      id: String(r.id || `${r.date || "unknown"}-${r.amount || 0}-${r.note || ""}`),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || "")) ? String(r.date) : "",
       amount: Math.max(0, Math.round((Number(r.amount) || 0) * 100) / 100),
       note: String(r.note || "").slice(0, 80),
-      at: Number(r.at || Date.now()),
-    })).filter((r) => r.amount > 0).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.at - a.at).slice(0, 1000);
+      at: Number(r.at || 0),
+    })).filter((r) => r.date && r.amount > 0).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.at - a.at).slice(0, 5000);
+  }
+  function cardRecordText(row) {
+    return [row?.resume, row?.turnoverType, row?.title, row?.summary, row?.typeName, row?.remark]
+      .filter(Boolean).join(" ");
+  }
+  function cardIsRecharge(row) {
+    const text = cardRecordText(row);
+    if (String(row?.typeFrom || "") !== "1") return false;
+    if (/退款|退费|冲正|撤销|补助|补贴|奖学金/.test(text)) return false;
+    return /充值|圈存|存款/.test(text);
+  }
+  function cardNormalizeBill(row) {
+    const rawDate = String(row?.effectdateStr || row?.jndatetimeStr || row?.effectdate || row?.jndatetime || "");
+    const date = rawDate.match(/\d{4}[-/]\d{2}[-/]\d{2}/)?.[0]?.replaceAll("/", "-") || "";
+    const amount = Math.abs(Number(row?.tranamt || 0)) / 100;
+    const note = cardRecordText(row) || "一卡通充值";
+    const id = String(row?.orderId || row?.id || row?.serialNo || `${date}-${amount}-${note}`);
+    return { id, date, amount, note, at: Date.parse(rawDate.replaceAll("/", "-")) || 0 };
   }
   function cardTotals(mode = cardState.mode) {
     const groups = new Map();
@@ -2111,29 +2136,144 @@
       `<button type="button" class="pp-chip${cardState.mode === mode ? " on" : ""}" data-card-mode="${mode}">${label}</button>`).join("");
     const bars = items.length ? items.slice(0, 18).map((it) =>
       `<div class="yk-bar"><span>${esc(cardPeriodLabel(it.key, cardState.mode))}</span><i style="width:${Math.max(4, Math.round(it.amount / max * 100))}%"></i><span>${esc(cardMoney(it.amount))}</span></div>`).join("")
-      : `<div class="yk-empty">还没有充值记录。先在上方录一笔，就能按年、月、日自动统计。</div>`;
+      : `<div class="yk-empty">暂未从一卡通账单识别到充值记录。连接校园网后点“同步账单”再试。</div>`;
     const rows = cardState.rows.slice(0, 12).map((r) => `<div class="yk-ledger-row" data-card-row="${esc(r.id)}">
-      <span>${esc(r.date)}</span><b>${esc(cardMoney(r.amount))}</b><span>${esc(r.note || "一卡通充值")}</span><button type="button" class="pp-btn" data-card-del="${esc(r.id)}">删除</button>
-    </div>`).join("") || `<div class="yk-empty">暂无记录。这里保存的是 U-Time 本地充值台账，不会写入一卡通平台。</div>`;
+      <span>${esc(r.date)}</span><b>${esc(cardMoney(r.amount))}</b><span>${esc(r.note || "一卡通充值")}</span>
+    </div>`).join("") || `<div class="yk-empty">暂无平台充值记录。本页不再需要手工“记一笔”。</div>`;
+    const synced = cardState.syncedAt ? new Date(cardState.syncedAt).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
     return `<div class="yk-stat">
-      <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${cardState.rows.length} 笔本地记录，可按年份 / 月份 / 日期汇总查看。</span></div>
-      <div class="yk-form">
-        <input type="date" data-card-date value="${esc(cardToday())}" aria-label="充值日期">
-        <input type="number" data-card-amount min="0" step="0.01" placeholder="金额" aria-label="充值金额">
-        <input type="text" data-card-note maxlength="80" placeholder="备注，可不填" aria-label="充值备注">
-        <button type="button" class="pp-btn pri" data-card-add>记一笔</button>
-      </div>
+      <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${cardState.rows.length} 笔一卡通平台充值记录，可按年份 / 月份 / 日期汇总查看。</span></div>
+      <div class="yk-account"><span>账单来源：<b>一卡通平台</b></span><span>最后同步：${esc(synced)}</span>${cardState.error ? `<span class="warn">${esc(cardState.error)}</span>` : ""}</div>
     </div>
     <div class="yk-groups"><div class="yk-group-head"><b>充值统计</b><div class="pp-chips">${chips}</div></div><div class="yk-bars">${bars}</div></div>
     <div class="yk-ledger">${rows}</div>`;
   }
-  async function cardSaveRows() {
-    cardState.rows = cardCleanRows(cardState.rows);
-    await tide.storage.set(CARD_LEDGER_KEY, cardState.rows);
-  }
   function cardPaintStats(root) {
     const box = root?.querySelector?.("[data-card-stats]");
     if (box) box.innerHTML = cardStatsHtml();
+  }
+  function cardPaintLogin(root) {
+    const box = root?.querySelector?.("[data-card-login-box]");
+    if (!box) return;
+    if (cardState.accessToken && !cardState.error) {
+      box.innerHTML = `<div class="yk-account"><span>已自动登录：<b>${esc(cardState.username || "一卡通账号")}</b></span><span>账号和密码已加密保存在本机密钥库。</span><button type="button" class="pp-btn" data-card-change>更换账号</button></div>`;
+      return;
+    }
+    box.innerHTML = `<div class="yk-login">
+      <input type="text" inputmode="numeric" autocomplete="username" data-card-user value="${esc(cardState.username)}" placeholder="学/工号" aria-label="一卡通学号或工号">
+      <input type="password" autocomplete="current-password" data-card-pass value="${esc(cardState.password)}" placeholder="一卡通密码" aria-label="一卡通密码">
+      <button type="button" class="pp-btn pri" data-card-login>${cardState.loading ? "正在登录…" : "登录并自动同步"}</button>
+      <small>登录成功后，账号、密码和令牌只会加密保存在本机密钥库；下次打开将完全自动登录并同步账单。</small>
+    </div>`;
+  }
+  function cardSetStatus(root, text, warn = false) {
+    const status = root?.querySelector?.("[data-card-status]");
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle("warn", warn);
+  }
+  function cardAuthedUrl(url) {
+    if (!cardState.accessToken) return url;
+    const clean = String(url).replace(/([?&])synjones-auth=[^&#]*&?/i, (all, lead) => lead === "?" ? "?" : "").replace(/[?&]$/, "");
+    const sep = clean.includes("?") ? "&" : "?";
+    return `${clean}${sep}synjones-auth=${encodeURIComponent(cardState.accessToken)}`;
+  }
+  async function cardSaveSecret() {
+    await tide.vault.set(CARD_VAULT_KEY, JSON.stringify({
+      username: cardState.username, password: cardState.password, accessToken: cardState.accessToken,
+      tokenType: cardState.tokenType, refreshToken: cardState.refreshToken, expiresAt: cardState.expiresAt,
+    }));
+  }
+  async function cardRestoreSecret() {
+    let saved = null;
+    try { saved = JSON.parse((await tide.vault.get(CARD_VAULT_KEY)) || "null"); } catch { saved = null; }
+    cardState.username = String(saved?.username || await tide.storage.get("username", "") || "");
+    cardState.password = String(saved?.password || "");
+    if (!cardState.password) {
+      try { cardState.password = String(JSON.parse((await tide.vault.get("secret")) || "null")?.password || ""); } catch { cardState.password = ""; }
+    }
+    cardState.accessToken = String(saved?.accessToken || "");
+    cardState.tokenType = String(saved?.tokenType || "bearer");
+    cardState.refreshToken = String(saved?.refreshToken || "");
+    cardState.expiresAt = Number(saved?.expiresAt || 0);
+  }
+  async function cardLogin(username, password) {
+    if (!username || !password) throw new Error("请输入一卡通学/工号和密码");
+    if (!cardState.sid) cardState.sid = await tide.http.session();
+    const body = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}` +
+      "&grant_type=password&scope=all&loginFrom=h5&logintype=sno&device_token=h5";
+    const res = await tide.http.fetch(cardState.sid, "POST", CARD_AUTH_URL, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: CARD_BASIC_AUTH, Accept: "application/json" },
+      body,
+    });
+    let data = null;
+    try { data = JSON.parse(String(res?.body || "")); } catch { data = null; }
+    if (res.status >= 400 || !data?.access_token) {
+      const msg = data?.message || data?.msg || data?.error_description || `登录失败（HTTP ${res.status}）`;
+      throw new Error(String(msg));
+    }
+    cardState.username = username;
+    cardState.password = password;
+    cardState.accessToken = String(data.access_token);
+    cardState.tokenType = String(data.token_type || "bearer");
+    cardState.refreshToken = String(data.refresh_token || "");
+    cardState.expiresAt = Date.now() + Math.max(0, Number(data.expires_in || 0) - 60) * 1000;
+    await cardSaveSecret();
+  }
+  async function cardFetchBills() {
+    if (!cardState.sid) cardState.sid = await tide.http.session();
+    const all = [];
+    const headers = { Accept: "application/json", Referer: CARD_BILLING, "synjones-auth": `${cardState.tokenType || "bearer"} ${cardState.accessToken}` };
+    for (let current = 1; current <= CARD_MAX_PAGES; current++) {
+      const url = `${CARD_BILLS_URL}?size=${CARD_PAGE_SIZE}&current=${current}`;
+      const res = await tide.http.fetch(cardState.sid, "GET", url, { headers });
+      let data = null;
+      try { data = JSON.parse(String(res?.body || "")); } catch { data = null; }
+      if (res.status === 401 || data?.code === 401) { const error = new Error("一卡通登录已过期"); error.code = 401; throw error; }
+      if (res.status >= 400 || Number(data?.code || 200) >= 400) throw new Error(data?.message || `账单同步失败（HTTP ${res.status}）`);
+      const page = data?.data || data || {};
+      const records = Array.isArray(page.records) ? page.records : [];
+      all.push(...records);
+      const pages = Number(page.pages || Math.ceil(Number(page.total || records.length) / CARD_PAGE_SIZE) || 1);
+      if (!records.length || current >= pages) break;
+    }
+    const seen = new Set();
+    return cardCleanRows(all.filter(cardIsRecharge).map(cardNormalizeBill).filter((r) => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    }));
+  }
+  async function cardSync(root, forceLogin = false) {
+    if (cardState.loading) return;
+    cardState.loading = true;
+    cardState.error = "";
+    cardPaintLogin(root);
+    cardSetStatus(root, "正在自动登录并同步一卡通账单…");
+    try {
+      if (forceLogin || !cardState.accessToken || cardState.expiresAt <= Date.now()) {
+        await cardLogin(cardState.username, cardState.password);
+      }
+      try {
+        cardState.rows = await cardFetchBills();
+      } catch (error) {
+        if (error?.code !== 401 || !cardState.password) throw error;
+        await cardLogin(cardState.username, cardState.password);
+        cardState.rows = await cardFetchBills();
+      }
+      cardState.syncedAt = Date.now();
+      await tide.storage.set(CARD_CACHE_KEY, { rows: cardState.rows, syncedAt: cardState.syncedAt });
+      const frame = root?.querySelector?.("[data-card-frame]");
+      if (frame) frame.src = cardAuthedUrl(CARD_BILLING);
+      cardSetStatus(root, `已自动登录并同步 ${cardState.rows.length} 笔充值记录。`);
+    } catch (error) {
+      cardState.error = error?.message || String(error);
+      cardSetStatus(root, `${cardState.error}。请核对一卡通密码，或确认当前网络能访问校园一卡通。`, true);
+    } finally {
+      cardState.loading = false;
+      cardPaintLogin(root);
+      cardPaintStats(root);
+    }
   }
 
   function cardShellHtml() {
@@ -2143,7 +2283,9 @@
       <div class="jw-kicker">校 园 服 务 · 一 卡 通</div>
       <div class="jw-head"><h3>一卡通</h3><span>慧新易校 / 新中新 H5</span></div>
       <div class="pp-toolbar">
-        <button class="pp-btn pri" data-card-home>首页登录</button>
+        <button class="pp-btn pri" data-card-billing>账单</button>
+        <button class="pp-btn" data-card-sync>同步账单</button>
+        <button class="pp-btn" data-card-home>首页</button>
         <button class="pp-btn" data-card-recharge>充值</button>
         <button class="pp-btn" data-card-center>账户中心</button>
         <button class="pp-btn" data-card-reload>刷新</button>
@@ -2151,10 +2293,11 @@
         <button class="pp-btn" data-card-back>回通知</button>
         <span style="flex:1"></span>
       </div>
-      <div class="jw-tip">一卡通平台有自己的 H5 登录态，不吃警大门户 SSO 票据。这里默认先进入首页/登录壳，登录成功后再点「充值」或「账户中心」，避免直接打开受保护深链时报「未授权」。</div>
+      <div class="jw-tip">U-Time 会自动登录一卡通并读取平台账单，充值总量及年/月/日统计均来自平台数据。首次登录成功后凭据加密保存在本机，下次无需再次输入。</div>
+      <div data-card-login-box></div>
       <div data-card-stats>${cardStatsHtml()}</div>
-      <div class="yk-status" data-card-status>正在载入一卡通首页…</div>
-      <div class="yk-frame-shell"><iframe class="yk-frame" data-card-frame src="${esc(CARD_HOME)}" title="一卡通"></iframe></div>
+      <div class="yk-status" data-card-status>正在恢复一卡通登录信息…</div>
+      <div class="yk-frame-shell"><iframe class="yk-frame" data-card-frame src="${esc(CARD_BILLING)}" title="一卡通账单"></iframe></div>
       <div style="height:30px"></div>
       </div></div>
     </div>`;
@@ -2170,11 +2313,11 @@
     const go = (url, text) => {
       if (!frame) return;
       if (status) { status.textContent = text || "正在载入…"; status.classList.remove("warn"); }
-      frame.src = url;
+      frame.src = cardAuthedUrl(url);
     };
     frame?.addEventListener("load", () => {
       if (status) {
-        status.textContent = "已在 U-Time 内打开。一卡通登录态由平台页面自己维护；若页面提示未授权，请先点「首页登录」完成登录后再进入子功能。";
+        status.textContent = cardState.accessToken ? "一卡通页面已在 U-Time 内打开，并已携带自动登录令牌。" : "一卡通页面已打开，正在等待自动登录。";
         status.classList.remove("warn");
       }
     });
@@ -2185,41 +2328,44 @@
       }
     });
     el.addEventListener("click", (e) => {
-      if (e.target.closest("[data-card-home]")) { go(CARD_HOME, "正在打开一卡通首页/登录入口…"); return; }
-      if (e.target.closest("[data-card-recharge]")) { go(CARD_RECHARGE, "正在进入一卡通充值页…若提示未授权，请先回首页登录。"); return; }
-      if (e.target.closest("[data-card-center]")) { go(CARD_CENTER, "正在进入一卡通账户中心…若提示未授权，请先回首页登录。"); return; }
-      if (e.target.closest("[data-card-reload]")) { go(frame?.src || CARD_HOME, "正在刷新当前一卡通页面…"); return; }
-      if (e.target.closest("[data-card-open]")) { tide.util.openUrl(frame?.src || CARD_HOME); return; }
+      if (e.target.closest("[data-card-billing]")) { go(CARD_BILLING, "正在打开一卡通账单…"); return; }
+      if (e.target.closest("[data-card-sync]")) { cardSync(el); return; }
+      if (e.target.closest("[data-card-home]")) { go(CARD_HOME, "正在打开一卡通首页…"); return; }
+      if (e.target.closest("[data-card-recharge]")) { go(CARD_RECHARGE, "正在进入一卡通充值页…"); return; }
+      if (e.target.closest("[data-card-center]")) { go(CARD_CENTER, "正在进入一卡通账户中心…"); return; }
+      if (e.target.closest("[data-card-reload]")) { go(frame?.src || CARD_BILLING, "正在刷新当前一卡通页面…"); return; }
+      if (e.target.closest("[data-card-open]")) { tide.util.openUrl(frame?.src || cardAuthedUrl(CARD_BILLING)); return; }
       if (e.target.closest("[data-card-back]")) { tide.util.navigate("plug:cppu-notify"); return; }
+      if (e.target.closest("[data-card-login]")) {
+        cardState.username = el.querySelector("[data-card-user]")?.value?.trim() || "";
+        cardState.password = el.querySelector("[data-card-pass]")?.value || "";
+        cardSync(el, true);
+        return;
+      }
+      if (e.target.closest("[data-card-change]")) {
+        cardState.accessToken = "";
+        cardState.password = "";
+        cardState.error = "请输入新的账号和密码";
+        tide.vault?.del?.(CARD_VAULT_KEY).catch?.(() => {});
+        cardPaintLogin(el);
+        return;
+      }
       const modeBtn = e.target.closest("[data-card-mode]");
       if (modeBtn) {
         cardState.mode = modeBtn.dataset.cardMode || "month";
         cardPaintStats(el);
         return;
       }
-      if (e.target.closest("[data-card-add]")) {
-        const date = el.querySelector("[data-card-date]")?.value || cardToday();
-        const amount = Number(el.querySelector("[data-card-amount]")?.value || 0);
-        const note = el.querySelector("[data-card-note]")?.value || "";
-        if (!Number.isFinite(amount) || amount <= 0) { tide.notify("请输入大于 0 的充值金额"); return; }
-        cardState.rows.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date, amount, note, at: Date.now() });
-        cardSaveRows().then(() => {
-          cardPaintStats(el);
-          tide.notify("已记录一卡通充值");
-        });
-        return;
-      }
-      const delBtn = e.target.closest("[data-card-del]");
-      if (delBtn) {
-        const id = delBtn.dataset.cardDel || "";
-        cardState.rows = cardState.rows.filter((r) => r.id !== id);
-        cardSaveRows().then(() => cardPaintStats(el));
-        return;
-      }
     });
     (async () => {
-      cardState.rows = cardCleanRows(await tide.storage.get(CARD_LEDGER_KEY, []));
+      const cache = await tide.storage.get(CARD_CACHE_KEY, null);
+      cardState.rows = cardCleanRows(cache?.rows || []);
+      cardState.syncedAt = Number(cache?.syncedAt || 0);
+      await cardRestoreSecret();
+      cardPaintLogin(el);
       cardPaintStats(el);
+      if (cardState.username && cardState.password) await cardSync(el);
+      else cardSetStatus(el, "首次使用请输入一卡通学/工号和密码；成功后将自动保存并在下次完全自动登录。", true);
     })();
   }
 

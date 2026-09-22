@@ -7,8 +7,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -131,15 +131,29 @@ for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', '
 }
 assert.match(source, /\{\s*view:\s*"cppu-card"[^}]*label:\s*"一卡通"[^}]*icon:\s*"credit-card"/,
   '一卡通入口必须是 U-Time 内部视图，不能直接撞受保护充值深链');
-assert.ok(source.includes('const CARD_HOME = CARD_ORIGIN + "/campus-card/?appId=2&loginFrom=h5&type=app"'),
-  '一卡通视图必须默认先进入首页/登录壳，避免未授权');
+assert.ok(source.includes('const CARD_BILLING = CARD_ORIGIN + "/campus-card/billing/list?name=billList&appId=24&loginFrom=h5&type=app"'),
+  '一卡通视图必须使用平台账单地址');
 assert.ok(source.includes('const CARD_RECHARGE = CARD_ORIGIN + "/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app"'),
   '一卡通充值深链只能作为应用内视图按钮的目标保留');
-assert.ok(source.includes('CARD_LEDGER_KEY = "cardRechargeLedger"'), '一卡通充值统计必须保存到插件本地 storage');
+assert.ok(source.includes('CARD_AUTH_URL') && source.includes('/berserker-auth/oauth/token'), '一卡通必须通过平台 OAuth 自动登录');
+assert.ok(source.includes('CARD_BILLS_URL') && source.includes('/berserker-search/search/personal/turnover'), '一卡通充值统计必须读取平台账单接口');
+assert.ok(source.includes('CARD_VAULT_KEY = "cardSecret"') && source.includes('tide.vault.set(CARD_VAULT_KEY'), '一卡通账号密码必须保存到加密密钥库');
+assert.ok(source.includes('CARD_CACHE_KEY = "cardRechargeCache"'), '一卡通平台账单必须支持本地只读缓存');
 assert.ok(source.includes('总充值量') && source.includes('按年份 / 月份 / 日期'), '一卡通视图必须显示总充值量，并说明可按年/月/日汇总');
 assert.ok(source.includes('year: "按年"') && source.includes('month: "按月"') && source.includes('day: "按日"'),
   '一卡通充值统计必须支持按年、按月、按日三种模式');
-assert.ok(source.includes('data-card-add') && source.includes('data-card-del'), '一卡通充值台账必须支持新增和删除记录');
+assert.ok(source.includes('data-card-sync') && source.includes('data-card-login'), '一卡通视图必须支持自动登录和主动同步');
+assert.ok(!source.includes('data-card-add') && !source.includes('data-card-del'), '一卡通统计不得再让用户手工新增或删除充值记录');
+assert.equal(cardIsRecharge({typeFrom:'1',resume:'校园卡充值'}), true, '平台入账中的充值应被识别');
+assert.equal(cardIsRecharge({typeFrom:'1',resume:'微信支付转账',turnoverType:'充值'}), true, '平台真实的微信转账充值不得被误排除');
+assert.equal(cardIsRecharge({typeFrom:'0',resume:'食堂消费'}), false, '消费流水不得计入充值量');
+assert.equal(cardIsRecharge({typeFrom:'1',resume:'助学金补助'}), false, '补助入账不得误算成充值');
+const normalizedBill=cardNormalizeBill({orderId:'bill-1',effectdateStr:'2026-09-22 08:30:00',tranamt:12345,resume:'校园卡充值'});
+assert.deepEqual({...normalizedBill},{id:'bill-1',date:'2026-09-22',amount:123.45,note:'校园卡充值',at:Date.parse('2026-09-22 08:30:00')});
+cardState.rows=[normalizedBill,{...normalizedBill,id:'bill-2',date:'2026-08-01',amount:50}];
+cardState.mode='month';
+assert.equal(cardTotals().total,173.45,'平台充值流水必须正确汇总总充值量');
+assert.match(cardStatsHtml(),/一卡通平台充值记录/);
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
