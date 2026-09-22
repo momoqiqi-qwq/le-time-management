@@ -23,6 +23,8 @@
   const CARD_BILLING = CARD_ORIGIN + "/campus-card/billing/list?name=billList&appId=24&loginFrom=h5&type=app";
   const CARD_AUTH_URL = CARD_ORIGIN + "/berserker-auth/oauth/token";
   const CARD_BILLS_URL = CARD_ORIGIN + "/berserker-search/search/personal/turnover";
+  const CARD_LIST_URL = CARD_ORIGIN + "/berserker-app/ykt/tsm/getCampusCards";
+  const CARD_DETAIL_URL = CARD_ORIGIN + "/berserker-app/ykt/tsm/queryCard";
   const CARD_BASIC_AUTH = "Basic bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm06bW9iaWxlX3NlcnZpY2VfcGxhdGZvcm1fc2VjcmV0";
   const CARD_VAULT_KEY = "cardSecret";
   const CARD_CACHE_KEY = "cardRechargeCache";
@@ -37,12 +39,13 @@
     { url: "https://webvpn.cppu.edu.cn/", label: "WebVPN", icon: "shield-halved" },
     { url: "https://mail.cppu.edu.cn/", label: "教育邮箱", icon: "envelope" },
     { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school" },
-    // 这三个教务模块走 `view:`（在 U-Time 里开视图）而不是换票开浏览器：
+    // 这四个教务模块走 `view:`（在 U-Time 里开视图）而不是换票开浏览器：
     // 教务 SPA 完全没有 URL 深链（je-app/je-main/je-core 三个 bundle 都不解析
     // location.hash / location.search，开任何功能地址栏都停在 index.html），
     // 做成链接的话三个入口只会统统落回教务首页，等于同一个入口抄三遍。
     { view: "cppu-xk", label: "学生选课", icon: "list-check" },
     { view: "cppu-qj", label: "学生请假", icon: "calendar-xmark" },
+    { view: "cppu-credit", label: "警大学分", icon: "graduation-cap" },
     { view: "cppu-cx", label: "创新学分", icon: "medal" },
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
     // 「我的请假」与「学工」同源，只是该 SPA 的 hash 路由（实测路由表里有 /StuDailyLeaveList）。
@@ -373,6 +376,16 @@
       .jw-tag{display:inline-block;border-radius:6px;padding:2px 8px;background:var(--paper);border:1px solid var(--line-soft);color:var(--deep);font-size:calc(10.5px * var(--ui-text-scale))}
       .jw-tag.ok{background:rgba(46,196,182,.14);border-color:rgba(46,196,182,.45);color:#0B6B60}
       .jw-tag.warn{background:rgba(242,217,166,.24);border-color:#E3C384;color:#8A6420}
+      .jw-tag.live{background:rgba(220,53,69,.13);border-color:rgba(220,53,69,.52);color:#B42318;font-weight:700}
+      .jw-task-card{display:block;width:100%;font:inherit;text-align:left;color:inherit;cursor:pointer;transition:border-color .16s ease,background .16s ease,opacity .16s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+      .jw-task-card:hover{border-color:var(--deep);background:var(--paper)}
+      .jw-task-card:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      .jw-task-card.live{border-color:rgba(220,53,69,.55);box-shadow:inset 3px 0 0 #D93645}
+      .jw-task-card.expired{opacity:.54;filter:grayscale(.32);background:var(--paper)}
+      .jw-task-card.expired:hover{opacity:.68}
+      .jw-task-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:8px 0 10px}
+      .jw-task-detail-head .jw-card-t{font-size:calc(16px * var(--ui-text-scale));color:var(--deep)}
+      .jw-task-courses{margin-top:8px}
       .jw-card-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
       .jw-card-act .pp-btn{min-height:34px;padding:5px 10px;font-size:calc(11.5px * var(--ui-text-scale))}
       .jw-leave-draft{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}
@@ -385,19 +398,30 @@
       .jw-sum{display:flex;align-items:baseline;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:6px 0 10px}
       .jw-sum b{font-size:calc(30px * var(--ui-text-scale));color:var(--deep);line-height:1}
       .jw-sum span{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .jw-credit-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:8px 0 4px}
+      .jw-credit-stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+      .jw-credit-stat small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:5px}
+      .jw-credit-stat b{display:block;color:var(--deep);font-size:calc(22px * var(--ui-text-scale));line-height:1.2}
+      .jw-credit-stat span{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-top:4px}
+      .jw-credit-bar{height:7px;border-radius:99px;background:var(--paper);border:1px solid var(--line-soft);overflow:hidden;margin-top:9px}
+      .jw-credit-bar i{display:block;height:100%;background:#2EC4B6;border-radius:inherit}
+      .jw-credit-course.done{opacity:.62}
+      .jw-credit-course.fail{border-color:rgba(220,53,69,.48)}
+      .jw-cx-project{border-left:3px solid #2EC4B6}
+      .jw-cx-project.pending{border-left-color:#E3C384}
       .yk-frame-shell{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-height:620px;height:calc(100vh - 190px);box-shadow:0 1px 10px rgba(34,48,58,.05)}
       .yk-frame{display:block;width:100%;height:100%;border:0;background:var(--paper)}
       .yk-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.7;margin:7px 0 0}
       .yk-status.warn{color:#8A6420}
       .yk-stat{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(260px,1.2fr);gap:10px;margin:10px 0}
-      .yk-total{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-      .yk-total small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
-      .yk-total b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
-      .yk-total span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
+      .yk-total,.yk-balance{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+      .yk-total small,.yk-balance small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
+      .yk-total b,.yk-balance b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
+      .yk-total span,.yk-balance span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
       .yk-login{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:minmax(140px,1fr) minmax(160px,1fr) auto;gap:8px;align-items:center}
       .yk-login input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}
       .yk-login small{grid-column:1/-1;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));line-height:1.7}
-      .yk-account{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale))}
+      .yk-account{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale))}
       .yk-account b{color:var(--ink)}
       .yk-groups{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
       .yk-group-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
@@ -411,7 +435,7 @@
       .yk-ledger-row:first-child{border-top:0}
       .yk-ledger-row b{color:var(--deep)}
       .yk-empty{color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale));line-height:1.7}
-      @media(max-width:600px){.jw-card-t{font-size:calc(14.5px * var(--ui-text-scale))}.jw-head h3{font-size:calc(17px * var(--ui-text-scale))}.jw-sum b{font-size:calc(26px * var(--ui-text-scale))}.jw-row small{min-width:0;flex-basis:100%}}
+      @media(max-width:600px){.jw-card-t{font-size:calc(14.5px * var(--ui-text-scale))}.jw-head h3{font-size:calc(17px * var(--ui-text-scale))}.jw-sum b{font-size:calc(26px * var(--ui-text-scale))}.jw-row small{min-width:0;flex-basis:100%}.jw-credit-overview{grid-template-columns:1fr}}
       @media(max-width:820px){
         .pp-shell{flex-direction:column;padding:0 14px}
         /* 窄屏时侧栏是整层叠在正文上面的，收起要收"高度"而不是宽度 */
@@ -494,7 +518,7 @@
   async function clearSavedLogin() {
     state.savedPassword = "";
     jwSid = null;
-    jwState.data = { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, cxCredit: null };
+    jwState.data = { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, grade: null, cxCredit: null, cxDetail: null };
     try {
       await tide.vault?.del?.("secret");
       await tide.vault?.del?.("cookies");
@@ -1555,7 +1579,7 @@
     });
   }
 
-  /* ═════════ 智慧教务只读接入：学生选课 · 学生请假 · 创新学分 ═════════
+  /* ═════════ 智慧教务只读接入：学生选课 · 学生请假 · 学分 · 创新学分 ═════════
      为什么做成插件内视图而不是侧栏链接：教务是正方 JE 的 SPA，完全没有 URL 深链
      （je-app / je-main / je-core 三个 bundle 都不读 location.hash、location.search，
      开任何功能地址栏都停在 index.html），换票开浏览器只会一遍遍落回首页。
@@ -1575,12 +1599,16 @@
     xkResult: { funcCode: "V_JWBZK_XKGL_XKJG_XS", funcId: "UEgVc81fir8gotAkmzM", tableCode: "V_JWBZK_XKGL_XKJG" },
     qjRecord: { funcCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ_XSCX", funcId: "jycdtB3HszziSH8rgxn", tableCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ" },
     qjCourse: { funcCode: "copy from V_JWBZK_PK_XSKBZHCX", funcId: "TtHt7qQKBLbsw4B2DgB", tableCode: "V_JWBZK_PK_XSKBZHCX" },
+    creditPlan: { funcCode: "V_JWBZK_JXJH_JXJH", funcId: "oSVuQBmmB2WLat8hLcQ", tableCode: "V_JWBZK_JXJH_JXJH" },
+    grade: { funcCode: "V_STUDENT_GRADE", funcId: "UGwUYaFdMocm4gG2cdA", tableCode: "V_STUDENT_GRADE" },
     cxCredit: { funcCode: "V_CXGL_GRADE_STU", funcId: "VqfuoxJmlz2G9QJnoPZ", tableCode: "V_CXGL_GRADEQUERY" },
+    cxDetail: { funcCode: "T_SZKP_CXGL_CREDITAPPLICATION_STU", funcId: "Ib0BbzaqbUbrKVOsERB", tableCode: "T_SZKP_CXGL_CREDITAPPLICATION" },
   };
   // 教务里没有「创新成绩」这个菜单，实名叫「成绩查询(学生)」，挂在 创新实践 下面
   const JW_MENU = {
     xk: "学生服务 › 我的课程表 › 我的选课 › 学生选课",
     qj: "学生服务 › 我的课程表 › 我的课表 › 学生请假申请",
+    credit: "学生服务 › 我的学业 › 成绩 › 我的学分",
     cx: "学生服务 › 综合素质考评 › 创新实践 › 成绩查询(学生)",
   };
   // 校方字典（/je/dd/dd/getDicItemByCodes 的 KCSXDM_1 / KCHJDM_1 / KJDM / QJSQSP）抄一份在用：
@@ -1596,17 +1624,19 @@
     if (!c) return "";
     return JW_DD[dict]?.[c] || c;
   };
-  const jwKeyLabel = (k) => ({ xkTask: "选课任务", xkResult: "选课结果", qjRecord: "请假记录", qjCourse: "可请假课次", cxCredit: "创新学分" }[k] || k);
+  const jwKeyLabel = (k) => ({ xkTask: "选课任务", xkResult: "选课结果", qjRecord: "请假记录", qjCourse: "可请假课次", creditPlan: "培养计划", grade: "课程成绩", cxCredit: "创新学分", cxDetail: "创新学分明细" }[k] || k);
 
   let jwSid = null;                 // 已经落上教务 authorization 的那个会话 id
   const jwLive = () => !!jwSid && jwSid === state.sid;
   const jwState = {
     term: null,
-    data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, cxCredit: null },
+    data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, grade: null, cxCredit: null, cxDetail: null },
     loading: {}, error: {}, at: {},
     courseScope: "week",            // today | week | term，默认本周（本学期是 200+ 行的紧凑列表）
     leaveCourseId: "",
     leaveReason: "",
+    selectedTaskId: "",
+    creditHideDone: false,
     expandedCredit: new Set(),
   };
   const jwMounted = new Map();      // viewId -> { el, cfg }
@@ -1716,14 +1746,15 @@
 
   async function jwSaveCache() {
     const keep = {};
-    for (const k of ["xkTask", "xkResult", "qjRecord", "cxCredit"]) if (Array.isArray(jwState.data[k])) keep[k] = jwState.data[k];
-    try { await tide.storage.set("jwCache", { term: jwState.term, at: jwState.at, keep }); } catch { /* 忽略 */ }
+    for (const k of ["xkTask", "xkResult", "qjRecord", "creditPlan", "grade", "cxCredit", "cxDetail"]) if (Array.isArray(jwState.data[k])) keep[k] = jwState.data[k];
+    try { await tide.storage.set("jwCache", { term: jwState.term, at: jwState.at, keep, prefs: { creditHideDone: jwState.creditHideDone } }); } catch { /* 忽略 */ }
   }
   async function jwRestoreCache() {
     try {
       const c = await tide.storage.get("jwCache", null);
       if (!c || typeof c !== "object") return;
       if (c.term && !jwState.term) jwState.term = c.term;
+      jwState.creditHideDone = c.prefs?.creditHideDone === true;
       for (const [k, rows] of Object.entries(c.keep || {})) if (Array.isArray(rows) && jwState.data[k] === null) jwState.data[k] = rows;
       for (const [k, at] of Object.entries(c.at || {})) if (!jwState.at[k]) jwState.at[k] = Number(at) || 0;
     } catch { /* 缓存坏了当没有 */ }
@@ -1777,16 +1808,81 @@
   }
   function jwMetaLine(parts) { return `<div class="pp-meta">${parts.filter(Boolean).join("")}</div>`; }
 
+  const jwTaskId = (r, index = 0) => String(r?.ID || [r?.KKXNXQ, r?.LC, r?.XKRWMC, index].filter(Boolean).join("|"));
+  function jwTermOrder(code) {
+    const m = String(code || "").match(/^(\d{4})\d{4}-(\d+)$/);
+    return m ? Number(m[1]) * 10 + Number(m[2]) : 0;
+  }
+  function jwTaskStatus(r) {
+    const code = String(r?.XKRWZT ?? r?.ZT ?? "").trim();
+    const supplied = String(r?.XKRWZTNAME || r?.XKRWZTMC || r?.ZTMC || "").trim();
+    const labels = { "0": "未开始选课", "1": "未开始选课", "2": "正在选课", "3": "结束选课" };
+    let label = supplied || labels[code] || (code ? `状态 ${code}` : "状态未知");
+    const oldTerm = jwTermOrder(r?.KKXNXQ) > 0 && jwTermOrder(jwState.term?.code) > 0
+      && jwTermOrder(r.KKXNXQ) < jwTermOrder(jwState.term.code);
+    const ended = code === "3" || /结束|已结束|关闭|停止/.test(label);
+    const expired = oldTerm || ended;
+    if (oldTerm && !ended) label = "结束选课";
+    const active = !expired && (code === "2" || /正在选课|选课中|进行中/.test(label));
+    return { code, label, active, expired };
+  }
+
+  function jwTaskCourses(task) {
+    const rows = Array.isArray(jwState.data.xkResult) ? jwState.data.xkResult : [];
+    return rows.filter((r) => !task?.KKXNXQ || String(r.KKXNXQ || "") === String(task.KKXNXQ));
+  }
+
+  function jwTaskDetailHtml() {
+    const rows = Array.isArray(jwState.data.xkTask) ? jwState.data.xkTask : [];
+    const task = rows.find((r, index) => jwTaskId(r, index) === jwState.selectedTaskId);
+    if (!task) {
+      jwState.selectedTaskId = "";
+      return jwTaskHtml();
+    }
+    const status = jwTaskStatus(task);
+    const courses = jwTaskCourses(task);
+    const detail = [
+      ["学期", jwTermName(task.KKXNXQ)],
+      ["选课轮次", task.LC ? `第 ${task.LC} 轮` : "未标注"],
+      ["年级", task.NJ],
+      ["校区", task.XQ],
+      ["学院 / 专业", [task.XYID, task.XYZY].filter(Boolean).join(" / ")],
+    ].filter(([, value]) => value).map(([label, value]) => `<div class="jw-detail-cell"><b>${esc(label)}</b><span>${esc(value)}</span></div>`).join("");
+    const courseHtml = courses.length ? courses.map((r) => `<div class="jw-card">
+        <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
+        ${jwMetaLine([
+          r.XKBMC ? jwTag(r.XKBMC) : "",
+          r.XF ? jwTag(`${r.XF} 学分`, "ok") : "",
+          r.SKDD ? jwTag(r.SKDD) : "",
+          jwTag(String(r.OPERATERCODE || "") === String(state.username || "") ? "本人自选" : "教务代选"),
+        ])}
+      </div>`).join("") : `<div class="pp-empty">这个学期还没有已选课程</div>`;
+    return `<button type="button" class="pp-btn" data-jw-task-back>返回任务列表</button>
+      <div class="jw-card${status.expired ? " expired" : status.active ? " live" : ""}">
+        <div class="jw-task-detail-head">
+          <div class="jw-card-t">${esc(task.XKRWMC || "（未命名任务）")}</div>
+          ${jwTag(status.label, status.active ? "live" : status.expired ? "" : "warn")}
+        </div>
+        ${jwMetaLine([jwTag(jwTermName(task.KKXNXQ)), task.LC ? jwTag(`第 ${task.LC} 轮`) : ""])}
+        ${detail ? `<div class="jw-detail-grid">${detail}</div>` : ""}
+        ${status.active ? `<div class="jw-card-act"><button type="button" class="pp-btn pri" data-jw-task-site>进入教务办理选课</button></div>` : ""}
+      </div>
+      ${jwSection("本学期已选课程", `${courses.length} 门`, `<div class="jw-task-courses">${courseHtml}</div>`)}`;
+  }
+
   function jwTaskHtml() {
     const rows = jwState.data.xkTask;
     const head = jwStateBlock("xkTask");
     if (head) return jwSection("可参加的选课任务", jwAt("xkTask"), head);
     if (!Array.isArray(rows)) return jwSection("可参加的选课任务", jwAt("xkTask"), `<div class="pp-empty">还没有拉取过选课任务，点上方「刷新」</div>`);
     if (!rows.length) return jwSection("可参加的选课任务", jwAt("xkTask"), `<div class="pp-empty">现在没有待选的选课任务<br>这个列表只列「还没选过的」任务，选完就会消失</div>`);
-    const cards = rows.map((r) => `<div class="jw-card">
+    const cards = rows.map((r, index) => {
+      const status = jwTaskStatus(r);
+      return `<button type="button" class="jw-card jw-task-card${status.expired ? " expired" : status.active ? " live" : ""}" data-jw-task="${esc(jwTaskId(r, index))}" aria-label="查看选课任务：${esc(r.XKRWMC || "未命名任务")}">
         <div class="jw-card-t">${esc(r.XKRWMC || "（未命名任务）")}</div>
-        ${jwMetaLine([jwTag(jwTermName(r.KKXNXQ)), r.LC ? jwTag(`第 ${r.LC} 轮`) : ""])}
-      </div>`).join("");
+        ${jwMetaLine([jwTag(jwTermName(r.KKXNXQ)), r.LC ? jwTag(`第 ${r.LC} 轮`) : "", jwTag(status.label, status.active ? "live" : status.expired ? "" : "warn")])}
+      </button>`;
+    }).join("");
     return jwSection("可参加的选课任务", `${rows.length} 项 · ${jwAt("xkTask")}`, cards);
   }
 
@@ -1909,53 +2005,106 @@
     return jwSection("请假记录", `${Array.isArray(rows) ? rows.length + " 条 · " : ""}${jwAt("qjRecord")}`, records)
       + jwSection("可提请假的课次", jwAt("qjCourse"), jwCourseScopeBar() + jwCourseList());
   }
-  function jwCreditHtml() {
-    const rows = jwState.data.cxCredit;
-    const head = jwStateBlock("cxCredit");
-    if (head) return head;
-    if (!Array.isArray(rows)) return `<div class="pp-empty">还没有拉取过创新学分，点上方「刷新」</div>`;
-    if (!rows.length) return `<div class="pp-empty">还没有已发布的创新实践学分<br>（教务只统计已发布的学期，未发布不出现在这里）</div>`;
-    const sum = rows.reduce((n, r) => n + (Number(r.SUM_VALUE) || 0), 0);
-    const applyAll = rows.reduce((n, r) => n + (Number(r.APPLYALL) || 0), 0);
-    const ended = rows.reduce((n, r) => n + (Number(r.END_VALUE) || 0), 0);
-    const top = `<div class="jw-sum"><b>${sum}</b><span>已发布学期合计学分 · 申请 ${applyAll} 项 / 已认定 ${ended} 项</span></div>`;
-    const labelMap = {
-      DECLARE_YEAR_SEMESTER: "学期", SUM_VALUE: "合计学分", APPLYALL: "申请项目数", END_VALUE: "已认定项目数",
-      XQMC: "校区", XYDMC: "学院", XM: "姓名", XH: "学号", ZYMC: "专业", BJMC: "班级",
-      PROJECT_NAME: "项目名称", XMMC: "项目名称", ITEM_NAME: "项目名称", ACTIVITY_NAME: "活动名称",
-      CREDIT_NAME: "学分项目", SCORE: "成绩", VALUE: "学分", REMARK: "备注",
-    };
-    const skip = new Set(["DECLARE_YEAR_SEMESTER", "SUM_VALUE", "APPLYALL", "END_VALUE", "XQMC", "XYDMC"]);
-    const detail = (r, key) => {
-      const cells = Object.entries(r).filter(([k, v]) => !skip.has(k) && v != null && String(v).trim() !== "")
-        .slice(0, 24)
-        .map(([k, v]) => `<div class="jw-detail-cell"><b>${esc(labelMap[k] || k)}</b><span>${esc(v)}</span></div>`).join("");
-      return `<div class="jw-detail-grid">${cells || "<small>教务接口这一条只返回了汇总字段，没有返回单个项目明细。可以点「去教务」查看原系统里的完整明细。</small>"}</div>`;
-    };
-    return top + rows.map((r, idx) => {
-      const key = String(r.ID || r.DECLARE_YEAR_SEMESTER || idx);
-      const open = jwState.expandedCredit.has(key);
-      return `<div class="jw-card" data-credit-key="${esc(key)}">
-        <div class="jw-card-t">${esc(r.DECLARE_YEAR_SEMESTER || "（无学期）")} · ${Number(r.SUM_VALUE) || 0} 学分</div>
-        ${jwMetaLine([
-          jwTag(`申请 ${Number(r.APPLYALL) || 0} 项`),
-          jwTag(`已认定 ${Number(r.END_VALUE) || 0} 项`, "ok"),
-          (Number(r.APPLYALL) || 0) > (Number(r.END_VALUE) || 0) ? jwTag(`待认定 ${(Number(r.APPLYALL) || 0) - (Number(r.END_VALUE) || 0)} 项`, "warn") : "",
-          r.XQMC ? jwTag(r.XQMC) : "",
-          r.XYDMC ? jwTag(r.XYDMC) : "",
-        ])}
-        <div class="jw-card-act"><button type="button" class="pp-btn" data-credit-toggle="${esc(key)}">${open ? "收起明细" : "展开看看是什么项目"}</button></div>
-        ${open ? detail(r, key) : ""}
-      </div>`;
+  const jwGradeDone = (r) => String(r?.SFHDXF || "") === "1";
+  function jwAcademicCreditHtml() {
+    const planRows = jwState.data.creditPlan;
+    const grades = jwState.data.grade;
+    const planState = jwStateBlock("creditPlan", "正在读取培养计划…");
+    const gradeState = jwStateBlock("grade", "正在读取课程学分…");
+    if (planState || gradeState) return planState + gradeState;
+    if (!Array.isArray(planRows) || !Array.isArray(grades)) return `<div class="pp-empty">还没有拉取过学分数据，点上方「刷新」</div>`;
+    const plan = planRows[0] || {};
+    const categories = [
+      { id: "required", title: "必修", codes: ["01"], target: Number(plan.KCBXXF) || 0 },
+      { id: "elective", title: "选修", codes: ["02"], target: Number(plan.KCXXXF) || 0 },
+      { id: "practice", title: "实践", codes: ["03", "04"], target: Number(plan.SJKCZXF) || 0 },
+    ].map((category) => {
+      const rows = grades.filter((r) => category.codes.includes(String(r.KCSX || "")));
+      const earned = rows.filter(jwGradeDone).reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
+      return { ...category, rows, earned };
+    });
+    const earnedAll = grades.filter(jwGradeDone).reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
+    const totalTarget = Number(plan.KCZXF) || categories[0].target + categories[1].target;
+    const overview = `<div class="jw-sum"><b>${earnedAll}</b><span>已获得学分 / 培养计划 ${totalTarget || "--"} 学分</span></div>
+      <div class="jw-credit-overview">${categories.map((category) => {
+        const percent = category.target ? Math.min(100, Math.round(category.earned / category.target * 100)) : 0;
+        return `<div class="jw-credit-stat"><small>${category.title}学分</small><b>${category.earned} / ${category.target || "--"}</b><span>${category.rows.filter(jwGradeDone).length} 门已获得</span><div class="jw-credit-bar"><i style="width:${percent}%"></i></div></div>`;
+      }).join("")}</div>`;
+    const toggle = `<div class="pp-toolbar"><button type="button" class="pp-chip${jwState.creditHideDone ? " on" : ""}" data-credit-hide-done aria-pressed="${jwState.creditHideDone}">${jwState.creditHideDone ? "显示已修完" : "隐藏已修完"}</button><span>${grades.length} 门成绩记录</span></div>`;
+    const lists = categories.map((category) => {
+      const visible = jwState.creditHideDone ? category.rows.filter((r) => !jwGradeDone(r)) : category.rows;
+      const hidden = category.rows.length - visible.length;
+      const cards = visible.length ? visible.map((r) => {
+        const done = jwGradeDone(r);
+        return `<div class="jw-card jw-credit-course ${done ? "done" : "fail"}">
+          <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
+          ${jwMetaLine([
+            jwTag(`${Number(r.XF) || 0} 学分`, done ? "ok" : "warn"),
+            jwTag(done ? "已获得学分" : "未获得学分", done ? "ok" : "live"),
+            r.ZPCJ != null && String(r.ZPCJ) !== "" ? jwTag(`成绩 ${r.ZPCJ}`) : "",
+            r.XNXQ ? jwTag(jwTermName(r.XNXQ)) : "",
+          ])}
+        </div>`;
+      }).join("") : `<div class="pp-empty">${hidden ? `已隐藏 ${hidden} 门已修完课程` : `暂无${category.title}课程成绩记录`}</div>`;
+      return jwSection(`${category.title}学分`, `${category.earned} / ${category.target || "--"} 学分`, cards);
     }).join("");
+    return overview + toggle + lists;
+  }
+
+  function jwInnovationCreditHtml() {
+    const summaries = jwState.data.cxCredit;
+    const details = jwState.data.cxDetail;
+    const summaryState = jwStateBlock("cxCredit", "正在读取创新学分汇总…");
+    const detailState = jwStateBlock("cxDetail", "正在读取创新学分项目…");
+    if (summaryState || detailState) return summaryState + detailState;
+    if (!Array.isArray(summaries) || !Array.isArray(details)) return `<div class="pp-empty">还没有拉取过创新学分，点上方「刷新」</div>`;
+    if (!summaries.length && !details.length) return `<div class="pp-empty">还没有创新实践学分记录</div>`;
+    const sum = summaries.reduce((n, r) => n + (Number(r.SUM_VALUE) || 0), 0)
+      || details.filter((r) => String(r.SY_AUDFLAG || "") === "ENDED").reduce((n, r) => n + (Number(r.CREDIT_VALUE) || 0), 0);
+    const applyAll = summaries.reduce((n, r) => n + (Number(r.APPLYALL) || 0), 0) || details.length;
+    const ended = summaries.reduce((n, r) => n + (Number(r.END_VALUE) || 0), 0)
+      || details.filter((r) => String(r.SY_AUDFLAG || "") === "ENDED").length;
+    const top = `<div class="jw-sum"><b>${sum}</b><span>创新实践学分 · 申请 ${applyAll} 项 / 已认定 ${ended} 项</span></div>`;
+    const byTerm = new Map();
+    for (const row of details) {
+      const term = String(row.DECLARE_YEAR_SEMESTER || "未标注学期");
+      if (!byTerm.has(term)) byTerm.set(term, []);
+      byTerm.get(term).push(row);
+    }
+    const projects = [...byTerm.entries()].map(([term, rows]) => {
+      const termCredits = rows.reduce((n, r) => n + (Number(r.CREDIT_VALUE) || 0), 0);
+      const cards = rows.map((r) => {
+        const approved = String(r.SY_AUDFLAG || "") === "ENDED" || String(r.SY_CURRENTTASK || "").includes("结束");
+        const status = approved ? "已认定" : (r.SY_CURRENTTASK || r.SY_AUDFLAG || "处理中");
+        const detailCells = [
+          ["申请理由", r.REASONS_FOR_APPLYING_CREDIT],
+          ["认定方式", r.ASSESSMENT_METHOD],
+          ["责任单位", r.RESPONSIBLE_UNIT],
+          ["申报时间", r.DECLARATION_DATE],
+        ].filter(([, value]) => value).map(([label, value]) => `<div class="jw-detail-cell"><b>${esc(label)}</b><span>${esc(value)}</span></div>`).join("");
+        return `<div class="jw-card jw-cx-project${approved ? "" : " pending"}">
+          <div class="jw-card-t">${esc(r.CONTENT || r.ASSESSMENT_ITEMS || "（未命名创新项目）")}</div>
+          ${jwMetaLine([
+            r.ASSESSMENT_ITEMS ? jwTag(r.ASSESSMENT_ITEMS) : "",
+            r.CATEGORY ? jwTag(r.CATEGORY) : "",
+            r.ASSESSMENT_CONTENTS_STANDARDS ? jwTag(r.ASSESSMENT_CONTENTS_STANDARDS) : "",
+            jwTag(`${Number(r.CREDIT_VALUE) || 0} 学分`, "ok"),
+            jwTag(status, approved ? "ok" : "warn"),
+          ])}
+          ${detailCells ? `<div class="jw-detail-grid">${detailCells}</div>` : ""}
+        </div>`;
+      }).join("");
+      return jwSection(jwTermName(term), `${rows.length} 项 · ${termCredits} 学分`, cards);
+    }).join("");
+    return top + (projects || `<div class="pp-empty">汇总已经发布，但教务暂未返回具体申报项目</div>`);
   }
 
   const JW_VIEWS = [
     {
       id: "cppu-xk", title: "警大选课", icon: "list-check", keys: ["xkTask", "xkResult"], menu: JW_MENU.xk,
       kicker: "教 务 · 学 生 选 课",
-      tip: "选课任务列表只列「还没选过的」任务；已选课程里的「教务代选」表示不是本人提交的。选课本体在教务里做。",
-      body: () => jwTaskHtml() + jwResultHtml(),
+      tip: "选择任务可进入 U-Time 选课页查看状态与本学期已选课程；已结束和过期任务会自动置灰。",
+      body: () => jwState.selectedTaskId ? jwTaskDetailHtml() : jwTaskHtml() + jwResultHtml(),
     },
     {
       id: "cppu-qj", title: "警大请假", icon: "calendar-xmark", keys: ["qjRecord", "qjCourse"], menu: JW_MENU.qj,
@@ -1964,10 +2113,16 @@
       body: () => jwLeaveHtml(),
     },
     {
-      id: "cppu-cx", title: "警大创新学分", icon: "medal", keys: ["cxCredit"], menu: JW_MENU.cx,
+      id: "cppu-credit", title: "警大学分", icon: "graduation-cap", keys: ["creditPlan", "grade"], menu: JW_MENU.credit,
+      kicker: "教 务 · 学 分 进 度",
+      tip: "按培养计划汇总必修、选修和实践学分；课程是否修完以教务的“是否获得学分”为准。",
+      body: () => jwAcademicCreditHtml(),
+    },
+    {
+      id: "cppu-cx", title: "警大创新学分", icon: "medal", keys: ["cxCredit", "cxDetail"], menu: JW_MENU.cx,
       kicker: "教 务 · 创 新 实 践 学 分",
-      tip: "教务侧只发布按学期汇总的结果，明细要到「创新实践学分申请」里看。未发布的学期不会出现在这里。",
-      body: () => jwCreditHtml(),
+      tip: "按学期显示创新实践申报项目、级别、奖项、认定学分和审核状态。",
+      body: () => jwInnovationCreditHtml(),
     },
   ];
 
@@ -2014,6 +2169,23 @@
         tide.notify(`在教务里打开：${cfg.menu}`);
         return;
       }
+      if (e.target.closest("[data-jw-task-back]")) {
+        jwState.selectedTaskId = "";
+        jwPaint();
+        return;
+      }
+      const taskBtn = e.target.closest("[data-jw-task]");
+      if (taskBtn) {
+        jwState.selectedTaskId = taskBtn.dataset.jwTask || "";
+        jwPaint();
+        return;
+      }
+      const taskSite = e.target.closest("[data-jw-task-site]");
+      if (taskSite) {
+        await openSideLink(JW_INDEX, taskSite);
+        tide.notify(`已打开教务，请进入「${JW_MENU.xk}」办理`);
+        return;
+      }
       const scope = e.target.closest("[data-jw-scope]");
       if (scope) {
         jwState.courseScope = scope.dataset.jwScope || "week";
@@ -2049,6 +2221,12 @@
         }
         return;
       }
+      if (e.target.closest("[data-credit-hide-done]")) {
+        jwState.creditHideDone = !jwState.creditHideDone;
+        jwPaint();
+        await jwSaveCache();
+        return;
+      }
       const creditBtn = e.target.closest("[data-credit-toggle]");
       if (creditBtn) {
         const key = creditBtn.dataset.creditToggle || "";
@@ -2071,6 +2249,7 @@
   const cardState = {
     rows: [], mode: "month", sid: null, username: "", password: "", accessToken: "",
     tokenType: "bearer", refreshToken: "", expiresAt: 0, loading: false, syncedAt: 0, error: "",
+    balance: null, balanceAt: 0, balanceError: "",
   };
   const cardMoney = (n) => `¥${(Number(n) || 0).toFixed(2)}`;
   const cardPeriodKey = (date, mode) => {
@@ -2141,8 +2320,10 @@
       <span>${esc(r.date)}</span><b>${esc(cardMoney(r.amount))}</b><span>${esc(r.note || "一卡通充值")}</span>
     </div>`).join("") || `<div class="yk-empty">暂无平台充值记录。本页不再需要手工“记一笔”。</div>`;
     const synced = cardState.syncedAt ? new Date(cardState.syncedAt).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
+    const balanceSynced = cardState.balanceAt ? new Date(cardState.balanceAt).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
     return `<div class="yk-stat">
       <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${cardState.rows.length} 笔一卡通平台充值记录，可按年份 / 月份 / 日期汇总查看。</span></div>
+      <div class="yk-balance"><small>当前余额</small><b>${cardState.balance == null ? "--" : esc(cardMoney(cardState.balance))}</b><span>一卡通平台实时余额（含未结算金额） · ${esc(balanceSynced)}${cardState.balanceError ? ` · ${esc(cardState.balanceError)}` : ""}</span></div>
       <div class="yk-account"><span>账单来源：<b>一卡通平台</b></span><span>最后同步：${esc(synced)}</span>${cardState.error ? `<span class="warn">${esc(cardState.error)}</span>` : ""}</div>
     </div>
     <div class="yk-groups"><div class="yk-group-head"><b>充值统计</b><div class="pp-chips">${chips}</div></div><div class="yk-bars">${bars}</div></div>
@@ -2220,10 +2401,40 @@
     cardState.expiresAt = Date.now() + Math.max(0, Number(data.expires_in || 0) - 60) * 1000;
     await cardSaveSecret();
   }
+  function cardAuthHeaders() {
+    return { Accept: "application/json", Referer: CARD_BILLING, "synjones-auth": `${cardState.tokenType || "bearer"} ${cardState.accessToken}` };
+  }
+  function cardBalanceFromDetail(detail) {
+    const settled = Number(detail?.db_balance);
+    const unsettled = Number(detail?.unsettle_amount || 0);
+    if (!Number.isFinite(settled) || !Number.isFinite(unsettled)) throw new Error("余额数据格式异常");
+    return Math.round(settled + unsettled) / 100;
+  }
+  async function cardFetchBalance() {
+    if (!cardState.sid) cardState.sid = await tide.http.session();
+    const headers = cardAuthHeaders();
+    const cardsRes = await tide.http.fetch(cardState.sid, "GET", CARD_LIST_URL, { headers });
+    let cardsData = null;
+    try { cardsData = JSON.parse(String(cardsRes?.body || "")); } catch { cardsData = null; }
+    if (cardsRes.status === 401 || cardsData?.code === 401) { const error = new Error("一卡通登录已过期"); error.code = 401; throw error; }
+    if (cardsRes.status >= 400 || Number(cardsData?.code || 200) >= 400) throw new Error(cardsData?.message || cardsData?.msg || `余额同步失败（HTTP ${cardsRes.status}）`);
+    const cards = Array.isArray(cardsData?.data?.card) ? cardsData.data.card : [];
+    const card = cards.find((item) => Number(item?.lostflag || 0) === 0) || cards[0];
+    if (!card?.account) throw new Error("未找到可用的一卡通账户");
+    const url = `${CARD_DETAIL_URL}?account=${encodeURIComponent(card.account)}`;
+    const detailRes = await tide.http.fetch(cardState.sid, "GET", url, { headers });
+    let detailData = null;
+    try { detailData = JSON.parse(String(detailRes?.body || "")); } catch { detailData = null; }
+    if (detailRes.status === 401 || detailData?.code === 401) { const error = new Error("一卡通登录已过期"); error.code = 401; throw error; }
+    if (detailRes.status >= 400 || Number(detailData?.code || 200) >= 400) throw new Error(detailData?.message || detailData?.msg || `余额同步失败（HTTP ${detailRes.status}）`);
+    if (String(detailData?.data?.retcode || "") !== "0") throw new Error(detailData?.data?.errmsg || "一卡通余额查询失败");
+    const detail = Array.isArray(detailData?.data?.card) ? detailData.data.card[0] : null;
+    return cardBalanceFromDetail(detail);
+  }
   async function cardFetchBills() {
     if (!cardState.sid) cardState.sid = await tide.http.session();
     const all = [];
-    const headers = { Accept: "application/json", Referer: CARD_BILLING, "synjones-auth": `${cardState.tokenType || "bearer"} ${cardState.accessToken}` };
+    const headers = cardAuthHeaders();
     for (let current = 1; current <= CARD_MAX_PAGES; current++) {
       const url = `${CARD_BILLS_URL}?size=${CARD_PAGE_SIZE}&current=${current}`;
       const res = await tide.http.fetch(cardState.sid, "GET", url, { headers });
@@ -2261,8 +2472,18 @@
         await cardLogin(cardState.username, cardState.password);
         cardState.rows = await cardFetchBills();
       }
+      cardState.balanceError = "";
+      try {
+        cardState.balance = await cardFetchBalance();
+        cardState.balanceAt = Date.now();
+      } catch (error) {
+        cardState.balanceError = error?.message || "余额同步失败";
+      }
       cardState.syncedAt = Date.now();
-      await tide.storage.set(CARD_CACHE_KEY, { rows: cardState.rows, syncedAt: cardState.syncedAt });
+      await tide.storage.set(CARD_CACHE_KEY, {
+        rows: cardState.rows, syncedAt: cardState.syncedAt,
+        balance: cardState.balance, balanceAt: cardState.balanceAt,
+      });
       const frame = root?.querySelector?.("[data-card-frame]");
       if (frame) frame.src = cardAuthedUrl(CARD_BILLING);
       cardSetStatus(root, `已自动登录并同步 ${cardState.rows.length} 笔充值记录。`);
@@ -2361,6 +2582,8 @@
       const cache = await tide.storage.get(CARD_CACHE_KEY, null);
       cardState.rows = cardCleanRows(cache?.rows || []);
       cardState.syncedAt = Number(cache?.syncedAt || 0);
+      cardState.balance = Number.isFinite(Number(cache?.balance)) && cache?.balance != null ? Number(cache.balance) : null;
+      cardState.balanceAt = Number(cache?.balanceAt || 0);
       await cardRestoreSecret();
       cardPaintLogin(el);
       cardPaintStats(el);
@@ -2645,7 +2868,7 @@
 
   tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: 'building-columns', render });
   tide.ui.registerView({ id: "cppu-card", title: "警大一卡通", icon: "credit-card", render: mountCardView });
-  // 教务三个只读视图：侧栏「校园服务」里的 学生选课 / 学生请假 / 创新学分 入口直接 navigate 过来
+  // 教务四个只读视图：侧栏「校园服务」里的选课 / 请假 / 学分 / 创新学分入口直接 navigate 过来
   for (const cfg of JW_VIEWS) {
     tide.ui.registerView({
       id: cfg.id, title: cfg.title, icon: cfg.icon,

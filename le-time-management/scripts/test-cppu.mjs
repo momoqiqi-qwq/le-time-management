@@ -7,8 +7,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -137,6 +137,8 @@ assert.ok(source.includes('const CARD_RECHARGE = CARD_ORIGIN + "/campus-card/car
   '一卡通充值深链只能作为应用内视图按钮的目标保留');
 assert.ok(source.includes('CARD_AUTH_URL') && source.includes('/berserker-auth/oauth/token'), '一卡通必须通过平台 OAuth 自动登录');
 assert.ok(source.includes('CARD_BILLS_URL') && source.includes('/berserker-search/search/personal/turnover'), '一卡通充值统计必须读取平台账单接口');
+assert.ok(source.includes('CARD_LIST_URL') && source.includes('/berserker-app/ykt/tsm/getCampusCards'), '一卡通余额同步必须先读取校园卡账户');
+assert.ok(source.includes('CARD_DETAIL_URL') && source.includes('/berserker-app/ykt/tsm/queryCard'), '一卡通余额必须通过平台实时查询接口获取');
 assert.ok(source.includes('CARD_VAULT_KEY = "cardSecret"') && source.includes('tide.vault.set(CARD_VAULT_KEY'), '一卡通账号密码必须保存到加密密钥库');
 assert.ok(source.includes('CARD_CACHE_KEY = "cardRechargeCache"'), '一卡通平台账单必须支持本地只读缓存');
 assert.ok(source.includes('总充值量') && source.includes('按年份 / 月份 / 日期'), '一卡通视图必须显示总充值量，并说明可按年/月/日汇总');
@@ -153,7 +155,20 @@ assert.deepEqual({...normalizedBill},{id:'bill-1',date:'2026-09-22',amount:123.4
 cardState.rows=[normalizedBill,{...normalizedBill,id:'bill-2',date:'2026-08-01',amount:50}];
 cardState.mode='month';
 assert.equal(cardTotals().total,173.45,'平台充值流水必须正确汇总总充值量');
+assert.equal(cardBalanceFromDetail({db_balance:1234,unsettle_amount:66}),13,'当前余额必须按平台分值换算并包含未结算金额');
+assert.throws(()=>cardBalanceFromDetail({db_balance:'bad'}),/余额数据格式异常/,'坏余额数据不得显示为 0 元');
+calls=[];cardState.sid=null;cardState.accessToken='card-token';cardState.tokenType='bearer';let balanceStep=0;
+response=()=>++balanceStep===1
+  ? {status:200,body:JSON.stringify({code:200,data:{card:[{account:'card-account',lostflag:0}]}})}
+  : {status:200,body:JSON.stringify({code:200,data:{retcode:'0',card:[{db_balance:1234,unsettle_amount:66}]}})};
+assert.equal(await cardFetchBalance(),13,'余额接口两段调用必须返回实时余额');
+assert.match(calls[0][2],/getCampusCards$/);
+assert.match(calls[1][2],/queryCard\?account=card-account$/);
+assert.equal(calls[1][3].headers['synjones-auth'],'bearer card-token','余额请求必须携带一卡通令牌');
+cardState.balance=13;cardState.balanceAt=Date.now();
 assert.match(cardStatsHtml(),/一卡通平台充值记录/);
+assert.match(cardStatsHtml(),/当前余额/);
+assert.match(cardStatsHtml(),/¥13\.00/);
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
@@ -466,12 +481,12 @@ assert.doesNotMatch(source, /\/je\/doAct|\/je\/develop\/funcInfo\/(save|add|upda
   '教务接入必须只读：写入类端点没实测过就不许出现在插件里');
 assert.ok(source.includes('const JW_LOAD = JWAPP + "/je/load"'), '教务取数端点必须挂在 jw 域，不能混进 sso-jw');
 
-/* 侧栏四个应用内入口 + 五个视图注册 */
-assert.deepEqual(views.map((v) => v.id).sort(), ['cppu-card', 'cppu-cx', 'cppu-notify', 'cppu-qj', 'cppu-xk'],
-  '必须注册通知视图 + 选课/请假/创新学分/一卡通四个应用内视图');
+/* 侧栏五个应用内入口 + 六个视图注册 */
+assert.deepEqual(views.map((v) => v.id).sort(), ['cppu-card', 'cppu-credit', 'cppu-cx', 'cppu-notify', 'cppu-qj', 'cppu-xk'],
+  '必须注册通知视图 + 选课/请假/警大学分/创新学分/一卡通五个应用内视图');
 assert.ok(views.filter((v) => v.id !== 'cppu-notify').every((v) => typeof v.render === 'function'), '插件子视图必须有 render');
 assert.ok(views.some((v) => v.id === 'cppu-cx' && v.title === '警大创新学分'), '创新学分视图要有独立标题');
-for (const v of ['cppu-xk', 'cppu-qj', 'cppu-cx', 'cppu-card']) assert.ok(source.includes(`view: "${v}"`), `校园服务栏必须有 ${v} 入口`);
+for (const v of ['cppu-xk', 'cppu-qj', 'cppu-credit', 'cppu-cx', 'cppu-card']) assert.ok(source.includes(`view: "${v}"`), `校园服务栏必须有 ${v} 入口`);
 assert.match(source, /url\.startsWith\("view:"\)\) \{ tide\.util\.navigate\("plug:" \+ url\.slice\(5\)\)/,
   'view: 入口必须在插件内切视图，而不是开系统浏览器（教务 SPA 没有 URL 深链）');
 assert.match(source, /data-goto="\$\{esc\("view:" \+ item\.view\)\}"/,
@@ -515,12 +530,52 @@ jwState.data.xkResult = [
 const resultHtml = jwResultHtml();
 assert.ok(resultHtml.includes('2026年秋季学期 · 2 门 · 2 学分'), '已选课程按学期分组并合计学分');
 assert.ok(resultHtml.includes('本人自选') && resultHtml.includes('教务代选'), 'OPERATERCODE 是学号=本人自选，是 uuid=教务代选');
-jwState.data.xkTask = [{ XKRWMC: '2026年秋季学期线上选修课（慕课）选课', KKXNXQ: '20262027-1', LC: '2' }];
+jwState.data.xkTask = [
+  { ID: 'active-task', XKRWMC: '2026年秋季学期线上选修课（慕课）选课', KKXNXQ: '20262027-1', LC: '2', XKRWZT: '2' },
+  { ID: 'old-task', XKRWMC: '2025年秋季学期新生选修课选课', KKXNXQ: '20252026-1', LC: '3', XKRWZT: '3' },
+];
 const taskHtml = jwTaskHtml();
 assert.ok(taskHtml.includes('慕课') && taskHtml.includes('第 2 轮'), '选课任务要显示轮次，学期码要翻成学期名');
+assert.ok(taskHtml.includes('data-jw-task="active-task"'), '选课任务卡必须可点击进入应用内选课页');
+assert.match(taskHtml, /jw-task-card live[\s\S]*正在选课/, '正在选课的任务要显示红色活动状态');
+assert.match(taskHtml, /jw-task-card expired[\s\S]*2025年秋季学期新生选修课选课/, '已结束或旧学期任务必须置灰');
+assert.equal(jwTaskStatus(jwState.data.xkTask[1]).label, '结束选课', '状态码 3 必须翻成结束选课');
+jwState.selectedTaskId = 'active-task';
+const taskDetail = jwTaskDetailHtml();
+assert.ok(taskDetail.includes('返回任务列表') && taskDetail.includes('本学期已选课程'), '点击任务后的 U-Time 页面要能返回并展示本学期已选课程');
+assert.ok(taskDetail.includes('进入教务办理选课'), '正在选课任务要保留最终办理入口');
+jwState.selectedTaskId = 'old-task';
+assert.ok(!jwTaskDetailHtml().includes('进入教务办理选课'), '已结束任务只能查看，不能显示成仍可办理');
+jwState.selectedTaskId = '';
+assert.ok(source.includes('const taskBtn = e.target.closest("[data-jw-task]")'), '选课任务点击必须在插件内切换详情页');
+jwState.data.creditPlan = [{ KCZXF: 157, KCBXXF: 125, KCXXXF: 32, SJKCZXF: 13 }];
+jwState.data.grade = [
+  { KCMC: '大学英语1', XF: 3, KCSX: '01', SFHDXF: '1', ZPCJ: 72, XNXQ: '20252026-1' },
+  { KCMC: '高等数学（理）2', XF: 4, KCSX: '01', SFHDXF: '2', ZPCJ: 29, XNXQ: '20252026-2' },
+  { KCMC: '机器人操控基础', XF: 1, KCSX: '02', SFHDXF: '1', ZPCJ: 88, XNXQ: '20262027-1' },
+];
+assert.equal(jwGradeDone(jwState.data.grade[0]), true);
+let academicCredit = jwAcademicCreditHtml();
+assert.ok(academicCredit.includes('必修学分') && academicCredit.includes('3 / 125'), '警大学分必须按培养计划统计必修目标和已获学分');
+assert.ok(academicCredit.includes('选修学分') && academicCredit.includes('1 / 32'), '警大学分必须单独统计选修学分');
+assert.ok(academicCredit.includes('实践学分') && academicCredit.includes('0 / 13'), '警大学分必须单独统计实践学分');
+assert.ok(academicCredit.includes('已获得学分') && academicCredit.includes('未获得学分'), '课程明细必须显示是否修完');
+jwState.creditHideDone = true;
+academicCredit = jwAcademicCreditHtml();
+assert.ok(!academicCredit.includes('大学英语1') && academicCredit.includes('高等数学（理）2'), '隐藏已修完后只保留未获得学分的课程');
+jwState.creditHideDone = false;
 jwState.data.cxCredit = [{ DECLARE_YEAR_SEMESTER: '20252026-2', SUM_VALUE: 7, APPLYALL: 7, END_VALUE: 4, XQMC: '廊坊校区', XYDMC: '防火工程二队' }];
-const creditHtml = jwCreditHtml();
-assert.ok(creditHtml.includes('合计学分') && creditHtml.includes('待认定 3 项'), '创新学分要给出合计与「申请了但没认定」的差额');
+jwState.data.cxDetail = [{
+  DECLARE_YEAR_SEMESTER: '20252026-2', CONTENT: '全国大学生计算机应用能力与数字素养大赛人工智能应用基础赛项',
+  ASSESSMENT_ITEMS: '学科竞赛', CATEGORY: '省部级', ASSESSMENT_CONTENTS_STANDARDS: '三等奖', CREDIT_VALUE: 1,
+  SY_AUDFLAG: 'ENDED', SY_CURRENTTASK: '已结束', REASONS_FOR_APPLYING_CREDIT: '竞赛学值分奖励', DECLARATION_DATE: '2026-09-13 19:14:13',
+}];
+const innovationCredit = jwInnovationCreditHtml();
+assert.ok(innovationCredit.includes('创新实践学分') && innovationCredit.includes('申请 7 项 / 已认定 4 项'), '创新学分要保留已发布汇总');
+assert.ok(innovationCredit.includes('人工智能应用基础赛项') && innovationCredit.includes('省部级') && innovationCredit.includes('三等奖'), '创新学分必须显示真实项目、级别和奖项');
+assert.ok(!innovationCredit.includes('CREDIT_APPLICATIONID_ID') && !innovationCredit.includes('STUDENT_XH'), '创新学分页面不得把数据库内部字段当作项目明细');
+assert.ok(source.includes('V_JWBZK_JXJH_JXJH') && source.includes('V_STUDENT_GRADE'), '警大学分必须读取培养计划和成绩接口');
+assert.ok(source.includes('T_SZKP_CXGL_CREDITAPPLICATION_STU'), '创新学分必须读取申报项目明细接口');
 for (const k of Object.keys(jwState.data)) jwState.data[k] = null;
 
 console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths, bounded renewal and read-only 教务 views');
