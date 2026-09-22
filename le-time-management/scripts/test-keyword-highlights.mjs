@@ -9,9 +9,19 @@ const read = (name) => fs.readFileSync(path.join(here, "..", name), "utf8");
 
 const defaults = highlightSegments("今天 09:30，截止 2026-09-21 18:00", DEFAULT_KEYWORD_HIGHLIGHTS);
 assert.deepEqual(defaults.filter((part) => part.kind === "time").map((part) => part.text),
-  ["09:30", "2026-09-21", "18:00"], "默认规则应识别日期和时刻");
+  ["今天", "09:30", "2026-09-21", "18:00"], "默认规则应识别日期和时刻");
 assert.ok(defaults.filter((part) => part.kind === "time").every((part) => part.color === "#e5484d"),
   "日期和时间默认使用红色字体");
+
+const moreTimes = highlightSegments("明天上午8：25交，2026年9月22日 09:50 截止；9.28 22时30分复查，下周三下午3点半到5点。", DEFAULT_KEYWORD_HIGHLIGHTS)
+  .filter((part) => part.kind === "time").map((part) => part.text);
+assert.deepEqual(moreTimes,
+  ["明天", "上午8：25", "2026年9月22日", "09:50", "9.28", "22时30分", "下周三", "下午3点半到5点"],
+  "应覆盖中文日期、点号月日、全角冒号、中文时分、周几和时间段");
+
+assert.deepEqual(highlightSegments("插件版本 v2.12.1 不应整段标红", DEFAULT_KEYWORD_HIGHLIGHTS)
+  .filter((part) => part.kind === "time").map((part) => part.text), [],
+  "版本号里的点号不应被误识别为日期");
 
 const custom = highlightSegments("重点任务，今天 09:30 完成", {
   rules: [

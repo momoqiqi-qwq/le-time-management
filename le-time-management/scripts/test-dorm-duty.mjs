@@ -16,6 +16,13 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+/** 小程序 runtime 是 CommonJS，直接 require 进来**真跑**（不是正则扫源码）。
+    两端各写一份复制/导入实现，只有跑起来才比得出语义有没有跑偏。 */
+const requireCjs = createRequire(import.meta.url);
+const mini = requireCjs(fileURLToPath(new URL('../../miniprogram/core/pluginRuntime.js', import.meta.url)));
 
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
 const PLUGIN_SRC = read('../public/plugins/dorm-duty/main.js');
@@ -176,11 +183,13 @@ function bootPlugin({ seed = {}, today = '2026-09-17', navAlive = true, clock = 
   vm.runInContext(
     PLUGIN_SRC.replace(
       '  tide.ui.registerView({ id: VIEW_ID,',
-      '  globalThis.__fx = { state, load, save, tick, stopTimer, snapshot, GROUP_MAX, NAME_MAX, confirmFn,\n'
+      '  globalThis.__fx = { state, load, save, tick, stopTimer, snapshot, GROUP_MAX, NAME_MAX, MEMBER_MAX, confirmFn,\n'
       + '    defaultGroup, normalizeGroup, normalizeGroups, migrateLegacy, addTodayTask,\n'
       + '    cycleStartOf, assigneeFor, assigneesFor, cycleIndexAt, overrideHit, overrideHits, normalAssignees,\n'
       + '    isCycleStartDay, reminderDue, periodOf, perRoundOf,\n'
       + '    nextBigText, render, heroHtml, rowsHtml, groupChipsHtml, swapHtml, rulesHtml, setActiveGroup, addGroup, removeGroup, renameGroup,\n'
+      + '    duplicateGroup, importMembers, tabMenuHtml,\n'
+      + '    get tabMenu() { return tabMenu; }, set tabMenu(v) { tabMenu = v; },\n'
       + '    get MY_GEN() { return MY_GEN; }, set MY_GEN(v) { MY_GEN = v; } };\n'
       + '  tide.ui.registerView({ id: VIEW_ID,'
     ),
@@ -999,4 +1008,259 @@ const quietSeed = (patch = {}) => ({ groups: [GROUP({ remindEnabled: false })], 
   assert.match(host2.innerHTML, /data-swap-clear/, '有换人记录时要有撤销入口');
 }
 
-console.log('PASS: dorm-duty 多套轮换互不串台、旧数据迁移不丢字段、轮换切段（周期 1/3/7/14）、换人只影响本轮、逐组提醒且各自去重、坏时刻不再静默失效、双实例与停用自终止、组增删改与上限、空态与多组渲染、多人值日（perRound 滑动窗口 + override 双格式 + 多人提醒/任务/渲染）');
+/* ── 八、标签右键菜单：整组复制与导入成员 ── */
+/* 8.1 duplicateGroup：整组原样复制，但 id 必须全部重新生成。
+   共享成员 id 是这里唯一的致命错误 —— 「本轮换人」和「移除某人」都按 id 找 person，
+   两组共用 m 开头的同一批 id 时，在副本里换人会把原组的排班一起改掉。 */
+{
+  const A = GROUP({
+    id: 'gA', name: '宿舍值日', remindEnabled: false, periodDays: 3, perRound: 2,
+    startDate: '2026-09-10', sound: 'chime', remindTime: '07:30',
+    overrides: { '2026-09-17': 'mB' }, lastNotified: '2026-09-17',
+    removed: [{ id: 'mX', name: '已走的人' }],
+  });
+  const B = GROUP({ id: 'gB', name: '公区卫生', remindEnabled: false, members: [{ id: 'p1', name: '甲' }] });
+  const { fx, storage } = bootPlugin({ seed: { groups: [A, B], activeId: 'gA' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  const created = await fx.duplicateGroup('gA');
+  assert.ok(created, '复制应返回新那一组');
+
+  // 规则原样带走：相位一致才是「同一批人、另一件事」
+  assert.equal(created.periodDays, 3, '周期要带走');
+  assert.equal(created.perRound, 2, '每轮人数要带走');
+  assert.equal(created.startDate, '2026-09-10', '起始日必须带走 —— 两组才会在同一天换人');
+  assert.equal(created.remindTime, '07:30');
+  assert.equal(created.sound, 'chime');
+  assert.equal(created.remindEnabled, false, '提醒开关的状态（含关掉）也要带走');
+
+  // 名字带走、id 全新
+  assert.equal(created.members.map((m) => m.name).join(','), '阿青,小北,老陈', '成员顺序与名字要带走');
+  for (const m of created.members) {
+    assert.ok(!MEMBERS.some((x) => x.id === m.id), `副本成员 ${m.name} 的 id 必须重新生成，否则两组共享同一人`);
+    assert.ok(m.id, '副本成员必须有 id，否则改名/移除会命中 undefined');
+  }
+  assert.equal(created.removed.length, 1, '「已移除」名单也带走（恢复时能找回名字）');
+  assert.ok(!created.removed.some((m) => m.id === 'mX'), '「已移除」的 id 同样要重新生成');
+  assert.equal(Object.keys(created.overrides).length, 0, '换人记录必须清空 —— 它记的是原组的成员 id，端过来全是悬空引用');
+  assert.equal(created.lastNotified, '', '提醒标记清空，否则副本当天不会再提醒当班的人');
+  assert.notEqual(created.id, 'gA');
+
+  // 原组一点不能动
+  const origin = fx.state.groups.find((x) => x.id === 'gA');
+  assert.equal(Object.entries(origin.overrides).map(([k, v]) => `${k}=${v}`).join(','), '2026-09-17=mB', '复制不能吃掉原组的换人记录');
+  assert.equal(origin.lastNotified, '2026-09-17');
+  assert.equal(origin.members.map((m) => m.id).join(','), 'mA,mB,mC', '原组成员 id 不能被换掉');
+
+  // 位置与选中态：紧跟源组，而不是甩到列表末尾
+  const ids = fx.state.groups.map((x) => x.id);
+  assert.equal(ids.slice(0, 2).join(','), `gA,${created.id}`, '副本要紧跟在源组后面');
+  assert.equal(ids[2], 'gB', '原有的后面那组顺位后移，不能被顶掉');
+  assert.equal(fx.state.activeId, created.id, '复制完要切到副本，才接得上「自动改名」');
+  assert.equal(storage.get('groups').length, 3, '必须落盘');
+}
+
+/* 8.2 副本名字自动避开重名：截断要留出后缀的位置，不能退化成和源组同名 */
+{
+  const { fx } = bootPlugin({ seed: { groups: [GROUP({ id: 'gA', name: '宿舍值日', remindEnabled: false })], activeId: 'gA' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  assert.equal((await fx.duplicateGroup('gA')).name, '宿舍值日 2');
+  assert.equal((await fx.duplicateGroup('gA')).name, '宿舍值日 3', '同名已被占时往后取号');
+
+  // 满 NAME_MAX 的名字：把本体截短来腾出「 2」，而不是整名撞车
+  const longName = '一二三四五六七八九十甲乙';
+  assert.equal(longName.length, fx.NAME_MAX);
+  const { fx: fx2 } = bootPlugin({ seed: { groups: [GROUP({ id: 'gL', name: longName, remindEnabled: false })], activeId: 'gL' }, today: '2026-09-17' });
+  await settle();
+  await fx2.load();
+  const copied = await fx2.duplicateGroup('gL');
+  assert.equal(copied.name, '一二三四五六七八九十 2', '超长名字要截本体留出后缀，不能和源组重名');
+  assert.ok(copied.name.length <= fx2.NAME_MAX, '副本名不能突破 NAME_MAX');
+}
+
+/* 8.3 duplicateGroup 的边界：上限与不存在的组都要拒 */
+{
+  const many = Array.from({ length: 12 }, (_, i) => GROUP({ id: `g${i}`, name: `组${i}`, remindEnabled: false }));
+  const { fx } = bootPlugin({ seed: { groups: many, activeId: 'g0' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  assert.equal(fx.state.groups.length, fx.GROUP_MAX, '种子数据应正好铺满上限');
+  assert.equal(await fx.duplicateGroup('g0'), null, '到 GROUP_MAX 时复制必须返回 null，由调用方提示');
+  assert.equal(fx.state.groups.length, fx.GROUP_MAX, '被拒时不能悄悄塞进第 13 组');
+  const { fx: fx2 } = bootPlugin({ seed: quietSeed(), today: '2026-09-17' });
+  await settle();
+  await fx2.load();
+  assert.equal(await fx2.duplicateGroup('不存在'), null, '找不到那组时返回 null 而不是抛异常');
+}
+
+/* 8.4 importMembers：按名字去重追加到末尾，id 一律新建 */
+{
+  const target = GROUP({ id: 'gT', name: '公区值日', remindEnabled: false, members: [{ id: 't1', name: '阿青' }] });
+  const source = GROUP({ id: 'gS', name: '宿舍值日', remindEnabled: false, members: [{ id: 'mB', name: '小北' }, { id: 'mC', name: '老陈' }, { id: 'mA', name: '阿青' }] });
+  const { fx, storage } = bootPlugin({ seed: { groups: [target, source], activeId: 'gT' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  const n = await fx.importMembers('gT', 'gS');
+  assert.equal(n, 2, '阿青已在名单里，只该补进小北和老陈');
+  const g = fx.state.groups.find((x) => x.id === 'gT');
+  assert.equal(g.members.map((m) => m.name).join(','), '阿青,小北,老陈', '已有的人顺序不动，新的人按源组顺序追加到末尾');
+  assert.equal(g.members[0].id, 't1', '原有的那位连 id 都不能变，否则过去的轮次会指错人');
+  for (const m of g.members.slice(1)) assert.ok(!['mA', 'mB', 'mC', 't1'].includes(m.id), '导入的成员必须新建 id —— 复用源组 id 会让两组共享同一人');
+  assert.equal(storage.get('groups').find((x) => x.id === 'gT').members.length, 3, '导入结果必须落盘，不是只改了内存');
+  assert.equal(fx.state.activeId, 'gT', '导入不该顺手切走当前组');
+
+  assert.equal(await fx.importMembers('gT', 'gS'), 0, '再导一次一个人也不会重复');
+  assert.equal(await fx.importMembers('gT', 'gT'), 0, '不能从自己导');
+  assert.equal(await fx.importMembers('gT', '查无此组'), 0, '源组不存在返回 0 而不是抛异常');
+  assert.equal(await fx.importMembers('查无此组', 'gS'), 0, '目标组不存在同样返回 0');
+}
+
+/* 8.5 导入上限：夹到 MEMBER_MAX，不能把名单撑爆 */
+{
+  const target = GROUP({
+    id: 'gT', name: '目标', remindEnabled: false,
+    members: Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, name: `旧${i}` })),
+  });
+  const source = GROUP({
+    id: 'gS', name: '源', remindEnabled: false,
+    members: Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, name: `新${i}` })),
+  });
+  const { fx } = bootPlugin({ seed: { groups: [target, source], activeId: 'gT' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  assert.equal(fx.MEMBER_MAX, 16, '上限本身要钉住，否则下面的算式失去意义');
+  const n = await fx.importMembers('gT', 'gS');
+  assert.equal(n, fx.MEMBER_MAX - 14, '14 + 8 会超上限，只该补到 MEMBER_MAX');
+  assert.equal(fx.state.groups.find((x) => x.id === 'gT').members.length, fx.MEMBER_MAX, '成员数必须夹在 MEMBER_MAX');
+}
+
+/* 8.6 菜单渲染：五项动作 + 「导入成员」的二级选组 */
+{
+  const A = GROUP({ id: 'gA', name: '宿舍值日', remindEnabled: false });
+  const B = GROUP({ id: 'gB', name: '公区卫生', remindEnabled: false });
+  const { fx } = bootPlugin({ seed: { groups: [A, B], activeId: 'gA' }, today: '2026-09-17' });
+  await settle();
+  await fx.load();
+  fx.tabMenu = { id: 'gB', x: 40, y: 60, step: '' };
+  const html = fx.tabMenuHtml();
+  assert.match(html, /data-tab-menu/, '菜单根节点要有 data-tab-menu，收起逻辑靠它判断「点的是菜单自身」');
+  assert.match(html, /role="menu"/);
+  assert.match(html, /公区卫生/, '标题要说清操作的是哪一套，别右键错了才发现');
+  for (const act of ['switch', 'rename', 'duplicate', 'import', 'remove']) {
+    assert.ok(html.includes(`data-tab-act="${act}"`), `菜单必须有「${act}」动作`);
+  }
+  assert.ok(!/data-group=/.test(html), '菜单项不能复用标签的 data-group 标记，否则事件委托会先命中切组分支');
+  assert.ok(!/data-group-del/.test(html), '菜单项也不能复用卡片的 data-group-del 标记，同理');
+  assert.match(html, /left:40px;top:60px/, '菜单按传入的视口坐标定位');
+
+  // 二级：点「导入成员」后列出别的组，当前组自己不出现在候选里
+  fx.tabMenu = { id: 'gB', x: 40, y: 60, step: 'import' };
+  const sub = fx.tabMenuHtml();
+  assert.match(sub, /data-import-from="gA"/, '二级菜单要列出可导入的源组');
+  assert.ok(!/data-import-from="gB"/.test(sub), '不能把当前组列为导入源');
+  assert.match(sub, /取消/, '二级菜单必须有退出入口');
+  assert.ok(!/data-tab-act="rename"/.test(sub), '二级菜单不再重复一级动作');
+
+  // 只有一套轮换时：没有别的组可导，也没有可删的余地
+  const { fx: only } = bootPlugin({ seed: quietSeed(), today: '2026-09-17' });
+  await settle();
+  await only.load();
+  only.tabMenu = { id: only.state.groups[0].id, x: 10, y: 10, step: '' };
+  const one = only.tabMenuHtml();
+  assert.match(one, /data-tab-act="remove"[^>]*disabled|data-tab-act="remove" disabled/, '只剩一套时删除项要禁用（与卡片按钮同一道守卫）');
+  const oneSub = (() => { only.tabMenu = { ...only.tabMenu, step: 'import' }; return only.tabMenuHtml(); })();
+  assert.ok(!/data-import-from=/.test(oneSub), '没有别的组时二级菜单不该列出任何源');
+}
+
+/* 8.7 菜单的源码不变量：定位、收起、长按 */
+assert.match(PLUGIN_SRC, /addEventListener\("contextmenu"/, '标签必须接 contextmenu');
+assert.match(PLUGIN_SRC, /e\.preventDefault\(\)/, '右键要压掉浏览器原生菜单');
+assert.match(PLUGIN_SRC, /function openTabMenu\(/, '必须有 openTabMenu()');
+assert.match(PLUGIN_SRC, /function closeTabMenu\(\) \{ if \(!tabMenu\) return; tabMenu = null; paint\(\); \}/,
+  'closeTabMenu 必须幂等（没开时直接返回），否则每次 pointerdown 都白重绘一遍');
+assert.match(PLUGIN_SRC, /\$\{tabMenu \? tabMenuHtml\(\) : ""\}/, 'paint() 必须渲染菜单');
+assert.match(PLUGIN_SRC, /window\.innerWidth[\s\S]{0,120}--sar|innerWidth[\s\S]{0,200}\) - sar -/,
+  '夹取右边界必须减掉 --sar，innerWidth 是从屏幕角量的，Android 导航栏会裁掉菜单');
+for (const v of ['--sat', '--sab', '--sal', '--sar']) {
+  assert.match(PLUGIN_SRC, new RegExp(`px\\("${v}"\\)`),
+    `菜单夹取必须读 ${v}，缺一条边就有边被系统栏压住（铁律四）`);
+}
+assert.match(PLUGIN_SRC, /addEventListener\("pointerdown"/, '长按入口挂在 pointerdown');
+assert.match(PLUGIN_SRC, /550/, '长按阈值 550ms：短于它当普通点击，长于它才弹菜单');
+assert.match(PLUGIN_SRC, /longPressed/, '长按弹菜单后必须吞掉随后的 click，否则顺带把组切走了');
+assert.match(PLUGIN_SRC, /if \(longPressed\) \{ longPressed = false; return; \}[\s\S]{0,240}tabMenu = null/,
+  '菜单开着时点标签要把浮层一起收起 —— 只切组会留下一个指向旧组的菜单（document 上的收起监听刻意放过标签点击）');
+assert.match(PLUGIN_SRC, /\.dd-tabmenu\{[^}]*position:fixed/, '菜单是 fixed 浮层');
+assert.match(PLUGIN_SRC, /const promptFn = \(/, '重命名走 promptFn 兜底，不能裸调 window.prompt');
+
+/* 8.8 小程序端同语义实现 + 「⋯」入口 */
+assert.match(miniRuntime, /function ddDuplicateGroup\(/, '小程序要有同语义的 ddDuplicateGroup');
+assert.match(miniRuntime, /function ddImportMembers\(/, '小程序要有同语义的 ddImportMembers');
+assert.match(miniPage, /onDdGroupMenu\(\) \{|onDdGroupMenu\(e\) \{/, '页面必须有 onDdGroupMenu');
+assert.match(miniPage, /wx\.showActionSheet/, '「⋯」用 ActionSheet 承载同一组动作');
+assert.match(miniWxml, /bindtap="onDdGroupMenu"/, 'WXML 标签上必须有「⋯」入口');
+
+/* 8.9 小程序端真跑：两端各一份实现，逐字段钉住同语义（防「桌面改了小程序没跟」） */
+{
+  const seed = () => ([
+    {
+      id: 'gA', name: '宿舍值日', startDate: '2026-09-10', periodDays: 3, perRound: 2,
+      remindEnabled: false, remindTime: '07:30', sound: 'chime',
+      members: [{ id: 'mA', name: '阿青' }, { id: 'mB', name: '小北' }],
+      removed: [{ id: 'mZ', name: '走的人' }], overrides: { '2026-09-17': 'mB' }, lastNotified: '2026-09-17',
+    },
+    {
+      id: 'gB', name: '公区卫生', startDate: '2026-09-10', periodDays: 7, perRound: 1,
+      remindEnabled: true, remindTime: '08:00', sound: 'beep',
+      members: [{ id: 'p1', name: '甲' }], removed: [], overrides: {}, lastNotified: '',
+    },
+  ]);
+  const out = mini.ddDuplicateGroup(mini.ddGroups(seed(), '2026-09-17'), 'gA', '2026-09-17');
+  assert.ok(out, '小程序端复制要返回新列表');
+  const copy = out.created;
+  assert.equal(copy.name, '宿舍值日 2', '副本名规则要和桌面端一致');
+  assert.equal(copy.startDate, '2026-09-10', '起始日带走，两端同相位');
+  assert.equal(copy.periodDays, 3);
+  assert.equal(copy.perRound, 2);
+  assert.equal(copy.remindEnabled, false, '「提醒已关掉」不能被归一化偷偷打开');
+  assert.equal(copy.remindTime, '07:30');
+  assert.equal(copy.sound, 'chime');
+  assert.equal(copy.members.map((m) => m.name).join(','), '阿青,小北');
+  assert.ok(!copy.members.some((m) => m.id === 'mA' || m.id === 'mB'), '成员 id 必须重新生成（与桌面端同一条规矩）');
+  assert.equal(copy.removed.length, 1, '「已移除」名单也带走');
+  assert.ok(!copy.removed.some((m) => m.id === 'mZ'), '「已移除」的 id 同样重新生成');
+  assert.equal(Object.keys(copy.overrides).length, 0, '换人记录清空，端过来全是悬空引用');
+  assert.equal(copy.lastNotified, '', '提醒标记清空');
+  assert.equal(out.groups.map((g) => g.id).slice(0, 2).join(','), `gA,${copy.id}`, '紧跟源组插入');
+  assert.equal(out.activeId, copy.id, '复制完切到副本');
+
+  const full = mini.ddGroups(Array.from({ length: 12 }, (_, i) => ({ id: `g${i}`, name: `组${i}` })), '2026-09-17');
+  assert.equal(full.length, 12);
+  assert.equal(mini.ddDuplicateGroup(full, 'g0', '2026-09-17'), null, '到 DD_GROUP_MAX 返回 null');
+  assert.equal(mini.ddDuplicateGroup(full, '查无此组', '2026-09-17'), null, '找不到那组返回 null');
+  assert.equal(mini.ddCopyName('一二三四五六七八九十甲乙', [{ name: '一二三四五六七八九十甲乙' }]),
+    '一二三四五六七八九十 2', '满 NAME_MAX 的名字要截本体腾出后缀，两端一致');
+
+  const gl = mini.ddGroups(seed(), '2026-09-17');
+  const imp = mini.ddImportMembers(gl, 'gB', 'gA');
+  assert.equal(imp.added, 2, '补进阿青和小北');
+  const dest = imp.groups.find((g) => g.id === 'gB');
+  assert.equal(dest.members.map((m) => m.name).join(','), '甲,阿青,小北', '已有的人不动，新的人按源组顺序追加到末尾');
+  assert.equal(dest.members[0].id, 'p1', '原有成员的 id 不能动，否则过去的轮次会指错人');
+  assert.ok(!dest.members.slice(1).some((m) => m.id === 'mA' || m.id === 'mB'), '导入的成员必须新建 id');
+  assert.equal(mini.ddImportMembers(imp.groups, 'gB', 'gA').added, 0, '再导一次一个人也不会重复');
+  assert.equal(mini.ddImportMembers(gl, 'gB', 'gB').added, 0, '不能自己导给自己');
+  assert.equal(mini.ddImportMembers(gl, 'gB', '查无此组').added, 0, '源组不存在返回 0 而不是抛异常');
+  assert.equal(imp.groups.find((g) => g.id === 'gA').members.length, 2, '源组一点不能动');
+  assert.equal(imp.groups.find((g) => g.id === 'gA').overrides['2026-09-17'], 'mB', '导入不能改掉源组的换人记录');
+
+  // 上限：夹到 DD_MEMBER_MAX（与桌面端 MEMBER_MAX 同一个数）
+  const bigTarget = { id: 'gT', name: '目标', members: Array.from({ length: 14 }, (_, i) => ({ id: `t${i}`, name: `旧${i}` })) };
+  const bigSource = { id: 'gS', name: '源', members: Array.from({ length: 8 }, (_, i) => ({ id: `s${i}`, name: `新${i}` })) };
+  const capped = mini.ddImportMembers(mini.ddGroups([bigTarget, bigSource], '2026-09-17'), 'gT', 'gS');
+  assert.equal(capped.added, 2, '14 + 8 会超上限，只该补到 16');
+  assert.equal(capped.groups.find((g) => g.id === 'gT').members.length, 16, '成员数必须夹在 DD_MEMBER_MAX');
+}
+
+console.log('PASS: dorm-duty 多套轮换互不串台、旧数据迁移不丢字段、轮换切段（周期 1/3/7/14）、换人只影响本轮、逐组提醒且各自去重、坏时刻不再静默失效、双实例与停用自终止、组增删改与上限、空态与多组渲染、多人值日（perRound 滑动窗口 + override 双格式 + 多人提醒/任务/渲染）、标签右键菜单（整组复制换新 id + 清换人记录 + 按名字去重导入 + 长按与夹取）');

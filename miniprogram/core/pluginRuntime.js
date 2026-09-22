@@ -553,6 +553,79 @@ function ddRemoveGroup(groups, id, activeId) {
   const nextActive = activeId === id ? next[Math.min(idx, next.length - 1)].id : activeId;
   return { ok: true, groups: next, activeId: nextActive };
 }
+/** 副本名：把本体截短来腾出「 N」的位置。直接 src + " 2" 再切到 DD_NAME_MAX，
+    满长的名字会切回和源组一模一样的串。与桌面端 nextCopyName 同语义。 */
+function ddCopyName(srcName, groups) {
+  const taken = {};
+  (groups || []).forEach((g) => { taken[g.name] = 1; });
+  for (let n = 2; n < 100; n++) {
+    const suffix = " " + n;
+    const keep = Math.max(1, DD_NAME_MAX - suffix.length);
+    const cand = (String(srcName || "").slice(0, keep) + suffix).slice(0, DD_NAME_MAX);
+    if (!taken[cand]) return cand;
+  }
+  return ("轮换 " + ((groups || []).length + 1)).slice(0, DD_NAME_MAX);
+}
+/** 复制一套轮换：规则与名单原样带走，但组 id 和每个成员 id 全部重新生成。
+    沿用旧 id 等于两组共享同一批人，副本里换人 / 移除会连着改掉原组的排班。
+    连带代价：overrides 记的是成员 id，端过来全是悬空引用，所以清空；lastNotified 也清空。
+    起始日保留 —— 同一宿舍的两套值日才会在同一天换人。
+    返回 { groups, activeId, created }；到上限或找不到那组时返回 null。 */
+function ddDuplicateGroup(groups, id, today) {
+  const list = groups || [];
+  if (list.length >= DD_GROUP_MAX) return null;
+  const idx = list.map((g) => g.id).indexOf(id);
+  if (idx < 0) return null;
+  const src = list[idx];
+  const reid = (arr) => (arr || []).map((m) => ({ id: ddUid("m"), name: m.name }));
+  const created = ddNormalizeGroup({
+    id: ddUid("g"),
+    name: ddCopyName(src.name, list),
+    startDate: src.startDate,
+    periodDays: src.periodDays,
+    perRound: src.perRound,
+    remindEnabled: src.remindEnabled,
+    remindTime: src.remindTime,
+    sound: src.sound,
+    members: reid(src.members),
+    removed: reid(src.removed),
+    overrides: {},
+    lastNotified: "",
+  }, today);
+  // 紧跟源组插入，而不是甩到列表末尾
+  return {
+    groups: list.slice(0, idx + 1).concat([created], list.slice(idx + 1)),
+    activeId: created.id,
+    created: created,
+  };
+}
+/** 从另一套轮换导入成员：按**名字**去重后追加到目标末尾，id 一律新建。
+    只能按名字对 —— 两组的成员 id 各起各的。已有的人连 id 都不动。
+    返回 { groups, added }；找不到组 / 自己导给自己 / 没有新人可加时 added = 0。 */
+function ddImportMembers(groups, targetId, sourceId) {
+  const list = groups || [];
+  const ti = list.map((g) => g.id).indexOf(targetId);
+  const si = list.map((g) => g.id).indexOf(sourceId);
+  if (ti < 0 || si < 0 || ti === si) return { groups: list, added: 0 };
+  const target = list[ti];
+  const source = list[si];
+  const mine = (target.members || []).slice();
+  const room = DD_MEMBER_MAX - mine.length;
+  if (room <= 0) return { groups: list, added: 0 };
+  const have = {};
+  mine.forEach((m) => { have[m.name] = 1; });
+  const added = [];
+  for (let i = 0; i < (source.members || []).length && added.length < room; i++) {
+    const m = source.members[i];
+    if (have[m.name]) continue;
+    have[m.name] = 1;
+    added.push({ id: ddUid("m"), name: m.name });
+  }
+  if (!added.length) return { groups: list, added: 0 };
+  const next = list.slice();
+  next[ti] = ddGroupPatch(target, { members: mine.concat(added) });
+  return { groups: next, added: added.length };
+}
 
 /* ── 视图模型（纯函数，页面与测试共用） ── */
 const ddRelLabel = (n) => (n === 0 ? "今天" : n === 1 ? "明天" : n > 0 ? n + " 天后" : -n + " 天前");
@@ -1083,6 +1156,7 @@ module.exports = {
   ddCycleStartOf, ddCycleIndexAt, ddIsCycleStartDay, ddAssigneeFor, ddNormalFor, ddOverrideHit,
   ddWithGroup, ddGroupPatch, ddGroupAddMember, ddGroupRenameMember, ddGroupMoveMember,
   ddGroupRemoveMember, ddGroupRestoreMember, ddGroupSetOverride, ddAddGroup, ddRemoveGroup,
+  ddDuplicateGroup, ddImportMembers, ddCopyName,
   DD_PERIODS, DD_UPCOMING, DD_REMOVED_KEEP, DD_GROUP_MAX, DD_NAME_MAX,
 
   // 拖入消息收纳（inbox-drop）

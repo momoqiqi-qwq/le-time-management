@@ -142,9 +142,13 @@
    ⚠️ 组名与当班人之间用 margin 而不是空格：<text> 里元素边界处的空白在渲染时可能被吞，
    桌面端那边是靠 flex 的 gap 撑开的，这里得自己给。 */
 .dd-gchips { display: flex; flex-wrap: wrap; gap: 12rpx; margin-top: 10rpx; }
+.dd-gtab { display: flex; align-items: stretch; }
 .dd-gchip { font-size: 23rpx; border: 2rpx solid var(--line); background: var(--paper); border-radius: 999rpx; padding: 8rpx 22rpx; color: var(--ink-2); }
 .dd-gchip.on { background: var(--deep); color: var(--on-deep); border-color: var(--deep); font-weight: 700; }
 .dd-gwho { font-size: 20rpx; opacity: .75; margin-left: 8rpx; }
+/* 「⋯」= 桌面端右键菜单的触屏入口，贴在标签右端做成同一颗药丸的尾巴，
+   和标签分开绑 tap，才不会点菜单时顺手把当前轮换切走。 */
+.dd-gmore { display: flex; align-items: center; padding: 0 16rpx; margin-left: 6rpx; border: 2rpx solid var(--line); border-radius: 999rpx; background: var(--paper); color: var(--ink-2); font-size: 26rpx; line-height: 1; }
 
 .dd-field { display: flex; align-items: center; gap: 16rpx; padding: 14rpx 0; }
 .dd-field + .dd-field { border-top: 1rpx solid var(--line-soft); }

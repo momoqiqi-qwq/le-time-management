@@ -1345,6 +1345,50 @@ fn open_url_with_shell_execute(url: &str) -> Result<(), String> {
 /// 照常泵消息。教务导入窗口（`school_import_open`）一直是这么写的，所以没踩到。
 static BROWSER_WINDOW_SEQ: AtomicU64 = AtomicU64::new(1);
 
+const INTERNAL_BROWSER_BOOTSTRAP: &str = r#"
+(function () {
+  if (window.__leInternalBrowserBootstrap) return;
+  window.__leInternalBrowserBootstrap = true;
+
+  const toHttpUrl = (raw) => {
+    try {
+      const href = new URL(String(raw || ""), location.href).href;
+      return /^https?:/i.test(href) ? href : "";
+    } catch (_) {
+      return "";
+    }
+  };
+  const openHere = (raw) => {
+    const href = toHttpUrl(raw);
+    if (href) location.href = href;
+    return window;
+  };
+
+  window.open = function (url) {
+    return openHere(url);
+  };
+
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    const link = target && target.closest ? target.closest("a[target]") : null;
+    if (!link) return;
+    const frame = String(link.getAttribute("target") || "").toLowerCase();
+    if (!frame || frame === "_self") return;
+    const href = toHttpUrl(link.getAttribute("href") || link.href);
+    if (!href) return;
+    event.preventDefault();
+    location.href = href;
+  }, true);
+
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!form || !form.getAttribute) return;
+    const frame = String(form.getAttribute("target") || "").toLowerCase();
+    if (frame && frame !== "_self") form.removeAttribute("target");
+  }, true);
+})();
+"#;
+
 #[tauri::command]
 async fn open_internal(app: AppHandle, url: String) -> Result<(), String> {
     let parsed: Url = url.parse().map_err(|e| format!("网页地址无效: {e}"))?;
@@ -1354,6 +1398,8 @@ async fn open_internal(app: AppHandle, url: String) -> Result<(), String> {
     let seq = BROWSER_WINDOW_SEQ.fetch_add(1, Ordering::Relaxed);
     let label = format!("browser-{seq}");
     let builder = WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(parsed))
+        .initialization_script_for_all_frames(INTERNAL_BROWSER_BOOTSTRAP)
+        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
         .title("U-Time · 网页")
         .inner_size(1100.0, 780.0);
     #[cfg(target_os = "android")]

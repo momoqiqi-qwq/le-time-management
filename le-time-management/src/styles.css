@@ -3730,6 +3730,12 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   color: var(--ink-2) !important;
 }
 
+/* 通知正文：插件侧写死 #4B565E，落在深色 --panel 上几乎不可见。
+   正文是卡片里唯一要读的内容，用 --ink 而不是 --ink-2（夜间 --ink-2 偏灰，长段落费眼）。 */
+:root[data-theme-mode="dark"] .plugview .pp-detail .c {
+  color: var(--ink) !important;
+}
+
 :root[data-theme-mode="dark"] .plugview :where(.gx-card:hover, .pp-card:hover) {
   background: var(--paper) !important;
 }

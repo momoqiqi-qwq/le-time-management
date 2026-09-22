@@ -38,7 +38,7 @@ const GUIDE_DOCS = {
   "cn-holiday": ["打开即可优先读取本地节假日数据", "需要最新调整时再手动联网更新", "用于课程、计划和休息日判断"],
   "wechat-push": ["按插件页面配置 PushPlus / 推送参数", "选择需要推送的提醒", "先测试连接，再开启日常使用"],
   "web-collector": ["输入网址和名称进行收藏，可搜索、编辑备注和导入桌面收藏", "小程序复制原文链接后在浏览器打开；不自动抓取任意网站，也不保证网页内嵌"],
-  "dorm-duty": ["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响", "选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）", "需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务"],
+  "dorm-duty": ["一个插件里可放多套轮换（宿舍值日 / 公区卫生…），各有自己的成员、周期与提醒时刻，互不影响", "选中一套轮换后按顺序添加成员，第一个人先当班；设好起始日期与轮换周期（每天 / 每周 / 自定义 N 天）", "需要时给某一轮临时换人；到点会提醒当班的人，也可一键加入今日任务", "点标签后面的「⋯」可以改名、删除，或把整套轮换连成员带规则复制一份，也能从别的轮换按名字导入成员，不用重打一遍名字"],
   "inbox-drop": ["小程序没有系统级拖放，用「粘贴消息」把聊天里的通知复制进来，或直接手输一句话", "插件会自动认出来源平台、消息类型和其中的日期时间，认错了可以改", "确认无误后收纳；需要动起来的点「建任务」，会带着象限和截止时间进任务表", "收纳记录与桌面端共用一份存储，桌面拖进来的消息在这里也能看到"],
 };
 
@@ -390,17 +390,94 @@ Page({
   onDdGroupDel() {
     const dd = this.data.dd || {};
     if (!dd.canDelGroup) { wx.showToast({ title: "至少要留一套轮换", icon: "none" }); return; }
+    this.ddGroupRemove(dd.activeId, dd.groupName);
+  },
+  /** 整份替换 groups（复制 / 导入 / 删除都要改列表本身，ddCommit 只能改当前组）。 */
+  ddSetGroups(groups, activeId) {
+    store.pluginStorageSet("dorm-duty", "groups", groups);
+    if (activeId) store.pluginStorageSet("dorm-duty", "activeId", activeId);
+    this.loadDormDuty();
+  },
+  /** 「⋯」菜单：桌面端右键菜单的触屏等价物（WebView 长按普通按钮不会触发 contextmenu，
+      所以移动端只能给一个显式入口）。操作对象是**被点的那个标签**（data-id），
+      不是当前组 —— 否则点「公区值日」的 ⋯ 会去改「宿舍值日」。 */
+  onDdGroupMenu(e) {
+    const id = e.currentTarget.dataset.id;
+    const groups = this.ddGroups();
+    if (!groups.some((g) => g.id === id)) return;
+    const acts = ["切到这一组", "重命名", "再添加一个", "导入成员"];
+    if (groups.length > 1) acts.push("删除这一组");   // 最后一套不可删，干脆不列出来
+    wx.showActionSheet({
+      itemList: acts,
+      success: (res) => {
+        const act = acts[res.tapIndex];
+        if (act === "切到这一组") this.onDdGroup(e);
+        else if (act === "重命名") this.ddGroupRename(id);
+        else if (act === "再添加一个") this.ddGroupDuplicate(id);
+        else if (act === "导入成员") this.ddGroupImport(id);
+        else if (act === "删除这一组") {
+          const hit = this.ddGroups().filter((g) => g.id === id)[0];
+          if (hit) this.ddGroupRemove(id, hit.name);
+        }
+      },
+    });
+  },
+  ddGroupRename(id) {
+    const hit = this.ddGroups().filter((g) => g.id === id)[0];
+    if (!hit) return;
     wx.showModal({
-      title: "删除轮换",
-      content: "删除「" + dd.groupName + "」？它的成员、换人记录和提醒设置会一起删掉。",
+      title: "重命名轮换", editable: true, placeholderText: hit.name, content: hit.name,
       success: (res) => {
         if (!res.confirm) return;
-        const out = runtime.ddRemoveGroup(this.ddGroups(), dd.activeId, dd.activeId);
-        if (!out.ok) return;
-        store.pluginStorageSet("dorm-duty", "groups", out.groups);
-        store.pluginStorageSet("dorm-duty", "activeId", out.activeId);
-        this.loadDormDuty();
-        wx.showToast({ title: "已删除「" + dd.groupName + "」", icon: "none" });
+        const name = String(res.content || "").trim();
+        if (!name) { wx.showToast({ title: "名字不能为空", icon: "none" }); return; }
+        this.ddSetGroups(runtime.ddWithGroup(this.ddGroups(), id,
+          (g) => runtime.ddGroupPatch(g, { name: name.slice(0, runtime.DD_NAME_MAX) })));
+      },
+    });
+  },
+  /** 复制完立刻要名字 —— 与桌面端「再添加一个」同一流程。取消改名就沿用「XX 2」。 */
+  ddGroupDuplicate(id) {
+    const out = runtime.ddDuplicateGroup(this.ddGroups(), id, store.todayStr());
+    if (!out) { wx.showToast({ title: "最多 " + runtime.DD_GROUP_MAX + " 套轮换，先删掉不用的", icon: "none" }); return; }
+    this.ddSetGroups(out.groups, out.activeId);
+    wx.showModal({
+      title: "给复制出来的这套改个名字", editable: true, placeholderText: out.created.name, content: out.created.name,
+      success: (res) => {
+        if (!res.confirm) return;
+        const name = String(res.content || "").trim();
+        if (!name) return;
+        this.ddSetGroups(runtime.ddWithGroup(this.ddGroups(), out.created.id,
+          (g) => runtime.ddGroupPatch(g, { name: name.slice(0, runtime.DD_NAME_MAX) })));
+      },
+    });
+  },
+  ddGroupImport(id) {
+    const others = this.ddGroups().filter((g) => g.id !== id);
+    if (!others.length) { wx.showToast({ title: "还没有别的轮换可以导入", icon: "none" }); return; }
+    wx.showActionSheet({
+      itemList: others.map((g) => g.name + "（" + g.members.length + " 人）"),
+      success: (res) => {
+        const src = others[res.tapIndex];
+        if (!src) return;
+        const out = runtime.ddImportMembers(this.ddGroups(), id, src.id);
+        if (!out.added) { wx.showToast({ title: "那套轮换的人已经都在这份名单里了", icon: "none" }); return; }
+        this.ddSetGroups(out.groups);
+        const hit = this.ddGroups().filter((g) => g.id === id)[0];
+        wx.showToast({ title: "已给「" + (hit ? hit.name : "这套轮换") + "」导入 " + out.added + " 人", icon: "none" });
+      },
+    });
+  },
+  ddGroupRemove(id, name) {
+    wx.showModal({
+      title: "删除轮换",
+      content: "删除「" + name + "」？它的成员、换人记录和提醒设置会一起删掉。",
+      success: (res) => {
+        if (!res.confirm) return;
+        const out = runtime.ddRemoveGroup(this.ddGroups(), id, (this.data.dd || {}).activeId);
+        if (!out.ok) { wx.showToast({ title: "至少要留一套轮换", icon: "none" }); return; }
+        this.ddSetGroups(out.groups, out.activeId);
+        wx.showToast({ title: "已删除「" + name + "」", icon: "none" });
       },
     });
   },

@@ -33,6 +33,8 @@ assert.match(api, /document\.documentElement\.dataset\.openLinksInApp === "on"/,
   "openUrl 必须读取当前设置的实时 DOM 状态，不能只在启动时缓存");
 assert.match(api, /if \(isTauri && inApp\) \{[\s\S]*await invoke\("open_internal", \{ url \}\)/,
   "开启时必须调用原生应用内网页窗口");
+assert.doesNotMatch(api, /isChaoxingInteractiveUrl/,
+  "学习通作业/通知/课程页也必须留在应用内网页窗口，不能按域名绕到系统浏览器");
 assert.match(api, /return api\.openExternal\(url\)/,
   "关闭或纯浏览器环境必须退回系统浏览器路径");
 assert.match(pluginHost, /openUrl: \(url\) => \{ requirePermission\(man, pid, "openUrl"\); return api\.openUrl\(url\); \}/,
@@ -50,6 +52,18 @@ assert.match(rust, /if !matches!\(parsed\.scheme\(\), "http" \| "https"\)/,
   "应用内网页只允许 http/https，禁止任意 scheme");
 assert.match(rust, /WebviewWindowBuilder::new\(&app, &label, WebviewUrl::External\(parsed\)\)/,
   "应用内模式必须使用隔离的 Tauri WebView 窗口");
+assert.match(rust, /const INTERNAL_BROWSER_BOOTSTRAP: &str = r#"/,
+  "应用内网页窗口必须注入兼容脚本，处理站点里的新窗口跳转");
+assert.match(rust, /window\.open = function \(url\)[\s\S]*return openHere\(url\)/,
+  "应用内网页必须把 window.open 转为当前窗口跳转，避免学习通作业入口点击无响应");
+assert.match(rust, /target\.closest\("a\[target\]"\)[\s\S]*event\.preventDefault\(\)[\s\S]*location\.href = href/,
+  "应用内网页必须接管 target=_blank 链接并留在当前窗口打开");
+assert.match(rust, /\.initialization_script_for_all_frames\(INTERNAL_BROWSER_BOOTSTRAP\)/,
+  "应用内 WebView 必须在主框架和子框架都装载新窗口兼容脚本");
+assert.match(rust, /\.on_new_window\(\|_, _\| tauri::webview::NewWindowResponse::Deny\)/,
+  "漏出的新窗口请求必须拒绝，不能创建与旧窗口绑定生命周期的关联子窗口");
+assert.doesNotMatch(rust, /NewWindowResponse::Create/,
+  "应用内网页不能使用原生关联子窗口，否则关闭最新窗口会把旧窗口一起带掉");
 assert.match(rust, /builder\.activity_name\("BrowserActivity"\)/,
   "Android 应用内网页必须使用独立 BrowserActivity");
 assert.match(rust, /open_external,\s*\n\s*open_internal,/,

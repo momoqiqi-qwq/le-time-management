@@ -43,7 +43,7 @@
     ignoredIds: new Set(),
     readOverrides: new Map(),   // id -> true(未读)/false(已读)：本机标记覆盖，不动平台状态
     tab: "inbox",
-    filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部" },
+    filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部", catType: "全部" },
     course: { year: null, searchOpen: false, view: "year" },
     notice: null,
     loading: false,
@@ -242,10 +242,10 @@ const CX_PY_DATA = {
     return /请先登录|用户登录|登录学习通|fanyalogin|账号登录/.test(head);
   }
 
-  // 浏览器打开：能直接开就直接开；需要登录就改走 passport 跳板，登录后自动回到该页。
-  async function openTarget(item) {
-    const target = pickTargetLink(item);
-    if (!target) { tide.notify("这条通知里没有可打开的链接"); return; }
+  /* 带登录态打开：能直接开就直接开；需要登录就改走 passport 跳板，登录后自动回到该页。
+     通知与课程门户共用这一条，别各写一份。 */
+  async function openWithLogin(target) {
+    if (!target) { tide.notify("没有可打开的链接"); return; }
     if (isAnonymousUrl(target)) { tide.util.openUrl(target); return; }
     state.busy = "open"; paintMain();
     let needLogin = true;
@@ -258,6 +258,11 @@ const CX_PY_DATA = {
     } else {
       tide.util.openUrl(target);
     }
+  }
+  async function openTarget(item) {
+    const target = pickTargetLink(item);
+    if (!target) { tide.notify("这条通知里没有可打开的链接"); return; }
+    await openWithLogin(target);
   }
   function cookieObject(cookie) {
     const out = {};
@@ -323,10 +328,18 @@ const CX_PY_DATA = {
       .cx2-nav button.on{background:var(--deep);color:#fff;border-color:var(--deep)}
       .cx2-pill{display:inline-block;font-size:calc(10px * var(--ui-text-scale));border-radius:999px;padding:2px 7px;background:color-mix(in srgb,var(--deep) 16%,var(--panel));color:var(--deep);margin-left:5px}
       .cx2-new{background:var(--coral);color:#fff}
+      .cx2-pill.cx2-late{background:var(--coral);color:#fff}
       .cx2-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
       .cx2-search{flex:1;min-width:220px;border:1px solid var(--line);border-radius:9px;min-height:40px;padding:8px 11px;background:var(--panel);color:var(--ink)}
       .cx2-search::placeholder{color:var(--ink-2);opacity:1}
       .cx2-select{border:1px solid var(--line);border-radius:9px;min-height:40px;padding:6px 9px;background:var(--panel);color:var(--ink)}
+      /* 通知分类页的类型胶囊：和学年下拉并排，选中态用主色实心，右侧小字是该学年下的条数 */
+      .cx2-chips{display:inline-flex;gap:6px;flex-wrap:wrap}
+      .cx2-chips button{display:inline-flex;align-items:center;gap:5px;min-height:40px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--ink-2);font-size:calc(12px * var(--ui-text-scale))}
+      .cx2-chips button i{font-style:normal;font-size:calc(10.5px * var(--ui-text-scale));opacity:.75;font-variant-numeric:tabular-nums}
+      .cx2-chips button:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line));color:var(--ink)}
+      .cx2-chips button.on{background:var(--deep);border-color:var(--deep);color:#fff;font-weight:600}
+      .cx2-chips button.on i{opacity:.85}
       .cx2-check{display:inline-flex;align-items:center;gap:8px;font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);white-space:nowrap}.cx2-check .switch{margin-top:0}
       .cx2-status{font-size:calc(12px * var(--ui-text-scale));color:var(--ink-2);margin:7px 0 11px}
       .cx2-status.err{background:color-mix(in srgb,var(--coral) 16%,var(--panel));border:1px solid color-mix(in srgb,var(--coral) 34%,var(--line));color:color-mix(in srgb,var(--coral) 50%,var(--ink));padding:10px;border-radius:9px}
@@ -380,6 +393,7 @@ const CX_PY_DATA = {
       .cx2-status-sec{margin:12px 0 2px}
       .cx2-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px}
       .dot-red{background:#dc2626}
+      .dot-amber{background:#d97706}
       .dot-blue{background:#2563eb}
       .dot-green{background:#16a34a}
       .dot-gray{background:#9ca3af}
@@ -432,6 +446,10 @@ const CX_PY_DATA = {
       .cx2-detail .body{white-space:pre-line;max-height:420px;overflow:auto;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.7;color:color-mix(in srgb,var(--ink) 78%,var(--ink-2))}
       .cx2-todo{display:grid;gap:9px;max-width:900px}
       .cx2-due{font-weight:700;color:color-mix(in srgb,var(--sun) 50%,var(--ink));font-size:calc(12px * var(--ui-text-scale))}
+      /* 逾期档：整张卡往珊瑚色偏一点，截止时间那行换成红色并带上「逾期多久」。
+         和 .unread 同理不能用 border-color 简写 —— 左边框是类型色的位置，简写会把它吞掉。 */
+      .cx2-card.late{background:color-mix(in srgb,var(--coral) 9%,var(--panel));border-top-color:color-mix(in srgb,var(--coral) 30%,var(--line));border-right-color:color-mix(in srgb,var(--coral) 30%,var(--line));border-bottom-color:color-mix(in srgb,var(--coral) 30%,var(--line))}
+      .cx2-due.late{color:color-mix(in srgb,var(--coral) 62%,var(--ink))}
       .cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
       .cx2-kpi{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
       .cx2 footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2)}
@@ -560,6 +578,9 @@ const CX_PY_DATA = {
       courses.push({ name: stripHtml(name), courseid: cid, clazzid: clz,
         cpi: pick(li, /info="\d+_(\d+)"/), teacher: stripHtml(pick(li, /class="line2 color3"[^>]*title="([^"]+)"/)),
         clazz: stripHtml(pick(li, /班级：([^<]+)/)).trim(),
+        // 卡片标题那个 <a> 就是平台自己给的课程门户地址（带服务端签发的 enc），
+        // 比我们自己拼 courseid+clazzid+cpi 可靠 —— 少了 enc 会被判成非法参数。
+        url: decodeEntities(pick(li, /<a\b[^>]*href="([^"]+)"[^>]*>[^<]*<span[^>]*class="course-name/)),
         // 卡片里还有一行「开课时间：2025-09-01～2027-09-01」，课程页的年级分组与完成状态全靠它推断。
         start: pick(li, /开课时间：\s*(\d{4}-\d{2}-\d{2})/),
         end: pick(li, /开课时间：\s*\d{4}-\d{2}-\d{2}\s*[～~\-]\s*(\d{4}-\d{2}-\d{2})/) });
@@ -606,9 +627,25 @@ const CX_PY_DATA = {
       return true;
     });
   }
-  function todos() {
-    const now = Date.now();
-    return visibleInbox().map((n) => ({ ...n, dueText: deadline(n.body) })).filter((n) => n.dueText && new Date(n.dueText.replace(' ', 'T')).getTime() >= now).sort((a,b)=>a.dueText.localeCompare(b.dueText));
+  /* 待办分三档：未截止未提交 / 已逾期未提交 / 已提交但未到截止时间。
+     旧版 todos() 用 `>= now` 过滤，截止一到条目就从列表里消失 —— 过期没交的最需要被看见，
+     所以这里改成先取出所有带截止时间的，再按 now 切成两份。
+     「未提交」不含探到已提交的（那是做完了，只是通知还挂着），探测失败的那批会留在未提交里，宁可偏多不可偏少。 */
+  function withDue() {
+    return visibleInbox().map((n) => ({ ...n, dueText: deadline(n.body) })).filter((n) => n.dueText)
+      .sort((a, b) => a.dueText.localeCompare(b.dueText));
+  }
+  const dueAt = (n) => new Date(String(n.dueText).replace(' ', 'T')).getTime();
+  const isLate = (n) => dueAt(n) < Date.now();
+  function openAll() { return withDue().filter((n) => !isLate(n)); }
+  function todos() { return openAll().filter((n) => statusOf(n) !== 'grading'); }
+  function submittedOpen() { return openAll().filter((n) => statusOf(n) === 'grading'); }
+  function lateAll() { return withDue().filter(isLate); }
+  function overdueTodos() { return lateAll().filter((n) => statusOf(n) !== 'grading'); }
+  function submittedOverdue() { return lateAll().filter((n) => statusOf(n) === 'grading'); }
+  function overdueDays(n) {
+    const ms = Date.now() - dueAt(n);
+    return ms >= 86400000 ? `${Math.floor(ms / 86400000)} 天` : `${Math.max(1, Math.round(ms / 3600000))} 小时`;
   }
 
   async function ignoreNotice(n) {
@@ -666,11 +703,11 @@ const CX_PY_DATA = {
   }
 
   function navHtml() {
-    const t = todos();
+    const t = todos(), l = overdueTodos(), s = submittedOpen();
     return `<div class="cx2-nav">${[
       ["inbox", `收件箱 <span class="cx2-pill">${visibleInbox().length}</span>${state.newIds.size?`<span class="cx2-pill cx2-new">+${state.newIds.size}</span>`:""}`],
       ["cats", `通知分类 <span class="cx2-pill">${visibleInbox().length}</span>`],
-      ["todo", `待办作业 <span class="cx2-pill">${t.length}</span>`],
+      ["todo", `待办作业 <span class="cx2-pill">${t.length}</span>${l.length?`<span class="cx2-pill cx2-late" title="截止已过、且本机没探到已提交">逾期 ${l.length}</span>`:""}${s.length?`<span class="cx2-pill" title="本机探到已提交，但截止时间还没到">已提交 ${s.length}</span>`:""}`],
       ["courses", `课程 <span class="cx2-pill">${state.courses.length}</span>`],
       ["lookup", "分享码查询"],
     ].map(([id,label])=>`<button data-tab="${id}" class="${state.tab===id?'on':''}">${label}</button>`).join('')}</div>`;
@@ -697,15 +734,34 @@ const CX_PY_DATA = {
     if (ySel !== state.filter.catYear) state.filter.catYear = ySel;
     const pool = visibleInbox().filter((n) => ySel === "全部" || noticeAcademicYear(n) === ySel).sort((a, b) => String(b.time || "").localeCompare(String(a.time || "")));
     const yearSel = `<select class="cx2-select" data-cat-year aria-label="筛选学年" title="按通知时间推导学年（9 月至次年 8 月为一个学年）">${['全部', ...years].map((y) => `<option value="${y}" ${y === ySel ? 'selected' : ''}>${y === '全部' ? '全部学年' : `${y} 学年`}</option>`).join('')}</select>`;
-    const secs = CATS.map((cat) => {
+    // 类型筛选与学年下拉同级：选中后只留那一类分区。胶囊上的计数跟着已选学年走，所以「全部」恒等于当前学年条数。
+    const tSel = CATS.includes(state.filter.catType) ? state.filter.catType : "全部";
+    if (tSel !== state.filter.catType) state.filter.catType = tSel;
+    const chips = `<span class="cx2-chips" role="group" aria-label="按类型筛选通知">${["全部", ...CATS].map((t) => {
+      const n = t === "全部" ? pool.length : pool.filter((x) => classify(x) === t).length;
+      return `<button class="${t === tSel ? "on" : ""}" data-cat-type="${t}" aria-pressed="${t === tSel}" title="${t === "全部" ? "显示全部类型分区" : `只看${t}分区`}">${t === "全部" ? "全部类型" : t}<i>${n}</i></button>`;
+    }).join("")}</span>`;
+    const rows = tSel === "全部" ? pool : pool.filter((n) => classify(n) === tSel);
+    const secs = (tSel === "全部" ? CATS : [tSel]).map((cat) => {
       const list = pool.filter((n) => classify(n) === cat);
       return `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-tag ${cat}">${cat}</span><span class="cx2-grade-sub">${list.length} 条</span></h4>${list.length ? `<div class="cx2-grid">${list.map(inboxCardHtml).join('')}</div>` : `<div class="cx2-empty">这个学年没有${cat}。</div>`}</section>`;
     }).join("");
-    return `<div class="cx2-toolbar">${yearSel}<span class="cx2-kpi">共 ${pool.length} 条</span></div>${pool.length ? secs : '<div class="cx2-empty">这个学年没有通知。</div>'}`;
+    return `<div class="cx2-toolbar">${yearSel}${chips}<span class="cx2-kpi">共 ${rows.length} 条</span></div>${rows.length ? secs : `<div class="cx2-empty">这个学年没有${tSel === "全部" ? "通知" : tSel}。</div>`}`;
+  }
+  function todoCardHtml(n, late, submitted) {
+    const cat = classify(n);
+    const due = late
+      ? `<div class="cx2-due late">已逾期 ${esc(overdueDays(n))} · 截止 ${esc(n.dueText)}</div>`
+      : `<div class="cx2-due">${submitted ? "已提交 · " : ""}截止 ${esc(n.dueText)}</div>`;
+    return `<article class="cx2-card ${catFrameClass(n)}${late ? ' late' : ''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div>${due}<div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`;
   }
   function todoHtml() {
-    const list=todos();
-    return list.length?`<div class="cx2-todo">${list.map(n=>`<article class="cx2-card ${catFrameClass(n)}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag 作业">作业</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div><div class="cx2-due">截止 ${esc(n.dueText)}</div><div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`).join('')}</div>`:'<div class="cx2-empty">当前拉取范围内没有识别到未截止作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>';
+    const list = todos(), late = overdueTodos(), submitted = submittedOpen(), done = submittedOverdue();
+    return `<div class="cx2-kpis"><span class="cx2-kpi" title="正文里带「结束时间 / 截止时间」且还没到期、本机没探到已提交">未截止未提交 ${list.length}</span><span class="cx2-kpi" title="截止已过、且本机没探到已提交">已逾期未提交 ${late.length}</span><span class="cx2-kpi" title="本机探到已提交，但截止时间还没到">已提交未截止 ${submitted.length}</span>${done.length ? `<span class="cx2-kpi" title="截止已过，但作业页打开是查看页，说明交过了，不再算逾期">已提交已过期 ${done.length}</span>` : ''}</div>
+      <section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-amber"></span>未截止未提交<span class="cx2-grade-sub">${list.length} 条 · 越早截止越靠前</span></h4>${list.length ? `<div class="cx2-todo">${list.map((n) => todoCardHtml(n, false, false)).join('')}</div>` : `<div class="cx2-empty">没有未截止且未提交的作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>`}</section>
+      ${late.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-red"></span>已逾期未提交<span class="cx2-grade-sub">${late.length} 条 · 逾期最久的在前</span></h4><div class="cx2-todo">${late.map((n) => todoCardHtml(n, true, false)).join('')}</div></section>` : ''}
+      ${submitted.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-blue"></span>已提交但未到截止时间<span class="cx2-grade-sub">${submitted.length} 条 · 越早截止越靠前</span></h4><div class="cx2-todo">${submitted.map((n) => todoCardHtml(n, false, true)).join('')}</div></section>` : ''}
+      <div class="cx2-hint">待办按提交状态拆开：未提交的保留在「未截止 / 已逾期」两段；探到已提交且未到截止时间的单独放在下方，避免和真正待处理的作业混在一起。</div>`;
   }
   /* ── 作业提交状态探测：通知正文里没有提交/批改状态，只能拿附件里的作业入口实地看一眼 ──
      附件 iframe 的 name 是 Base64(URL编码的 JSON)，里面带 workId 和作业入口 URL。
@@ -748,7 +804,9 @@ const CX_PY_DATA = {
   let probing = false;
   async function probePendingWorks() {
     if (probing || !state.loggedIn) return;
-    const targets = todos().filter((n) => { const r = parseWorkRef(n); return r && !state.workStatus[r.id]; }).slice(0, 6);
+    const unknown = (n) => { const r = parseWorkRef(n); return r && !state.workStatus[r.id]; };
+    // 未截止的先探（≤6）；逾期的一并探一批（≤4）—— 不探就没法把「其实早就交了」的那批从逾期里摘出去
+    const targets = [...todos().filter(unknown).slice(0, 6), ...lateAll().filter(unknown).slice(0, 4)];
     if (!targets.length) return;
     probing = true;
     try {
@@ -822,6 +880,10 @@ const CX_PY_DATA = {
     const g = gradeOf(t.year, enrollYear);
     return !g ? "" : /^大/.test(g) ? g + t.half : g;
   }
+  const COURSE_OPEN_TIP = "用系统浏览器打开该门课的学习通课程门户，地址取课程卡片自带的那个链接；若浏览器未登录学习通，会先跳登录页并在登录后自动回到该课程";
+  const courseOpenBtn = (c) => c.url
+    ? `<div class="cx2-card-actions"><button data-course-open title="${esc(COURSE_OPEN_TIP)}">打开课程门户（带登录态）</button></div>`
+    : `<p class="cx2-course-tip">没能从这张课程卡片里解析出课程门户链接（多半是平台改了卡片结构），只能从学习通 App 进课。</p>`;
   function courseCardHtml(c, enrollYear, now) {
     const st = courseStatus(c, now);
     const t = termOf(c?.start);
@@ -829,9 +891,9 @@ const CX_PY_DATA = {
     const mark = `<span class="cx2-mark st-${st}" title="${STATUS_META[st].title}">${STATUS_META[st].label}</span>`;
     const termLine = t ? `${g || `学年 ${t.year}${t.half}`} · 开课 ${c.start}` : "无开课时间";
     const more = t
-      ? `<div class="cx2-course-more"><p><i>开课</i>${esc(c.start)} ～ ${esc(c.end || "卡片未给结课日")}</p><p><i>学期</i>${esc(t.label)}${g ? ` · ${esc(g)}` : ""}</p><p class="cx2-course-tip">结课日取自学习通卡片原文（实测恒为开课 +2 年），完成状态只按开课学期推断。</p></div>`
-      : `<div class="cx2-course-more"><p><i>开课</i>学习通这张课程卡片里没有「开课时间」一行，无法推断学期与完成状态。</p></div>`;
-    return `<div class="cx2-course st-${st}" data-course-toggle title="点击展开该课的完整开课时间">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span>${more}</div>`;
+      ? `<div class="cx2-course-more"><p><i>开课</i>${esc(c.start)} ～ ${esc(c.end || "卡片未给结课日")}</p><p><i>学期</i>${esc(t.label)}${g ? ` · ${esc(g)}` : ""}</p><p class="cx2-course-tip">结课日取自学习通卡片原文（实测恒为开课 +2 年），完成状态只按开课学期推断。</p>${courseOpenBtn(c)}</div>`
+      : `<div class="cx2-course-more"><p><i>开课</i>学习通这张课程卡片里没有「开课时间」一行，无法推断学期与完成状态。</p>${courseOpenBtn(c)}</div>`;
+    return `<div class="cx2-course st-${st}" data-course-toggle data-key="${esc(`${c.courseid}_${c.clazzid}`)}" title="点击展开该课的完整开课时间">${mark}<b>${esc(c.name)}</b><span>${esc([c.teacher, c.clazz].filter(Boolean).join(' · ') || '—')}</span><span class="cx2-termline">${esc(termLine)}</span><span>courseId ${esc(c.courseid)} · clazzId ${esc(c.clazzid)}</span>${more}</div>`;
   }
   /* 开课时间总览：跨学年、跨状态，把课程按「开课日期」升序串成一条时间轴，同一天开课的并成一节。
      吃当前搜索词；没有开课时间行的课程固定落在最后一段。 */
@@ -952,8 +1014,10 @@ const CX_PY_DATA = {
       if(e.target.closest('[data-login]')){const u=host.querySelector('[data-u]').value.trim(),p=host.querySelector('[data-p]').value,status=host.querySelector('[data-login-status]');if(!u||!p){status.textContent='请填写账号和密码';return;}state.remember=host.querySelector('[data-remember]').checked;state.creds={uname:u,password:p};status.textContent='正在登录…';try{await cxLogin(u,p);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       if(e.target.closest('[data-cookie-login]')){const c=host.querySelector('[data-cookie]').value.trim(),status=host.querySelector('[data-login-status]');state.remember=host.querySelector('[data-remember]').checked;state.creds=null;status.textContent='正在验证 Cookie…';try{await startCookieSession(c);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
+      const catChip=e.target.closest('[data-cat-type]');if(catChip){state.filter.catType=catChip.dataset.catType;savePrefs();paintMain();return;}
       const yearBtn=e.target.closest('[data-year]');if(yearBtn){state.course.year=Number(yearBtn.dataset.year)||0;paintMain();return;}
       const viewBtn=e.target.closest('[data-course-view]');if(viewBtn){state.course.view=viewBtn.dataset.courseView==='timeline'?'timeline':'year';paintMain();return;}
+      const openCourse=e.target.closest('[data-course-open]');if(openCourse){const c=state.courses.find((x)=>`${x.courseid}_${x.clazzid}`===openCourse.closest('[data-key]')?.dataset.key);if(c)await openWithLogin(c.url);return;}
       const courseCard=e.target.closest('[data-course-toggle]');if(courseCard){courseCard.title=courseCard.classList.toggle('open')?'点击收起该课的开课时间':'点击展开该课的完整开课时间';return;}
       if(e.target.closest('[data-search-toggle]')){state.course.searchOpen=true;paintMain();return;}
       const modeBtn=e.target.closest('[data-mode]');if(modeBtn){state.refreshMode=modeBtn.dataset.mode==='throttle'?'throttle':'auto';await tide.storage.set('refreshMode',state.refreshMode);paintMain();return;}

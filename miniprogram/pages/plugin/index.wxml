@@ -78,7 +78,10 @@
     <view class="card">
       <view class="section-title">轮换（{{dd.groupCount}}）</view>
       <view class="dd-gchips">
-        <text class="dd-gchip {{item.on ? 'on' : ''}}" wx:for="{{dd.groups}}" wx:key="id" data-id="{{item.id}}" bindtap="onDdGroup">{{item.name}}<text class="dd-gwho" wx:if="{{item.who}}">· {{item.who}}</text></text>
+        <view class="dd-gtab" wx:for="{{dd.groups}}" wx:key="id">
+          <text class="dd-gchip {{item.on ? 'on' : ''}}" data-id="{{item.id}}" bindtap="onDdGroup">{{item.name}}<text class="dd-gwho" wx:if="{{item.who}}">· {{item.who}}</text></text>
+          <text class="dd-gmore" data-id="{{item.id}}" bindtap="onDdGroupMenu">⋯</text>
+        </view>
       </view>
       <view class="dd-add">
         <button class="btn small pri dd-addbtn" bindtap="onDdGroupNew" disabled="{{!dd.canAddGroup}}">新建轮换</button>

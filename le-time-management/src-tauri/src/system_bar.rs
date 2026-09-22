@@ -57,7 +57,10 @@ pub fn init<R: Runtime>() -> tauri::plugin::TauriPlugin<R> {
 /// `dark_icons = true` 表示「浅色背景，需要深色图标」—— 与 Android 的
 /// `isAppearanceLightStatusBars` 语义一致，前端传 `mode == "light"` 即可。
 #[tauri::command]
-pub async fn system_bar<R: Runtime>(app: tauri::AppHandle<R>, dark_icons: bool) -> Result<Value, String> {
+pub async fn system_bar<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    dark_icons: bool,
+) -> Result<Value, String> {
     #[cfg(target_os = "android")]
     {
         return app

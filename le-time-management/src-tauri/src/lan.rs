@@ -95,8 +95,12 @@ impl PushSlot {
     /// 桌面端点「接收」或「拒绝」：落成终端态。返回 false = 这次已经不作数了
     /// （被更新的推送顶掉，或者重复回执）。
     pub fn resolve(&self, id: &str, approve: bool, note: &str) -> bool {
-        let Ok(mut slot) = self.current.lock() else { return false };
-        let Some(push) = slot.as_mut() else { return false };
+        let Ok(mut slot) = self.current.lock() else {
+            return false;
+        };
+        let Some(push) = slot.as_mut() else {
+            return false;
+        };
         if push.id != id || push.status != "pending" {
             return false;
         }
@@ -183,9 +187,8 @@ fn read_body(request: &mut tiny_http::Request, limit: u64) -> Result<String, Str
 /// 以及老版裸 data.json（顶层就是 tasks/blocks）—— 与前端 parseSnapshot 的宽容度对齐。
 fn push_meta(body: &str) -> Option<serde_json::Value> {
     let parsed: serde_json::Value = serde_json::from_str(body).ok()?;
-    let count = |v: &serde_json::Value, key: &str| {
-        v.get(key).and_then(|x| x.as_array()).map(|a| a.len())
-    };
+    let count =
+        |v: &serde_json::Value, key: &str| v.get(key).and_then(|x| x.as_array()).map(|a| a.len());
     let root = parsed.get("data").unwrap_or(&parsed);
     let tasks = count(root, "tasks")?;
     let blocks = count(root, "blocks")?;
@@ -254,17 +257,22 @@ pub fn spawn_server(
                 }
                 // 拉之前的「电脑上是什么货」：条数 + 落盘时间 + 肯不肯收回传。只读，不落任何盘。
                 (&tiny_http::Method::Get, "/api/info") => {
-                    let saved_at = std::fs::metadata(&data_path).ok()
+                    let saved_at = std::fs::metadata(&data_path)
+                        .ok()
                         .and_then(|m| m.modified().ok())
                         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                         .map(|d| d.as_secs());
-                    let parsed: Option<serde_json::Value> = std::fs::read_to_string(&data_path).ok()
+                    let parsed: Option<serde_json::Value> = std::fs::read_to_string(&data_path)
+                        .ok()
                         .and_then(|s| serde_json::from_str(&s).ok());
-                    let count = |key: &str| parsed.as_ref()
-                        .and_then(|v| v.get(key))
-                        .and_then(|v| v.as_array())
-                        .map(|a| a.len())
-                        .unwrap_or(0);
+                    let count = |key: &str| {
+                        parsed
+                            .as_ref()
+                            .and_then(|v| v.get(key))
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.len())
+                            .unwrap_or(0)
+                    };
                     let body = serde_json::json!({
                         "ok": true,
                         "appVersion": env!("CARGO_PKG_VERSION"),
@@ -277,7 +285,7 @@ pub fn spawn_server(
                     (200, json_headers(), body.to_string())
                 }
                 /* ── 回传第一段：收下快照、只进暂存槽、立刻回 202 ──
-                   这里绝不等用户点确认：HTTP 线程一等，等期间的其它请求全排死。 */
+                这里绝不等用户点确认：HTTP 线程一等，等期间的其它请求全排死。 */
                 (&tiny_http::Method::Post, "/api/push") => {
                     if !allow_push {
                         (403, json_headers(), serde_json::json!({

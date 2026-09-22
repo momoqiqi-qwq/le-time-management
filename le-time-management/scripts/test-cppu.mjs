@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../public/plugins/cppu-notify/main.js',import.meta.url),'utf8');
-let response, calls=[], vaultData={}, opened=[], notices=[];
+let response, calls=[], vaultData={}, opened=[], notices=[], views=[];
 const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeout,setInterval,clearInterval,
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
-  tide:{ui:{registerView(){}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url)},notify:(message)=>notices.push(message)}
+  tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,openSideLink}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -103,16 +103,67 @@ assert.ok(cppuBlock.includes(`"${cppuManifest.version}"`), `pluginCatalog 必须
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
-/* ── 左侧校园服务栏：五个入口（含一网通办）+ 标题/图标自动识别 ── */
-for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html', 'https://service.cppu.edu.cn/fe/site/service']) {
+/* ── 左侧校园服务栏：七个入口（含一网通办、一卡通、我的请假）+ 标题/图标自动识别 ── */
+for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html#/StuDailyLeaveList', 'https://service.cppu.edu.cn/fe/site/service', 'https://yktcard.cppu.edu.cn/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app']) {
   assert.ok(source.includes(url), `校园服务栏必须包含 ${url}`);
 }
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
-assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓五个站点');
+assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓七个站点');
 assert.match(source, /\{\s*url:\s*"https:\/\/service\.cppu\.edu\.cn\/fe\/site\/service"[^}]*icon:\s*"[a-z-]+"/, '一网通办入口必须自带语义图标，供无法读 favicon 时兜底');
+assert.match(source, /\{\s*url:\s*"https:\/\/yktcard\.cppu\.edu\.cn\/campus-card\/cardRecharge[^}]*icon:\s*"[a-z-]+"/, '一卡通入口必须自带语义图标，供无法读 favicon 时兜底');
+assert.match(source, /\{\s*url:\s*"https:\/\/xg\.cppu\.edu\.cn\/XGPhone\/Phone\/index\.html#\/StuDailyLeaveList"[^}]*icon:\s*"[a-z-]+"/, '「我的请假」入口必须自带语义图标，供无法读 favicon 时兜底');
+/* 反面判据①：一卡通走自己的 OAuth2 登录、不接学校统一身份认证（该校部署的 casUrl 是占位符
+   xxx.xxx.edu.cn），换不到免登票据 —— 所以这个 URL 只应出现在 QUICK_LINKS 一处，
+   一旦有人把它塞进 TICKET_LINKS，点击就会白等一次换票再回退，必须拦下。 */
+assert.ok((source.split('yktcard.cppu.edu.cn').length - 1) === 1,
+  '一卡通 URL 只应出现在 QUICK_LINKS 一处，不得同时进 TICKET_LINKS');
+/* 反面判据②：「我的请假」是学工 SPA 的 hash 路由（裸开 index.html 返回 200 静态壳、无服务端
+   302，登录由该 SPA 自己的 /Login 路由处理），同样不该进 TICKET_LINKS。用完整带 hash 的
+   URL 计数 —— 实现里的注释只提路由名，不会把注释算进来。 */
+assert.ok((source.split('index.html#/StuDailyLeaveList').length - 1) === 1,
+  '「我的请假」URL 只应出现在 QUICK_LINKS 一处，不得同时进 TICKET_LINKS');
+/* 反面判据③（本次真正的坑）：用户给的原始地址是登录后的落地页，带一次性授权码与 state
+   （用完即废）—— 原样抄进入口的话，点开必然失败。实现里只允许留裸地址 + hash 路由。 */
+assert.doesNotMatch(source, /index\.html\?code=|state=QYState/,
+  '「我的请假」入口不得写死带一次性授权码 code / state 的地址（用完即废，点开必失败）');
 assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '侧栏必须同时绑定在登录页与通知列表页');
+assert.ok(source.includes('MAIL_ACCOUNT = "2025290058@cppu.edu.cn"'), '教育邮箱自动登录必须使用用户指定的完整邮箱账号');
+assert.match(source, /if \(url === MAIL\) \{ await openMailLink\(btn\); return; \}/,
+  '点击教育邮箱必须进入专用自动登录链路，而不是裸开 mail.cppu.edu.cn');
+assert.ok(source.includes('readSavedPassword') && source.includes('tide.vault.get("secret")'),
+  '教育邮箱必须复用警大通知插件密钥库里保存的同一份密码');
+assert.ok(source.includes('mailSessionUrlFromResponse') && source.includes('verifyMailSession'),
+  '教育邮箱提交后必须识别 sid 会话入口并二次校验，不能只 POST 一次就宣布成功');
+assert.doesNotMatch(source, /const direct = mailSessionUrlFromResponse[\s\S]{0,120}?openUrl\(direct\)/,
+  '邮箱首页如果已经返回 sid，也要先校验该入口不是登录页再打开');
+const mailFn = source.slice(source.indexOf('async function openMailLink'));
+assert.doesNotMatch(mailFn, /data:text\/html|openUrl\([^)]*password/s,
+  '邮箱自动登录不能把密码拼进 openUrl/data URL 这类可见地址');
+
+vaultData.secret = JSON.stringify({ password: 'mail-pass' });
+state.autoLogin = true; state.savedPassword = ''; calls = []; opened = []; notices = [];
+response = (sid, method, url, opts = {}) => {
+  if (method === 'GET' && url === 'https://mail.cppu.edu.cn/') {
+    return { status: 200, finalUrl: url, body: '<form action="/coremail/index.jsp?cus=1" method="post"><input name="uid"><input name="password" type="password"></form>' };
+  }
+  if (method === 'POST') {
+    return { status: 200, finalUrl: 'https://mail.cppu.edu.cn/coremail/XT5/index.jsp?sid=mail-sid', body: '' };
+  }
+  if (method === 'GET' && url.includes('sid=mail-sid')) {
+    return { status: 200, finalUrl: url, body: '<html><title>Coremail</title><div id="mailbox">Inbox</div></html>' };
+  }
+  return { status: 404, body: '' };
+};
+await openMailLink(null);
+assert.equal(opened.at(-1), 'https://mail.cppu.edu.cn/coremail/XT5/index.jsp?sid=mail-sid');
+const mailPost = calls.find((c) => c[1] === 'POST' && c[2].includes('/coremail/index.jsp'));
+assert.ok(mailPost, '教育邮箱自动登录必须向邮箱登录表单提交 POST');
+assert.ok(mailPost[3].body.includes('uid=2025290058%40cppu.edu.cn'), '邮箱登录提交体必须带完整邮箱账号');
+assert.ok(mailPost[3].body.includes('password=mail-pass'), '邮箱登录提交体必须复用密钥库保存的警大通知密码');
+assert.ok(opened.every((url) => !url.includes('mail-pass')), '打开到系统浏览器的 URL 里不能泄露密码');
+assert.ok(calls.some((c) => c[1] === 'GET' && c[2].includes('sid=mail-sid')), '打开邮箱前必须用同一 HTTP 会话校验 sid 入口可用');
 
 /* ── 校园服务栏可收起 / 展开：默认收起、有动画、自左上角往右下角展开、正文随之让位 ── */
 assert.match(source, /sideOpen:\s*false/, '校园服务栏必须默认收起');
@@ -268,4 +319,162 @@ await openSideLink('https://webvpn.cppu.edu.cn/');
 assert.deepEqual(opened,['https://webvpn.cppu.edu.cn/'],'未声明换票的入口必须仍然直开裸地址');
 assert.equal(calls.length,0,'未声明换票的入口不应发起任何请求');
 
-console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths and bounded renewal');
+/* ── 11. 智慧教务只读接入（选课 / 请假 / 创新学分）────────────────────────
+   三条硬规矩：① 建立教务会话要「要票 → 自己消费落票」两段（跟侧栏「把票交给浏览器」正相反）；
+   ② 取数只走通用查询端点 /je/load，请求体配方错了服务端直接回 UNKOWN_ERROR；
+   ③ 全程只读，绝不出现写入类端点（提交请假/选课要回教务点）。 */
+state.sid = 'jw-test'; state.username = '2025290058'; calls = []; opened = []; notices = [];
+const jeJson = (rows) => ({ status: 200, finalUrl: 'https://jw.cppu.edu.cn/je/load', location: '', cookies: [], body: JSON.stringify({ total: rows.length, rows }) });
+/* 教务侧真实形状（2026-09-22 真机抓的）：视图型功能只要 funcCode 就能查；
+   funcType=sql 的功能必须把它自己的 SELECT 原样回传（queryType/dbSql/queryParamsStr）。 */
+const JE_META = {
+  'V_JWBZK_XKGL_XKJG_XS': { funcId: 'UEgVc81fir8gotAkmzM', funcType: 'view' },
+  'JWBZK.T_JWBZK_XKGL_XYXK': { funcId: 'cxJNVOE1UJU4YwTJyDT', funcType: 'sql', sql: 'SELECT DISTINCT A.ID FROM JWBZK.T_JWBZK_XKGL_XKRW A' },
+};
+const jeMetaJson = (code) => {
+  const m = JE_META[code] || {};
+  return { status: 200, finalUrl: 'https://jw.cppu.edu.cn/je/develop/funcInfo/getStaticFuncByCode', location: '', cookies: [], body: JSON.stringify({ funcInfo: { funcId: m.funcId, funcType: m.funcType }, func: { info: m.sql ? { FUNCINFO_SQL: m.sql } : {} } }) };
+};
+const jeMeta = (opts) => decodeURIComponent(String(opts?.body || '')).replace(/\+/g, ' ').match(/FUNCINFO_FUNCCODE=([^&]*)/)?.[1] || '';
+response = (sid, method, url, opts = {}) => {
+  if (url.startsWith('https://sso-jw.cppu.edu.cn/tpass/login')) return { status: 302, body: '', finalUrl: url, location: 'https://jw.cppu.edu.cn/cas_callback?ticket=ST-self', cookies: [] };
+  if (url.startsWith('https://jw.cppu.edu.cn/cas_callback')) return { status: 200, body: '<html>智慧教务</html>', finalUrl: 'https://jw.cppu.edu.cn/index.html', location: '', cookies: [] };
+  if (url.endsWith('/je/develop/funcInfo/getStaticFuncByCode')) return jeMetaJson(jeMeta(opts));
+  if (url.startsWith('https://jw.cppu.edu.cn/je/load')) return jeJson([{ KCMC: '示例课程' }]);
+  return { status: 404, body: '', finalUrl: url, location: '', cookies: [] };
+};
+assert.equal(await ensureJwSession(), true, '换票自消费后应建立教务会话');
+assert.equal(jwLive(), true, '教务会话必须记在发起它的那个 sid 上（换会话就要重换票）');
+assert.equal(calls.length, 2, '建立教务会话 = 要票 + 落票两段请求');
+assert.equal(calls[0][2], 'https://sso-jw.cppu.edu.cn/tpass/login?service=' + encodeURIComponent('https://jw.cppu.edu.cn/cas_callback'), '要票的 service 必须是教务的 cas_callback');
+assert.equal(calls[0][3].followRedirects, false, '要票那段必须禁止自动重定向（一次性票据不能被跟到底吃掉）');
+assert.equal(calls[1][3]?.followRedirects, undefined, '落票这段要跟着重定向跑完，Cookie Jar 才拿得到 authorization');
+assert.equal(calls[1][2], 'https://jw.cppu.edu.cn/cas_callback?ticket=ST-self', '教务会话必须自己消费这张票，区别于侧栏「交给系统浏览器」');
+
+calls = [];
+const jeOnce = await jeLoad('xkResult', []);   // 跨 realm 的对象不能 deepEqual（原型不同）
+assert.equal(jeOnce.length, 1);
+assert.equal(jeOnce[0].KCMC, '示例课程');
+assert.equal(calls.length, 2, '教务会话有效时取数 = 功能元信息 + 数据查询两段，不该再换票');
+assert.equal(calls[0][2], 'https://jw.cppu.edu.cn/je/develop/funcInfo/getStaticFuncByCode', '查询前要先拿功能元信息（funcType / dbSql 都在里面）');
+assert.ok(decodeURIComponent(calls[0][3].body).includes('V_JWBZK_XKGL_XKJG_XS'), '元信息按 funcCode 查');
+assert.equal(calls[1][1], 'POST');
+assert.equal(calls[1][2], 'https://jw.cppu.edu.cn/je/load', '教务数据只走通用查询端点');
+const jeBody = new URLSearchParams(calls[1][3].body);
+assert.equal(jeBody.get('funcCode'), 'V_JWBZK_XKGL_XKJG_XS');
+assert.equal(jeBody.get('funcId'), 'UEgVc81fir8gotAkmzM', 'funcId 必须用元信息里的功能自身 id，不是菜单 id');
+assert.equal(jeBody.get('tableCode'), 'V_JWBZK_XKGL_XKJG');
+assert.equal(jeBody.get('_isFunc_'), 'true');
+assert.equal(jeBody.get('limit'), '-1', '一次拉全量（分页要靠 j_query，不是靠翻页）');
+assert.equal(jeBody.get('queryType'), null, '视图型功能不要回传 SQL');
+assert.equal(JSON.parse(jeBody.get('j_query')).custom.length, 0);
+assert.equal(calls[1][3].headers.Referer, 'https://jw.cppu.edu.cn/index.html', '/je/load 必须带教务站内来源');
+calls = [];
+await jeLoad('xkResult', []);
+assert.equal(calls.length, 1, '同一功能的元信息必须缓存，不能每次查询都多跳');
+
+// funcType=sql 的功能（学员选课）漏掉回传 SQL 会直接 UNKOWN_ERROR
+calls = [];
+await jeLoad('xkTask', []);
+const taskBody = new URLSearchParams(calls.at(-1)[3].body);
+assert.equal(taskBody.get('queryType'), 'sql');
+assert.equal(taskBody.get('dbSql'), 'SELECT DISTINCT A.ID FROM JWBZK.T_JWBZK_XKGL_XKRW A', 'sql 型功能要原样回传它自己的 SELECT');
+assert.equal(taskBody.get('queryParamsStr'), '[]');
+
+calls = [];
+await jeLoad('qjCourse', [{ type: 'and', value: [{ code: 'XNXQ_CODE', type: '=', value: '20262027-1', cn: 'and' }] }]);
+const jeQuery = JSON.parse(new URLSearchParams(calls.at(-1)[3].body).get('j_query'));
+assert.deepEqual(jeQuery._custom_types, ['group'], '条件组必须声明 group 类型，否则服务端不认');
+assert.equal(jeQuery.custom[0].value[0].value, '20262027-1');
+
+// 会话过期的表现不是 401，而是 POST 被 302 回登录页、拿回来一整页 HTML → 换新票重一次
+calls = []; let loadHits = 0;
+response = (sid, method, url, opts = {}) => {
+  if (url.startsWith('https://sso-jw.cppu.edu.cn/tpass/login')) return { status: 302, body: '', finalUrl: url, location: 'https://jw.cppu.edu.cn/cas_callback?ticket=ST-' + loadHits, cookies: [] };
+  if (url.startsWith('https://jw.cppu.edu.cn/cas_callback')) return { status: 200, body: '<html>ok</html>', finalUrl: 'https://jw.cppu.edu.cn/index.html', location: '', cookies: [] };
+  if (url.endsWith('/je/develop/funcInfo/getStaticFuncByCode')) return jeMetaJson(jeMeta(opts));
+  if (url.startsWith('https://jw.cppu.edu.cn/je/load')) {
+    loadHits++;
+    return loadHits === 1 ? { status: 200, body: '<html>统一身份认证平台</html>', finalUrl: url, location: '', cookies: [] } : jeJson([{ KCMC: '重取到的课程' }]);
+  }
+  return { status: 404, body: '', finalUrl: url, location: '', cookies: [] };
+};
+assert.equal((await jeLoad('cxCredit'))[0].KCMC, '重取到的课程', '拿到 HTML 必须换新票重一次');
+assert.equal(loadHits, 2, '解析失败只重试一次，不能无限重');
+loadHits = 0; response = (sid, method, url) => (url.includes('/je/load') ? { status: 200, body: '<html>nope</html>', finalUrl: url, location: '', cookies: [] } : (url.includes('tpass/login') ? { status: 302, body: '', finalUrl: url, location: 'https://jw.cppu.edu.cn/cas_callback?ticket=x', cookies: [] } : { status: 200, body: '<html>ok</html>', finalUrl: 'https://jw.cppu.edu.cn/index.html', location: '', cookies: [] }));
+await assert.rejects(() => jeLoad('qjRecord'), /教务数据解析失败/, '两次都拿不到 rows 就把 HTTP 状态报出来，不要静默返回空列表');
+
+// 重启恢复：dump 里已带教务 authorization 就省一次换票；但 sso-jw 域的同名 Cookie 不算
+await clearSavedLogin(); state.sid = null;
+vaultData.cookies = JSON.stringify([{ url: 'https://jw.cppu.edu.cn', cookie: 'authorization=keep-me' }, { url: 'https://portal-jw.cppu.edu.cn', cookie: 'tp_up=t' }]);
+assert.equal(await restoreCookies(), true);
+assert.equal(jwLive(), true, '恢复的 Cookie 里有教务 authorization 时必须直接认这个会话');
+await clearSavedLogin(); state.sid = null;
+vaultData.cookies = JSON.stringify([{ url: 'https://sso-jw.cppu.edu.cn', cookie: 'authorization=other' }]);
+assert.equal(await restoreCookies(), true);
+assert.equal(jwLive(), false, 'sso-jw 域的 authorization 不能当成教务会话（域名判定要精确到 https://jw.）');
+await clearSavedLogin(); state.sid = null;
+
+/* 只读守门：写入类端点一个都不许出现 */
+assert.doesNotMatch(source, /\/je\/doAct|\/je\/develop\/funcInfo\/(save|add|update)|jw\.cppu\.edu\.cn[^"'`\n]*\/(save|submit|add|update|delete)/i,
+  '教务接入必须只读：写入类端点没实测过就不许出现在插件里');
+assert.ok(source.includes('const JW_LOAD = JWAPP + "/je/load"'), '教务取数端点必须挂在 jw 域，不能混进 sso-jw');
+
+/* 侧栏三个入口 + 四个视图注册 */
+assert.deepEqual(views.map((v) => v.id).sort(), ['cppu-cx', 'cppu-notify', 'cppu-qj', 'cppu-xk'],
+  '必须注册通知视图 + 选课/请假/创新学分三个教务视图');
+assert.ok(views.filter((v) => v.id !== 'cppu-notify').every((v) => typeof v.render === 'function'), '教务视图必须有 render');
+assert.ok(views.some((v) => v.id === 'cppu-cx' && v.title === '警大创新学分'), '创新学分视图要有独立标题');
+for (const v of ['cppu-xk', 'cppu-qj', 'cppu-cx']) assert.ok(source.includes(`view: "${v}"`), `校园服务栏必须有 ${v} 入口`);
+assert.match(source, /url\.startsWith\("view:"\)\) \{ tide\.util\.navigate\("plug:" \+ url\.slice\(5\)\)/,
+  'view: 入口必须在插件内切视图，而不是开系统浏览器（教务 SPA 没有 URL 深链）');
+assert.match(source, /data-goto="\$\{esc\("view:" \+ item\.view\)\}"/,
+  'view 入口必须渲染成 view:<视图 id>，不能拿 undefined 的 item.url 去渲染 data-goto');
+
+/* 字典与学期码：未命中的码一律原样显示 */
+assert.equal(jwDict('JC', '03'), '5-6', '节次要按校方字典翻成 5-6 节');
+assert.equal(jwDict('SQZT', '1'), '审批中');
+assert.equal(jwDict('KCSX', '99'), '99', '未知码必须原样显示，不许编一个好听的词');
+assert.equal(jwDict('KCSX', ''), '');
+assert.equal(jwTermName('20252026-1'), '2025-2026 学年第 1 学期', '学期码 20252026-1 要读成人话');
+
+/* ── 12. 用真机样本喂渲染函数：范围切换 / 已申请关联 / 分组统计 / 转义 ── */
+const dayOffset = (n) => {
+  const d = new Date(Date.now() + n * 86400000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+jwState.term = { code: '20262027-1', name: '2026年秋季学期', jxStart: dayOffset(-21), weeks: 28 };  // 今天是第 4 周
+jwState.loading = {}; jwState.at = {};
+jwState.error = { xkTask: '', xkResult: '', qjRecord: '', qjCourse: '', cxCredit: '' };
+jwState.courseScope = 'week';
+jwState.data.qjRecord = [{ SKRQ: dayOffset(0), JC: '03', KCMC: '数字电子技术', JSXMS: '刘晓军', JSMC: 'A102', SQYY: '尊敬的老师<img src=x onerror=alert(1)>，因补考冲突', SQZT: '1', YWID: 'bc@17' }];
+jwState.data.qjCourse = [
+  { ID: 'bc@17', SKRQ: dayOffset(0), XQ: 4, JC: '03', KCMC: '数字电子技术', KCSX: '01', HJLX: '01', JS: '刘晓军', DDMC: 'A102', XF: 3 },
+  { ID: 'yy@1', SKRQ: dayOffset(7), XQ: 5, JC: '02', KCMC: 'C语言程序设计A', KCSX: '01', HJLX: '03', JS: '邱宏', DDMC: 'B501', XF: 3 },
+];
+const leaveWeek = jwLeaveHtml();
+assert.ok(leaveWeek.includes('数字电子技术') && !leaveWeek.includes('C语言程序设计A'), '「本周」不能串进下周的课次');
+assert.ok(leaveWeek.includes('已申请'), '课次要按 YWID ↔ 课次 ID 关联出「已申请」');
+assert.ok(leaveWeek.includes('审批中') && leaveWeek.includes('5-6节'), '请假状态与节次都要走字典翻成人话');
+assert.ok(!leaveWeek.includes('<img src=x') && leaveWeek.includes('&lt;img src=x'), '请假理由是自由文本，必须转义后再进 HTML');
+jwState.courseScope = 'today';
+assert.ok(jwLeaveHtml().includes('数字电子技术'), '「今天」按上课日期精确匹配');
+jwState.courseScope = 'term';
+const leaveTerm = jwLeaveHtml();
+assert.ok(leaveTerm.includes('C语言程序设计A') && leaveTerm.includes('class="jw-row"'), '「本学期」是 200+ 节，必须走紧凑行而不是卡片');
+jwState.data.xkResult = [
+  { KCMC: '多旋翼无人机组装与调试', KCSX: '02', XKBMC: '选_1', XF: 1, SKDD: '消训楼410', KKXNXQ: '20262027-1', KKXNXQNAME: '2026年秋季学期', OPERATERCODE: '2025290058' },
+  { KCMC: '反邪教研究', KCSX: '02', XKBMC: '选_2', XF: 1, SKDD: 'A204', KKXNXQ: '20262027-1', KKXNXQNAME: '2026年秋季学期', OPERATERCODE: '8712c0c67d92ff2fe5da1e36591bb80d' },
+];
+const resultHtml = jwResultHtml();
+assert.ok(resultHtml.includes('2026年秋季学期 · 2 门 · 2 学分'), '已选课程按学期分组并合计学分');
+assert.ok(resultHtml.includes('本人自选') && resultHtml.includes('教务代选'), 'OPERATERCODE 是学号=本人自选，是 uuid=教务代选');
+jwState.data.xkTask = [{ XKRWMC: '2026年秋季学期线上选修课（慕课）选课', KKXNXQ: '20262027-1', LC: '2' }];
+const taskHtml = jwTaskHtml();
+assert.ok(taskHtml.includes('慕课') && taskHtml.includes('第 2 轮'), '选课任务要显示轮次，学期码要翻成学期名');
+jwState.data.cxCredit = [{ DECLARE_YEAR_SEMESTER: '20252026-2', SUM_VALUE: 7, APPLYALL: 7, END_VALUE: 4, XQMC: '廊坊校区', XYDMC: '防火工程二队' }];
+const creditHtml = jwCreditHtml();
+assert.ok(creditHtml.includes('合计学分') && creditHtml.includes('待认定 3 项'), '创新学分要给出合计与「申请了但没认定」的差额');
+for (const k of Object.keys(jwState.data)) jwState.data[k] = null;
+
+console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths, bounded renewal and read-only 教务 views');

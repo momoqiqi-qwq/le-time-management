@@ -8,10 +8,14 @@
   const SSO = "https://sso.cppu.edu.cn";
   const JW = "https://sso-jw.cppu.edu.cn";
   const PORTAL = "https://portal-jw.cppu.edu.cn";
+  const JWAPP = "https://jw.cppu.edu.cn";          // 智慧教务（正方 JE），与上面的 sso-jw 不是一个域
+  const JW_INDEX = JWAPP + "/index.html";
   const SERVICE_JW = JW + "/tpass/bridge";
   const LOGIN_URL = SSO + "/tpass/login?service=" + encodeURIComponent(SERVICE_JW);
   const SERVICE_PORTAL = PORTAL + "/tp_up/view?m=up";
   const SILENT_LOGIN = JW + "/tpass/login?service=" + encodeURIComponent(SERVICE_PORTAL);
+  const MAIL = "https://mail.cppu.edu.cn/";
+  const MAIL_ACCOUNT = "2025290058@cppu.edu.cn";
   const PAGES_MAX = 10, PAGE_SIZE = 50, CHUNK = 15;
   const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
@@ -22,8 +26,26 @@
     { url: "https://webvpn.cppu.edu.cn/", label: "WebVPN", icon: "shield-halved" },
     { url: "https://mail.cppu.edu.cn/", label: "教育邮箱", icon: "envelope" },
     { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school" },
+    // 这三个教务模块走 `view:`（在 U-Time 里开视图）而不是换票开浏览器：
+    // 教务 SPA 完全没有 URL 深链（je-app/je-main/je-core 三个 bundle 都不解析
+    // location.hash / location.search，开任何功能地址栏都停在 index.html），
+    // 做成链接的话三个入口只会统统落回教务首页，等于同一个入口抄三遍。
+    { view: "cppu-xk", label: "学生选课", icon: "list-check" },
+    { view: "cppu-qj", label: "学生请假", icon: "calendar-xmark" },
+    { view: "cppu-cx", label: "创新学分", icon: "medal" },
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
+    // 「我的请假」与「学工」同源，只是该 SPA 的 hash 路由（实测路由表里有 /StuDailyLeaveList）。
+    // 裸开 index.html 返回 200 静态壳、没有服务端 302，登录由该 SPA 自己的 /Login 路由处理
+    // ⇒ 不属于「302 到统一身份认证」那一类，刻意不进 TICKET_LINKS（换票链路不适用）。
+    // ⚠️ 用户给的原始地址带一次性授权码与 state 参数（用完即废），绝不能原样写死进来，
+    // 否则入口点开必失败；这里只保留裸地址 + hash 路由。
+    { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html#/StuDailyLeaveList", label: "我的请假", icon: "calendar-check" },
     { url: "https://service.cppu.edu.cn/fe/site/service", label: "一网通办", icon: "clipboard-list" },
+    // 一卡通平台（慧新易校 / 新中新）走它自己的 OAuth2 登录，不接学校统一身份认证 ——
+    // 实测配置里的 casUrl 指向占位符 xxx.xxx.edu.cn，SSO 换票是坏的，
+    // 所以刻意不进 TICKET_LINKS：换不到免登票据，裸开即可。
+    // 登录态存 sessionStorage，关标签页即失效，每次新会话都要重登（学/工号 + 密码 + 图形验证码）。
+    { url: "https://yktcard.cppu.edu.cn/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app", label: "一卡通", icon: "credit-card" },
   ];
   // 需要登录才能进的入口：点一下不直接开裸地址（那样只会落到统一身份认证登录页），
   // 而是用插件自身那份统一身份认证会话（sso.cppu.edu.cn 的 CASTGC，随 rememberMe 保 5 天）
@@ -248,6 +270,29 @@
       .pp-side-txt b{font-size:calc(12.5px * var(--ui-text-scale));font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
       .pp-side-txt small{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
       .pp-side-note{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
+      /* ── 教务只读视图（选课 / 请假 / 创新学分）：一律用主题变量，深色模式自动跟随 ── */
+      .jw-kicker{font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:var(--ink-3);margin:16px 0 4px}
+      .jw-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+      .jw-head h3{font-size:calc(19px * var(--ui-text-scale));font-weight:700;color:var(--deep);margin:0}
+      .jw-head span{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .jw-tip{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3);line-height:1.75;margin:2px 0 6px}
+      .jw-sec{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:calc(12.5px * var(--ui-text-scale));font-weight:700;color:var(--deep);padding:14px 2px 8px;letter-spacing:.04em}
+      .jw-sec small{font-weight:400;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .jw-group{font-size:calc(11.5px * var(--ui-text-scale));font-weight:600;color:var(--deep);padding:8px 2px 6px;border-bottom:1px solid var(--line-soft);margin-bottom:8px}
+      .jw-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin-bottom:8px}
+      .jw-card-t{font-size:calc(13.5px * var(--ui-text-scale));font-weight:600;line-height:1.5;color:var(--ink)}
+      .jw-why{font-size:calc(11.5px * var(--ui-text-scale));line-height:1.8;color:var(--ink-3);margin-top:7px;padding-top:7px;border-top:1px dashed var(--line);white-space:pre-wrap;overflow-wrap:anywhere}
+      .jw-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:7px 4px;border-bottom:1px solid var(--line-soft);font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .jw-row b{color:var(--ink);font-weight:600;font-size:calc(12px * var(--ui-text-scale))}
+      .jw-row span{color:var(--deep);font-weight:600}
+      .jw-row small{flex:1;min-width:120px}
+      .jw-tag{display:inline-block;border-radius:6px;padding:2px 8px;background:var(--paper);border:1px solid var(--line-soft);color:var(--deep);font-size:calc(10.5px * var(--ui-text-scale))}
+      .jw-tag.ok{background:rgba(46,196,182,.14);border-color:rgba(46,196,182,.45);color:#0B6B60}
+      .jw-tag.warn{background:rgba(242,217,166,.24);border-color:#E3C384;color:#8A6420}
+      .jw-sum{display:flex;align-items:baseline;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:6px 0 10px}
+      .jw-sum b{font-size:calc(30px * var(--ui-text-scale));color:var(--deep);line-height:1}
+      .jw-sum span{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      @media(max-width:600px){.jw-card-t{font-size:calc(14.5px * var(--ui-text-scale))}.jw-head h3{font-size:calc(17px * var(--ui-text-scale))}.jw-sum b{font-size:calc(26px * var(--ui-text-scale))}.jw-row small{min-width:0;flex-basis:100%}}
       @media(max-width:820px){
         .pp-shell{flex-direction:column;padding:0 14px}
         /* 窄屏时侧栏是整层叠在正文上面的，收起要收"高度"而不是宽度 */
@@ -296,7 +341,7 @@
   async function saveCookies() {
     if (typeof tide.vault?.set !== "function" || !state.sid) return;
     try {
-      const dump = await tide.http.exportCookies(state.sid, [SSO, JW, PORTAL]);
+      const dump = await tide.http.exportCookies(state.sid, [SSO, JW, PORTAL, JWAPP]);
       if (dump.length) await tide.vault.set("cookies", JSON.stringify(dump));
     } catch { /* 密钥库不可用（浏览器调试）时静默跳过 */ }
   }
@@ -311,6 +356,9 @@
         // tp_up 本身也保存在门户 Cookie 中。先恢复它可直接复用仍有效的门户会话，
         // 即使主 SSO 的 CASTGC 已失效，也不必立刻退回验证码登录。
         state.token = tokenFromText(...dump.map((row) => row?.cookie));
+        // 教务（jw.cppu.edu.cn）的 authorization 若在 dump 里，本会话就省一次换票；
+        // 判域名要精确到 https://jw.：sso-jw.cppu.edu.cn 也带 jw.，误判会让教务请求白跑。
+        if (dump.some((row) => String(row?.url || "").startsWith(JWAPP) && /authorization=/i.test(String(row?.cookie || "")))) jwSid = state.sid;
         return !!state.sid;
       }
     } catch { /* 票据损坏按无票据处理 */ }
@@ -319,6 +367,8 @@
 
   async function clearSavedLogin() {
     state.savedPassword = "";
+    jwSid = null;
+    jwState.data = { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, cxCredit: null };
     try {
       await tide.vault?.del?.("secret");
       await tide.vault?.del?.("cookies");
@@ -1098,6 +1148,14 @@
   }
   function sideHtml() {
     const rows = QUICK_LINKS.map((item) => {
+      // `view:` 入口既没有网址也没有站点元信息：标题用短名，副行写「在 U-Time 内查看」。
+      if (item.view) {
+        return `<button type="button" class="pp-side-btn" data-goto="${esc("view:" + item.view)}" `
+          + `title="${esc(`${item.label} · 在 U-Time 内查看教务数据`)}">`
+          + `<span class="pp-side-ico">${linkIcon(item)}</span>`
+          + `<span class="pp-side-txt"><b>${esc(item.label)}</b><small>在 U-Time 内查看</small></span>`
+          + `</button>`;
+      }
       const meta = linkMeta[item.url] || {};
       const recognized = usableTitle(meta.title);
       const host = meta.host || hostOf(item.url);
@@ -1145,6 +1203,7 @@
     } catch { /* 存储不可用时用内存里的 */ }
     let changed = false;
     for (const item of QUICK_LINKS) {
+      if (!item.url) continue;          // `view:` 入口是插件内视图，没有站点可识别
       const cached = linkMeta[item.url];
       if (!force && cached && Date.now() - Number(cached.at || 0) < LINK_META_TTL) continue;
       try {
@@ -1185,6 +1244,9 @@
   }
 
   async function openSideLink(url, btn) {
+    // `view:` 入口不开浏览器，直接切到本插件注册的对应视图（宿主视图 id 统一带 `plug:` 前缀）
+    if (url.startsWith("view:")) { tide.util.navigate("plug:" + url.slice(5)); return; }
+    if (url === MAIL) { await openMailLink(btn); return; }
     const entry = TICKET_LINKS[url];
     if (!entry || !state.sid) { tide.util.openUrl(url); return; }
     if (btn && btn.setAttribute) btn.setAttribute("aria-busy", "1");
@@ -1196,6 +1258,127 @@
     tide.notify("没换到免登票据，已按普通方式打开，可能需要先登录一次");
   }
 
+  function mailSessionUrlFromResponse(res, base = MAIL) {
+    const parts = [res?.finalUrl, res?.location, res?.body].filter(Boolean).map(String);
+    for (const raw of parts) {
+      const text = raw.replace(/&amp;/g, "&");
+      const absolute = text.match(/https?:\/\/mail\.cppu\.edu\.cn\/[^"'<>\\\s]*[?&;]sid=[^"'<>\\\s]+/i)?.[0];
+      const relative = text.match(/(?:^|["'=])((?:\/coremail\/|\/)[^"'<>\\\s]*sid=[^"'<>\\\s]+)/i)?.[1];
+      const sid = text.match(/(?:[?&;]sid=|\bsid\s*[:=]\s*["'])([A-Za-z0-9._-]+)/i)?.[1];
+      const hit = absolute || relative || (sid ? `/coremail/XT5/index.jsp?sid=${encodeURIComponent(sid)}` : "");
+      if (!hit) continue;
+      try {
+        const u = new URL(hit, base);
+        if (u.protocol === "https:" && u.hostname === "mail.cppu.edu.cn" && u.searchParams.get("sid")) return u.href;
+      } catch { /* ignore */ }
+    }
+    return "";
+  }
+
+  function mailLoginFailureText(res) {
+    const text = cleanText(res?.body || "");
+    const hit = text.match(/((?:密码|账号|用户|验证码|登录|邮箱)[^\n。；;]{0,42}(?:错误|失败|不存在|过期|不正确|被锁定))/);
+    return hit ? hit[1].trim() : "";
+  }
+
+  async function verifyMailSession(sid, target) {
+    const check = await tide.http.fetch(sid, "GET", target, { headers: { "Referer": MAIL, "Accept": "text/html,*/*" } });
+    if (check.status >= 400) throw new Error(`邮箱入口校验失败（HTTP ${check.status}）`);
+    const newer = mailSessionUrlFromResponse(check, check?.finalUrl || target);
+    if (newer) return newer;
+    const body = String(check?.body || "");
+    let form = null;
+    try { form = tide.util.web.detectLoginForm(body, check?.finalUrl || target); } catch { form = null; }
+    if (form?.passwordField || /type=["']?password|coremail.*login|登录邮箱|邮箱登录/i.test(body)) {
+      throw new Error("邮箱登录未建立：校验入口时仍停留在登录页");
+    }
+    return target;
+  }
+
+  function defaultMailForm(pageUrl) {
+    return {
+      pageUrl,
+      form: {
+        action: new URL("/coremail/index.jsp?cus=1", MAIL).href,
+        method: "POST",
+        usernameField: "uid",
+        passwordField: "password",
+        captchaField: "",
+        fields: [
+          { name: "action", value: "login" },
+          { name: "locale", value: "zh_CN" },
+          { name: "nodetect", value: "false" },
+        ],
+      },
+    };
+  }
+
+  async function readSavedPassword() {
+    if (state.savedPassword) return state.savedPassword;
+    if (!state.autoLogin || typeof tide.vault?.get !== "function") return "";
+    try {
+      state.savedPassword = JSON.parse((await tide.vault.get("secret")) || "null")?.password || "";
+    } catch {
+      state.savedPassword = "";
+    }
+    return state.savedPassword;
+  }
+
+  async function openMailLink(btn) {
+    const password = await readSavedPassword();
+    if (!password) {
+      tide.util.openUrl(MAIL);
+      tide.notify("还没有保存警大通知插件密码，已按普通方式打开教育邮箱");
+      return;
+    }
+    if (btn && btn.setAttribute) btn.setAttribute("aria-busy", "1");
+    try {
+      const sid = await tide.http.session();
+      const first = await tide.http.fetch(sid, "GET", MAIL, { headers: { "Accept": "text/html,*/*" } });
+      let pageUrl = first?.finalUrl || MAIL;
+      const direct = mailSessionUrlFromResponse(first, pageUrl);
+      if (direct) {
+        const verified = await verifyMailSession(sid, direct);
+        tide.util.openUrl(verified);
+        return;
+      }
+      let form = null;
+      try { form = tide.util.web.detectLoginForm(first?.body || "", pageUrl); } catch { form = null; }
+      const rt = form?.passwordField ? { form, pageUrl } : defaultMailForm(pageUrl);
+      if (rt.form.captchaField) {
+        tide.util.openUrl(MAIL);
+        tide.notify("教育邮箱当前登录页需要验证码，已按普通方式打开");
+        return;
+      }
+      const fields = {};
+      for (const f of rt.form.fields || []) if (f.name && f.value !== undefined) fields[f.name] = f.value;
+      fields[rt.form.usernameField || "uid"] = MAIL_ACCOUNT;
+      fields[rt.form.passwordField || "password"] = password;
+      const body = tide.util.web.formEncode(fields);
+      const action = rt.form.action || rt.pageUrl;
+      const method = (rt.form.method || "POST").toUpperCase();
+      const res = method === "GET"
+        ? await tide.http.fetch(sid, "GET", action + (action.includes("?") ? "&" : "?") + body, { headers: { "Referer": rt.pageUrl } })
+        : await tide.http.fetch(sid, "POST", action, {
+            headers: { "Content-Type": "application/x-www-form-urlencoded", "Referer": rt.pageUrl },
+            body,
+          });
+      if (res.status >= 400) throw new Error(`邮箱登录提交失败（HTTP ${res.status}）`);
+      const failed = mailLoginFailureText(res);
+      if (failed) throw new Error(failed);
+      const target = mailSessionUrlFromResponse(res, res?.finalUrl || action);
+      if (!target) throw new Error("邮箱登录已提交，但没有拿到可由浏览器直接打开的 sid 会话入口");
+      const verified = await verifyMailSession(sid, target);
+      tide.util.openUrl(verified);
+      tide.notify("已使用警大通知保存的账号密码打开教育邮箱");
+    } catch (e) {
+      tide.util.openUrl(MAIL);
+      tide.notify(`教育邮箱自动登录失败，已按普通方式打开：${e?.message || e}`);
+    } finally {
+      if (btn && btn.removeAttribute) btn.removeAttribute("aria-busy");
+    }
+  }
+
   function bindSide(root) {
     if (!root || root.dataset.ppSideBound) return;
     root.dataset.ppSideBound = "1";
@@ -1204,6 +1387,430 @@
       if (go) { openSideLink(go.dataset.goto, go); return; }
       if (e.target.closest("[data-side-toggle]")) { applySideOpen(root, !state.sideOpen); return; }
     });
+  }
+
+  /* ═════════ 智慧教务只读接入：学生选课 · 学生请假 · 创新学分 ═════════
+     为什么做成插件内视图而不是侧栏链接：教务是正方 JE 的 SPA，完全没有 URL 深链
+     （je-app / je-main / je-core 三个 bundle 都不读 location.hash、location.search，
+     开任何功能地址栏都停在 index.html），换票开浏览器只会一遍遍落回首页。
+     取数走通用查询端点 POST /je/load：服务端按会话拼 whereSql（`and xh=学号`），
+     客户端既看不到也改不掉别人的数据。
+     🔴 刻意只读：交请假、选课这类写操作不接管 —— 提交接口要真提交一次才录得到，
+     没录到就不要假装会写，一律用「去教务」换票开首页交给用户自己点。 */
+  const JW_LOAD = JWAPP + "/je/load";
+  const JW_FUNC_INFO = JWAPP + "/je/develop/funcInfo/getStaticFuncByCode";
+  const JW_NOW_TERM = JWAPP + "/je/system/getNowXnxq";
+  const JW_TICKET_ENTRY = { service: JWAPP + "/cas_callback", origin: JWAPP, path: "/cas_callback" };
+  // funcId 是功能自身的 id（实测取自面板的 funcData.info.funcId），不是菜单 id。
+  // qjCourse 那条 funcCode 里带空格和 "copy from" 前缀不是笔误 —— 校方就是这么配的，
+  // 抄错一个字符服务端直接回 UNKOWN_ERROR。
+  const JW_FUNC = {
+    xkTask: { funcCode: "JWBZK.T_JWBZK_XKGL_XYXK", funcId: "cxJNVOE1UJU4YwTJyDT", tableCode: "JWBZK.T_JWBZK_XKGL_XKRW" },
+    xkResult: { funcCode: "V_JWBZK_XKGL_XKJG_XS", funcId: "UEgVc81fir8gotAkmzM", tableCode: "V_JWBZK_XKGL_XKJG" },
+    qjRecord: { funcCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ_XSCX", funcId: "jycdtB3HszziSH8rgxn", tableCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ" },
+    qjCourse: { funcCode: "copy from V_JWBZK_PK_XSKBZHCX", funcId: "TtHt7qQKBLbsw4B2DgB", tableCode: "V_JWBZK_PK_XSKBZHCX" },
+    cxCredit: { funcCode: "V_CXGL_GRADE_STU", funcId: "VqfuoxJmlz2G9QJnoPZ", tableCode: "V_CXGL_GRADEQUERY" },
+  };
+  // 教务里没有「创新成绩」这个菜单，实名叫「成绩查询(学生)」，挂在 创新实践 下面
+  const JW_MENU = {
+    xk: "学生服务 › 我的课程表 › 我的选课 › 学生选课",
+    qj: "学生服务 › 我的课程表 › 我的课表 › 学生请假申请",
+    cx: "学生服务 › 综合素质考评 › 创新实践 › 成绩查询(学生)",
+  };
+  // 校方字典（/je/dd/dd/getDicItemByCodes 的 KCSXDM_1 / KCHJDM_1 / KJDM / QJSQSP）抄一份在用：
+  // 省掉每次开视图多打一跳；未命中的码一律原样显示，绝不猜一个好看的词糊上去。
+  const JW_DD = {
+    KCSX: { "01": "必修课", "02": "选修课", "03": "课外实践必修", "04": "实践技能选修" },
+    HJLX: { "01": "理论", "02": "实验", "03": "实践及实训" },
+    JC: { "01": "1-2", "02": "3-4", "03": "5-6", "04": "7-8", "05": "9-10", "06": "11-12" },
+    SQZT: { "0": "已撤销", "1": "审批中", "2": "已同意", "3": "未同意" },
+  };
+  const jwDict = (dict, code) => {
+    const c = String(code ?? "").trim();
+    if (!c) return "";
+    return JW_DD[dict]?.[c] || c;
+  };
+  const jwKeyLabel = (k) => ({ xkTask: "选课任务", xkResult: "选课结果", qjRecord: "请假记录", qjCourse: "可请假课次", cxCredit: "创新学分" }[k] || k);
+
+  let jwSid = null;                 // 已经落上教务 authorization 的那个会话 id
+  const jwLive = () => !!jwSid && jwSid === state.sid;
+  const jwState = {
+    term: null,
+    data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, cxCredit: null },
+    loading: {}, error: {}, at: {},
+    courseScope: "week",            // today | week | term，默认本周（本学期是 200+ 行的紧凑列表）
+  };
+  const jwMounted = new Map();      // viewId -> { el, cfg }
+
+  const jwToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  // 校历的 JXZQSRQ（教学周期起始日）才是第 1 周第一天；KSRQ 是学期起始日，可能含军训/假期
+  function jwWeekOf(dateStr) {
+    const start = Date.parse(`${jwState.term?.jxStart || ""}T00:00:00`);
+    const day = Date.parse(`${dateStr || ""}T00:00:00`);
+    if (!Number.isFinite(start) || !Number.isFinite(day)) return 0;
+    return Math.floor((day - start) / (7 * 86400000)) + 1;
+  }
+
+  async function ensureJwSession(force = false) {
+    await newSession();
+    if (!force && jwLive()) return true;
+    const ticket = await mintTicket(JW_TICKET_ENTRY);
+    if (!ticket) { jwSid = null; return false; }
+    // 侧栏那个「教务」入口是把票交给系统浏览器（自己绝不消费，否则浏览器拿到废票）；
+    // 这里反过来：必须自己消费掉，同一个 Cookie Jar 才会落上 jw 的 authorization。
+    const res = await getPage(ticket).catch(() => null);
+    const ok = !!res && res.status === 200 && !/tpass\/login/i.test(String(res.finalUrl || ""));
+    jwSid = ok ? state.sid : null;
+    if (ok) await saveCookies();
+    return ok;
+  }
+
+  const jeRowsOf = (res) => {
+    try {
+      const j = JSON.parse(String(res?.body || ""));
+      return Array.isArray(j?.rows) ? j.rows : null;
+    } catch { return null; }
+  };
+
+  // funcType=sql 的功能（如「学员选课」）光给 funcCode 是查不出来的：教务前端会把该功能的
+  // 整段 SELECT 从元信息里取出来原样回传，服务端才认（实测漏掉就回 UNKOWN_ERROR）。
+  // 视图型功能（V_ 开头那几张）不需要，所以这里按 funcType 条件加，一律不自己拼 SQL。
+  const jwFuncMeta = {};
+  async function jwFuncInfo(key) {
+    if (jwFuncMeta[key]) return jwFuncMeta[key];
+    const f = JW_FUNC[key];
+    const res = await tide.http.fetch(state.sid, "POST", JW_FUNC_INFO, {
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Referer: JW_INDEX },
+      body: tide.util.web.formEncode({ refresh: "false", tableCode: "JE_CORE_FUNCINFO", FUNCINFO_FUNCCODE: f.funcCode, perm: "true" }),
+    });
+    let j = null;
+    try { j = JSON.parse(String(res.body || "")); } catch { j = null; }
+    const info = j?.funcInfo || {};
+    const meta = {
+      funcId: String(info.funcId || f.funcId),
+      funcType: String(info.funcType || ""),
+      dbSql: String(j?.func?.info?.FUNCINFO_SQL || ""),
+    };
+    // 元信息拿到了才缓存（省掉后续每次多一跳）；拿不到就退回硬编码 funcId，下次再取
+    if (info.funcId) jwFuncMeta[key] = meta;
+    return jwFuncMeta[key] || { funcId: f.funcId, funcType: "", dbSql: "" };
+  }
+
+  async function jeLoad(key, groups = []) {
+    const f = JW_FUNC[key];
+    if (!f) throw new Error(`未登记的教务功能：${key}`);
+    if (!state.sid || !await ensureJwSession()) throw new Error("教务登录态未建立：请先在「警大通知」里完成登录");
+    let meta = await jwFuncInfo(key);
+    const post = () => {
+      const params = {
+        funcCode: f.funcCode, funcId: meta.funcId, columnLazy: "true", mark: "false", postil: "",
+        funcEdit: "false", coverJquery: "0", tableCode: f.tableCode, _isFunc_: "true",
+        j_query: JSON.stringify({ custom: groups, _custom_types: groups.map(() => "group") }),
+        j_order: "[]", page: "1", start: "0", limit: "-1",
+      };
+      if (meta.funcType === "sql" && meta.dbSql) { params.queryType = "sql"; params.dbSql = meta.dbSql; params.queryParamsStr = "[]"; }
+      return tide.http.fetch(state.sid, "POST", JW_LOAD, {
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Referer: JW_INDEX },
+        body: tide.util.web.formEncode(params),
+      });
+    };
+    let res = await post().catch((e) => { throw new Error(explainHttpError(e)); });
+    let rows = jeRowsOf(res);
+    if (!rows) {
+      // 会话过期的表现不是 401，而是 POST 被 302 回登录页、拿回来一整页 HTML
+      delete jwFuncMeta[key];
+      if (!await ensureJwSession(true)) throw new Error("教务登录态已失效，请重新登录");
+      meta = await jwFuncInfo(key);
+      res = await post().catch((e) => { throw new Error(explainHttpError(e)); });
+      rows = jeRowsOf(res);
+      if (!rows) throw new Error(`教务数据解析失败（HTTP ${res.status}）`);
+    }
+    return rows;
+  }
+
+  async function loadJwTerm(force = false) {
+    if (!force && jwState.term) return jwState.term;
+    if (!state.sid || !await ensureJwSession()) return jwState.term;
+    try {
+      const res = await tide.http.fetch(state.sid, "POST", JW_NOW_TERM, {
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Referer: JW_INDEX },
+        body: "",
+      });
+      const v = JSON.parse(String(res.body || ""))?.data?.values || {};
+      if (v.DM) jwState.term = { code: v.DM, name: String(v.MC || v.DM), jxStart: String(v.JXZQSRQ || ""), weeks: Number(v.XQZS) || 0 };
+    } catch { /* 学期拿不到不阻塞列表：课次视图退化成「不过滤学期」 */ }
+    return jwState.term;
+  }
+
+  async function jwSaveCache() {
+    const keep = {};
+    for (const k of ["xkTask", "xkResult", "qjRecord", "cxCredit"]) if (Array.isArray(jwState.data[k])) keep[k] = jwState.data[k];
+    try { await tide.storage.set("jwCache", { term: jwState.term, at: jwState.at, keep }); } catch { /* 忽略 */ }
+  }
+  async function jwRestoreCache() {
+    try {
+      const c = await tide.storage.get("jwCache", null);
+      if (!c || typeof c !== "object") return;
+      if (c.term && !jwState.term) jwState.term = c.term;
+      for (const [k, rows] of Object.entries(c.keep || {})) if (Array.isArray(rows) && jwState.data[k] === null) jwState.data[k] = rows;
+      for (const [k, at] of Object.entries(c.at || {})) if (!jwState.at[k]) jwState.at[k] = Number(at) || 0;
+    } catch { /* 缓存坏了当没有 */ }
+  }
+
+  async function jwEnsureKeys(keys, force = false) {
+    await loadJwTerm(force);
+    for (const key of keys) {
+      if (jwState.loading[key]) continue;
+      if (!force && Array.isArray(jwState.data[key])) continue;
+      jwState.loading[key] = true;
+      jwState.error[key] = "";
+      jwPaint();
+      try {
+        // 课次一次拉「整学期」（实测 222 节），今天/本周在渲染时切，避免每切一次打一次接口
+        const groups = key === "qjCourse" && jwState.term?.code
+          ? [{ type: "and", value: [{ code: "XNXQ_CODE", type: "=", value: jwState.term.code, cn: "and" }] }]
+          : [];
+        jwState.data[key] = await jeLoad(key, groups);
+        jwState.at[key] = Date.now();
+      } catch (e) {
+        jwState.error[key] = String(e?.message || e);
+      }
+      jwState.loading[key] = false;
+    }
+    await jwSaveCache();
+    jwPaint();
+  }
+
+  /* ── 视图渲染 ── */
+  function jwTag(text, cls) { return text ? `<span class="jw-tag${cls ? " " + cls : ""}">${esc(text)}</span>` : ""; }
+  function jwAt(key) {
+    const at = Number(jwState.at[key]) || 0;
+    return at ? `更新于 ${new Date(at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "尚未拉取";
+  }
+  function jwStateBlock(key, loadingText) {
+    if (jwState.loading[key]) return `<div class="pp-empty">${esc(loadingText || `正在拉取${jwKeyLabel(key)}…`)}</div>`;
+    if (jwState.error[key]) return `<div class="pp-banner">${esc(jwState.error[key])}</div>`;
+    return "";
+  }
+  function jwTermName(code) {
+    const c = String(code || "");
+    if (!c) return "";
+    if (jwState.term?.code === c) return jwState.term.name;
+    // 教务的学期码形如 20262027-1：前 8 位是跨年的两个年份，后半是学期序号
+    const m = c.match(/^(\d{4})\d{4}-(\d)$/);
+    return m ? `${m[1]}-${Number(m[1]) + 1} 学年第 ${m[2]} 学期` : c;
+  }
+  function jwSection(title, sub, inner) {
+    return `<div class="jw-sec">${esc(title)}${sub ? `<small>${esc(sub)}</small>` : ""}</div>${inner}`;
+  }
+  function jwMetaLine(parts) { return `<div class="pp-meta">${parts.filter(Boolean).join("")}</div>`; }
+
+  function jwTaskHtml() {
+    const rows = jwState.data.xkTask;
+    const head = jwStateBlock("xkTask");
+    if (head) return jwSection("可参加的选课任务", jwAt("xkTask"), head);
+    if (!Array.isArray(rows)) return jwSection("可参加的选课任务", jwAt("xkTask"), `<div class="pp-empty">还没有拉取过选课任务，点上方「刷新」</div>`);
+    if (!rows.length) return jwSection("可参加的选课任务", jwAt("xkTask"), `<div class="pp-empty">现在没有待选的选课任务<br>这个列表只列「还没选过的」任务，选完就会消失</div>`);
+    const cards = rows.map((r) => `<div class="jw-card">
+        <div class="jw-card-t">${esc(r.XKRWMC || "（未命名任务）")}</div>
+        ${jwMetaLine([jwTag(jwTermName(r.KKXNXQ)), r.LC ? jwTag(`第 ${r.LC} 轮`) : ""])}
+      </div>`).join("");
+    return jwSection("可参加的选课任务", `${rows.length} 项 · ${jwAt("xkTask")}`, cards);
+  }
+
+  function jwResultHtml() {
+    const rows = jwState.data.xkResult;
+    const head = jwStateBlock("xkResult");
+    if (head) return jwSection("已选课程", jwAt("xkResult"), head);
+    if (!Array.isArray(rows)) return jwSection("已选课程", jwAt("xkResult"), `<div class="pp-empty">还没有拉取过选课结果，点上方「刷新」</div>`);
+    if (!rows.length) return jwSection("已选课程", jwAt("xkResult"), `<div class="pp-empty">还没有选课记录</div>`);
+    const byTerm = new Map();
+    for (const r of rows) {
+      const k = r.KKXNXQNAME || jwTermName(r.KKXNXQ);
+      if (!byTerm.has(k)) byTerm.set(k, []);
+      byTerm.get(k).push(r);
+    }
+    let html = "";
+    for (const [term, list] of byTerm) {
+      const xf = list.reduce((n, r) => n + (Number(r.XF) || 0), 0);
+      html += `<div class="jw-group">${esc(term)} · ${list.length} 门 · ${xf} 学分</div>`;
+      html += list.map((r) => {
+        const self = String(r.OPERATERCODE || "") === String(state.username || "");
+        return `<div class="jw-card">
+          <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
+          ${jwMetaLine([
+            jwTag(jwDict("KCSX", r.KCSX)),
+            r.XKBMC ? jwTag(r.XKBMC) : "",
+            r.XF ? jwTag(`${r.XF} 学分`, "ok") : "",
+            r.SKDD ? jwTag(r.SKDD) : "",
+            jwTag(self ? "本人自选" : "教务代选", self ? "" : "warn"),
+          ])}
+        </div>`;
+      }).join("");
+    }
+    return jwSection("已选课程", `${rows.length} 门 · ${jwAt("xkResult")}`, html);
+  }
+
+  function jwCourseScopeBar() {
+    const items = [["today", "今天"], ["week", "本周"], ["term", "本学期"]];
+    return `<div class="pp-toolbar"><span class="pp-lab">范围</span><div class="pp-chips">${items.map(([id, label]) =>
+      `<button type="button" class="pp-chip${jwState.courseScope === id ? " on" : ""}" data-jw-scope="${id}">${label}</button>`).join("")}</div></div>`;
+  }
+  function jwCourseList() {
+    const rows = jwState.data.qjCourse;
+    const head = jwStateBlock("qjCourse");
+    if (head) return head;
+    if (!Array.isArray(rows)) return `<div class="pp-empty">还没有拉取过课次，点上方「刷新」</div>`;
+    const applied = new Set((jwState.data.qjRecord || []).map((r) => String(r.YWID || "")));
+    const scope = jwState.courseScope;
+    const today = jwToday();
+    const week = jwWeekOf(today);
+    const list = rows.filter((r) => (scope === "today" ? String(r.SKRQ) === today : scope === "week" ? Number(r.XQ) === week : true));
+    if (!list.length) {
+      return `<div class="pp-empty">${scope === "week" ? "本周没有课次（或校历起始日没拿到）" : scope === "today" ? "今天没有安排课程" : "本学期没有课次记录"}</div>`;
+    }
+    const fmt = (r) => `${String(r.SKRQ || "").slice(5)} 周${"日一二三四五六"[Number(new Date(`${r.SKRQ}T00:00:00`).getDay()) || 0]} ${jwDict("JC", r.JC)}节`;
+    if (scope === "term") {
+      // 本学期是 200+ 节，用紧凑一行一节；今天/本周才上卡片
+      return list.map((r) => `<div class="jw-row">
+          <b>${esc(fmt(r))}</b><span>${esc(r.KCMC || "")}</span><small>${esc([jwDict("KCSX", r.KCSX), r.JS, r.DDMC].filter(Boolean).join(" · "))}</small>
+          ${applied.has(String(r.ID)) ? jwTag("已申请", "ok") : ""}
+        </div>`).join("");
+    }
+    return list.map((r) => `<div class="jw-card">
+        <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}${applied.has(String(r.ID)) ? " " + jwTag("已申请", "ok") : ""}</div>
+        ${jwMetaLine([
+          jwTag(fmt(r)),
+          jwTag(`第 ${r.XQ} 周`),
+          jwTag(jwDict("KCSX", r.KCSX)),
+          jwTag(jwDict("HJLX", r.HJLX)),
+          r.JS ? jwTag(r.JS) : "",
+          r.DDMC ? jwTag(r.DDMC) : "",
+          r.XF ? jwTag(`${r.XF} 学分`) : "",
+        ])}
+      </div>`).join("");
+  }
+  function jwLeaveHtml() {
+    const rows = jwState.data.qjRecord;
+    const head = jwStateBlock("qjRecord");
+    const records = head || !Array.isArray(rows)
+      ? (head || `<div class="pp-empty">还没有拉取过请假记录，点上方「刷新」</div>`)
+      : (rows.length ? rows.map((r) => `<div class="jw-card">
+          <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
+          ${jwMetaLine([
+            jwTag(`${String(r.SKRQ || "").slice(5)} ${jwDict("JC", r.JC)}节`),
+            r.JSXMS ? jwTag(r.JSXMS) : "",
+            r.JSMC ? jwTag(r.JSMC) : "",
+            jwTag(jwDict("SQZT", r.SQZT), String(r.SQZT) === "2" ? "ok" : String(r.SQZT) === "1" ? "warn" : ""),
+          ])}
+          ${r.SQYY ? `<div class="jw-why">${esc(r.SQYY)}</div>` : ""}
+        </div>`).join("") : `<div class="pp-empty">还没有提交过请假申请</div>`);
+    return jwSection("请假记录", `${Array.isArray(rows) ? rows.length + " 条 · " : ""}${jwAt("qjRecord")}`, records)
+      + jwSection("可提请假的课次", jwAt("qjCourse"), jwCourseScopeBar() + jwCourseList());
+  }
+  function jwCreditHtml() {
+    const rows = jwState.data.cxCredit;
+    const head = jwStateBlock("cxCredit");
+    if (head) return head;
+    if (!Array.isArray(rows)) return `<div class="pp-empty">还没有拉取过创新学分，点上方「刷新」</div>`;
+    if (!rows.length) return `<div class="pp-empty">还没有已发布的创新实践学分<br>（教务只统计已发布的学期，未发布不出现在这里）</div>`;
+    const sum = rows.reduce((n, r) => n + (Number(r.SUM_VALUE) || 0), 0);
+    const applyAll = rows.reduce((n, r) => n + (Number(r.APPLYALL) || 0), 0);
+    const ended = rows.reduce((n, r) => n + (Number(r.END_VALUE) || 0), 0);
+    const top = `<div class="jw-sum"><b>${sum}</b><span>已发布学期合计学分 · 申请 ${applyAll} 项 / 已认定 ${ended} 项</span></div>`;
+    return top + rows.map((r) => `<div class="jw-card">
+        <div class="jw-card-t">${esc(r.DECLARE_YEAR_SEMESTER || "（无学期）")} · ${Number(r.SUM_VALUE) || 0} 学分</div>
+        ${jwMetaLine([
+          jwTag(`申请 ${Number(r.APPLYALL) || 0} 项`),
+          jwTag(`已认定 ${Number(r.END_VALUE) || 0} 项`, "ok"),
+          (Number(r.APPLYALL) || 0) > (Number(r.END_VALUE) || 0) ? jwTag(`待认定 ${(Number(r.APPLYALL) || 0) - (Number(r.END_VALUE) || 0)} 项`, "warn") : "",
+          r.XQMC ? jwTag(r.XQMC) : "",
+          r.XYDMC ? jwTag(r.XYDMC) : "",
+        ])}
+      </div>`).join("");
+  }
+
+  const JW_VIEWS = [
+    {
+      id: "cppu-xk", title: "警大选课", icon: "list-check", keys: ["xkTask", "xkResult"], menu: JW_MENU.xk,
+      kicker: "教 务 · 学 生 选 课",
+      tip: "选课任务列表只列「还没选过的」任务；已选课程里的「教务代选」表示不是本人提交的。选课本体在教务里做。",
+      body: () => jwTaskHtml() + jwResultHtml(),
+    },
+    {
+      id: "cppu-qj", title: "警大请假", icon: "calendar-xmark", keys: ["qjRecord", "qjCourse"], menu: JW_MENU.qj,
+      kicker: "教 务 · 学 生 请 假",
+      tip: "这里是查询与准备：看到哪一节能请、之前请的批没批。真的提交要去教务点「请假申请」（本插件不代交，避免误写进学校流程）。",
+      body: () => jwLeaveHtml(),
+    },
+    {
+      id: "cppu-cx", title: "警大创新学分", icon: "medal", keys: ["cxCredit"], menu: JW_MENU.cx,
+      kicker: "教 务 · 创 新 实 践 学 分",
+      tip: "教务侧只发布按学期汇总的结果，明细要到「创新实践学分申请」里看。未发布的学期不会出现在这里。",
+      body: () => jwCreditHtml(),
+    },
+  ];
+
+  function jwShellHtml(cfg) {
+    return `<div class="${sideShellClass()}">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}
+      <div class="pp-main"><div class="pp-wrap">
+      <div class="jw-kicker">${esc(cfg.kicker)}</div>
+      <div class="jw-head"><h3>${esc(cfg.title)}</h3><span data-jw-term>${esc(jwState.term ? `${jwState.term.name}（${jwState.term.code}）` : "学期加载中…")}</span></div>
+      <div class="pp-toolbar">
+        <button class="pp-btn pri" data-jw-refresh>刷新</button>
+        <button class="pp-btn" data-jw-site>去教务</button>
+        <button class="pp-btn" data-jw-back>回通知</button>
+        <span style="flex:1"></span>
+      </div>
+      <div class="jw-tip">${esc(cfg.tip)}</div>
+      <div data-jw-body>${cfg.body()}</div>
+      <div style="height:30px"></div>
+      </div></div>
+    </div>`;
+  }
+  function jwPaint() {
+    for (const [id, m] of [...jwMounted]) {
+      if (!m.el || !m.el.isConnected) { jwMounted.delete(id); continue; }
+      const body = m.el.querySelector("[data-jw-body]");
+      if (body) body.innerHTML = m.cfg.body();
+      const term = m.el.querySelector("[data-jw-term]");
+      if (term) term.textContent = jwState.term ? `${jwState.term.name}（${jwState.term.code}）` : "学期加载中…";
+    }
+  }
+
+  function mountJwView(el, cfg) {
+    ensureStyle();
+    el.innerHTML = jwShellHtml(cfg);
+    jwMounted.set(cfg.id, { el, cfg });
+    bindSide(el);
+    loadLinkMeta(el);
+    el.addEventListener("click", async (e) => {
+      if (e.target.closest("[data-jw-refresh]")) { await jwEnsureKeys(cfg.keys, true); return; }
+      if (e.target.closest("[data-jw-back]")) { tide.util.navigate("plug:cppu-notify"); return; }
+      if (e.target.closest("[data-jw-site]")) {
+        const btn = e.target.closest("[data-jw-site]");
+        await openSideLink(JW_INDEX, btn);
+        tide.notify(`在教务里打开：${cfg.menu}`);
+        return;
+      }
+      const scope = e.target.closest("[data-jw-scope]");
+      if (scope) {
+        jwState.courseScope = scope.dataset.jwScope || "week";
+        jwPaint();
+        if (!Array.isArray(jwState.data.qjCourse)) await jwEnsureKeys(["qjCourse"]);
+        return;
+      }
+    });
+    (async () => {
+      await jwRestoreCache();
+      jwPaint();
+      await jwEnsureKeys(cfg.keys);
+    })();
+    return () => { jwMounted.delete(cfg.id); };
   }
 
   /* ── 登录界面 ── */
@@ -1472,4 +2079,11 @@
   }
 
   tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: 'building-columns', render });
+  // 教务三个只读视图：侧栏「校园服务」里的 学生选课 / 学生请假 / 创新学分 入口直接 navigate 过来
+  for (const cfg of JW_VIEWS) {
+    tide.ui.registerView({
+      id: cfg.id, title: cfg.title, icon: cfg.icon,
+      render: (el) => mountJwView(el, cfg),
+    });
+  }
 })();

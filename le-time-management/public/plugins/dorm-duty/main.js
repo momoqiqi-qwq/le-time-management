@@ -49,6 +49,18 @@
   let root = null;
   let MY_GEN = 0;
 
+  /* ── 标签右键菜单 ──
+     菜单是 position:fixed 浮层，落在宿主 .view 之外，四边得自己让开 Android 的状态栏 /
+     导航栏 / 横屏挖孔（铁律四：WebView 里 env() 恒为 0，只能读宿主注入的 --sat 等）。
+     step 为空是一级动作表，"import" 是二级「导入成员」的选源组列表。 */
+  let tabMenu = null;
+  let tabMenuDismissBound = false;
+  /** 长按弹过菜单后，浏览器还会补一个 click —— 不吞掉的话长按的同时顺手把组切了。 */
+  let longPressed = false;
+  const LONG_PRESS_MS = 550;
+  const MENU_W = 200;
+  const MENU_H = 320;
+
   /* ── 日期助手：一律用 UTC 零点算差值，避开时区与夏令时偏移（与 cn-holiday 同款） ── */
   const toUTC = (s) => { const [y, m, d] = String(s).split("-").map(Number); return Date.UTC(y, m - 1, d); };
   const fromUTC = (t) => new Date(t).toISOString().slice(0, 10);
@@ -69,6 +81,15 @@
       if (typeof window !== "undefined" && typeof window.confirm === "function") return window.confirm(msg);
     } catch { /* 忽略：确认框本身不该把删除流程卡死 */ }
     return true;
+  };
+  /** 要一个名字。取消 / 拿不到弹窗一律返回 null = 「不改名」，不能把复制流程卡死。
+      Android 侧 Tauri 生成的 RustWebChromeClient 实现了 onJsPrompt（弹 AlertDialog + EditText），
+      所以 APK 上这个框是真能用的，不只是桌面能用。 */
+  const promptFn = (msg, value) => {
+    try {
+      if (typeof window !== "undefined" && typeof window.prompt === "function") return window.prompt(msg, value);
+    } catch { /* 退回「不改名」 */ }
+    return null;
   };
 
   /* ── 归一化：数据损坏不能把插件变成白屏，一律退回可用默认值 ── */
@@ -346,6 +367,18 @@
       .dd-gchip:hover{border-color:color-mix(in srgb,var(--deep,#0F4C5C) 42%,var(--line,#DCD6CB))}
       .dd-gchip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
       .dd-gchip .dd-gwho{font-style:normal;font-size:calc(11px * var(--ui-text-scale));opacity:.72}
+      /* 右键菜单。刻意不钉 top/left/right/bottom —— 坐标由 JS 按视口算好写进 style，
+         这样夹取时能把宿主注入的安全区减掉（CSS 里那条边钉死了就没法让了）。 */
+      .dd-tabmenu{position:fixed;z-index:60;min-width:180px;max-width:260px;max-height:320px;overflow:auto;display:grid;gap:2px;padding:6px;background:var(--panel,#fff);border:1px solid var(--line,#DCD6CB);border-radius:12px;box-shadow:0 12px 30px rgba(20,30,36,.18)}
+      .dd-tabmenu-title{font-size:calc(11.5px * var(--ui-text-scale));font-weight:750;color:var(--ink,#22303A);padding:6px 9px 7px;margin-bottom:4px;border-bottom:1px solid var(--line-soft,#F0ECE5);overflow-wrap:anywhere}
+      .dd-tabmenu-hint{font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3,#A1A9AF);line-height:1.6;padding:4px 9px 6px}
+      .dd-tabmenu-item{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:34px;padding:0 9px;border:0;border-radius:8px;background:transparent;color:var(--ink,#22303A);font-family:inherit;font-size:calc(12.5px * var(--ui-text-scale));text-align:left;cursor:pointer;overflow-wrap:anywhere}
+      .dd-tabmenu-item:hover{background:color-mix(in srgb,var(--deep,#0F4C5C) 8%,var(--panel,#fff));color:var(--deep,#0F4C5C)}
+      .dd-tabmenu-item.danger{color:var(--coral,#D64545)}
+      .dd-tabmenu-item.danger:hover{background:color-mix(in srgb,var(--coral,#D64545) 10%,var(--panel,#fff));color:var(--coral,#D64545)}
+      .dd-tabmenu-item:disabled{opacity:.45;cursor:not-allowed}
+      .dd-tabmenu-sep{height:1px;margin:5px 4px;background:var(--line-soft,#F0ECE5)}
+      .dd-tabmenu-n{font-style:normal;flex:none;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3,#A1A9AF)}
       .dd-hero{display:grid;grid-template-columns:1.35fr .65fr;gap:14px;margin:12px 0 14px}
       .dd-card{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-radius:18px;padding:20px 22px}
       .dd-kicker{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3,#8B979F);letter-spacing:.24em;text-transform:uppercase;margin-bottom:8px}
@@ -474,7 +507,7 @@
     return state.groups.map((g) => {
       const names = assigneesFor(g, tide.util.today()).map((m) => m.name).join("、");
       const on = g.id === state.activeId;
-      return `<button class="dd-gchip${on ? " on" : ""}" data-group="${esc(g.id)}" type="button" aria-pressed="${on ? "true" : "false"}" title="切到「${esc(g.name)}」">
+      return `<button class="dd-gchip${on ? " on" : ""}" data-group="${esc(g.id)}" type="button" aria-pressed="${on ? "true" : "false"}" title="切到「${esc(g.name)}」（右键或长按可重命名 / 复制 / 导入成员）">
         <span>${esc(g.name)}</span><em class="dd-gwho">${esc(names || "未排班")}</em>
       </button>`;
     }).join("");
@@ -625,6 +658,7 @@
         <div class="dd-glist" role="tablist" aria-label="轮换列表">${groupChipsHtml()}</div>
         <button class="dd-btn" data-group-new type="button">${faIcon("circle-plus")}新建轮换</button>
       </div>
+      ${tabMenu ? tabMenuHtml() : ""}
       <div class="dd-hero">
         <section class="dd-card">${heroHtml(s)}
           <div class="dd-actions">
@@ -707,6 +741,166 @@
     await save();
     return true;
   }
+  /** 副本名：把本体截短来腾出「 N」的位置。直接 `src + " 2"` 再切到 NAME_MAX，
+      满长的名字会切回和源组一模一样的串 —— 用户取消改名时标签条上就是两个同名标签。 */
+  function nextCopyName(srcName, groups) {
+    const taken = new Set(groups.map((g) => g.name));
+    for (let n = 2; n < 100; n += 1) {
+      const suffix = ` ${n}`;
+      const cand = (srcName.slice(0, Math.max(1, NAME_MAX - suffix.length)) + suffix).slice(0, NAME_MAX);
+      if (!taken.has(cand)) return cand;
+    }
+    return `轮换 ${groups.length + 1}`.slice(0, NAME_MAX);
+  }
+  /** 复制一套轮换：规则与名单原样带走，但**组 id 和每个成员 id 全部重新生成**。
+      沿用旧 id 等于两组共享同一批人 —— 副本里「本轮换人」「移除某人」会连着改掉原组的排班，
+      而「每套轮换互不影响」是本插件的立身之本（见文件头第一条建模决定）。
+      连带代价：overrides 记的是成员 id，端过来全是悬空引用，所以换人记录清空；
+      lastNotified 也清空，否则副本当天不会再提醒当班的人。
+      起始日**保留** —— 同一宿舍的两套值日才会在同一天换人。 */
+  async function duplicateGroup(id) {
+    if (state.groups.length >= GROUP_MAX) return null;
+    const src = state.groups.find((x) => x.id === id);
+    if (!src) return null;
+    const reid = (list) => list.map((m) => ({ id: uid("m"), name: m.name }));
+    const copy = normalizeGroup({
+      ...src,
+      id: uid("g"),
+      name: nextCopyName(src.name, state.groups),
+      members: reid(src.members),
+      removed: reid(src.removed),
+      overrides: {},
+      lastNotified: "",
+    }, tide.util.today());
+    // 紧跟源组插入，而不是甩到列表末尾
+    state.groups.splice(state.groups.indexOf(src) + 1, 0, copy);
+    state.activeId = copy.id;
+    await save();
+    return copy;
+  }
+  /** 从另一套轮换导入成员：按**名字**去重后追加到当前名单末尾，id 一律新建。
+      只能按名字对 —— 两组的成员 id 各起各的，名字才是唯一对得上的东西。
+      已有的人连 id 都不动，否则换人顺序和过去的轮次会指错人。返回实际导入人数。 */
+  async function importMembers(targetId, sourceId) {
+    const target = state.groups.find((x) => x.id === targetId);
+    const source = state.groups.find((x) => x.id === sourceId);
+    if (!target || !source || target === source) return 0;
+    const room = MEMBER_MAX - target.members.length;
+    if (room <= 0) return 0;
+    const have = new Set(target.members.map((m) => m.name));
+    const added = [];
+    for (const m of source.members) {
+      if (added.length >= room) break;
+      if (have.has(m.name)) continue;
+      have.add(m.name);
+      added.push({ id: uid("m"), name: m.name });
+    }
+    if (!added.length) return 0;
+    target.members.push(...added);
+    await save();
+    return added.length;
+  }
+
+  /* ── 标签右键菜单 ── */
+  /** 弹菜单。只定位、**不切组** —— 一级菜单里「切到这一组」才是切组动作，
+      右键时偷偷切走会让用户以为菜单操作的是原来那套。 */
+  function openTabMenu(id, x, y) {
+    if (!state.groups.some((g) => g.id === id)) return;
+    // ⚠️ 视口坐标是从屏幕角量起的，而安全区那四条边落在屏幕边上：fixed 的包含块是宿主
+    // .view 的 padding box，.view 垫掉的安全区拦不住 fixed 后代 —— 夹取必须自己减掉。
+    const px = (v) => {
+      try { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0; } catch { return 0; }
+    };
+    const [sat, sab, sal, sar] = [px("--sat"), px("--sab"), px("--sal"), px("--sar")];
+    tabMenu = {
+      id,
+      x: Math.max(8 + sal, Math.min(x, (window.innerWidth || 1024) - sar - MENU_W)),
+      y: Math.max(8 + sat, Math.min(y, (window.innerHeight || 768) - sab - MENU_H)),
+      step: "",
+    };
+    paint();
+  }
+  function closeTabMenu() { if (!tabMenu) return; tabMenu = null; paint(); }
+
+  /** 菜单项统一 data-tab-act，不复用标签的 data-group、也不复用卡片的 data-group-del ——
+      事件委托里那两个分支会先把点击抢走（与 school-notice 同一条规矩）。 */
+  function tabMenuHtml() {
+    const target = state.groups.find((g) => g.id === tabMenu.id);
+    if (!target) return "";
+    const item = (act, label, opts = {}) => `<button type="button" role="menuitem" class="dd-tabmenu-item${opts.danger ? " danger" : ""}" data-tab-act="${act}"${opts.disabled ? " disabled" : ""}>${esc(label)}</button>`;
+    const head = `<div class="dd-tabmenu" data-tab-menu role="menu" aria-label="轮换操作" style="left:${tabMenu.x}px;top:${tabMenu.y}px">`
+      + `<span class="dd-tabmenu-title">${esc(target.name)}</span>`;
+    if (tabMenu.step === "import") {
+      const others = state.groups.filter((g) => g.id !== target.id);
+      return head
+        + `<span class="dd-tabmenu-hint">把哪一套的成员并进「${esc(target.name)}」？同名的人自动跳过</span>`
+        + (others.length
+          ? others.map((g) => `<button type="button" role="menuitem" class="dd-tabmenu-item" data-import-from="${esc(g.id)}">${esc(g.name)}<em class="dd-tabmenu-n">${g.members.length} 人</em></button>`).join("")
+          : `<span class="dd-tabmenu-hint">还没有别的轮换可以导入。</span>`)
+        + `<span class="dd-tabmenu-sep"></span>`
+        + item("back", "取消")
+        + `</div>`;
+    }
+    const lastOne = state.groups.length <= 1;
+    return head
+      + item("switch", "切到这一组")
+      + item("rename", "重命名")
+      + item("duplicate", "再添加一个")
+      + item("import", "导入成员")
+      + `<span class="dd-tabmenu-sep"></span>`
+      + item("remove", "删除这一组", { danger: true, disabled: lastOne })
+      + `</div>`;
+  }
+
+  /** 执行菜单动作。target 是**被右键那套**（tabMenu.id），不是当前那套。 */
+  async function runTabMenuAction(act) {
+    if (!tabMenu) return;
+    const id = tabMenu.id;
+    if (act === "import") { tabMenu = { ...tabMenu, step: "import" }; return paint(); }
+    if (act === "back") { tabMenu = { ...tabMenu, step: "" }; return paint(); }
+    const target = state.groups.find((g) => g.id === id);
+    tabMenu = null;
+    if (!target) return paint();
+    if (act === "switch") {
+      await setActiveGroup(id);
+      return paint();
+    }
+    if (act === "rename") {
+      const next = promptFn(`给「${target.name}」改个名字`, target.name);
+      if (next != null && next.trim()) await renameGroup(id, next);
+      return paint();
+    }
+    if (act === "duplicate") {
+      const created = await duplicateGroup(id);
+      if (!created) { await paint(); tide.notify(`最多 ${GROUP_MAX} 套轮换，先删掉不用的`); return; }
+      await paint();
+      const next = promptFn("给复制出来的这套改个名字", created.name);
+      if (next != null && next.trim()) await renameGroup(created.id, next);
+      await paint();
+      tide.notify(`已复制出「${(state.groups.find((g) => g.id === created.id) || created).name}」，成员和规则都带过来了`);
+      return;
+    }
+    if (act === "remove") {
+      if (state.groups.length <= 1) { await paint(); tide.notify("至少要留一套轮换"); return; }
+      if (!confirmFn(`删除轮换「${target.name}」？\n\n它的成员、换人记录和提醒设置会一起删掉。`)) return paint();
+      const name = target.name;
+      if (await removeGroup(id)) tide.notify(`已删除轮换「${name}」`);
+      return paint();
+    }
+    paint();
+  }
+
+  /** 二级菜单选中某个源组 → 导进被右键那套。 */
+  async function importFromMenu(sourceId) {
+    const targetId = tabMenu ? tabMenu.id : state.activeId;
+    tabMenu = null;
+    const n = await importMembers(targetId, sourceId);
+    await paint();
+    const target = state.groups.find((g) => g.id === targetId);
+    tide.notify(n
+      ? `已给「${target ? target.name : "这套轮换"}」导入 ${n} 位成员，顺序在「成员 · 轮换顺序」里调`
+      : `那套轮换的人已经都在「${target ? target.name : "这套轮换"}」里了`);
+  }
 
   /* ── 加入今日任务 ── */
   /** 把这一组本轮的人做成一条今天的任务（多人用「、」连接）。同日同名的未完成任务视为重复。 */
@@ -730,6 +924,65 @@
   }
 
   /* ── 交互绑定：每次 paint() 后重绑（节点都是新的） ── */
+  /** 标签右键菜单的接线。paint() 会重建节点，所以标签上的监听每次重绑、
+      document 上的收起监听用 tabMenuDismissBound 闸门只绑一次。 */
+  function bindTabMenu() {
+    const list = root.querySelector(".dd-glist");
+    // 只对标签压掉浏览器原生菜单；别处保留（右键往输入框里粘贴还用得上）。
+    list?.addEventListener("contextmenu", (e) => {
+      const tab = e.target?.closest?.("[data-group]");
+      if (!tab) return;
+      e.preventDefault();
+      openTabMenu(tab.dataset.group, e.clientX, e.clientY);
+    });
+    // Android WebView 长按普通按钮不会触发 contextmenu，只能自己数时间。
+    // 按下后挪开 10px 以上算滑动，不该弹菜单。
+    let pressTimer = null;
+    let pressAt = null;
+    const clearPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    list?.addEventListener("pointerdown", (e) => {
+      const tab = e.target?.closest?.("[data-group]");
+      clearPress();
+      // 新的一次按下就是新意图：清掉上一次长按可能残留的标志，否则它会白吞掉一次正常点击
+      longPressed = false;
+      if (!tab || e.button === 2) return;
+      pressAt = { x: e.clientX, y: e.clientY };
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        longPressed = true;
+        openTabMenu(tab.dataset.group, pressAt.x, pressAt.y);
+      }, LONG_PRESS_MS);
+    });
+    list?.addEventListener("pointermove", (e) => {
+      if (!pressTimer || !pressAt) return;
+      if (Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 10) clearPress();
+    });
+    list?.addEventListener("pointerup", clearPress);
+    list?.addEventListener("pointercancel", clearPress);
+
+    root.querySelectorAll("[data-tab-act]").forEach((btn) => btn.addEventListener("click", () => {
+      runTabMenuAction(btn.dataset.tabAct).catch((e) => tide.notify(`操作失败：${e.message || e}`));
+    }));
+    root.querySelectorAll("[data-import-from]").forEach((btn) => btn.addEventListener("click", () => {
+      importFromMenu(btn.dataset.importFrom).catch((e) => tide.notify(`导入失败：${e.message || e}`));
+    }));
+
+    if (tabMenuDismissBound) return;
+    tabMenuDismissBound = true;
+    document.addEventListener("pointerdown", (e) => {
+      const t = e.target;
+      // 点菜单自身留给 click；点标签交给 contextmenu 重新定位
+      if (t && typeof t.closest === "function" && (t.closest("[data-tab-menu]") || t.closest("[data-group]"))) return;
+      if (e.button === 2) return;
+      closeTabMenu();
+    }, true);
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeTabMenu(); });
+    document.addEventListener("scroll", () => closeTabMenu(), true);
+    if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+      window.addEventListener("resize", () => closeTabMenu());
+    }
+  }
+
   function bind() {
     const q = (sel) => root.querySelector(sel);
     const g = activeGroup();
@@ -738,8 +991,15 @@
 
     // 切换 / 新建 / 改名 / 删除轮换
     root.querySelectorAll("[data-group]").forEach((btn) => btn.addEventListener("click", async () => {
-      if (await setActiveGroup(btn.dataset.group)) await paint();
+      if (longPressed) { longPressed = false; return; }   // 长按弹过菜单，这个 click 是它的尾巴
+      // 菜单开着时点标签 = 切组 + 收掉浮层。document 上的收起监听刻意放过标签点击，
+      // 所以这里不收就没人收 —— 屏幕上会留下一个指着旧组的菜单。
+      const closing = !!tabMenu;
+      tabMenu = null;
+      const switched = await setActiveGroup(btn.dataset.group);
+      if (switched || closing) await paint();
     }));
+    bindTabMenu();
     q("[data-group-new]")?.addEventListener("click", async () => {
       const created = await addGroup();
       if (!created) { tide.notify(`最多 ${GROUP_MAX} 套轮换，先删掉不用的`); return; }

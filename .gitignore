@@ -70,3 +70,6 @@ cloudflare-pages/plugin-guide/.wrangler/
 /动画演示/**/shery - emotion rename/
 /动画演示/**/*.png
 /动画演示/**/*.jpg
+
+# 教务接口勘察笔记（含真实学号 / 姓名 / 班级 / 选课记录，仓库是 PUBLIC，切勿入库）
+/docs/教务系统三模块接口勘察-*.md
