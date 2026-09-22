@@ -7,8 +7,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwCreditHtml}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -33,6 +33,28 @@ assert.match(calls[0][2],/\/tp_up\/up\/pim\/showpim\//);
 assert.equal(cleanText('First<br><br>Second'),'First\n\nSecond');
 state.details.test={error:'network unavailable'};
 assert.match(cardHtml(item),/重试加载正文/);
+assert.equal(noticeKind({PIM_TITLE:'英语四六级考试报名通知'}).id,'exam');
+assert.equal(noticeKind({PIM_TITLE:'第九届 精武杯 技能比武科目新增禁毒知识竞赛等4项实施方案'}).id,'contest');
+assert.equal(noticeKind({PIM_TITLE:'关于图书馆开放时间调整的通知'}).id,'notice');
+assert.ok(source.includes('data-kinds'), '警大通知必须提供考试/比赛/通知分类筛选栏');
+const foundAttachments=extractAttachments({ATTACHMENTS:[{FILE_NAME:'实施方案.pdf',FILE_URL:'/tp_up/up/pim/file/download?id=1'}]}, '');
+assert.equal(foundAttachments.length,1);
+assert.equal(foundAttachments[0].name,'实施方案.pdf');
+assert.match(foundAttachments[0].url,/portal-jw\.cppu\.edu\.cn\/tp_up\/up\/pim\/file\/download/);
+state.details={};state.expanded.add('attach');calls=[];
+response={status:200,body:JSON.stringify([{PIM_CONTENT:'',ATTACHMENTS:[{FILE_NAME:'实施方案.pdf',FILE_URL:'/tp_up/up/pim/file/download?id=1'}]}])};
+await loadDetail('attach');
+const attachmentItem={RESOURCE_ID:'attach',PIM_TITLE:'附件通知',CREATE_TIME:1};
+assert.match(cardHtml(attachmentItem),/附件 1/);
+assert.match(cardHtml(attachmentItem),/实施方案\.pdf/);
+assert.match(cardHtml(attachmentItem),/下载附件/);
+const attachmentCalls=calls.length;
+await loadDetail('attach');
+assert.equal(calls.length,attachmentCalls,'Only-attachment detail should also use cached detail');
+response={status:500,body:''};opened=[];notices=[];
+await downloadAttachment(foundAttachments[0]);
+assert.equal(opened.at(-1),foundAttachments[0].url,'Attachment download should fall back to opening original link');
+assert.match(notices.at(-1),/打开附件链接/);
 response={status:200,body:'{"list":[]}'};
 await loadPage(1);
 assert.match(calls.at(-1)[2],/\/tp_up\/up\/pim\/allpim\//);
@@ -103,22 +125,32 @@ assert.ok(cppuBlock.includes(`"${cppuManifest.version}"`), `pluginCatalog 必须
 assert.match(cppuBlock, /"vault"/, 'pluginCatalog 必须同步 vault 权限');
 assert.match(cppuBlock, /"openUrl"/, 'pluginCatalog 必须同步 openUrl 权限');
 
-/* ── 左侧校园服务栏：七个入口（含一网通办、一卡通、我的请假）+ 标题/图标自动识别 ── */
-for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html#/StuDailyLeaveList', 'https://service.cppu.edu.cn/fe/site/service', 'https://yktcard.cppu.edu.cn/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app']) {
+/* ── 左侧校园服务栏：十个入口（含一网通办、一卡通、我的请假）+ 标题/图标自动识别 ── */
+for (const url of ['https://webvpn.cppu.edu.cn/', 'https://mail.cppu.edu.cn/', 'https://jw.cppu.edu.cn/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html', 'https://xg.cppu.edu.cn/XGPhone/Phone/index.html#/StuDailyLeaveList', 'https://service.cppu.edu.cn/fe/site/service']) {
   assert.ok(source.includes(url), `校园服务栏必须包含 ${url}`);
 }
+assert.match(source, /\{\s*view:\s*"cppu-card"[^}]*label:\s*"一卡通"[^}]*icon:\s*"credit-card"/,
+  '一卡通入口必须是 U-Time 内部视图，不能直接撞受保护充值深链');
+assert.ok(source.includes('const CARD_HOME = CARD_ORIGIN + "/campus-card/?appId=2&loginFrom=h5&type=app"'),
+  '一卡通视图必须默认先进入首页/登录壳，避免未授权');
+assert.ok(source.includes('const CARD_RECHARGE = CARD_ORIGIN + "/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app"'),
+  '一卡通充值深链只能作为应用内视图按钮的目标保留');
+assert.ok(source.includes('CARD_LEDGER_KEY = "cardRechargeLedger"'), '一卡通充值统计必须保存到插件本地 storage');
+assert.ok(source.includes('总充值量') && source.includes('按年份 / 月份 / 日期'), '一卡通视图必须显示总充值量，并说明可按年/月/日汇总');
+assert.ok(source.includes('year: "按年"') && source.includes('month: "按月"') && source.includes('day: "按日"'),
+  '一卡通充值统计必须支持按年、按月、按日三种模式');
+assert.ok(source.includes('data-card-add') && source.includes('data-card-del'), '一卡通充值台账必须支持新增和删除记录');
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
 assert.ok(source.includes('LINK_META_TTL') && source.includes('quickLinkMeta'), '识别结果必须本地缓存，避免每次进插件都抓七个站点');
 assert.match(source, /\{\s*url:\s*"https:\/\/service\.cppu\.edu\.cn\/fe\/site\/service"[^}]*icon:\s*"[a-z-]+"/, '一网通办入口必须自带语义图标，供无法读 favicon 时兜底');
-assert.match(source, /\{\s*url:\s*"https:\/\/yktcard\.cppu\.edu\.cn\/campus-card\/cardRecharge[^}]*icon:\s*"[a-z-]+"/, '一卡通入口必须自带语义图标，供无法读 favicon 时兜底');
 assert.match(source, /\{\s*url:\s*"https:\/\/xg\.cppu\.edu\.cn\/XGPhone\/Phone\/index\.html#\/StuDailyLeaveList"[^}]*icon:\s*"[a-z-]+"/, '「我的请假」入口必须自带语义图标，供无法读 favicon 时兜底');
 /* 反面判据①：一卡通走自己的 OAuth2 登录、不接学校统一身份认证（该校部署的 casUrl 是占位符
-   xxx.xxx.edu.cn），换不到免登票据 —— 所以这个 URL 只应出现在 QUICK_LINKS 一处，
-   一旦有人把它塞进 TICKET_LINKS，点击就会白等一次换票再回退，必须拦下。 */
-assert.ok((source.split('yktcard.cppu.edu.cn').length - 1) === 1,
-  '一卡通 URL 只应出现在 QUICK_LINKS 一处，不得同时进 TICKET_LINKS');
+   xxx.xxx.edu.cn），换不到免登票据 —— 所以 QUICK_LINKS 必须走 view，TICKET_LINKS 不得出现一卡通。 */
+const ticketLinksBlock = source.slice(source.indexOf('const TICKET_LINKS'), source.indexOf('const LINK_META_TTL'));
+assert.doesNotMatch(ticketLinksBlock, /yktcard\.cppu\.edu\.cn|CARD_/,
+  '一卡通不得进 TICKET_LINKS；它必须在应用内视图里按平台自己的登录态走');
 /* 反面判据②：「我的请假」是学工 SPA 的 hash 路由（裸开 index.html 返回 200 静态壳、无服务端
    302，登录由该 SPA 自己的 /Login 路由处理），同样不该进 TICKET_LINKS。用完整带 hash 的
    URL 计数 —— 实现里的注释只提路由名，不会把注释算进来。 */
@@ -420,12 +452,12 @@ assert.doesNotMatch(source, /\/je\/doAct|\/je\/develop\/funcInfo\/(save|add|upda
   '教务接入必须只读：写入类端点没实测过就不许出现在插件里');
 assert.ok(source.includes('const JW_LOAD = JWAPP + "/je/load"'), '教务取数端点必须挂在 jw 域，不能混进 sso-jw');
 
-/* 侧栏三个入口 + 四个视图注册 */
-assert.deepEqual(views.map((v) => v.id).sort(), ['cppu-cx', 'cppu-notify', 'cppu-qj', 'cppu-xk'],
-  '必须注册通知视图 + 选课/请假/创新学分三个教务视图');
-assert.ok(views.filter((v) => v.id !== 'cppu-notify').every((v) => typeof v.render === 'function'), '教务视图必须有 render');
+/* 侧栏四个应用内入口 + 五个视图注册 */
+assert.deepEqual(views.map((v) => v.id).sort(), ['cppu-card', 'cppu-cx', 'cppu-notify', 'cppu-qj', 'cppu-xk'],
+  '必须注册通知视图 + 选课/请假/创新学分/一卡通四个应用内视图');
+assert.ok(views.filter((v) => v.id !== 'cppu-notify').every((v) => typeof v.render === 'function'), '插件子视图必须有 render');
 assert.ok(views.some((v) => v.id === 'cppu-cx' && v.title === '警大创新学分'), '创新学分视图要有独立标题');
-for (const v of ['cppu-xk', 'cppu-qj', 'cppu-cx']) assert.ok(source.includes(`view: "${v}"`), `校园服务栏必须有 ${v} 入口`);
+for (const v of ['cppu-xk', 'cppu-qj', 'cppu-cx', 'cppu-card']) assert.ok(source.includes(`view: "${v}"`), `校园服务栏必须有 ${v} 入口`);
 assert.match(source, /url\.startsWith\("view:"\)\) \{ tide\.util\.navigate\("plug:" \+ url\.slice\(5\)\)/,
   'view: 入口必须在插件内切视图，而不是开系统浏览器（教务 SPA 没有 URL 深链）');
 assert.match(source, /data-goto="\$\{esc\("view:" \+ item\.view\)\}"/,

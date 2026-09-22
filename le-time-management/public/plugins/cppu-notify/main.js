@@ -16,6 +16,11 @@
   const SILENT_LOGIN = JW + "/tpass/login?service=" + encodeURIComponent(SERVICE_PORTAL);
   const MAIL = "https://mail.cppu.edu.cn/";
   const MAIL_ACCOUNT = "2025290058@cppu.edu.cn";
+  const CARD_ORIGIN = "https://yktcard.cppu.edu.cn";
+  const CARD_HOME = CARD_ORIGIN + "/campus-card/?appId=2&loginFrom=h5&type=app";
+  const CARD_RECHARGE = CARD_ORIGIN + "/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app";
+  const CARD_CENTER = CARD_ORIGIN + "/campus-card/userCenter?name=userCenter&appId=2&loginFrom=h5&type=app";
+  const CARD_LEDGER_KEY = "cardRechargeLedger";
   const PAGES_MAX = 10, PAGE_SIZE = 50, CHUNK = 15;
   const AUTO_REFRESH_MS = 10 * 60 * 1000;
 
@@ -41,11 +46,10 @@
     // 否则入口点开必失败；这里只保留裸地址 + hash 路由。
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html#/StuDailyLeaveList", label: "我的请假", icon: "calendar-check" },
     { url: "https://service.cppu.edu.cn/fe/site/service", label: "一网通办", icon: "clipboard-list" },
-    // 一卡通平台（慧新易校 / 新中新）走它自己的 OAuth2 登录，不接学校统一身份认证 ——
-    // 实测配置里的 casUrl 指向占位符 xxx.xxx.edu.cn，SSO 换票是坏的，
-    // 所以刻意不进 TICKET_LINKS：换不到免登票据，裸开即可。
-    // 登录态存 sessionStorage，关标签页即失效，每次新会话都要重登（学/工号 + 密码 + 图形验证码）。
-    { url: "https://yktcard.cppu.edu.cn/campus-card/cardRecharge?name=cardRecharge&appId=2&loginFrom=h5&type=app", label: "一卡通", icon: "credit-card" },
+    // 一卡通平台（慧新易校 / 新中新）不是 sso-jw/门户体系里的子系统。
+    // 直接打开 cardRecharge 这类受保护深链，平台还没建立自己的 H5 session 时会先报「未授权」；
+    // 所以这里改成 U-Time 内部视图：先加载一卡通 H5 首页/登录壳，再由视图内按钮跳充值等子页。
+    { view: "cppu-card", label: "一卡通", icon: "credit-card" },
   ];
   // 需要登录才能进的入口：点一下不直接开裸地址（那样只会落到统一身份认证登录页），
   // 而是用插件自身那份统一身份认证会话（sso.cppu.edu.cn 的 CASTGC，随 rememberMe 保 5 天）
@@ -91,9 +95,9 @@
     notices: [], page: 1, hasMore: true,
     fetching: false, error: null, fetchedAt: 0,
     expanded: new Set(),
-    details: {},           // rid -> {content, loading, error}
+    details: {},           // rid -> {content, attachments, loading, error}
     seen: new Set(),
-    filter: { kw: "", month: "all", hideSeen: false },
+    filter: { kw: "", month: "all", kind: "all", hideSeen: false },
     captcha: "", pending: null, renderedCount: CHUNK,
     savedPassword: "",     // 密钥库取出的密码（仅内存，用于自动登录与表单预填）
     sideOpen: false,       // 校园服务栏：默认收起。只活在本次插件会话里，重进插件回到收起
@@ -122,6 +126,18 @@
     const [y, m] = mo.split("-");
     return `${y}年${Number(m)}月`;
   }
+  const NOTICE_KINDS = [
+    { id: "all", label: "全部" },
+    { id: "exam", label: "考试" },
+    { id: "contest", label: "比赛" },
+    { id: "notice", label: "通知" },
+  ];
+  function noticeKind(it) {
+    const hay = `${titleOf(it)} ${it.TYPE_NAME || ""} ${it.BELONG_UNIT_NAME || ""}`.toLowerCase();
+    if (/比赛|竞赛|大赛|挑战赛|赛项|参赛|征文|作品征集|技能比武|创新创业/.test(hay)) return NOTICE_KINDS[2];
+    if (/考试|考务|期中|期末|补考|缓考|重修|监考|考场|准考证|四六级|cet|普通话|资格证|等级考试|报名缴费/.test(hay)) return NOTICE_KINDS[1];
+    return NOTICE_KINDS[3];
+  }
   function cleanText(raw) {
     let t = String(raw || "")
       .replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "")
@@ -139,6 +155,61 @@
   }
   const titleOf = (it) => String(it.PIM_TITLE || "(无标题)").replace(/&ldquo;/g, "\u201c").replace(/&rdquo;/g, "\u201d");
   const itemKey = (it) => String(it.RESOURCE_ID || "");
+  function portalUrl(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    try { return new URL(s, PORTAL + "/tp_up/").href; }
+    catch { return s; }
+  }
+  function fileNameFromUrl(url) {
+    try {
+      const u = new URL(url);
+      const last = decodeURIComponent((u.pathname.split("/").filter(Boolean).pop() || "").replace(/\+/g, " "));
+      return last || "附件";
+    } catch { return "附件"; }
+  }
+  function safeFileName(name) {
+    return String(name || "附件").replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "附件";
+  }
+  function mimeOf(name) {
+    const ext = String(name || "").toLowerCase().split(".").pop();
+    return ({
+      pdf: "application/pdf", doc: "application/msword",
+      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      xls: "application/vnd.ms-excel",
+      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ppt: "application/vnd.ms-powerpoint",
+      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      zip: "application/zip", rar: "application/vnd.rar", txt: "text/plain",
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+    })[ext] || "application/octet-stream";
+  }
+  function extractAttachments(raw, contentHtml = "") {
+    const out = [], seen = new Set();
+    const push = (name, url) => {
+      const href = portalUrl(url);
+      if (!href || seen.has(href)) return;
+      seen.add(href);
+      out.push({ name: safeFileName(cleanText(name) || fileNameFromUrl(href)), url: href });
+    };
+    const pick = (obj, re) => Object.keys(obj || {}).find((k) => re.test(k) && obj[k] != null && String(obj[k]).trim());
+    const walk = (v) => {
+      if (!v || typeof v !== "object") return;
+      if (Array.isArray(v)) { v.forEach(walk); return; }
+      const nameKey = pick(v, /(^|_)(file|attach)?.?(name|title|mc|bt|originalname)$/i);
+      const urlKey = pick(v, /(^|_)(file|attach|download)?.?(url|href|path|dz|lj)$/i);
+      if (urlKey && urlKey !== "CONTENT_URL" && (nameKey || /file|attach|download/i.test(Object.keys(v).join(" ")))) {
+        push(v[nameKey] || "", v[urlKey]);
+      }
+      Object.entries(v).forEach(([k, val]) => { if (k !== "CONTENT_URL") walk(val); });
+    };
+    walk(raw);
+    String(contentHtml || "").replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_, href, label) => {
+      push(label, href);
+      return "";
+    });
+    return out;
+  }
   function tokenFromText(...parts) {
     for (const part of parts) {
       const m = String(part || "").match(/tp_up[=;]([^&?;\s"'<>]+)/);
@@ -203,6 +274,7 @@
       .pp-tag{border-radius:6px;padding:2px 8px;background:#E1EEF3;color:#0F4C5C;font-size:calc(10px * var(--ui-text-scale))}
       .pp-tag.top{background:#FFF0E1;color:#B26A00}
       .pp-tag.unread{background:#FDE8E8;color:#C64545}
+      .pp-tag.kind{background:#F6F3EC;color:#6D5B3F;border:1px solid #E4DFD6}
       .pp-detail-shell{display:grid;grid-template-rows:0fr;opacity:0;margin-top:0;transition:grid-template-rows .42s cubic-bezier(.2,.78,.2,1),opacity .24s ease,margin-top .42s cubic-bezier(.2,.78,.2,1)}
       .pp-card.open .pp-detail-shell{grid-template-rows:1fr;opacity:1;margin-top:10px}
       .pp-detail-clip{min-height:0;overflow:hidden}
@@ -210,6 +282,12 @@
       .pp-card.open .pp-detail{transform:translateY(0)}
       .pp-detail .c{font-size:calc(12px * var(--ui-text-scale));color:#4B565E;line-height:1.9;white-space:pre-wrap;max-height:320px;overflow-y:auto;overscroll-behavior:contain}
       .pp-detail .pp-act{display:flex;gap:8px;margin-top:10px}
+      .pp-att-list{margin-top:10px;border:1px solid #E4DFD6;border-radius:10px;background:#FBFAF5;padding:9px 10px}
+      .pp-att-list>b{display:block;font-size:calc(11px * var(--ui-text-scale));color:#0F4C5C;margin-bottom:6px}
+      .pp-att{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px dashed #E7DFD1;min-width:0}
+      .pp-att:first-of-type{border-top:0}
+      .pp-att span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:calc(12px * var(--ui-text-scale));color:#4B565E}
+      .pp-att .pp-btn{padding:5px 10px;font-size:calc(11px * var(--ui-text-scale))}
       .pp-login{max-width:440px;margin:26px auto;background:#fff;border:1px solid #E4DFD6;border-radius:18px;padding:28px 30px;box-shadow:0 2px 10px rgba(34,48,58,.07)}
       .pp-login h3{font-size:calc(16px * var(--ui-text-scale));margin-bottom:4px}
       .pp-login .d{font-size:calc(12px * var(--ui-text-scale));color:#7E8B94;line-height:1.7;margin-bottom:12px}
@@ -289,9 +367,41 @@
       .jw-tag{display:inline-block;border-radius:6px;padding:2px 8px;background:var(--paper);border:1px solid var(--line-soft);color:var(--deep);font-size:calc(10.5px * var(--ui-text-scale))}
       .jw-tag.ok{background:rgba(46,196,182,.14);border-color:rgba(46,196,182,.45);color:#0B6B60}
       .jw-tag.warn{background:rgba(242,217,166,.24);border-color:#E3C384;color:#8A6420}
+      .jw-card-act{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+      .jw-card-act .pp-btn{min-height:34px;padding:5px 10px;font-size:calc(11.5px * var(--ui-text-scale))}
+      .jw-leave-draft{margin-top:10px;border-top:1px dashed var(--line);padding-top:10px}
+      .jw-leave-draft textarea{width:100%;min-height:82px;resize:vertical;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:9px 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale));line-height:1.7}
+      .jw-leave-draft small,.jw-detail-grid small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));line-height:1.7;margin-top:6px}
+      .jw-detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)}
+      .jw-detail-cell{background:var(--paper);border:1px solid var(--line-soft);border-radius:10px;padding:8px 10px;min-width:0}
+      .jw-detail-cell b{display:block;color:var(--ink-3);font-size:calc(10px * var(--ui-text-scale));font-weight:500;margin-bottom:3px}
+      .jw-detail-cell span{display:block;color:var(--ink);font-size:calc(11.5px * var(--ui-text-scale));line-height:1.55;overflow-wrap:anywhere}
       .jw-sum{display:flex;align-items:baseline;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:6px 0 10px}
       .jw-sum b{font-size:calc(30px * var(--ui-text-scale));color:var(--deep);line-height:1}
       .jw-sum span{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .yk-frame-shell{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;min-height:620px;height:calc(100vh - 190px);box-shadow:0 1px 10px rgba(34,48,58,.05)}
+      .yk-frame{display:block;width:100%;height:100%;border:0;background:var(--paper)}
+      .yk-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.7;margin:7px 0 0}
+      .yk-status.warn{color:#8A6420}
+      .yk-stat{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(260px,1.2fr);gap:10px;margin:10px 0}
+      .yk-total{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+      .yk-total small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
+      .yk-total b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
+      .yk-total span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
+      .yk-form{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:140px 130px 1fr auto;gap:8px;align-items:center}
+      .yk-form input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}
+      .yk-groups{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+      .yk-group-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+      .yk-group-head b{font-size:calc(12.5px * var(--ui-text-scale));color:var(--deep)}
+      .yk-bars{display:flex;flex-direction:column;gap:6px}
+      .yk-bar{display:grid;grid-template-columns:92px 1fr 88px;align-items:center;gap:8px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
+      .yk-bar i{display:block;height:9px;border-radius:99px;background:linear-gradient(90deg,#2EC4B6,#0F4C5C);min-width:2px}
+      .yk-bar span:last-child{text-align:right;color:var(--deep);font-weight:650}
+      .yk-ledger{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+      .yk-ledger-row{display:grid;grid-template-columns:100px 1fr auto auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft);font-size:calc(11.5px * var(--ui-text-scale))}
+      .yk-ledger-row:first-child{border-top:0}
+      .yk-ledger-row b{color:var(--deep)}
+      .yk-empty{color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale));line-height:1.7}
       @media(max-width:600px){.jw-card-t{font-size:calc(14.5px * var(--ui-text-scale))}.jw-head h3{font-size:calc(17px * var(--ui-text-scale))}.jw-sum b{font-size:calc(26px * var(--ui-text-scale))}.jw-row small{min-width:0;flex-basis:100%}}
       @media(max-width:820px){
         .pp-shell{flex-direction:column;padding:0 14px}
@@ -316,6 +426,14 @@
         .pp-toolbar>.pp-btn{padding:0 14px;font-size:calc(13px * var(--ui-text-scale))}
         .pp-side-txt b,.pp-side-txt small{max-width:96px}
         .pp-side-note{display:none}
+        .yk-stat{grid-template-columns:1fr}
+        .yk-form{grid-template-columns:1fr 1fr}
+        .yk-form input[data-card-note]{grid-column:1/-1}
+        .yk-form .pp-btn{grid-column:1/-1;min-height:44px}
+        .yk-bar{grid-template-columns:78px 1fr 76px}
+        .yk-ledger-row{grid-template-columns:86px 1fr auto}
+        .yk-ledger-row .pp-btn{grid-column:1/-1}
+        .yk-frame-shell{height:calc(100vh - 230px);min-height:520px}
       }
       @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail,.pp-side,.pp-side-inner,.pp-side-toggle{transition-duration:.01ms!important}}
     `;
@@ -899,7 +1017,7 @@
 
   async function loadDetail(rid) {
     const cur = state.details[rid] || {};
-    if (cur.content || cur.loading) return;
+    if (cur.content || cur.attachments || cur.loading) return;
     state.details[rid] = { loading: true };
     updateDetail(rid);
     try {
@@ -934,11 +1052,32 @@
           text = d.PIM_CONTENT || "";
         }
       }
-      state.details[rid] = { content: cleanText(text) || "（正文为空，可能内容在附件中）" };
+      state.details[rid] = { content: cleanText(text), attachments: extractAttachments(d, text) };
     } catch (e) {
       state.details[rid] = { error: String(e.message || e) };
     }
     updateDetail(rid);
+  }
+
+  async function downloadAttachment(att) {
+    try {
+      const res = await tide.http.fetch(state.sid, "GET", att.url, {
+        headers: { "Referer": referer(), "Cookie": "tp_up=" + state.token },
+        binary: true,
+      });
+      if (res.status !== 200 || !res.body) throw new Error(`附件接口 HTTP ${res.status}`);
+      const a = document.createElement("a");
+      a.href = `data:${mimeOf(att.name)};base64,${res.body}`;
+      a.download = safeFileName(att.name);
+      a.style.display = "none";
+      document.body?.appendChild?.(a);
+      a.click?.();
+      a.remove?.();
+      tide.notify(`已开始下载：${safeFileName(att.name)}`);
+    } catch (e) {
+      tide.util.openUrl(att.url);
+      tide.notify("应用内下载失败，已打开附件链接");
+    }
   }
 
   /* ── 过滤与渲染 ── */
@@ -946,6 +1085,7 @@
     const kw = state.filter.kw.trim().toLowerCase();
     const rows = state.notices.filter((it) => {
       if (state.filter.month !== "all" && monthOf(it) !== state.filter.month) return false;
+      if (state.filter.kind !== "all" && noticeKind(it).id !== state.filter.kind) return false;
       if (state.filter.hideSeen && state.seen.has(itemKey(it))) return false;
       if (kw) {
         const hay = `${titleOf(it)} ${it.CREATE_USER_NAME || ""} ${it.BELONG_UNIT_NAME || ""} ${it.TYPE_NAME || ""}`.toLowerCase();
@@ -966,6 +1106,15 @@
 
   function paintChips() {
     if (!ui) return;
+    const kindCounts = { all: state.notices.length, exam: 0, contest: 0, notice: 0 };
+    for (const it of state.notices) kindCounts[noticeKind(it).id] = (kindCounts[noticeKind(it).id] || 0) + 1;
+    ui.kinds?.replaceChildren(...NOTICE_KINDS.map((c) => {
+      const b = document.createElement("button");
+      b.className = "pp-chip" + (state.filter.kind === c.id ? " on" : "");
+      b.textContent = `${c.label}${kindCounts[c.id] ? ` ${kindCounts[c.id]}` : ""}`;
+      b.addEventListener("click", () => { state.filter.kind = c.id; saveFilter(); paintChips(); paintList(true); });
+      return b;
+    }));
     const months = [...new Set(state.notices.map(monthOf))].filter((mo) => mo !== "unknown").sort().reverse();
     ui.months.replaceChildren(...[{ id: "all", label: "全部" }, ...months.map((mo) => ({ id: mo, label: monthLabel(mo) }))].map((c) => {
       const b = document.createElement("button");
@@ -979,9 +1128,16 @@
 
   function detailHtml(rid) {
     const det = state.details[rid];
+    const attachments = Array.isArray(det?.attachments) ? det.attachments : [];
+    const attHtml = attachments.length ? `<div class="pp-att-list"><b>附件 ${attachments.length}</b>${attachments.map((a, i) => `
+      <div class="pp-att">
+        <span title="${esc(a.url)}">${esc(a.name)}</span>
+        <button class="pp-btn" data-attach-download="${i}">下载附件</button>
+      </div>`).join("")}</div>` : "";
+    const content = det?.content ? esc(det.content) : "（正文为空，可能内容在附件中）";
     return !det || det.loading ? "正在加载正文…" :
       det.error ? `<span style="color:#B03535;font-size:calc(12px * var(--ui-text-scale))">${esc(det.error)}</span><button class="pp-btn" data-retry>重试加载正文</button>` :
-      `<div class="c">${esc(det.content)}</div><div class="pp-act"><button class="pp-btn" data-remind>转为提醒</button></div>`;
+      `<div class="c">${content}</div>${attHtml}<div class="pp-act"><button class="pp-btn" data-remind>转为提醒</button></div>`;
   }
 
   function updateDetail(rid) {
@@ -1012,11 +1168,13 @@
     const t = Number(it.CREATE_TIME || 0);
     const timeStr = t ? new Date(t).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
     const open = state.expanded.has(rid);
+    const kind = noticeKind(it);
     return `<div class="pp-card${open ? " open" : ""}" data-rid="${esc(rid)}">
       <button class="pp-title pp-heading" data-toggle aria-expanded="${open}" aria-label="${esc(titleOf(it))}，${open ? "收起正文" : "展开正文"}">${esc(titleOf(it))}</button>
       <div class="pp-meta">
         ${it.IS_TOP === "1" ? '<span class="pp-tag top">置顶</span>' : ""}
         ${it.IS_READ === "0" ? '<span class="pp-tag unread">未读</span>' : ""}
+        <span class="pp-tag kind">${esc(kind.label)}</span>
         ${it.TYPE_NAME ? `<span class="pp-tag">${esc(it.TYPE_NAME)}</span>` : ""}
         <span>发布：${esc(it.CREATE_USER_NAME || "—")}（${esc(it.BELONG_UNIT_NAME || "—")}）</span>
         <span>${timeStr}</span>
@@ -1439,6 +1597,9 @@
     data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, cxCredit: null },
     loading: {}, error: {}, at: {},
     courseScope: "week",            // today | week | term，默认本周（本学期是 200+ 行的紧凑列表）
+    leaveCourseId: "",
+    leaveReason: "",
+    expandedCredit: new Set(),
   };
   const jwMounted = new Map();      // viewId -> { el, cfg }
 
@@ -1659,6 +1820,27 @@
     return `<div class="pp-toolbar"><span class="pp-lab">范围</span><div class="pp-chips">${items.map(([id, label]) =>
       `<button type="button" class="pp-chip${jwState.courseScope === id ? " on" : ""}" data-jw-scope="${id}">${label}</button>`).join("")}</div></div>`;
   }
+  const jwCourseId = (r) => String(r.ID || [r.SKRQ, r.JC, r.KCMC, r.JS, r.DDMC].filter(Boolean).join("|"));
+  function jwCourseTime(r) {
+    return `${String(r.SKRQ || "").slice(5)} 周${"日一二三四五六"[Number(new Date(`${r.SKRQ}T00:00:00`).getDay()) || 0]} ${jwDict("JC", r.JC)}节`;
+  }
+  function jwLeaveDraftHtml(r, applied) {
+    if (applied) return `<div class="jw-leave-draft"><small>这节课已经出现在请假记录里，通常不需要重复申请。</small></div>`;
+    const title = `${r.KCMC || "这节课"} · ${jwCourseTime(r)}`;
+    return `<div class="jw-leave-draft">
+      <textarea data-leave-reason placeholder="请假理由，例如：因身体不适需前往校医院就诊，无法参加本节课程。">${esc(jwState.leaveReason || "")}</textarea>
+      <div class="jw-card-act">
+        <button type="button" class="pp-btn pri" data-leave-site>去教务提交</button>
+        <button type="button" class="pp-btn" data-leave-task>存成待办</button>
+      </div>
+      <small>已选择：${esc(title)}。这里先帮你把课次和理由整理好；点「去教务提交」会免密打开教务，最终提交仍由学校系统确认。</small>
+    </div>`;
+  }
+  function jwLeaveActionHtml(r, applied) {
+    if (applied) return "";
+    const id = jwCourseId(r);
+    return `<div class="jw-card-act"><button type="button" class="pp-btn pri" data-leave-course="${esc(id)}">申请请假</button></div>`;
+  }
   function jwCourseList() {
     const rows = jwState.data.qjCourse;
     const head = jwStateBlock("qjCourse");
@@ -1672,18 +1854,24 @@
     if (!list.length) {
       return `<div class="pp-empty">${scope === "week" ? "本周没有课次（或校历起始日没拿到）" : scope === "today" ? "今天没有安排课程" : "本学期没有课次记录"}</div>`;
     }
-    const fmt = (r) => `${String(r.SKRQ || "").slice(5)} 周${"日一二三四五六"[Number(new Date(`${r.SKRQ}T00:00:00`).getDay()) || 0]} ${jwDict("JC", r.JC)}节`;
     if (scope === "term") {
       // 本学期是 200+ 节，用紧凑一行一节；今天/本周才上卡片
-      return list.map((r) => `<div class="jw-row">
-          <b>${esc(fmt(r))}</b><span>${esc(r.KCMC || "")}</span><small>${esc([jwDict("KCSX", r.KCSX), r.JS, r.DDMC].filter(Boolean).join(" · "))}</small>
-          ${applied.has(String(r.ID)) ? jwTag("已申请", "ok") : ""}
-        </div>`).join("");
+      return list.map((r) => {
+        const id = jwCourseId(r);
+        const hasApplied = applied.has(String(r.ID));
+        return `<div class="jw-row" data-jw-course-row="${esc(id)}">
+          <b>${esc(jwCourseTime(r))}</b><span>${esc(r.KCMC || "")}</span><small>${esc([jwDict("KCSX", r.KCSX), r.JS, r.DDMC].filter(Boolean).join(" · "))}</small>
+          ${hasApplied ? jwTag("已申请", "ok") : `<button type="button" class="pp-btn" data-leave-course="${esc(id)}">申请请假</button>`}
+        </div>${jwState.leaveCourseId === id ? jwLeaveDraftHtml(r, hasApplied) : ""}`;
+      }).join("");
     }
-    return list.map((r) => `<div class="jw-card">
-        <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}${applied.has(String(r.ID)) ? " " + jwTag("已申请", "ok") : ""}</div>
+    return list.map((r) => {
+      const id = jwCourseId(r);
+      const hasApplied = applied.has(String(r.ID));
+      return `<div class="jw-card" data-jw-course-row="${esc(id)}">
+        <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}${hasApplied ? " " + jwTag("已申请", "ok") : ""}</div>
         ${jwMetaLine([
-          jwTag(fmt(r)),
+          jwTag(jwCourseTime(r)),
           jwTag(`第 ${r.XQ} 周`),
           jwTag(jwDict("KCSX", r.KCSX)),
           jwTag(jwDict("HJLX", r.HJLX)),
@@ -1691,7 +1879,9 @@
           r.DDMC ? jwTag(r.DDMC) : "",
           r.XF ? jwTag(`${r.XF} 学分`) : "",
         ])}
-      </div>`).join("");
+        ${jwState.leaveCourseId === id ? jwLeaveDraftHtml(r, hasApplied) : jwLeaveActionHtml(r, hasApplied)}
+      </div>`;
+    }).join("");
   }
   function jwLeaveHtml() {
     const rows = jwState.data.qjRecord;
@@ -1721,7 +1911,23 @@
     const applyAll = rows.reduce((n, r) => n + (Number(r.APPLYALL) || 0), 0);
     const ended = rows.reduce((n, r) => n + (Number(r.END_VALUE) || 0), 0);
     const top = `<div class="jw-sum"><b>${sum}</b><span>已发布学期合计学分 · 申请 ${applyAll} 项 / 已认定 ${ended} 项</span></div>`;
-    return top + rows.map((r) => `<div class="jw-card">
+    const labelMap = {
+      DECLARE_YEAR_SEMESTER: "学期", SUM_VALUE: "合计学分", APPLYALL: "申请项目数", END_VALUE: "已认定项目数",
+      XQMC: "校区", XYDMC: "学院", XM: "姓名", XH: "学号", ZYMC: "专业", BJMC: "班级",
+      PROJECT_NAME: "项目名称", XMMC: "项目名称", ITEM_NAME: "项目名称", ACTIVITY_NAME: "活动名称",
+      CREDIT_NAME: "学分项目", SCORE: "成绩", VALUE: "学分", REMARK: "备注",
+    };
+    const skip = new Set(["DECLARE_YEAR_SEMESTER", "SUM_VALUE", "APPLYALL", "END_VALUE", "XQMC", "XYDMC"]);
+    const detail = (r, key) => {
+      const cells = Object.entries(r).filter(([k, v]) => !skip.has(k) && v != null && String(v).trim() !== "")
+        .slice(0, 24)
+        .map(([k, v]) => `<div class="jw-detail-cell"><b>${esc(labelMap[k] || k)}</b><span>${esc(v)}</span></div>`).join("");
+      return `<div class="jw-detail-grid">${cells || "<small>教务接口这一条只返回了汇总字段，没有返回单个项目明细。可以点「去教务」查看原系统里的完整明细。</small>"}</div>`;
+    };
+    return top + rows.map((r, idx) => {
+      const key = String(r.ID || r.DECLARE_YEAR_SEMESTER || idx);
+      const open = jwState.expandedCredit.has(key);
+      return `<div class="jw-card" data-credit-key="${esc(key)}">
         <div class="jw-card-t">${esc(r.DECLARE_YEAR_SEMESTER || "（无学期）")} · ${Number(r.SUM_VALUE) || 0} 学分</div>
         ${jwMetaLine([
           jwTag(`申请 ${Number(r.APPLYALL) || 0} 项`),
@@ -1730,7 +1936,10 @@
           r.XQMC ? jwTag(r.XQMC) : "",
           r.XYDMC ? jwTag(r.XYDMC) : "",
         ])}
-      </div>`).join("");
+        <div class="jw-card-act"><button type="button" class="pp-btn" data-credit-toggle="${esc(key)}">${open ? "收起明细" : "展开看看是什么项目"}</button></div>
+        ${open ? detail(r, key) : ""}
+      </div>`;
+    }).join("");
   }
 
   const JW_VIEWS = [
@@ -1743,7 +1952,7 @@
     {
       id: "cppu-qj", title: "警大请假", icon: "calendar-xmark", keys: ["qjRecord", "qjCourse"], menu: JW_MENU.qj,
       kicker: "教 务 · 学 生 请 假",
-      tip: "这里是查询与准备：看到哪一节能请、之前请的批没批。真的提交要去教务点「请假申请」（本插件不代交，避免误写进学校流程）。",
+      tip: "这里可以直接选课次、填写请假理由并生成申请草稿；点「去教务提交」会免密打开教务，最终提交仍由学校系统确认。",
       body: () => jwLeaveHtml(),
     },
     {
@@ -1804,6 +2013,44 @@
         if (!Array.isArray(jwState.data.qjCourse)) await jwEnsureKeys(["qjCourse"]);
         return;
       }
+      const leaveBtn = e.target.closest("[data-leave-course]");
+      if (leaveBtn) {
+        jwState.leaveCourseId = leaveBtn.dataset.leaveCourse || "";
+        jwPaint();
+        return;
+      }
+      const leaveSite = e.target.closest("[data-leave-site]");
+      if (leaveSite) {
+        jwState.leaveReason = el.querySelector("[data-leave-reason]")?.value || jwState.leaveReason;
+        await openSideLink(JW_INDEX, leaveSite);
+        tide.notify("已打开教务，请进入「学生服务 › 我的课程表 › 我的课表 › 学生请假申请」提交");
+        return;
+      }
+      if (e.target.closest("[data-leave-task]")) {
+        const rows = jwState.data.qjCourse || [];
+        const r = rows.find((x) => jwCourseId(x) === jwState.leaveCourseId);
+        jwState.leaveReason = el.querySelector("[data-leave-reason]")?.value || jwState.leaveReason;
+        if (r) {
+          tide.tasks.create({
+            title: `提交请假：${r.KCMC || "课程"}`,
+            quad: 1,
+            tags: ["警大请假"],
+            note: [`课次：${jwCourseTime(r)}`, `教师：${r.JS || ""}`, `地点：${r.DDMC || ""}`, `理由：${jwState.leaveReason || "（待填写）"}`].join("\n"),
+          });
+          tide.notify("已把请假草稿存成待办");
+        }
+        return;
+      }
+      const creditBtn = e.target.closest("[data-credit-toggle]");
+      if (creditBtn) {
+        const key = creditBtn.dataset.creditToggle || "";
+        if (jwState.expandedCredit.has(key)) jwState.expandedCredit.delete(key); else jwState.expandedCredit.add(key);
+        jwPaint();
+        return;
+      }
+    });
+    el.addEventListener("input", (e) => {
+      if (e.target.matches("[data-leave-reason]")) jwState.leaveReason = e.target.value;
     });
     (async () => {
       await jwRestoreCache();
@@ -1811,6 +2058,169 @@
       await jwEnsureKeys(cfg.keys);
     })();
     return () => { jwMounted.delete(cfg.id); };
+  }
+
+  const cardState = { rows: [], mode: "month" };
+  const cardToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  const cardMoney = (n) => `¥${(Number(n) || 0).toFixed(2)}`;
+  const cardPeriodKey = (date, mode) => {
+    const s = String(date || "");
+    if (mode === "year") return s.slice(0, 4) || "未知年份";
+    if (mode === "day") return s.slice(0, 10) || "未知日期";
+    return s.slice(0, 7) || "未知月份";
+  };
+  const cardPeriodLabel = (key, mode) => {
+    if (mode === "year" && /^\d{4}$/.test(key)) return `${key} 年`;
+    if (mode === "month" && /^\d{4}-\d{2}$/.test(key)) {
+      const [y, m] = key.split("-");
+      return `${y} 年 ${Number(m)} 月`;
+    }
+    if (mode === "day" && /^\d{4}-\d{2}-\d{2}$/.test(key)) {
+      const [, m, d] = key.split("-");
+      return `${Number(m)} 月 ${Number(d)} 日`;
+    }
+    return key;
+  };
+  function cardCleanRows(rows) {
+    return (Array.isArray(rows) ? rows : []).map((r) => ({
+      id: String(r.id || `${r.date || cardToday()}-${Math.random().toString(36).slice(2)}`),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || "")) ? String(r.date) : cardToday(),
+      amount: Math.max(0, Math.round((Number(r.amount) || 0) * 100) / 100),
+      note: String(r.note || "").slice(0, 80),
+      at: Number(r.at || Date.now()),
+    })).filter((r) => r.amount > 0).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.at - a.at).slice(0, 1000);
+  }
+  function cardTotals(mode = cardState.mode) {
+    const groups = new Map();
+    let total = 0;
+    for (const r of cardState.rows) {
+      total += Number(r.amount) || 0;
+      const key = cardPeriodKey(r.date, mode);
+      groups.set(key, (groups.get(key) || 0) + (Number(r.amount) || 0));
+    }
+    const items = [...groups.entries()].map(([key, amount]) => ({ key, amount })).sort((a, b) => String(b.key).localeCompare(String(a.key)));
+    return { total, items, max: Math.max(1, ...items.map((x) => x.amount)) };
+  }
+  function cardStatsHtml() {
+    const { total, items, max } = cardTotals();
+    const modeLabels = { year: "按年", month: "按月", day: "按日" };
+    const chips = Object.entries(modeLabels).map(([mode, label]) =>
+      `<button type="button" class="pp-chip${cardState.mode === mode ? " on" : ""}" data-card-mode="${mode}">${label}</button>`).join("");
+    const bars = items.length ? items.slice(0, 18).map((it) =>
+      `<div class="yk-bar"><span>${esc(cardPeriodLabel(it.key, cardState.mode))}</span><i style="width:${Math.max(4, Math.round(it.amount / max * 100))}%"></i><span>${esc(cardMoney(it.amount))}</span></div>`).join("")
+      : `<div class="yk-empty">还没有充值记录。先在上方录一笔，就能按年、月、日自动统计。</div>`;
+    const rows = cardState.rows.slice(0, 12).map((r) => `<div class="yk-ledger-row" data-card-row="${esc(r.id)}">
+      <span>${esc(r.date)}</span><b>${esc(cardMoney(r.amount))}</b><span>${esc(r.note || "一卡通充值")}</span><button type="button" class="pp-btn" data-card-del="${esc(r.id)}">删除</button>
+    </div>`).join("") || `<div class="yk-empty">暂无记录。这里保存的是 U-Time 本地充值台账，不会写入一卡通平台。</div>`;
+    return `<div class="yk-stat">
+      <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${cardState.rows.length} 笔本地记录，可按年份 / 月份 / 日期汇总查看。</span></div>
+      <div class="yk-form">
+        <input type="date" data-card-date value="${esc(cardToday())}" aria-label="充值日期">
+        <input type="number" data-card-amount min="0" step="0.01" placeholder="金额" aria-label="充值金额">
+        <input type="text" data-card-note maxlength="80" placeholder="备注，可不填" aria-label="充值备注">
+        <button type="button" class="pp-btn pri" data-card-add>记一笔</button>
+      </div>
+    </div>
+    <div class="yk-groups"><div class="yk-group-head"><b>充值统计</b><div class="pp-chips">${chips}</div></div><div class="yk-bars">${bars}</div></div>
+    <div class="yk-ledger">${rows}</div>`;
+  }
+  async function cardSaveRows() {
+    cardState.rows = cardCleanRows(cardState.rows);
+    await tide.storage.set(CARD_LEDGER_KEY, cardState.rows);
+  }
+  function cardPaintStats(root) {
+    const box = root?.querySelector?.("[data-card-stats]");
+    if (box) box.innerHTML = cardStatsHtml();
+  }
+
+  function cardShellHtml() {
+    return `<div class="${sideShellClass()}">
+      <aside class="pp-side" data-side>${sideHtml()}</aside>${sideToggleHtml()}
+      <div class="pp-main"><div class="pp-wrap">
+      <div class="jw-kicker">校 园 服 务 · 一 卡 通</div>
+      <div class="jw-head"><h3>一卡通</h3><span>慧新易校 / 新中新 H5</span></div>
+      <div class="pp-toolbar">
+        <button class="pp-btn pri" data-card-home>首页登录</button>
+        <button class="pp-btn" data-card-recharge>充值</button>
+        <button class="pp-btn" data-card-center>账户中心</button>
+        <button class="pp-btn" data-card-reload>刷新</button>
+        <button class="pp-btn" data-card-open>应用内新窗打开</button>
+        <button class="pp-btn" data-card-back>回通知</button>
+        <span style="flex:1"></span>
+      </div>
+      <div class="jw-tip">一卡通平台有自己的 H5 登录态，不吃警大门户 SSO 票据。这里默认先进入首页/登录壳，登录成功后再点「充值」或「账户中心」，避免直接打开受保护深链时报「未授权」。</div>
+      <div data-card-stats>${cardStatsHtml()}</div>
+      <div class="yk-status" data-card-status>正在载入一卡通首页…</div>
+      <div class="yk-frame-shell"><iframe class="yk-frame" data-card-frame src="${esc(CARD_HOME)}" title="一卡通"></iframe></div>
+      <div style="height:30px"></div>
+      </div></div>
+    </div>`;
+  }
+
+  function mountCardView(el) {
+    ensureStyle();
+    el.innerHTML = cardShellHtml();
+    bindSide(el);
+    loadLinkMeta(el);
+    const frame = el.querySelector("[data-card-frame]");
+    const status = el.querySelector("[data-card-status]");
+    const go = (url, text) => {
+      if (!frame) return;
+      if (status) { status.textContent = text || "正在载入…"; status.classList.remove("warn"); }
+      frame.src = url;
+    };
+    frame?.addEventListener("load", () => {
+      if (status) {
+        status.textContent = "已在 U-Time 内打开。一卡通登录态由平台页面自己维护；若页面提示未授权，请先点「首页登录」完成登录后再进入子功能。";
+        status.classList.remove("warn");
+      }
+    });
+    frame?.addEventListener("error", () => {
+      if (status) {
+        status.textContent = "一卡通页面没有载入成功；可以点「应用内新窗打开」使用独立 WebView 再试。";
+        status.classList.add("warn");
+      }
+    });
+    el.addEventListener("click", (e) => {
+      if (e.target.closest("[data-card-home]")) { go(CARD_HOME, "正在打开一卡通首页/登录入口…"); return; }
+      if (e.target.closest("[data-card-recharge]")) { go(CARD_RECHARGE, "正在进入一卡通充值页…若提示未授权，请先回首页登录。"); return; }
+      if (e.target.closest("[data-card-center]")) { go(CARD_CENTER, "正在进入一卡通账户中心…若提示未授权，请先回首页登录。"); return; }
+      if (e.target.closest("[data-card-reload]")) { go(frame?.src || CARD_HOME, "正在刷新当前一卡通页面…"); return; }
+      if (e.target.closest("[data-card-open]")) { tide.util.openUrl(frame?.src || CARD_HOME); return; }
+      if (e.target.closest("[data-card-back]")) { tide.util.navigate("plug:cppu-notify"); return; }
+      const modeBtn = e.target.closest("[data-card-mode]");
+      if (modeBtn) {
+        cardState.mode = modeBtn.dataset.cardMode || "month";
+        cardPaintStats(el);
+        return;
+      }
+      if (e.target.closest("[data-card-add]")) {
+        const date = el.querySelector("[data-card-date]")?.value || cardToday();
+        const amount = Number(el.querySelector("[data-card-amount]")?.value || 0);
+        const note = el.querySelector("[data-card-note]")?.value || "";
+        if (!Number.isFinite(amount) || amount <= 0) { tide.notify("请输入大于 0 的充值金额"); return; }
+        cardState.rows.unshift({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date, amount, note, at: Date.now() });
+        cardSaveRows().then(() => {
+          cardPaintStats(el);
+          tide.notify("已记录一卡通充值");
+        });
+        return;
+      }
+      const delBtn = e.target.closest("[data-card-del]");
+      if (delBtn) {
+        const id = delBtn.dataset.cardDel || "";
+        cardState.rows = cardState.rows.filter((r) => r.id !== id);
+        cardSaveRows().then(() => cardPaintStats(el));
+        return;
+      }
+    });
+    (async () => {
+      cardState.rows = cardCleanRows(await tide.storage.get(CARD_LEDGER_KEY, []));
+      cardPaintStats(el);
+    })();
   }
 
   /* ── 登录界面 ── */
@@ -1980,6 +2390,7 @@
         <span style="flex:1"></span>
         <button class="pp-btn" data-relogin>重新登录</button>
       </div>
+      <div class="pp-toolbar"><span class="pp-lab">分类</span><div class="pp-chips" data-kinds></div></div>
       <div class="pp-toolbar"><span class="pp-lab">月份</span><div class="pp-chips" data-months></div></div>
       <div class="pp-status" data-status></div>
       <div data-list></div>
@@ -1989,6 +2400,7 @@
 
     ui = {
       status: el.querySelector("[data-status]"),
+      kinds: el.querySelector("[data-kinds]"),
       months: el.querySelector("[data-months]"),
       list: el.querySelector("[data-list]"),
       kw: el.querySelector("[data-kw]"),
@@ -2032,6 +2444,13 @@
       if (!it) return;
       if (e.target.closest("[data-remind]")) { await toReminder(it); return; }
       if (e.target.closest("[data-retry]")) { loadDetail(rid); return; }
+      const attBtn = e.target.closest("[data-attach-download]");
+      if (attBtn) {
+        const det = state.details[rid];
+        const att = det?.attachments?.[Number(attBtn.dataset.attachDownload)];
+        if (att) await downloadAttachment(att);
+        return;
+      }
       if (!e.target.closest("[data-toggle]")) return;
       if (state.expanded.has(rid)) {
         state.expanded.delete(rid);
@@ -2079,6 +2498,7 @@
   }
 
   tide.ui.registerView({ id: "cppu-notify", title: "警大通知", icon: 'building-columns', render });
+  tide.ui.registerView({ id: "cppu-card", title: "警大一卡通", icon: "credit-card", render: mountCardView });
   // 教务三个只读视图：侧栏「校园服务」里的 学生选课 / 学生请假 / 创新学分 入口直接 navigate 过来
   for (const cfg of JW_VIEWS) {
     tide.ui.registerView({

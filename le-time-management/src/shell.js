@@ -715,7 +715,12 @@ export function renderShell(root) {
     for (const id of coreViewIds()) nav.append(navBtn(id));
     if (pluginViews.length) {
       // 桌面端侧栏仍保留插件直达列表；移动端底栏只留核心入口（.plug-list 被隐藏）
-      const box = el("div", { class: "plug-list" }, el("div", { class: "sec" }, "插 件 视 图"));
+      const box = el("div", { class: "plug-list" },
+        el("div", { class: "sec plug-list-sec" },
+          el("span", {}, "插 件 视 图"),
+          desktopWindow ? el("small", {}, "上下拖动排序") : null,
+        ),
+      );
       for (const pv of orderedPluginViews()) box.append(navBtn(`plug:${pv.id}`, true));
       if (desktopWindow) {
         attachPluginListDrag(box, () => {

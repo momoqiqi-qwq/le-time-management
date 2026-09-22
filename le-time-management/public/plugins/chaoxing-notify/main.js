@@ -655,6 +655,16 @@ const CX_PY_DATA = {
     await saveIgnored(); paintMain();
     tide.notify("已从本机列表移除（不影响学习通平台数据），顶部可恢复");
   }
+  async function ignoreNotices(list, label = "通知") {
+    const ids = [...new Set((list || []).map((n) => n && n.id).filter(Boolean))];
+    if (!ids.length) return;
+    for (const id of ids) {
+      state.ignoredIds.add(id);
+      state.newIds.delete(id);
+    }
+    await saveIgnored(); paintMain();
+    tide.notify(`已从本机列表移除 ${ids.length} 条${label}（不影响学习通平台数据），顶部可恢复`);
+  }
 
   /* 本机已读/未读标记：覆盖平台状态（readOverrides: id -> true=未读 / false=已读），
      只影响本机显示与筛选，不动学习通服务端。 */
@@ -757,7 +767,7 @@ const CX_PY_DATA = {
   }
   function todoHtml() {
     const list = todos(), late = overdueTodos(), submitted = submittedOpen(), done = submittedOverdue();
-    return `<div class="cx2-kpis"><span class="cx2-kpi" title="正文里带「结束时间 / 截止时间」且还没到期、本机没探到已提交">未截止未提交 ${list.length}</span><span class="cx2-kpi" title="截止已过、且本机没探到已提交">已逾期未提交 ${late.length}</span><span class="cx2-kpi" title="本机探到已提交，但截止时间还没到">已提交未截止 ${submitted.length}</span>${done.length ? `<span class="cx2-kpi" title="截止已过，但作业页打开是查看页，说明交过了，不再算逾期">已提交已过期 ${done.length}</span>` : ''}</div>
+    return `<div class="cx2-kpis"><span class="cx2-kpi" title="正文里带「结束时间 / 截止时间」且还没到期、本机没探到已提交">未截止未提交 ${list.length}</span><span class="cx2-kpi" title="截止已过、且本机没探到已提交">已逾期未提交 ${late.length}</span><span class="cx2-kpi" title="本机探到已提交，但截止时间还没到">已提交未截止 ${submitted.length}</span>${done.length ? `<span class="cx2-kpi" title="截止已过，但作业页打开是查看页，说明交过了，不再算逾期">已提交已过期 ${done.length}</span>` : ''}${late.length ? `<button class="danger" data-clear-late title="把当前「已逾期未提交」列表全部从本机隐藏；不影响学习通平台，也可用顶部「恢复已移除」放回">一键移除逾期</button>` : ''}</div>
       <section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-amber"></span>未截止未提交<span class="cx2-grade-sub">${list.length} 条 · 越早截止越靠前</span></h4>${list.length ? `<div class="cx2-todo">${list.map((n) => todoCardHtml(n, false, false)).join('')}</div>` : `<div class="cx2-empty">没有未截止且未提交的作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>`}</section>
       ${late.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-red"></span>已逾期未提交<span class="cx2-grade-sub">${late.length} 条 · 逾期最久的在前</span></h4><div class="cx2-todo">${late.map((n) => todoCardHtml(n, true, false)).join('')}</div></section>` : ''}
       ${submitted.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-blue"></span>已提交但未到截止时间<span class="cx2-grade-sub">${submitted.length} 条 · 越早截止越靠前</span></h4><div class="cx2-todo">${submitted.map((n) => todoCardHtml(n, false, true)).join('')}</div></section>` : ''}
@@ -1022,6 +1032,7 @@ const CX_PY_DATA = {
       if(e.target.closest('[data-search-toggle]')){state.course.searchOpen=true;paintMain();return;}
       const modeBtn=e.target.closest('[data-mode]');if(modeBtn){state.refreshMode=modeBtn.dataset.mode==='throttle'?'throttle':'auto';await tide.storage.set('refreshMode',state.refreshMode);paintMain();return;}
       if(e.target.closest('[data-refresh]')){await refreshAll();return;}
+      if(e.target.closest('[data-clear-late]')){await ignoreNotices(overdueTodos(),'逾期作业');return;}
       if(e.target.closest('[data-switch]')){state.loggedIn=false;state.sid=null;state.cookie='';state.creds=null;await tide.storage.set('sessionCookie',null);await tide.storage.set('creds',null);loginHtml();return;}
       const lookup=e.target.closest('[data-lookup]');if(lookup){const input=host.querySelector('[data-code]');try{state.error='';await loadNotice(input.value);paintMain();}catch(err){state.error=err.message||String(err);paintMain();}return;}
       if(e.target.closest('[data-ignore-reset]')){await restoreIgnored();return;}
