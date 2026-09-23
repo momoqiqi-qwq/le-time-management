@@ -45,7 +45,7 @@ export function resolveTheme(id, mode = getThemeMode()) {
 }
 
 /** @deprecated 用 resolveTheme 拿完整信息；这里仅为兼容旧调用点。 */
-export function effectiveThemeId(id, mode = getThemeMode()) {
+function effectiveThemeId(id, mode = getThemeMode()) {
   return resolveTheme(id, mode).id;
 }
 

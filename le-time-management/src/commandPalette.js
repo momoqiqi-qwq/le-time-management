@@ -177,7 +177,7 @@ function run(index = activeIndex) {
   try { item.run(); } catch (e) { console.error(e); }
 }
 
-export function closeCommandPalette() {
+function closeCommandPalette() {
   if (!modal) return;
   const closingModal = modal;
   const closingMask = modal._mask;
@@ -186,7 +186,7 @@ export function closeCommandPalette() {
   closeLayer(closingModal, closingMask);
 }
 
-export function openCommandPalette(initialQuery = "") {
+function openCommandPalette(initialQuery = "") {
   if (modal) { input.value = initialQuery; renderResults(); input.focus(); return; }
   const mask = el("div", { class: "cmd-mask", onclick: closeCommandPalette });
   input = el("input", { class: "cmd-input", type: "search", placeholder: "搜索任务、时间块、插件、设置，或输入命令…", value: initialQuery, "aria-label": "全局搜索" });

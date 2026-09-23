@@ -11,7 +11,7 @@
 const MOBILE_ZOOM_VIEWPORT = "width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover";
 
 /** 是否是需要放开缩放的手持设备（Android / iOS，与 isDesktopRuntime 的判断互为反面）。 */
-export function needsTouchZoom(ua = typeof navigator !== "undefined" ? navigator.userAgent : "") {
+function needsTouchZoom(ua = typeof navigator !== "undefined" ? navigator.userAgent : "") {
   return /Android|iPhone|iPad|iPod/i.test(String(ua || ""));
 }
 

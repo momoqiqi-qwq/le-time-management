@@ -37,7 +37,7 @@ export const BUILTIN_SOUNDS = [
 ];
 
 /** 可循环的长鸣预设 id（设置页的「长鸣音效」只列这些）。 */
-export const LOOP_SOUND_IDS = BUILTIN_SOUNDS.filter((s) => s.loop).map((s) => s.id);
+const LOOP_SOUND_IDS = BUILTIN_SOUNDS.filter((s) => s.loop).map((s) => s.id);
 
 /** 默认长鸣音：电子钟闹铃。找不到（预设被删）就退回第一个可循环预设。 */
 export const DEFAULT_LOOP_SOUND_ID = LOOP_SOUND_IDS[0] || "clock";
@@ -47,7 +47,7 @@ export const CUSTOM_SOUND_ID = "custom";
 
 export const DEFAULT_SOUND_ID = "beep";
 
-export function isKnownSound(id) {
+function isKnownSound(id) {
   return id === CUSTOM_SOUND_ID || BUILTIN_SOUNDS.some((s) => s.id === id);
 }
 

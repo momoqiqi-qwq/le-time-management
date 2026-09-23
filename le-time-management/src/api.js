@@ -102,6 +102,16 @@ export const api = {
     return invoke("update_open_install_settings");
   },
 
+  /**
+   * 把本应用交给系统卸载程序（Android 专有，见 src-tauri/src/uninstaller.rs）。
+   * resolve 只代表「系统卸载界面已拉起」，用户在界面里点取消我们收不到。
+   * 非 Android 平台返回 `{launched:false, reason}`，不是错误。
+   */
+  async appUninstall() {
+    if (!isTauri) return null;
+    return invoke("app_uninstall");
+  },
+
   // 插件网络桥：Tauri 端由 Rust 发请求（绕开 CORS），浏览器端直接 fetch
   async httpGet(url) {
     if (isTauri) return invoke("http_get", { url });

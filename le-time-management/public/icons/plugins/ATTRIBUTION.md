@@ -1,6 +1,6 @@
 # public/icons/plugins 素材台账（内置插件图标）
 
-共 15 个图标：15 个来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）；0 个为印章式文字图标（`风格` 列为 `text`，由本脚本代码绘制，非 Icons8 素材、无需署名）。
+共 16 个图标：16 个来自 **Icons8 / iGoutu** 的 **Color 彩色风格**（`wechat-push` 用 `3d-fluency` 风格，因为 Color 风格没有微信标志）；0 个为印章式文字图标（`风格` 列为 `text`，由本脚本代码绘制，非 Icons8 素材、无需署名）。
 
 图标集入口：<https://igoutu.cn/icons/set/标志--style-color> ｜ CDN 直链格式：`https://img.icons8.com/<style>/96/<slug>.png`
 
@@ -23,6 +23,7 @@
 | `weekly-report` | color | `statistics` | 周度报告 / 数据看板 | `e1bac31ac1bf7621…` |
 | `dorm-duty` | color | `broom` | 轮换值日 / 扫帚 | `17eaff49519fce69…` |
 | `inbox-drop` | color | `downloading-updates` | 拖入消息收纳 / 箭头入托盘 | `8e6c606ae009cbb6…` |
+| `ai-chat` | color | `artificial-intelligence` | AI 对话 / 智能大脑 | `9483174aa8c3f8f0…` |
 
 ## 许可
 

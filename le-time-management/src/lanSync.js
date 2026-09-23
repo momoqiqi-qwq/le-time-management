@@ -100,7 +100,7 @@ export function describeLanInfo(info) {
 /* ── 回传（手机 → 电脑）：两段式，必须等电脑端点「接收」 ── */
 
 /** 轮询节奏。电脑端是人在点，慢无所谓，1.2s 一次不吵到那条单线程服务。 */
-export const LAN_PUSH_POLL_MS = 1200;
+const LAN_PUSH_POLL_MS = 1200;
 /** 电脑上没人确认就放弃。让手机永远转圈比说清「没确认」更糟。 */
 export const LAN_PUSH_WAIT_MS = 120 * 1000;
 

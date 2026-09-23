@@ -113,6 +113,28 @@ tide.events.on("pomodoro:finished", (payload) => {
 tide.events.emit("my-plugin:changed", { ok: true });
 ```
 
+消息类插件统一用 `notice:new` 广播新消息，载荷契约固定成这样（宿主会按这份契约抄收，字段名别自创）：
+
+```js
+tide.events.emit("notice:new", {
+  source: "my-plugin",          // 插件 id
+  sourceName: "我的消息源",      // 给人看的来源名
+  total: 3,                     // 本次新到条数
+  items: [{ title: "…", time: "09-23 14:00", sender: "…" }],
+});
+```
+
+### 读其他插件的消息
+
+```js
+const list = tide.messages.list(30);   // 新的在前：[{ source, sourceName, title, time, sender, at }]
+```
+
+任何插件 `emit("notice:new", …)` 时，宿主会抄一份进这份跨插件队列，按 `source|time|title` 去重、只留最近 120 条。两条边界要清楚：
+
+- 队列**只在本次运行期**，重启即空 —— 消息的原始事实仍在各插件自己的私有存储里，这里只是一份汇总视图。要跨重启留存，自己并入私有存储（内置的 AI 对话插件就是这么做的）。
+- 抄收发生在 `emit` 那一刻，与谁在监听无关；所以晚加载的插件也读得到早加载插件在启动阶段广播的消息，不必自己去 `events.on` 蹲。
+
 ### 网络请求
 
 ```js
@@ -131,6 +153,25 @@ const feed = await tide.http.fetch(sid, "GET", "https://example.com/feed");
 ```
 
 仅支持 `http/https`。
+
+### AI 对话
+
+```js
+const st = await tide.ai.status();            // { configured, baseUrl, model, keyMasked }
+if (st.configured) {
+  const text = await tide.ai.chat([
+    { role: "system", content: "只回一句话" },
+    { role: "user", content: "把这段摘要成一句" },
+  ], { temperature: 0.3 });
+}
+```
+
+复用「设置 → AI 与自动任务」里用户自己配置的 Base URL / 模型 / API Key（OpenAI 兼容的 `/chat/completions`），密钥只存在 Rust 侧加密保险箱，插件拿不到也看不到。三条限制：
+
+- **非流式**：一次请求返回整段文本，"正在思考"这类等待态由插件自己画；上游总超时 55 秒。
+- 一次最多 **24 条消息**、文本总量 **60000 字符**，超了直接抛中文错误。上下文裁剪是调用方的事，宿主不会替插件偷偷删消息。
+- `status().configured` 为假时别发请求，先把用户引去配置：
+  `window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: "ai" } }))`。
 
 ### 工具
 

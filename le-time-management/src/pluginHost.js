@@ -31,6 +31,8 @@ export const PLUGIN_PERMISSION_LABELS = {
   openUrl: "打开网页",
   timeParse: "时间语义解析",
   vault: "加密密钥库（保存密码 / 登录票据等敏感凭据）",
+  ai: "AI 对话（用「设置 › AI 与自动任务」配好的模型）",
+  messages: "读取其他插件推来的消息",
   schoolImport: "学校教务登录与课表脚本导入",
   sound: "播放提醒音",
 };
@@ -63,6 +65,50 @@ function cachedHttpGet(url, ttlMs = 5 * 60 * 1000) {
 
 export const pluginViews = [];       // { id, title, icon, render, pluginId }
 export const taskActions = [];       // { id, label, icon, run(task), pluginId }
+
+/* ── 插件消息汇聚（notice:new 的宿主侧抄送）───────────────────────────────
+ *
+ * 五家消息类插件（门户 / 学习通 / 学校通知 / 竞赛 / RSS）都按同一份载荷广播
+ * `notice:new`：`{ source, sourceName, total, items:[{ title, time, sender }] }`。
+ * 谁想"看看别的插件推来了什么"，原本只能自己去 `events.on` 蹲着 —— 可插件是一个个
+ * 加载的，晚加载的那个根本听不到早加载插件在启动阶段就广播掉的消息，症状是
+ * "有时候看得见有时候看不见"，最难查。所以宿主在 emit 这一层顺手抄一份。
+ *
+ * 只存内存、只留最近 120 条：消息的原始事实仍在各插件自己的存储里，这里只是一份
+ * 跨插件视图。落进 data.json 就要连带迁移、备份、小程序三端一致，代价远大于价值；
+ * 需要跨重启留存的调用方（AI 对话插件）自己把它并入私有存储。
+ */
+const MESSAGE_FEED = [];
+const MESSAGE_SEEN = new Set();
+const MESSAGE_MAX = 120;
+
+export function collectNotice(payload, fromPluginId) {
+  const p = payload && typeof payload === "object" ? payload : {};
+  const items = Array.isArray(p.items) ? p.items : [];
+  const source = String(p.source || fromPluginId || "unknown");
+  const sourceName = String(p.sourceName || source);
+  items.forEach((raw) => {
+    const it = raw && typeof raw === "object" ? raw : {};
+    const title = String(it.title || "").trim();
+    if (!title) return;
+    const time = String(it.time || "").trim();
+    const key = `${source}|${time}|${title}`;
+    if (MESSAGE_SEEN.has(key)) return;
+    MESSAGE_SEEN.add(key);
+    MESSAGE_FEED.push({ source, sourceName, title, time, sender: String(it.sender || "").trim(), at: Date.now() });
+  });
+  // 去重集合跟着队列一起裁，否则跑久了 Set 只增不减。
+  if (MESSAGE_FEED.length > MESSAGE_MAX) {
+    MESSAGE_FEED.splice(0, MESSAGE_FEED.length - MESSAGE_MAX);
+    MESSAGE_SEEN.clear();
+    MESSAGE_FEED.forEach((m) => MESSAGE_SEEN.add(`${m.source}|${m.time}|${m.title}`));
+  }
+}
+
+/** 最近的消息，新的在前。宿主内部与测试都用这一个出口。 */
+export function listNotices(limit = 30) {
+  return JSON.parse(JSON.stringify(MESSAGE_FEED.slice(-Math.max(1, limit)).reverse()));
+}
 
 const yieldUi = () => new Promise((resolve) => {
   if (typeof requestIdleCallback === "function") requestIdleCallback(() => resolve(), { timeout: 40 });
@@ -246,8 +292,15 @@ function makeApi(man, source) {
       },
       emit(name, data) {
         requirePermission(man, pid, "events");
+        // 消息类插件的 notice:new 由宿主抄一份进跨插件队列，见 collectNotice 注释。
+        if (name === "notice:new") collectNotice(data, pid);
         (eventBus.get(name) || []).forEach((entry) => { try { entry.fn(data); } catch (e) { console.error(e); } });
       },
+    },
+
+    // 跨插件消息视图：读的是宿主抄收的 notice:new，不碰任何插件的私有存储。
+    messages: {
+      list: (limit = 30) => { requirePermission(man, pid, "messages"); return listNotices(limit); },
     },
 
     // 网络桥：Rust 端抓取，绕开 WebView CORS；每次调用都会校验插件是否在 manifest 中声明了 http 能力。
@@ -262,6 +315,22 @@ function makeApi(man, source) {
       // Cookie 整体导出/恢复：插件把登录态存进密钥库，应用重启后恢复，免验证码续期。
       exportCookies: (sid, urls) => { requirePermission(man, pid, "http"); return api.httpSessionExport(sid, urls); },
       restoreCookies: (cookies) => { requirePermission(man, pid, "http"); return api.httpSessionRestore(cookies); },
+    },
+
+    // AI 对话桥：复用「设置 › AI 与自动任务」里用户自己配的 Base URL / 模型 / Key。
+    //
+    // 为什么只给两个方法、不做加工：凭据只在 Rust 侧的 AES-256-GCM 保险箱里，
+    // 前端与插件都拿不到 key；上游是 OpenAI 兼容的 `/chat/completions`，
+    // **非流式** —— 一次请求拿回整段文本，所以插件侧要自己处理「等待态」。
+    // Rust 侧的硬限制（一次 ≤24 条消息、文本总量 ≤60000 字符）原样抛中文错误，
+    // 上下文裁剪是调用方的事，宿主不替插件偷偷删消息 —— 静默丢上下文比报错更难查。
+    ai: {
+      chat: (messages, opts = {}) => {
+        requirePermission(man, pid, "ai");
+        return api.aiChat(messages, opts.temperature);
+      },
+      // {configured, baseUrl, model, keyMasked}：插件据此决定是问 AI 还是引导去配置。
+      status: () => { requirePermission(man, pid, "ai"); return api.aiVaultStatus(); },
     },
 
     schoolImporter: {
@@ -427,8 +496,4 @@ export async function rescan() {
   taskActions.length = 0;
   registry.clear();
   await initPluginHost();
-}
-
-export function emitLocal(name, data) {
-  (eventBus.get(name) || []).forEach((entry) => { try { entry.fn(data); } catch (e) { console.error(e); } });
 }

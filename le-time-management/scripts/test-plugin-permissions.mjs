@@ -39,6 +39,8 @@ const NS_PERMISSION = {
   http: 'http',
   schoolImporter: 'schoolImport',
   vault: 'vault',
+  ai: 'ai',
+  messages: 'messages',
 };
 // tide.util 要再看第二段：同一个 util 下不同函数归不同能力
 const UTIL_PERMISSION = {

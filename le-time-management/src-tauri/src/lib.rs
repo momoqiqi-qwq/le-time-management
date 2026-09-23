@@ -12,6 +12,7 @@ use tauri_plugin_opener::OpenerExt as _;
 mod lan;
 mod notification;
 mod system_bar;
+mod uninstaller;
 mod update;
 
 /// 应用数据目录（Windows: %APPDATA%，Linux: ~/.local/share，Android: 应用内部存储）
@@ -1950,6 +1951,8 @@ pub fn run() {
         builder = builder.plugin(native_schedule::init());
         // 应用内一键升级：Android 侧需要原生插件把 content:// 交给系统安装器
         builder = builder.plugin(update::init());
+        // 应用内「卸载本应用」：把 ACTION_DELETE + package: 交给系统卸载程序（见 uninstaller.rs）
+        builder = builder.plugin(uninstaller::init());
         // 状态栏 / 导航栏图标明暗：edge-to-edge 下系统栏图标压在网页上，
         // 必须由网页把真实亮度同步过来（否则「系统深色 + 网页浅色」时图标看不见）
         builder = builder.plugin(system_bar::init());
@@ -2005,7 +2008,8 @@ pub fn run() {
             update::update_download,
             update::update_install,
             update::update_ready,
-            update::update_open_install_settings
+            update::update_open_install_settings,
+            uninstaller::app_uninstall
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

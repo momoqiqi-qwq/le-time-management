@@ -3,6 +3,7 @@ import { api } from "../api.js";
 import { PROJECT_LINKS } from "../projectLinks.js";
 import { ABOUT_DOCS, FRAMEWORKS, OPEN_SOURCE_PROJECTS, RELEASE_NOTES } from "../aboutData.js";
 import { createUpdateSettingsPanel } from "./settings/update.js";
+import { createUninstallPanel } from "./settings/uninstall.js";
 
 function sectionTitle(text) {
   return el("h3", { class: "about-section-title" }, text);
@@ -80,6 +81,11 @@ export function createAboutCard(info, registry = []) {
   // 软件更新紧跟在版本信息后面：关于页本来就写着版本号，检查 / 升级 / 两个提示开关都放这儿。
   // 细节见 views/settings/update.js；逻辑见 src/updateChecker.js。
   card.append(sectionTitle("软件更新"), createUpdateSettingsPanel({ currentVersion }));
+
+  // 卸载与更新对称：Android 把卸载交给系统卸载程序，桌面端这一整段（含标题）不出现。
+  // 面板为什么在浏览器调试里也画 —— 手机 UI 的预览与录屏都跑在 :1420，隐藏了就截不到图。
+  const uninstallPanel = createUninstallPanel({ version: currentVersion });
+  if (uninstallPanel) card.append(sectionTitle("卸载应用"), uninstallPanel);
 
   const releaseList = el("ul", { class: "about-bullets" });
   RELEASE_NOTES.forEach((text) => releaseList.append(el("li", {}, text)));

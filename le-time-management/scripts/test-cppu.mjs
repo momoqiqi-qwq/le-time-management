@@ -7,8 +7,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
   tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -142,6 +142,9 @@ assert.ok(source.includes('CARD_DETAIL_URL') && source.includes('/berserker-app/
 assert.ok(source.includes('CARD_VAULT_KEY = "cardSecret"') && source.includes('tide.vault.set(CARD_VAULT_KEY'), '一卡通账号密码必须保存到加密密钥库');
 assert.ok(source.includes('CARD_CACHE_KEY = "cardRechargeCache"'), '一卡通平台账单必须支持本地只读缓存');
 assert.ok(source.includes('总充值量') && source.includes('按年份 / 月份 / 日期'), '一卡通视图必须显示总充值量，并说明可按年/月/日汇总');
+assert.ok(source.includes('已花费'), '一卡通视图必须显示已花费金额');
+assert.ok(source.includes('accinfo'), '一卡通余额必须合并电子账户（本校 ecardConfig 为 type=1，主账户 db_balance 恒为 0）');
+assert.ok(source.includes('current=${current}&type=${type}'), '账单流水必须按平台的方向参数分别取入账与支出，不能混在一趟翻页里');
 assert.ok(source.includes('year: "按年"') && source.includes('month: "按月"') && source.includes('day: "按日"'),
   '一卡通充值统计必须支持按年、按月、按日三种模式');
 assert.ok(source.includes('data-card-sync') && source.includes('data-card-login'), '一卡通视图必须支持自动登录和主动同步');
@@ -151,24 +154,59 @@ assert.equal(cardIsRecharge({typeFrom:'1',resume:'微信支付转账',turnoverTy
 assert.equal(cardIsRecharge({typeFrom:'0',resume:'食堂消费'}), false, '消费流水不得计入充值量');
 assert.equal(cardIsRecharge({typeFrom:'1',resume:'助学金补助'}), false, '补助入账不得误算成充值');
 const normalizedBill=cardNormalizeBill({orderId:'bill-1',effectdateStr:'2026-09-22 08:30:00',tranamt:12345,resume:'校园卡充值'});
-assert.deepEqual({...normalizedBill},{id:'bill-1',date:'2026-09-22',amount:123.45,note:'校园卡充值',at:Date.parse('2026-09-22 08:30:00')});
-cardState.rows=[normalizedBill,{...normalizedBill,id:'bill-2',date:'2026-08-01',amount:50}];
+assert.deepEqual({...normalizedBill},{id:'bill-1',date:'2026-09-22',amount:123.45,note:'校园卡充值',kind:'in',at:Date.parse('2026-09-22 08:30:00')});
+assert.equal(cardNormalizeBill({orderId:'bill-9',effectdateStr:'2026-09-21 12:00:00',tranamt:1250,resume:'食堂消费'},'out').kind,'out','支出流水必须打上消费方向');
+cardState.rows=[normalizedBill,{...normalizedBill,id:'bill-2',date:'2026-08-01',amount:50},{id:'pay-1',date:'2026-09-20',amount:30,note:'食堂消费',kind:'out',at:0},{id:'pay-2',date:'2026-08-05',amount:7.5,note:'超市消费',kind:'out',at:0}];
 cardState.mode='month';
 assert.equal(cardTotals().total,173.45,'平台充值流水必须正确汇总总充值量');
+assert.equal(cardTotals().spent,37.5,'平台支出流水必须正确汇总已花费');
+assert.deepEqual([cardTotals().inCount,cardTotals().outCount],[2,2],'充值与消费的笔数必须分开统计');
+assert.equal(cardTotals().items.every((it)=>it.amount>0&&/^\d{4}-\d{2}$/.test(it.key)),true,'消费/充值统计的分桶只能来自流水日期');
+cardState.kind='out';
+assert.equal(cardTotals().items.reduce((s,it)=>s+it.amount,0),37.5,'切到消费维度后统计必须只汇总消费');
+cardState.kind='in';
 assert.equal(cardBalanceFromDetail({db_balance:1234,unsettle_amount:66}),13,'当前余额必须按平台分值换算并包含未结算金额');
+assert.equal(cardBalanceFromDetail({db_balance:0,unsettle_amount:0,accinfo:[{name:'普通账户',balance:1234},{name:'补贴账户',balance:66}]}),13,
+  '本校一卡通主账户恒为 0，余额必须把电子账户 accinfo 算进来');
+assert.equal(cardBalanceFromDetail([{db_balance:100,accinfo:[{balance:50}]},{db_balance:250}]),4,
+  '名下多张卡的余额必须逐张相加');
 assert.throws(()=>cardBalanceFromDetail({db_balance:'bad'}),/余额数据格式异常/,'坏余额数据不得显示为 0 元');
+assert.throws(()=>cardBalanceFromDetail({db_balance:0,accinfo:[{balance:'bad'}]}),/电子账户余额数据格式异常/,'坏电子账户数据不得静默算成 0');
 calls=[];cardState.sid=null;cardState.accessToken='card-token';cardState.tokenType='bearer';let balanceStep=0;
 response=()=>++balanceStep===1
-  ? {status:200,body:JSON.stringify({code:200,data:{card:[{account:'card-account',lostflag:0}]}})}
-  : {status:200,body:JSON.stringify({code:200,data:{retcode:'0',card:[{db_balance:1234,unsettle_amount:66}]}})};
+  /* 卡列表回 accinfo、queryCard 不回 —— 余额仍须读到电子账户里的钱 */
+  ? {status:200,body:JSON.stringify({code:200,data:{card:[{account:'card-account',lostflag:0,db_balance:0,accinfo:[{name:'普通账户',balance:1234}]}]}})}
+  : {status:200,body:JSON.stringify({code:200,data:{retcode:'0',card:[{account:'card-account',db_balance:0,unsettle_amount:66}]}})};
 assert.equal(await cardFetchBalance(),13,'余额接口两段调用必须返回实时余额');
 assert.match(calls[0][2],/getCampusCards$/);
 assert.match(calls[1][2],/queryCard\?account=card-account$/);
 assert.equal(calls[1][3].headers['synjones-auth'],'bearer card-token','余额请求必须携带一卡通令牌');
-cardState.balance=13;cardState.balanceAt=Date.now();
+/* 账单必须按平台方向参数各查一趟：type=1 入账、type=2 支出 */
+assert.equal(cardIsExpense({typeFrom:'0'}),true,'平台标记为非入账的流水即消费');
+assert.equal(cardIsExpense({typeFrom:0}),true,'方向字段是数字时也要认得');
+assert.equal(cardIsExpense({typeFrom:'1'}),false,'入账不得记成消费');
+assert.equal(cardIsExpense({resume:'食堂消费'}),false,'方向缺失时不得猜成消费');
+calls=[];cardState.sid=null;balanceStep=0;
+/* 故意让 type=2 那一趟把入账也回出来（服务端忽略 type 参数的情形），并掺一条无方向字段的流水：
+   分类只能靠流水自带的 typeFrom，且同一笔不得被两趟查询重复计入 */
+response=()=>{const u=calls.at(-1)?.[2]||'';const type=u.includes('type=2')?2:1;
+  const income=[{orderId:'in-1',effectdateStr:'2026-09-22 08:30:00',tranamt:12345,typeFrom:'1',resume:'校园卡充值'},{orderId:'in-2',effectdateStr:'2026-09-01 09:00:00',tranamt:5000,typeFrom:'1',resume:'助学金补助'}];
+  return {status:200,body:JSON.stringify({code:200,data:{pages:1,records:type===1?income:[...income,{orderId:'out-1',effectdateStr:'2026-09-21 12:00:00',tranamt:1250,typeFrom:'0',resume:'食堂消费'},{orderId:'x-1',effectdateStr:'2026-09-19 10:00:00',tranamt:900,resume:'方向缺失的流水'}]}})}};
+const bills=await cardFetchBills();
+assert.ok(calls.some((c)=>/personal\/turnover\?.*type=1$/.test(c[2])),'充值流水必须显式按入账类型查询');
+assert.ok(calls.some((c)=>/personal\/turnover\?.*type=2$/.test(c[2])),'消费流水必须显式按支出类型查询');
+assert.deepEqual(Array.from(bills,(r)=>r.id),['in-1','out-1'],'入账里的补助不得算成充值，重复流水要去重');
+assert.deepEqual(Array.from(bills,(r)=>r.kind),['in','out'],'同步结果必须保留每笔流水的收支方向');
+cardState.rows=bills;cardState.balance=13;cardState.balanceAt=Date.now();
 assert.match(cardStatsHtml(),/一卡通平台充值记录/);
 assert.match(cardStatsHtml(),/当前余额/);
 assert.match(cardStatsHtml(),/¥13\.00/);
+assert.match(cardStatsHtml(),/已花费/,'统计卡必须显示已花费');
+assert.match(cardStatsHtml(),/1 笔一卡通平台消费流水/,'已花费要说明它来自平台消费流水');
+assert.match(cardStatsHtml(),/data-card-kind="out"/,'统计必须能切到消费维度');
+assert.match(cardStatsHtml(),/校园卡账户 \+ 电子账户/,'余额口径必须在页面上说清楚');
+assert.match(cardStatsHtml(),/-¥12\.50/,'流水明细里的消费必须带负号');
+assert.doesNotMatch(cardStatsHtml(),/--/,'已同步到余额时不得渲染成占位符');
 assert.ok(source.includes('data-side') && source.includes('data-goto'), '校园服务栏必须渲染成可点击的入口');
 assert.ok(source.includes('tide.util.web.parseSiteMeta'), '标题必须来自网页元信息自动识别');
 assert.ok(source.includes('/icons/fontawesome/solid.svg#'), '图标必须使用应用内的 Font Awesome 字形兜底');
@@ -190,6 +228,37 @@ assert.ok((source.split('index.html#/StuDailyLeaveList').length - 1) === 1,
 assert.doesNotMatch(source, /index\.html\?code=|state=QYState/,
   '「我的请假」入口不得写死带一次性授权码 code / state 的地址（用完即废，点开必失败）');
 assert.ok(source.includes('bindSide') && source.includes('loadLinkMeta(el)'), '侧栏必须同时绑定在登录页与通知列表页');
+
+/* ── 教务入口做成带子菜单的父项（v1.23.0）────────────────────────
+   四个教务视图原来与 WebVPN / 邮箱 / 学工平铺在一起，现在收进「教务」父项下。 */
+assert.match(
+  source,
+  /url:\s*"https:\/\/jw\.cppu\.edu\.cn\/index\.html"[^}]*label:\s*"教务"[^}]*children:\s*\[[\s\S]*?view:\s*"cppu-xk"[\s\S]*?view:\s*"cppu-qj"[\s\S]*?view:\s*"cppu-credit"[\s\S]*?view:\s*"cppu-cx"[\s\S]*?\]/,
+  '「教务」必须是带 children 的父项，且四个教务视图收在 children 里');
+assert.match(source, /jwOpen:\s*true/,
+  '教务子菜单必须默认展开 —— 这 4 个入口本来就露在外面，默认收起等于把已有功能藏进一次点击之后');
+
+const sideFnSrc = source.slice(source.indexOf('function sideBtnHtml'), source.indexOf('function sideToggleHtml'));
+assert.match(sideFnSrc, /<button[^>]*data-side-sub/,
+  '展开/收起必须是父行内的独立 button，不能与整行的 data-goto 共用命中区');
+assert.match(sideFnSrc, /data-side-sub[^>]*aria-expanded/,
+  '展开箭头必须暴露 aria-expanded');
+assert.match(sideFnSrc, /<div class="pp-side-sub/, '子项必须渲染在 .pp-side-sub 容器里');
+/* 真 bug 防线：箭头嵌在带 data-goto 的父行里，分支顺序反了点箭头会顺手把教务开进系统浏览器 */
+const bindFnSrc = source.slice(source.indexOf('function bindSide'), source.indexOf('/* ═════════ 智慧教务只读接入'));
+assert.ok(bindFnSrc.indexOf('"[data-side-sub]"') > -1
+  && bindFnSrc.indexOf('"[data-side-sub]"') < bindFnSrc.indexOf('"[data-goto]"'),
+  'bindSide 的 [data-side-sub] 分支必须排在 [data-goto] 之前');
+
+assert.match(source, /\.pp-side-sub\{[^}]*grid-template-rows/,
+  '子菜单展开必须复用仓库既有的 grid-template-rows 0fr→1fr 手法，不新造机制');
+assert.match(source, /\.pp-side-sub \.pp-side-btn\{[^}]*padding-left/, '子项必须缩进，与平级入口区分开');
+assert.match(source, /\.pp-side-sub \.pp-side-txt small\{display:none/,
+  '子项不显示「在 U-Time 内查看」副行（4 行已经够高，副行是噪音）');
+/* 用户明确要求：这两个教务功能不接管 */
+assert.doesNotMatch(source, /自习室|评分信息/,
+  '「自习室查询」「评分信息查询」按用户要求不做，不得出现在侧栏');
+
 assert.ok(source.includes('MAIL_ACCOUNT = "2025290058@cppu.edu.cn"'), '教育邮箱自动登录必须使用用户指定的完整邮箱账号');
 assert.match(source, /if \(url === MAIL\) \{ await openMailLink\(btn\); return; \}/,
   '点击教育邮箱必须进入专用自动登录链路，而不是裸开 mail.cppu.edu.cn');
@@ -550,20 +619,33 @@ jwState.selectedTaskId = '';
 assert.ok(source.includes('const taskBtn = e.target.closest("[data-jw-task]")'), '选课任务点击必须在插件内切换详情页');
 jwState.data.creditPlan = [{ KCZXF: 157, KCBXXF: 125, KCXXXF: 32, SJKCZXF: 13 }];
 jwState.data.grade = [
-  { KCMC: '大学英语1', XF: 3, KCSX: '01', SFHDXF: '1', ZPCJ: 72, XNXQ: '20252026-1' },
-  { KCMC: '高等数学（理）2', XF: 4, KCSX: '01', SFHDXF: '2', ZPCJ: 29, XNXQ: '20252026-2' },
-  { KCMC: '机器人操控基础', XF: 1, KCSX: '02', SFHDXF: '1', ZPCJ: 88, XNXQ: '20262027-1' },
+  { KCMC: '大学英语1', XF: 3, KCSX: '01', KCMK: '08', SFHDXF: '1', ZPCJ: 72, XNXQ: '20252026-1' },
+  { KCMC: '高等数学（理）2', XF: 4, KCSX: '01', KCMK: '23', SFHDXF: '2', ZPCJ: 29, XNXQ: '20252026-2' },
+  { KCMC: '机器人操控基础', XF: 1, KCSX: '02', KCMK: '19', SFHDXF: '1', ZPCJ: 88, XNXQ: '20262027-1' },
+  { KCMC: '艺术导论', XF: 1, KCSX: '02', KCMK: '14', SFHDXF: '1', ZPCJ: 90, XNXQ: '20252026-1' },
+  { KCMC: '无模块码的选修课', XF: 1, KCSX: '02', SFHDXF: '2', ZPCJ: 55, XNXQ: '20252026-2' },
 ];
 assert.equal(jwGradeDone(jwState.data.grade[0]), true);
 let academicCredit = jwAcademicCreditHtml();
 assert.ok(academicCredit.includes('必修学分') && academicCredit.includes('3 / 125'), '警大学分必须按培养计划统计必修目标和已获学分');
-assert.ok(academicCredit.includes('选修学分') && academicCredit.includes('1 / 32'), '警大学分必须单独统计选修学分');
+assert.ok(academicCredit.includes('选修学分') && academicCredit.includes('2 / 32'), '警大学分必须单独统计选修学分');
 assert.ok(academicCredit.includes('实践学分') && academicCredit.includes('0 / 13'), '警大学分必须单独统计实践学分');
-assert.ok(academicCredit.includes('已获得学分') && academicCredit.includes('未获得学分'), '课程明细必须显示是否修完');
+assert.ok(!academicCredit.includes('大学英语1'), '未点开学分卡时不铺课程明细');
+assert.match(academicCredit, /data-credit-toggle="elective"[^>]*aria-expanded="false"/, '学分卡必须是可点击的展开按钮');
+jwState.expandedCredit.add('elective');
+academicCredit = jwAcademicCreditHtml();
+assert.ok(academicCredit.includes('已获得学分') && academicCredit.includes('未获得学分'), '展开后课程明细必须显示是否修完');
+assert.ok(academicCredit.includes('3 个课程模块'), '展开后必须按课程模块分类');
+assert.ok(academicCredit.includes('未标注模块 · 1 门 · 已获得 0 / 修读 1 学分'), '没有模块码的课程单独成组，不并进别的模块');
+jwState.expandedCredit.add('required');
+academicCredit = jwAcademicCreditHtml();
+assert.ok(academicCredit.includes('模块 08'), '字典没核实过模块名时原样显示模块码，不编类名');
+assert.ok(/data-credit-toggle="required" aria-expanded="true"/.test(academicCredit), '展开中的学分卡要标 aria-expanded');
 jwState.creditHideDone = true;
 academicCredit = jwAcademicCreditHtml();
 assert.ok(!academicCredit.includes('大学英语1') && academicCredit.includes('高等数学（理）2'), '隐藏已修完后只保留未获得学分的课程');
 jwState.creditHideDone = false;
+jwState.expandedCredit.clear();
 jwState.data.cxCredit = [{ DECLARE_YEAR_SEMESTER: '20252026-2', SUM_VALUE: 7, APPLYALL: 7, END_VALUE: 4, XQMC: '廊坊校区', XYDMC: '防火工程二队' }];
 jwState.data.cxDetail = [{
   DECLARE_YEAR_SEMESTER: '20252026-2', CONTENT: '全国大学生计算机应用能力与数字素养大赛人工智能应用基础赛项',

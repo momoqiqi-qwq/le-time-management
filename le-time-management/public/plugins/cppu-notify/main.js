@@ -38,15 +38,17 @@
   const QUICK_LINKS = [
     { url: "https://webvpn.cppu.edu.cn/", label: "WebVPN", icon: "shield-halved" },
     { url: "https://mail.cppu.edu.cn/", label: "教育邮箱", icon: "envelope" },
-    { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school" },
+    // 「教务」是唯一的父项：右侧箭头展开 / 收起，行本身仍是换票开教务（与升级前行为一致）。
     // 这四个教务模块走 `view:`（在 U-Time 里开视图）而不是换票开浏览器：
     // 教务 SPA 完全没有 URL 深链（je-app/je-main/je-core 三个 bundle 都不解析
     // location.hash / location.search，开任何功能地址栏都停在 index.html），
-    // 做成链接的话三个入口只会统统落回教务首页，等于同一个入口抄三遍。
-    { view: "cppu-xk", label: "学生选课", icon: "list-check" },
-    { view: "cppu-qj", label: "学生请假", icon: "calendar-xmark" },
-    { view: "cppu-credit", label: "警大学分", icon: "graduation-cap" },
-    { view: "cppu-cx", label: "创新学分", icon: "medal" },
+    // 做成链接的话四个入口只会统统落回教务首页，等于同一个入口抄四遍。
+    { url: "https://jw.cppu.edu.cn/index.html", label: "教务", icon: "school", children: [
+      { view: "cppu-xk", label: "学生选课", icon: "list-check" },
+      { view: "cppu-qj", label: "学生请假", icon: "calendar-xmark" },
+      { view: "cppu-credit", label: "警大学分", icon: "graduation-cap" },
+      { view: "cppu-cx", label: "创新学分", icon: "medal" },
+    ] },
     { url: "https://xg.cppu.edu.cn/XGPhone/Phone/index.html", label: "学工", icon: "id-card" },
     // 「我的请假」与「学工」同源，只是该 SPA 的 hash 路由（实测路由表里有 /StuDailyLeaveList）。
     // 裸开 index.html 返回 200 静态壳、没有服务端 302，登录由该 SPA 自己的 /Login 路由处理
@@ -110,6 +112,8 @@
     captcha: "", pending: null, renderedCount: CHUNK,
     savedPassword: "",     // 密钥库取出的密码（仅内存，用于自动登录与表单预填）
     sideOpen: false,       // 校园服务栏：默认收起。只活在本次插件会话里，重进插件回到收起
+    jwOpen: true,          // 「教务」子菜单：默认展开 —— 这四个入口升级前本来就露在侧栏上，
+                           // 默认收起等于把已有功能藏到一次点击之后。同样只活在本次会话里。
   };
   let ui = null, io = null, sentinelCb = null, paintToken = 0, autoRefreshTimer = null;
 
@@ -357,6 +361,26 @@
       .pp-side-txt b{font-size:calc(12.5px * var(--ui-text-scale));font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
       .pp-side-txt small{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:142px}
       .pp-side-note{font-size:calc(10px * var(--ui-text-scale));color:var(--ink-3);line-height:1.6;padding:8px 4px 1px;border-top:1px solid var(--line-soft);margin-top:7px}
+      /* ── 「教务」父项与子菜单 ── */
+      /* 整行按钮 + 右侧独立箭头。button 不能嵌 button，所以两者是 .pp-side-row 的兄弟而非父子。 */
+      .pp-side-row{display:flex;align-items:stretch;gap:2px}
+      .pp-side-row>.pp-side-btn{flex:1;min-width:0}
+      .pp-side-sub-btn{flex:none;width:30px;display:grid;place-items:center;border:0;background:transparent;border-radius:9px;color:var(--ink-3);font-family:inherit;font-size:calc(11px * var(--ui-text-scale));cursor:pointer;transition:background .16s ease,color .16s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+      .pp-side-sub-btn:hover{background:var(--paper);color:var(--deep)}
+      .pp-side-sub-btn:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      /* 展开沿用仓库既有的 grid-template-rows 0fr→1fr（.pp-detail-shell / .id-fold-body 同款），
+         内层必须 min-height:0 + overflow:hidden 才真能从 0 长起来。
+         visibility 收拢时延后 .3s（等折叠跑完）、展开时三通道延迟全归零 ——
+         只靠 aria-hidden 的话，折叠着的四个子项还能被 Tab 走到。 */
+      .pp-side-sub{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows .3s cubic-bezier(.22,.8,.22,1),opacity .22s ease,visibility 0s .3s}
+      .pp-side-sub.open{grid-template-rows:1fr;opacity:1;visibility:visible;transition-delay:0s,0s,0s}
+      .pp-side-sub-in{min-height:0;overflow:hidden;display:flex;flex-direction:column;gap:3px}
+      /* 子项：缩进一档 + 去掉「在 U-Time 内查看」副行（四行已经够高，副行是噪音） */
+      .pp-side-sub .pp-side-btn{padding-left:22px;min-height:38px}
+      .pp-side-sub .pp-side-txt small{display:none}
+      .pp-side-sub .pp-side-ico{width:22px;height:22px;border-radius:7px}
+      .pp-side-sub .pp-side-ico svg{width:12px;height:12px}
+      .pp-side-sub .pp-side-ico img{width:14px;height:14px}
       /* ── 教务只读视图（选课 / 请假 / 创新学分）：一律用主题变量，深色模式自动跟随 ── */
       .jw-kicker{font-size:calc(11px * var(--ui-text-scale));letter-spacing:.3em;color:var(--ink-3);margin:16px 0 4px}
       .jw-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px}
@@ -399,10 +423,14 @@
       .jw-sum b{font-size:calc(30px * var(--ui-text-scale));color:var(--deep);line-height:1}
       .jw-sum span{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
       .jw-credit-overview{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:8px 0 4px}
-      .jw-credit-stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0}
+      .jw-credit-stat{display:block;width:100%;font:inherit;text-align:left;color:inherit;cursor:pointer;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;min-width:0;transition:border-color .16s ease,background .16s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+      .jw-credit-stat:hover{border-color:var(--deep);background:var(--paper)}
+      .jw-credit-stat:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
+      .jw-credit-stat.on{border-color:#2EC4B6;background:var(--paper)}
       .jw-credit-stat small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:5px}
       .jw-credit-stat b{display:block;color:var(--deep);font-size:calc(22px * var(--ui-text-scale));line-height:1.2}
       .jw-credit-stat span{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-top:4px}
+      .jw-credit-stat em{display:block;color:var(--ink-3);font-style:normal;font-size:calc(10px * var(--ui-text-scale));margin-top:7px}
       .jw-credit-bar{height:7px;border-radius:99px;background:var(--paper);border:1px solid var(--line-soft);overflow:hidden;margin-top:9px}
       .jw-credit-bar i{display:block;height:100%;background:#2EC4B6;border-radius:inherit}
       .jw-credit-course.done{opacity:.62}
@@ -413,11 +441,12 @@
       .yk-frame{display:block;width:100%;height:100%;border:0;background:var(--paper)}
       .yk-status{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3);line-height:1.7;margin:7px 0 0}
       .yk-status.warn{color:#8A6420}
-      .yk-stat{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(260px,1.2fr);gap:10px;margin:10px 0}
-      .yk-total,.yk-balance{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-      .yk-total small,.yk-balance small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
-      .yk-total b,.yk-balance b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
-      .yk-total span,.yk-balance span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
+      .yk-stat{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0}
+      .yk-total,.yk-spent,.yk-balance{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+      .yk-total small,.yk-spent small,.yk-balance small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
+      .yk-total b,.yk-spent b,.yk-balance b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
+      .yk-spent b{color:#8A6420}
+      .yk-total span,.yk-spent span,.yk-balance span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
       .yk-login{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:minmax(140px,1fr) minmax(160px,1fr) auto;gap:8px;align-items:center}
       .yk-login input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}
       .yk-login small{grid-column:1/-1;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));line-height:1.7}
@@ -429,11 +458,13 @@
       .yk-bars{display:flex;flex-direction:column;gap:6px}
       .yk-bar{display:grid;grid-template-columns:92px 1fr 88px;align-items:center;gap:8px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
       .yk-bar i{display:block;height:9px;border-radius:99px;background:linear-gradient(90deg,#2EC4B6,#0F4C5C);min-width:2px}
+      .yk-bars.out .yk-bar i{background:linear-gradient(90deg,#E3C384,#8A6420)}
       .yk-bar span:last-child{text-align:right;color:var(--deep);font-weight:650}
       .yk-ledger{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
       .yk-ledger-row{display:grid;grid-template-columns:100px 1fr auto;gap:8px;align-items:center;padding:7px 0;border-top:1px solid var(--line-soft);font-size:calc(11.5px * var(--ui-text-scale))}
       .yk-ledger-row:first-child{border-top:0}
       .yk-ledger-row b{color:var(--deep)}
+      .yk-ledger-row.out b{color:#8A6420}
       .yk-empty{color:var(--ink-3);font-size:calc(11.5px * var(--ui-text-scale));line-height:1.7}
       @media(max-width:600px){.jw-card-t{font-size:calc(14.5px * var(--ui-text-scale))}.jw-head h3{font-size:calc(17px * var(--ui-text-scale))}.jw-sum b{font-size:calc(26px * var(--ui-text-scale))}.jw-row small{min-width:0;flex-basis:100%}.jw-credit-overview{grid-template-columns:1fr}}
       @media(max-width:820px){
@@ -450,6 +481,17 @@
         .pp-shell:not(.side-collapsed) .pp-side-toggle{margin-bottom:0;min-height:0}
         .pp-side-list{flex-direction:row;flex-wrap:wrap}
         .pp-side-btn{width:auto;flex:1 1 132px;min-width:0;min-height:52px;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+        /* 窄屏侧栏是换行的 chip 流，不是竖列：父项 = chip + 箭头的实际宽度，且刻意不给 flex-grow
+           —— 给了它会在自己那行里撑满，箭头被推到最右边、和教务 chip 中间空一大段。
+           箭头 44px 触控区并描一圈边，否则在 chip 流里只像个游离的小灰点，读不出是个按钮。
+           子菜单整体独占一行、里面的子项继续按 chip 换行排；
+           子项的缩进在 chip 流里没有意义（那是竖列的层级线索），退回常规内边距。 */
+        .pp-side-row{flex:0 0 auto}
+        .pp-side-row>.pp-side-btn{flex:1 1 132px}
+        .pp-side-sub-btn{width:44px;border:1px solid var(--line);background:var(--panel)}
+        .pp-side-sub{flex:1 1 100%}
+        .pp-side-sub-in{flex-direction:row;flex-wrap:wrap}
+        .pp-side-sub .pp-side-btn{padding-left:8px;min-height:44px}
         /* 手机上工具栏不能靠自动换行碰运气（原来「刷新」会独占一整行）：
            关键词搜索独占一行，其余按钮/开关挤一行，并统一给到 44px 的点击高度 */
         .pp-toolbar{gap:8px}
@@ -467,7 +509,7 @@
         .yk-ledger-row{grid-template-columns:86px 1fr auto}
         .yk-frame-shell{height:calc(100vh - 230px);min-height:520px}
       }
-      @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail,.pp-side,.pp-side-inner,.pp-side-toggle{transition-duration:.01ms!important}}
+      @media(prefers-reduced-motion:reduce){.pp-card,.pp-expand,.pp-expand::after,.pp-detail-shell,.pp-detail,.pp-side,.pp-side-inner,.pp-side-toggle,.pp-side-sub{transition-duration:.01ms!important}}
     `;
     document.head.append(st);
   }
@@ -1336,29 +1378,43 @@
     return `<img src="${esc(meta.iconUrl)}" alt="" loading="lazy" decoding="async" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">`
       + `<span style="display:none">${fallback}</span>`;
   }
-  function sideHtml() {
-    const rows = QUICK_LINKS.map((item) => {
-      // `view:` 入口既没有网址也没有站点元信息：标题用短名，副行写「在 U-Time 内查看」。
-      if (item.view) {
-        return `<button type="button" class="pp-side-btn" data-goto="${esc("view:" + item.view)}" `
-          + `title="${esc(`${item.label} · 在 U-Time 内查看教务数据`)}">`
-          + `<span class="pp-side-ico">${linkIcon(item)}</span>`
-          + `<span class="pp-side-txt"><b>${esc(item.label)}</b><small>在 U-Time 内查看</small></span>`
-          + `</button>`;
-      }
-      const meta = linkMeta[item.url] || {};
-      const recognized = usableTitle(meta.title);
-      const host = meta.host || hostOf(item.url);
-      // 主标题用短名（稳定、可扫读），自动识别到的站点标题放副行；没写短名时才拿识别结果当主标题。
-      const name = item.label || recognized || host;
-      const sub = item.label ? (recognized || host) : host;
-      const tip = [item.label, recognized, item.url].filter(Boolean).join(" · ")
-        + (TICKET_LINKS[item.url] ? " · 用统一身份认证自动换票，免密直达" : "");
-      return `<button type="button" class="pp-side-btn" data-goto="${esc(item.url)}" title="${esc(tip)}">`
+  function sideBtnHtml(item) {
+    // `view:` 入口既没有网址也没有站点元信息：标题用短名，副行写「在 U-Time 内查看」。
+    if (item.view) {
+      return `<button type="button" class="pp-side-btn" data-goto="${esc("view:" + item.view)}" `
+        + `title="${esc(`${item.label} · 在 U-Time 内查看教务数据`)}">`
         + `<span class="pp-side-ico">${linkIcon(item)}</span>`
-        + `<span class="pp-side-txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>`
+        + `<span class="pp-side-txt"><b>${esc(item.label)}</b><small>在 U-Time 内查看</small></span>`
         + `</button>`;
-    }).join("");
+    }
+    const meta = linkMeta[item.url] || {};
+    const recognized = usableTitle(meta.title);
+    const host = meta.host || hostOf(item.url);
+    // 主标题用短名（稳定、可扫读），自动识别到的站点标题放副行；没写短名时才拿识别结果当主标题。
+    const name = item.label || recognized || host;
+    const sub = item.label ? (recognized || host) : host;
+    const tip = [item.label, recognized, item.url].filter(Boolean).join(" · ")
+      + (TICKET_LINKS[item.url] ? " · 用统一身份认证自动换票，免密直达" : "");
+    return `<button type="button" class="pp-side-btn" data-goto="${esc(item.url)}" title="${esc(tip)}">`
+      + `<span class="pp-side-ico">${linkIcon(item)}</span>`
+      + `<span class="pp-side-txt"><b>${esc(name)}</b><small>${esc(sub)}</small></span>`
+      + `</button>`;
+  }
+  // 父项 = 整行按钮 + 右侧独立的箭头按钮（button 不能嵌 button，所以两者是 .pp-side-row 的兄弟），
+  // 下面跟一个 0fr→1fr 的子项容器。箭头只管展开收起，整行仍是入口本体的动作。
+  function sideItemHtml(item) {
+    if (!item.children?.length) return sideBtnHtml(item);
+    const open = state.jwOpen;
+    return `<div class="pp-side-row">` + sideBtnHtml(item)
+      + `<button type="button" class="pp-side-sub-btn" data-side-sub aria-expanded="${open}" `
+      + `title="${open ? "收起" : "展开"}${item.label}子菜单" `
+      + `aria-label="${open ? "收起" : "展开"}${item.label}子菜单"><span aria-hidden="true">${open ? "▾" : "▸"}</span></button>`
+      + `</div>`
+      + `<div class="pp-side-sub${open ? " open" : ""}"${open ? "" : ' aria-hidden="true"'}>`
+      + `<div class="pp-side-sub-in">${item.children.map(sideBtnHtml).join("")}</div></div>`;
+  }
+  function sideHtml() {
+    const rows = QUICK_LINKS.map(sideItemHtml).join("");
     return `<div class="pp-side-inner">`
       + `<div class="pp-side-head">`
       + `<button type="button" class="pp-side-head-toggle" data-side-toggle aria-expanded="true" title="收起校园服务" aria-label="收起校园服务"><span aria-hidden="true">◂</span>校园服务</button>`
@@ -1573,6 +1629,24 @@
     if (!root || root.dataset.ppSideBound) return;
     root.dataset.ppSideBound = "1";
     root.addEventListener("click", (e) => {
+      // 🔴 必须排在 [data-goto] 之前：箭头按钮紧贴在带 data-goto 的父行右侧，
+      // 顺序反了的话点箭头会顺手把教务开进系统浏览器。
+      const sub = e.target.closest("[data-side-sub]");
+      if (sub) {
+        state.jwOpen = !state.jwOpen;
+        // 就地改类名而不是 paintSide 重渲染：重渲染会让 grid-template-rows 一上来就是终值，
+        // 展开动画没了，而且焦点会从箭头上掉下去。
+        const row = sub.closest(".pp-side-row");
+        const panel = row && row.nextElementSibling;
+        if (panel) {
+          panel.classList.toggle("open", state.jwOpen);
+          panel.toggleAttribute("aria-hidden", !state.jwOpen);
+        }
+        sub.setAttribute("aria-expanded", state.jwOpen ? "true" : "false");
+        const glyph = sub.querySelector("span");
+        if (glyph) glyph.textContent = state.jwOpen ? "▾" : "▸";
+        return;
+      }
       const go = e.target.closest("[data-goto]");
       if (go) { openSideLink(go.dataset.goto, go); return; }
       if (e.target.closest("[data-side-toggle]")) { applySideOpen(root, !state.sideOpen); return; }
@@ -1618,6 +1692,9 @@
     HJLX: { "01": "理论", "02": "实验", "03": "实践及实训" },
     JC: { "01": "1-2", "02": "3-4", "03": "5-6", "04": "7-8", "05": "9-10", "06": "11-12" },
     SQZT: { "0": "已撤销", "1": "审批中", "2": "已同意", "3": "未同意" },
+    // 课程模块码（成绩行的 KCMK）。教务只回码不回名称，名称核实后逐条填这里；
+    // 没填的码由 jwModuleLabel 显示成「模块 14」，不猜一个好听的类名糊上去。
+    KCMK: {},
   };
   const jwDict = (dict, code) => {
     const c = String(code ?? "").trim();
@@ -2006,6 +2083,22 @@
       + jwSection("可提请假的课次", jwAt("qjCourse"), jwCourseScopeBar() + jwCourseList());
   }
   const jwGradeDone = (r) => String(r?.SFHDXF || "") === "1";
+  const jwModuleLabel = (code) => {
+    const c = String(code ?? "").trim();
+    if (!c) return "未标注模块";
+    return JW_DD.KCMK[c] || `模块 ${c}`;
+  };
+  function jwModuleGroups(rows) {
+    const byCode = new Map();
+    for (const r of rows) {
+      const c = String(r.KCMK ?? "").trim();
+      if (!byCode.has(c)) byCode.set(c, []);
+      byCode.get(c).push(r);
+    }
+    return [...byCode.entries()]
+      .sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]))
+      .map(([code, list]) => ({ code, label: jwModuleLabel(code), rows: list }));
+  }
   function jwAcademicCreditHtml() {
     const planRows = jwState.data.creditPlan;
     const grades = jwState.data.grade;
@@ -2025,30 +2118,45 @@
     });
     const earnedAll = grades.filter(jwGradeDone).reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
     const totalTarget = Number(plan.KCZXF) || categories[0].target + categories[1].target;
+    const isOpen = (id) => jwState.expandedCredit.has(id);
     const overview = `<div class="jw-sum"><b>${earnedAll}</b><span>已获得学分 / 培养计划 ${totalTarget || "--"} 学分</span></div>
       <div class="jw-credit-overview">${categories.map((category) => {
         const percent = category.target ? Math.min(100, Math.round(category.earned / category.target * 100)) : 0;
-        return `<div class="jw-credit-stat"><small>${category.title}学分</small><b>${category.earned} / ${category.target || "--"}</b><span>${category.rows.filter(jwGradeDone).length} 门已获得</span><div class="jw-credit-bar"><i style="width:${percent}%"></i></div></div>`;
+        const on = isOpen(category.id);
+        return `<button type="button" class="jw-credit-stat${on ? " on" : ""}" data-credit-toggle="${category.id}" aria-expanded="${on}" aria-label="展开${category.title}课程的模块分类">
+          <small>${category.title}学分</small><b>${category.earned} / ${category.target || "--"}</b><span>${category.rows.filter(jwGradeDone).length} 门已获得</span><div class="jw-credit-bar"><i style="width:${percent}%"></i></div>
+          <em>${on ? "收起分类" : `按模块看 ${category.rows.length} 门`}</em>
+        </button>`;
       }).join("")}</div>`;
+    const openCategories = categories.filter((category) => isOpen(category.id));
+    if (!openCategories.length) return overview;
     const toggle = `<div class="pp-toolbar"><button type="button" class="pp-chip${jwState.creditHideDone ? " on" : ""}" data-credit-hide-done aria-pressed="${jwState.creditHideDone}">${jwState.creditHideDone ? "显示已修完" : "隐藏已修完"}</button><span>${grades.length} 门成绩记录</span></div>`;
-    const lists = categories.map((category) => {
+    const courseCard = (r) => {
+      const done = jwGradeDone(r);
+      return `<div class="jw-card jw-credit-course ${done ? "done" : "fail"}">
+        <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
+        ${jwMetaLine([
+          jwTag(`${Number(r.XF) || 0} 学分`, done ? "ok" : "warn"),
+          jwTag(done ? "已获得学分" : "未获得学分", done ? "ok" : "live"),
+          r.ZPCJ != null && String(r.ZPCJ) !== "" ? jwTag(`成绩 ${r.ZPCJ}`) : "",
+          r.XNXQ ? jwTag(jwTermName(r.XNXQ)) : "",
+        ])}
+      </div>`;
+    };
+    const panels = openCategories.map((category) => {
       const visible = jwState.creditHideDone ? category.rows.filter((r) => !jwGradeDone(r)) : category.rows;
       const hidden = category.rows.length - visible.length;
-      const cards = visible.length ? visible.map((r) => {
-        const done = jwGradeDone(r);
-        return `<div class="jw-card jw-credit-course ${done ? "done" : "fail"}">
-          <div class="jw-card-t">${esc(r.KCMC || "（未命名课程）")}</div>
-          ${jwMetaLine([
-            jwTag(`${Number(r.XF) || 0} 学分`, done ? "ok" : "warn"),
-            jwTag(done ? "已获得学分" : "未获得学分", done ? "ok" : "live"),
-            r.ZPCJ != null && String(r.ZPCJ) !== "" ? jwTag(`成绩 ${r.ZPCJ}`) : "",
-            r.XNXQ ? jwTag(jwTermName(r.XNXQ)) : "",
-          ])}
-        </div>`;
-      }).join("") : `<div class="pp-empty">${hidden ? `已隐藏 ${hidden} 门已修完课程` : `暂无${category.title}课程成绩记录`}</div>`;
-      return jwSection(`${category.title}学分`, `${category.earned} / ${category.target || "--"} 学分`, cards);
+      const head = `${category.earned} / ${category.target || "--"} 学分`;
+      if (!visible.length) return jwSection(`${category.title}学分`, head, `<div class="pp-empty">${hidden ? `已隐藏 ${hidden} 门已修完课程` : `暂无${category.title}课程成绩记录`}</div>`);
+      const modules = jwModuleGroups(visible);
+      const body = modules.map((module) => {
+        const got = module.rows.filter(jwGradeDone).reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
+        const planned = module.rows.reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
+        return `<div class="jw-group">${esc(module.label)} · ${module.rows.length} 门 · 已获得 ${got} / 修读 ${planned} 学分</div>${module.rows.map(courseCard).join("")}`;
+      }).join("");
+      return jwSection(`${category.title}学分`, `${head} · ${modules.length} 个课程模块`, body);
     }).join("");
-    return overview + toggle + lists;
+    return overview + toggle + panels;
   }
 
   function jwInnovationCreditHtml() {
@@ -2115,7 +2223,7 @@
     {
       id: "cppu-credit", title: "警大学分", icon: "graduation-cap", keys: ["creditPlan", "grade"], menu: JW_MENU.credit,
       kicker: "教 务 · 学 分 进 度",
-      tip: "按培养计划汇总必修、选修和实践学分；课程是否修完以教务的“是否获得学分”为准。",
+      tip: "按培养计划汇总必修、选修和实践学分；课程是否修完以教务的“是否获得学分”为准。点上面的学分卡，按课程模块看这一类的明细。",
       body: () => jwAcademicCreditHtml(),
     },
     {
@@ -2247,7 +2355,7 @@
   }
 
   const cardState = {
-    rows: [], mode: "month", sid: null, username: "", password: "", accessToken: "",
+    rows: [], mode: "month", kind: "in", sid: null, username: "", password: "", accessToken: "",
     tokenType: "bearer", refreshToken: "", expiresAt: 0, loading: false, syncedAt: 0, error: "",
     balance: null, balanceAt: 0, balanceError: "",
   };
@@ -2276,6 +2384,7 @@
       date: /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || "")) ? String(r.date) : "",
       amount: Math.max(0, Math.round((Number(r.amount) || 0) * 100) / 100),
       note: String(r.note || "").slice(0, 80),
+      kind: r.kind === "out" ? "out" : "in",
       at: Number(r.at || 0),
     })).filter((r) => r.date && r.amount > 0).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.at - a.at).slice(0, 5000);
   }
@@ -2289,44 +2398,65 @@
     if (/退款|退费|冲正|撤销|补助|补贴|奖学金/.test(text)) return false;
     return /充值|圈存|存款/.test(text);
   }
-  function cardNormalizeBill(row) {
+  function cardIsExpense(row) {
+    /* 平台用 typeFrom 标方向（官方 H5 也拿它决定 +/-）；方向缺失就不算，
+       宁可少统计也不能把来路不明的流水记成消费 */
+    const from = String(row?.typeFrom ?? "");
+    return from !== "" && from !== "1";
+  }
+  function cardNormalizeBill(row, kind = "in") {
     const rawDate = String(row?.effectdateStr || row?.jndatetimeStr || row?.effectdate || row?.jndatetime || "");
     const date = rawDate.match(/\d{4}[-/]\d{2}[-/]\d{2}/)?.[0]?.replaceAll("/", "-") || "";
     const amount = Math.abs(Number(row?.tranamt || 0)) / 100;
-    const note = cardRecordText(row) || "一卡通充值";
+    const note = cardRecordText(row) || (kind === "out" ? "一卡通消费" : "一卡通充值");
     const id = String(row?.orderId || row?.id || row?.serialNo || `${date}-${amount}-${note}`);
-    return { id, date, amount, note, at: Date.parse(rawDate.replaceAll("/", "-")) || 0 };
+    return { id, date, amount, note, kind: kind === "out" ? "out" : "in", at: Date.parse(rawDate.replaceAll("/", "-")) || 0 };
   }
   function cardTotals(mode = cardState.mode) {
-    const groups = new Map();
-    let total = 0;
+    const groups = { in: new Map(), out: new Map() };
+    const sums = { in: 0, out: 0 };
     for (const r of cardState.rows) {
-      total += Number(r.amount) || 0;
+      const kind = r.kind === "out" ? "out" : "in";
+      sums[kind] += Number(r.amount) || 0;
       const key = cardPeriodKey(r.date, mode);
-      groups.set(key, (groups.get(key) || 0) + (Number(r.amount) || 0));
+      groups[kind].set(key, (groups[kind].get(key) || 0) + (Number(r.amount) || 0));
     }
-    const items = [...groups.entries()].map(([key, amount]) => ({ key, amount })).sort((a, b) => String(b.key).localeCompare(String(a.key)));
-    return { total, items, max: Math.max(1, ...items.map((x) => x.amount)) };
+    const toItems = (kind) => [...groups[kind].entries()]
+      .map(([key, amount]) => ({ key, amount }))
+      .sort((a, b) => String(b.key).localeCompare(String(a.key)));
+    const inItems = toItems("in"), outItems = toItems("out");
+    return {
+      total: sums.in,
+      spent: sums.out,
+      inCount: cardState.rows.filter((r) => r.kind !== "out").length,
+      outCount: cardState.rows.filter((r) => r.kind === "out").length,
+      items: cardState.kind === "out" ? outItems : inItems,
+      max: Math.max(1, ...inItems.map((x) => x.amount), ...outItems.map((x) => x.amount)),
+    };
   }
   function cardStatsHtml() {
-    const { total, items, max } = cardTotals();
+    const { total, spent, inCount, outCount, items, max } = cardTotals();
+    const kindLabels = { in: "充值", out: "消费" };
     const modeLabels = { year: "按年", month: "按月", day: "按日" };
-    const chips = Object.entries(modeLabels).map(([mode, label]) =>
+    const kindChips = Object.entries(kindLabels).map(([kind, label]) =>
+      `<button type="button" class="pp-chip${cardState.kind === kind ? " on" : ""}" data-card-kind="${kind}">${label}</button>`).join("");
+    const modeChips = Object.entries(modeLabels).map(([mode, label]) =>
       `<button type="button" class="pp-chip${cardState.mode === mode ? " on" : ""}" data-card-mode="${mode}">${label}</button>`).join("");
     const bars = items.length ? items.slice(0, 18).map((it) =>
       `<div class="yk-bar"><span>${esc(cardPeriodLabel(it.key, cardState.mode))}</span><i style="width:${Math.max(4, Math.round(it.amount / max * 100))}%"></i><span>${esc(cardMoney(it.amount))}</span></div>`).join("")
-      : `<div class="yk-empty">暂未从一卡通账单识别到充值记录。连接校园网后点“同步账单”再试。</div>`;
-    const rows = cardState.rows.slice(0, 12).map((r) => `<div class="yk-ledger-row" data-card-row="${esc(r.id)}">
-      <span>${esc(r.date)}</span><b>${esc(cardMoney(r.amount))}</b><span>${esc(r.note || "一卡通充值")}</span>
-    </div>`).join("") || `<div class="yk-empty">暂无平台充值记录。本页不再需要手工“记一笔”。</div>`;
+      : `<div class="yk-empty">暂未从一卡通账单识别到${kindLabels[cardState.kind] || "充值"}记录。连接校园网后点“同步账单”再试。</div>`;
+    const rows = cardState.rows.slice(0, 16).map((r) => `<div class="yk-ledger-row${r.kind === "out" ? " out" : ""}" data-card-row="${esc(r.id)}">
+      <span>${esc(r.date)}</span><b>${r.kind === "out" ? "-" : "+"}${esc(cardMoney(r.amount))}</b><span>${esc(r.note || kindLabels[r.kind === "out" ? "out" : "in"])}</span>
+    </div>`).join("") || `<div class="yk-empty">暂无平台流水记录。本页不再需要手工“记一笔”。</div>`;
     const synced = cardState.syncedAt ? new Date(cardState.syncedAt).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
     const balanceSynced = cardState.balanceAt ? new Date(cardState.balanceAt).toLocaleString("zh-CN", { hour12: false }) : "尚未同步";
     return `<div class="yk-stat">
-      <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${cardState.rows.length} 笔一卡通平台充值记录，可按年份 / 月份 / 日期汇总查看。</span></div>
-      <div class="yk-balance"><small>当前余额</small><b>${cardState.balance == null ? "--" : esc(cardMoney(cardState.balance))}</b><span>一卡通平台实时余额（含未结算金额） · ${esc(balanceSynced)}${cardState.balanceError ? ` · ${esc(cardState.balanceError)}` : ""}</span></div>
+      <div class="yk-total"><small>总充值量</small><b>${esc(cardMoney(total))}</b><span>共 ${inCount} 笔一卡通平台充值记录，可按年份 / 月份 / 日期汇总查看。</span></div>
+      <div class="yk-spent"><small>已花费</small><b>${esc(cardMoney(spent))}</b><span>共 ${outCount} 笔一卡通平台消费流水（含食堂、商超、洗浴等刷卡支出）。</span></div>
+      <div class="yk-balance"><small>当前余额</small><b>${cardState.balance == null ? "--" : esc(cardMoney(cardState.balance))}</b><span>一卡通平台实时余额（校园卡账户 + 电子账户，含未结算金额） · ${esc(balanceSynced)}${cardState.balanceError ? ` · ${esc(cardState.balanceError)}` : ""}</span></div>
       <div class="yk-account"><span>账单来源：<b>一卡通平台</b></span><span>最后同步：${esc(synced)}</span>${cardState.error ? `<span class="warn">${esc(cardState.error)}</span>` : ""}</div>
     </div>
-    <div class="yk-groups"><div class="yk-group-head"><b>充值统计</b><div class="pp-chips">${chips}</div></div><div class="yk-bars">${bars}</div></div>
+    <div class="yk-groups"><div class="yk-group-head"><b>流水统计</b><div class="pp-chips">${kindChips}</div><div class="pp-chips">${modeChips}</div></div><div class="yk-bars${cardState.kind === "out" ? " out" : ""}">${bars}</div></div>
     <div class="yk-ledger">${rows}</div>`;
   }
   function cardPaintStats(root) {
@@ -2405,10 +2535,24 @@
     return { Accept: "application/json", Referer: CARD_BILLING, "synjones-auth": `${cardState.tokenType || "bearer"} ${cardState.accessToken}` };
   }
   function cardBalanceFromDetail(detail) {
-    const settled = Number(detail?.db_balance);
-    const unsettled = Number(detail?.unsettle_amount || 0);
-    if (!Number.isFinite(settled) || !Number.isFinite(unsettled)) throw new Error("余额数据格式异常");
-    return Math.round(settled + unsettled) / 100;
+    /* 入参可以是单张卡，也可以是平台返回的整叠卡（名下多卡时逐张相加） */
+    let fen = 0;
+    for (const item of Array.isArray(detail) ? detail : [detail]) {
+      const settled = Number(item?.db_balance);
+      const unsettled = Number(item?.unsettle_amount || 0);
+      if (!Number.isFinite(settled) || !Number.isFinite(unsettled)) throw new Error("余额数据格式异常");
+      /* 本校一卡通是「电子账户」模式（getEcardConfig 的 type=1）：校园卡主账户 db_balance 恒为 0，
+         钱记在 accinfo[] 的各个电子账户上，官方 H5 在这种模式下也只渲染 accinfo 的余额。
+         只读主账户就会永远显示 ¥0.00。 */
+      const accounts = Array.isArray(item?.accinfo) ? item.accinfo : [];
+      for (const acc of accounts) {
+        const value = Number(acc?.balance || 0);
+        if (!Number.isFinite(value)) throw new Error("电子账户余额数据格式异常");
+        fen += value;
+      }
+      fen += settled + unsettled;
+    }
+    return Math.round(fen) / 100;
   }
   async function cardFetchBalance() {
     if (!cardState.sid) cardState.sid = await tide.http.session();
@@ -2428,15 +2572,19 @@
     if (detailRes.status === 401 || detailData?.code === 401) { const error = new Error("一卡通登录已过期"); error.code = 401; throw error; }
     if (detailRes.status >= 400 || Number(detailData?.code || 200) >= 400) throw new Error(detailData?.message || detailData?.msg || `余额同步失败（HTTP ${detailRes.status}）`);
     if (String(detailData?.data?.retcode || "") !== "0") throw new Error(detailData?.data?.errmsg || "一卡通余额查询失败");
-    const detail = Array.isArray(detailData?.data?.card) ? detailData.data.card[0] : null;
-    return cardBalanceFromDetail(detail);
+    const details = Array.isArray(detailData?.data?.card) ? detailData.data.card : [];
+    /* queryCard 不回 accinfo 时用卡列表里同账户那份兜底（明细字段优先）；
+       名下多卡时逐张相加，只查一张会漏掉另一张卡上的钱 */
+    const byAccount = new Map(cards.map((item) => [String(item?.account || ""), item]));
+    return cardBalanceFromDetail((details.length ? details : [card]).map((item) => ({
+      ...(byAccount.get(String(item?.account || "")) || {}), ...item,
+    })));
   }
-  async function cardFetchBills() {
-    if (!cardState.sid) cardState.sid = await tide.http.session();
-    const all = [];
+  async function cardFetchTurnover(type) {
     const headers = cardAuthHeaders();
+    const all = [];
     for (let current = 1; current <= CARD_MAX_PAGES; current++) {
-      const url = `${CARD_BILLS_URL}?size=${CARD_PAGE_SIZE}&current=${current}`;
+      const url = `${CARD_BILLS_URL}?size=${CARD_PAGE_SIZE}&current=${current}&type=${type}`;
       const res = await tide.http.fetch(cardState.sid, "GET", url, { headers });
       let data = null;
       try { data = JSON.parse(String(res?.body || "")); } catch { data = null; }
@@ -2448,10 +2596,21 @@
       const pages = Number(page.pages || Math.ceil(Number(page.total || records.length) / CARD_PAGE_SIZE) || 1);
       if (!records.length || current >= pages) break;
     }
+    return all;
+  }
+  async function cardFetchBills() {
+    if (!cardState.sid) cardState.sid = await tide.http.session();
+    /* 平台用 type 区分方向：1 入账、2 支出。不传 type 时两类混在一起翻页，
+       页数上限会把其中一类挤掉，所以收支各查一趟；
+       方向最终以流水自带的 typeFrom 为准，参数被服务端忽略也不会记错。 */
+    const raw = [...await cardFetchTurnover(1), ...await cardFetchTurnover(2)];
+    const income = raw.filter(cardIsRecharge).map((row) => cardNormalizeBill(row, "in"));
+    const expense = raw.filter(cardIsExpense).map((row) => cardNormalizeBill(row, "out"));
     const seen = new Set();
-    return cardCleanRows(all.filter(cardIsRecharge).map(cardNormalizeBill).filter((r) => {
-      if (seen.has(r.id)) return false;
-      seen.add(r.id);
+    return cardCleanRows([...income, ...expense].filter((r) => {
+      const key = `${r.kind}:${r.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     }));
   }
@@ -2486,7 +2645,8 @@
       });
       const frame = root?.querySelector?.("[data-card-frame]");
       if (frame) frame.src = cardAuthedUrl(CARD_BILLING);
-      cardSetStatus(root, `已自动登录并同步 ${cardState.rows.length} 笔充值记录。`);
+      const { inCount, outCount } = cardTotals();
+      cardSetStatus(root, `已自动登录并同步 ${cardState.rows.length} 笔一卡通流水（充值 ${inCount} 笔 / 消费 ${outCount} 笔）。`);
     } catch (error) {
       cardState.error = error?.message || String(error);
       cardSetStatus(root, `${cardState.error}。请核对一卡通密码，或确认当前网络能访问校园一卡通。`, true);
@@ -2514,7 +2674,7 @@
         <button class="pp-btn" data-card-back>回通知</button>
         <span style="flex:1"></span>
       </div>
-      <div class="jw-tip">U-Time 会自动登录一卡通并读取平台账单，充值总量及年/月/日统计均来自平台数据。首次登录成功后凭据加密保存在本机，下次无需再次输入。</div>
+      <div class="jw-tip">U-Time 会自动登录一卡通并读取平台账单，总充值、已花费及年/月/日统计均来自平台流水；当前余额读平台实时值，校园卡账户与电子账户合并计算。首次登录成功后凭据加密保存在本机，下次无需再次输入。</div>
       <div data-card-login-box></div>
       <div data-card-stats>${cardStatsHtml()}</div>
       <div class="yk-status" data-card-status>正在恢复一卡通登录信息…</div>
@@ -2574,6 +2734,12 @@
       const modeBtn = e.target.closest("[data-card-mode]");
       if (modeBtn) {
         cardState.mode = modeBtn.dataset.cardMode || "month";
+        cardPaintStats(el);
+        return;
+      }
+      const kindBtn = e.target.closest("[data-card-kind]");
+      if (kindBtn) {
+        cardState.kind = kindBtn.dataset.cardKind === "out" ? "out" : "in";
         cardPaintStats(el);
         return;
       }

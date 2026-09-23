@@ -3,13 +3,13 @@
 
 function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
 
-export function blockRange(block) {
+function blockRange(block) {
   const start = typeof block.startMin === "number" ? block.startMin : minutesOf(block.start);
   const dur = Math.max(1, Number(block.durMin) || 30);
   return { start, end: start + dur, durMin: dur };
 }
 
-export function minutesOf(hhmm) {
+function minutesOf(hhmm) {
   if (typeof hhmm === "number") return hhmm;
   const [h, m] = String(hhmm || "00:00").split(":").map(Number);
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);

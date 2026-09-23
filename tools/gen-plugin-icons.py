@@ -66,6 +66,7 @@ ICONS = {
     "weekly-report":     ("color",      "statistics",       "周度报告 / 数据看板"),
     "dorm-duty":         ("color",      "broom",            "轮换值日 / 扫帚"),
     "inbox-drop":        ("color",      "downloading-updates", "拖入消息收纳 / 箭头入托盘"),
+    "ai-chat":           ("color",      "artificial-intelligence", "AI 对话 / 智能大脑"),
 }
 
 # 印章式文字图标：plugin-id -> (文字(至多 2 字，竖排堆叠), 说明)。

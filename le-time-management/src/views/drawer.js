@@ -255,7 +255,7 @@ export function openTaskDrawer(taskId) {
 }
 
 // 找今天第一个放得下的空闲时段；失败时保留已有安排。
-export function scheduleToToday(t) {
+function scheduleToToday(t) {
   try {
     const b = S.placeTask(t, S.todayStr());
     toast(`已排入今天 ${b.start} · ${S.durLabel(b.durMin)}`);
@@ -267,7 +267,7 @@ export function scheduleToToday(t) {
     而 localStorage 的配额通常只有 5MB —— 存两张就写不进去，整个 store 的保存都会开始抛。
     所以统一把长边限制在 1280、按 JPEG 0.82 重编码；已经够小的图原样返回，不重复损失画质。
     压缩用 canvas，拿不到 canvas（极老 WebView）就退回 FileReader 原样转 —— 能用比完美重要。 */
-export function readImageAsDataUrl(file, maxSide = 1280, quality = 0.82) {
+function readImageAsDataUrl(file, maxSide = 1280, quality = 0.82) {
   return new Promise((resolve, reject) => {
     const readRaw = () => {
       const fr = new FileReader();

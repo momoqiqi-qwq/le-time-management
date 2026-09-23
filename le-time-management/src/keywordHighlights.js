@@ -80,7 +80,7 @@ export function highlightSegments(value, rawConfig = {}) {
   return segments.length ? segments : [{ text }];
 }
 
-export function contrastInk(color) {
+function contrastInk(color) {
   const hex = safeColor(color, "#ffffff").slice(1);
   const rgb = [0, 2, 4].map((at) => parseInt(hex.slice(at, at + 2), 16) / 255)
     .map((v) => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);

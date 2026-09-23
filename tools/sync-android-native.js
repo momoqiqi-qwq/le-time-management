@@ -9,6 +9,7 @@
 //   · v0.37.15 MainActivity 安全区注入（WebView 不实现 env(safe-area-inset-*)）
 //   · v0.37.17 MainActivity 返回键 handleBackNavigation + 双指缩放
 //   · v0.38.0 ApkInstallerPlugin（应用内一键升级）
+//   · AppUninstallerPlugin（应用内「卸载本应用」，交系统卸载程序）
 //   · v0.73.0 NotificationPlugin + ReminderHub + 三个接收器（系统通知与后台闹钟），
 //     以及 MainActivity 长鸣期间不冻结 WebView 的 onPause 补丁
 // 只要有人 init 一次，上面全部静默消失，而且因为目录不进 git，**回滚都没得回**。
@@ -20,8 +21,9 @@
 // ── 三类处理（刻意分开，别合并成「整目录覆盖」）──
 //   ① 我们拥有的文件（Kotlin 源码 + 通知小图标等资源）：整份覆盖。这部分百分之百是我们
 //      写的，没有上游模板会被盖坏的问题。清单见 SOURCES 与 RESOURCES。
-//   ② AndroidManifest.xml：**只加不删的补丁** —— 补 REQUEST_INSTALL_PACKAGES 与通知/闹钟
-//      四条权限、注册 .SchoolImportActivity / .BrowserActivity 与三个提醒接收器、删 MainActivity 的 label。
+//   ② AndroidManifest.xml：**只加不删的补丁** —— 补 REQUEST_INSTALL_PACKAGES /
+//      REQUEST_DELETE_PACKAGES 与通知/闹钟四条权限、注册 .SchoolImportActivity /
+//      .BrowserActivity 与三个提醒接收器、删 MainActivity 的 label。
 //      不做整份覆盖 —— 否则将来 Tauri 模板新增的 permission/provider 会被我们的旧副本吃掉。
 //      FileProvider 的 provider 块是 Tauri 模板自带的，**只校验不合成**（合成容易写错一整个块）。
 //   ③ res/xml/file_paths.xml：确保 `<cache-path>` 存在。Rust 侧把更新包暂存在
@@ -48,6 +50,7 @@ const SOURCES = [
   "BrowserActivity.kt",
   "NativeSchedulePlugin.kt",
   "ApkInstallerPlugin.kt",
+  "AppUninstallerPlugin.kt",
   "SystemBarPlugin.kt",
   // v0.73.0 系统通知与闹钟：插件 + 中枢 + 三个广播接收器
   "ReminderHub.kt",
@@ -65,6 +68,15 @@ const MANIFEST = "app/src/main/AndroidManifest.xml";
 const FILE_PATHS = "app/src/main/res/xml/file_paths.xml";
 /** Android 8.0 起「安装未知来源应用」是按应用授权，没有它系统安装器会被静默拦掉。 */
 const INSTALL_PERMISSION = "android.permission.REQUEST_INSTALL_PACKAGES";
+/**
+ * 应用内「卸载本应用」（`AppUninstallerPlugin`）要的那条。
+ *
+ * 系统的卸载 Activity 带 `android:permission="REQUEST_DELETE_PACKAGES"` 保护：
+ * 调用方没声明这条权限时，`startActivity(ACTION_DELETE)` 抛 SecurityException，
+ * 症状是「点了卸载按钮没反应」—— 而这条权限装完就自动生效，不需要运行时授权，
+ * 所以漏了只能靠清单，运行时探不出来。
+ */
+const UNINSTALL_PERMISSION = "android.permission.REQUEST_DELETE_PACKAGES";
 /**
  * v0.73.0 通知与闹钟所需的权限。清单合并只认声明过的权限，缺一个就是运行期才炸：
  *   · POST_NOTIFICATIONS —— Android 13 起通知是运行时权限，没声明连弹窗都给不出来
@@ -336,6 +348,8 @@ function patchManifest() {
   let xml = src;
   const perm = ensurePermission(xml, INSTALL_PERMISSION);
   xml = perm.xml;
+  const uninstallPerm = ensurePermission(xml, UNINSTALL_PERMISSION);
+  xml = uninstallPerm.xml;
   // 通知与闹钟的四条权限逐条幂等补齐（ensurePermission 已存在就原样返回）。
   const extraPerms = [];
   for (const permission of NOTIFICATION_PERMISSIONS) {
@@ -362,6 +376,7 @@ function patchManifest() {
   }
   const detail = [
     perm.changed && "补安装权限",
+    uninstallPerm.changed && "补卸载权限",
     extraPerms.length && `补通知权限（${extraPerms.join("、")}）`,
     camera.changed && "补相机声明（权限 + 非必需 feature）",
     activity.changed && "注册 SchoolImportActivity",

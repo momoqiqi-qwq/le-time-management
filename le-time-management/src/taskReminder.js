@@ -21,13 +21,13 @@ export const RING_MAX_OPTIONS = [
   { ms: 120000, label: "2 分钟" },
   { ms: 300000, label: "5 分钟" },
 ];
-export const DEFAULT_RING_MAX_MS = 120000;
+const DEFAULT_RING_MAX_MS = 120000;
 /** 应用不在时，到点提醒每隔多久重弹一次催办（原生闹钟侧的持续提醒）。 */
 export const NAG_INTERVAL_MS = 5 * 60000;
 /** 催办最多持续多久：过了就只留一条通知，不再反复弹。 */
-export const NAG_WINDOW_MS = 30 * 60000;
+const NAG_WINDOW_MS = 30 * 60000;
 /** 往原生排多远的提醒（再远的没意义：用户会改计划，且系统会挤压超远期闹钟）。 */
-export const ALARM_HORIZON_MS = 14 * 86400000;
+const ALARM_HORIZON_MS = 14 * 86400000;
 /** 与 NotificationPlugin.kt 的 MAX_SCHEDULED 对齐：超出的最远几条不排。 */
 export const ALARM_MAX_COUNT = 40;
 
@@ -83,7 +83,7 @@ export function reminderLabel(offset) {
   return `还有 ${Math.floor(offset / 60)} 小时 ${offset % 60} 分钟截止`;
 }
 
-export function dueReminderEvents(tasks, now = Date.now(), windowMs = 90000) {
+function dueReminderEvents(tasks, now = Date.now(), windowMs = 90000) {
   const out = [];
   for (const task of tasks || []) {
     if (!task || task.done || task.reminderEnabled === false) continue;

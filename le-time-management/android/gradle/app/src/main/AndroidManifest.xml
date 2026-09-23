@@ -25,12 +25,20 @@
        权限漏了的话 WebView 的 getUserMedia 连授权弹窗都弹不出来（系统在 ActivityResult 那层
        直接判拒），症状是「点扫一扫没反应」；feature 不写 required=false 会让商店把没相机
        的设备整个挡在门外，而扫码对这款应用只是可选入口。
+    ⑦ REQUEST_DELETE_PACKAGES —— 应用内「卸载本应用」（src/views/settings/uninstall.js）。
+       系统卸载界面所在的 Activity 带这条权限保护，漏声明时 startActivity 抛
+       SecurityException，症状同样是「点了没反应」；它是安装期就生效的普通权限，
+       运行时探不出来，只能靠清单。
 
   改本文件不影响构建；要改行为请改上面那个脚本里的补丁函数。
 -->
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 应用内「卸载本应用」：系统卸载界面受这条权限保护，漏了 startActivity 直接抛
+         SecurityException（症状同样是「点了卸载没反应」）。见 AppUninstallerPlugin.kt。
+         位置与 sync-android-native.js 补丁生成处对齐（紧跟 INTERNET 之后）。 -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- 端内扫一扫（src/qrScan.js）：WebView 的 getUserMedia 靠这条才拿得到系统授权；
          配套的 uses-feature required=false 见下，少了它商店会把没相机的设备挡在外面。 -->
     <uses-permission android:name="android.permission.CAMERA" />

@@ -7,10 +7,16 @@
  * - Android：复用 le-time-management 前端与 src-tauri，因此与 Windows 自动同源；这里做显式校验。
  * - 微信小程序：生成 miniprogram/core/pluginCatalog.js，并同步节假日/考试日历的离线数据，供原生适配页使用。
  *
- * 用法：在仓库根目录执行 `node tools/sync-plugins.js`。
+ * 用法：在仓库根目录执行 `node tools/sync-plugins.js`；带 `--check` 只校验生成物是否最新、不落盘。
  */
 const fs = require("fs");
 const path = require("path");
+
+const ARGS = process.argv.slice(2);
+const CHECK = ARGS.includes("--check");
+for (const arg of ARGS) {
+  if (arg !== "--check") fail(`未知参数：${arg}（用法：node tools/sync-plugins.js [--check]）`);
+}
 
 const ROOT = path.resolve(__dirname, "..");
 const DESKTOP_PLUGINS = path.join(ROOT, "le-time-management", "public", "plugins");
@@ -20,6 +26,8 @@ const MINI_CATALOG = path.join(MINI_CORE, "pluginCatalog.js");
 const MINI_DATA = path.join(MINI_CORE, "pluginData");
 const REQUIRED_PLATFORMS = ["windows", "android", "miniprogram"];
 const VALID_STATUS = new Set(["full", "native", "conditional", "unavailable"]);
+// --check 模式下收集"内容与事实源不一致"的生成物，最后一次性报出来。
+const stale = [];
 
 function fail(msg) {
   throw new Error(msg);
@@ -28,8 +36,14 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, "utf8"));
 }
 function write(file, content) {
+  const normalized = content.replace(/\r\n/g, "\n");
+  if (CHECK) {
+    const current = fs.existsSync(file) ? fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n") : null;
+    if (current !== normalized) stale.push(path.relative(ROOT, file));
+    return;
+  }
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content.replace(/\r\n/g, "\n"), "utf8");
+  fs.writeFileSync(file, normalized, "utf8");
 }
 function compactManifest(man) {
   return {
@@ -130,11 +144,17 @@ function syncPluginIcons(manifests) {
   // 桌面端 public/icons/plugins/ 是生成目录，Windows / Android 共用同一份。
   const miniIcons = path.join(ROOT, "miniprogram", "images", "plugins");
   const desktopIcons = path.join(ROOT, "le-time-management", "public", "icons", "plugins");
-  fs.mkdirSync(desktopIcons, { recursive: true });
+  if (!CHECK) fs.mkdirSync(desktopIcons, { recursive: true });
   for (const man of manifests) {
     const source = path.join(miniIcons, `${man.id}.png`);
     if (!fs.existsSync(source)) fail(`${man.id}: 缺少三端同步插件图标 ${source}`);
-    fs.copyFileSync(source, path.join(desktopIcons, `${man.id}.png`));
+    const target = path.join(desktopIcons, `${man.id}.png`);
+    if (CHECK) {
+      const same = fs.existsSync(target) && fs.readFileSync(target).equals(fs.readFileSync(source));
+      if (!same) stale.push(path.relative(ROOT, target));
+      continue;
+    }
+    fs.copyFileSync(source, target);
   }
 }
 
@@ -167,6 +187,12 @@ function main() {
   }
 
   const miniNative = manifests.filter((x) => x.platforms.miniprogram === "native").map((x) => x.id);
+  if (CHECK) {
+    if (stale.length) fail(`插件生成物未同步：${stale.join("、")}；请运行 node tools/sync-plugins.js`);
+    console.log(`✓ 插件生成物与清单同源（--check 未写盘）：${manifests.length} 个内置插件`);
+    console.log(`  微信小程序原生适配：${miniNative.length} 个 (${miniNative.join(", ")})`);
+    return;
+  }
   console.log(`✓ 已同步 ${manifests.length} 个内置插件`);
   console.log(`  Windows / Android：${manifests.length} 个同源`);
   console.log(`  微信小程序原生适配：${miniNative.length} 个 (${miniNative.join(", ")})`);

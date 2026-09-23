@@ -142,7 +142,7 @@ export const WEBDAV_PRESETS = [
 ];
 
 export const DEFAULT_SYNC_FILE_NAME = "le-time-data.json";
-export const SYNC_VAULT_PLUGIN_ID = "core-webdav";
+const SYNC_VAULT_PLUGIN_ID = "core-webdav";
 const SYNC_VAULT_KEY = "webdav-password";
 
 export function getPreset(id) {
@@ -234,7 +234,7 @@ const PROPFIND_BODY =
   '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>';
 
 /** PROPFIND 一个目录，返回 HTTP 状态码。207=存在，404=不存在，401/403=凭据问题。 */
-export async function statDavCollection({ url, username, password, sid }) {
+async function statDavCollection({ url, username, password, sid }) {
   const own = sid || (await api.httpSessionNew());
   const res = await api.httpFetch(own, "PROPFIND", url, {
     headers: { ...authHeaders(username, password), "Content-Type": "application/xml; charset=utf-8", Depth: "0" },

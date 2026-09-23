@@ -4,7 +4,7 @@ import { runDueAiAutomations } from './aiAutomation.js';
 
 const clone=x=>JSON.parse(JSON.stringify(x));
 let running=false, timer=null, unsub=null;
-export const DEFAULT_RULES=[
+const DEFAULT_RULES=[
   {id:'deadline-auto-schedule',name:'截止任务自动排程',enabled:true,trigger:'change',action:'schedule-due'},
   {id:'exam-reminders',name:'考试报名 / 打印 / 考试自动提醒',enabled:true,trigger:'hourly',action:'exam-remind'},
   {id:'course-sync',name:'课程自动同步时间块',enabled:false,trigger:'daily',action:'course-sync'},
