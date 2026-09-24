@@ -632,32 +632,52 @@ assert.ok(!jwTaskDetailHtml().includes('进入教务办理选课'), '已结束�
 jwState.selectedTaskId = '';
 assert.ok(source.includes('const taskBtn = e.target.closest("[data-jw-task]")'), '选课任务点击必须在插件内切换详情页');
 jwState.data.creditPlan = [{ KCZXF: 157, KCBXXF: 125, KCXXXF: 32, SJKCZXF: 13 }];
+// creditModule 是教务「我的学分」(V_JWBZK_XKGL_XKQK) 的原样形状：按培养方案顺序回，
+// 学分字段是补位字符串（"             43.0"），模块码与界面顺序完全无关（军事教育课程=28）。
+jwState.data.creditModule = [
+  { KCMK: '28', KCSX: '01', XFYQ: '              5.0', HDXF: '              5.0', YXXF: '              0.0', DXXF: '              0.0' },
+  { KCMK: '23', KCSX: '01', XFYQ: '             43.0', HDXF: '             27.0', YXXF: '              0.0', DXXF: '             16.0' },
+  { KCMK: '21', KCSX: '02', XFYQ: '              2.0', HDXF: '              2.0', YXXF: '              0.0', DXXF: '              0.0' },
+  { KCMK: '20', KCSX: '02', XFYQ: '              4.0', HDXF: '              0.0', YXXF: '              3.0', DXXF: '              4.0' },
+  { KCMK: '99', KCSX: '02', XFYQ: '              2.0', HDXF: '              0.0', YXXF: '              0.0', DXXF: '              2.0' },
+  { KCMK: '30', KCSX: '03', XFYQ: '              6.0', HDXF: '              0.0', YXXF: '              0.0', DXXF: '              6.0' },
+];
 jwState.data.grade = [
-  { KCMC: '大学英语1', XF: 3, KCSX: '01', KCMK: '08', SFHDXF: '1', ZPCJ: 72, XNXQ: '20252026-1' },
+  { KCMC: '军事理论', XF: 2, KCSX: '01', KCMK: '28', SFHDXF: '1', ZPCJ: 88, XNXQ: '20252026-1' },
   { KCMC: '高等数学（理）2', XF: 4, KCSX: '01', KCMK: '23', SFHDXF: '2', ZPCJ: 29, XNXQ: '20252026-2' },
-  { KCMC: '机器人操控基础', XF: 1, KCSX: '02', KCMK: '19', SFHDXF: '1', ZPCJ: 88, XNXQ: '20262027-1' },
-  { KCMC: '艺术导论', XF: 1, KCSX: '02', KCMK: '14', SFHDXF: '1', ZPCJ: 90, XNXQ: '20252026-1' },
-  { KCMC: '无模块码的选修课', XF: 1, KCSX: '02', SFHDXF: '2', ZPCJ: 55, XNXQ: '20252026-2' },
+  { KCMC: '人工智能导论（慕课）', XF: 1, KCSX: '02', KCMK: '21', SFHDXF: '1', ZPCJ: 90, XNXQ: '20252026-1' },
+  { KCMC: '无人机操控实训', XF: 1, KCSX: '02', KCMK: '20', SFHDXF: '2', ZPCJ: 55, XNXQ: '20262027-1' },
+  { KCMC: '方案外无模块码的课', XF: 1, KCSX: '02', SFHDXF: '2', ZPCJ: 40, XNXQ: '20252026-2' },
 ];
 assert.equal(jwGradeDone(jwState.data.grade[0]), true);
+assert.equal(jwDict('KCMK', '28'), '军事教育课程', '模块名必须取教务字典 KCMKDM_1');
+assert.equal(jwDict('KCMK', '01'), '自然科学', '模块码与培养方案里的顺序无关，不能按界面次序排号');
 let academicCredit = jwAcademicCreditHtml();
-assert.ok(academicCredit.includes('必修学分') && academicCredit.includes('3 / 125'), '警大学分必须按培养计划统计必修目标和已获学分');
-assert.ok(academicCredit.includes('选修学分') && academicCredit.includes('2 / 32'), '警大学分必须单独统计选修学分');
+assert.ok(academicCredit.includes('必修学分') && academicCredit.includes('2 / 125'), '警大学分必须按培养计划统计必修目标和已获学分');
+assert.ok(academicCredit.includes('选修学分') && academicCredit.includes('1 / 32'), '警大学分必须单独统计选修学分');
 assert.ok(academicCredit.includes('实践学分') && academicCredit.includes('0 / 13'), '警大学分必须单独统计实践学分');
-assert.ok(!academicCredit.includes('大学英语1'), '未点开学分卡时不铺课程明细');
+assert.ok(!academicCredit.includes('军事理论'), '未点开学分卡时不铺课程明细');
 assert.match(academicCredit, /data-credit-toggle="elective"[^>]*aria-expanded="false"/, '学分卡必须是可点击的展开按钮');
 jwState.expandedCredit.add('elective');
 academicCredit = jwAcademicCreditHtml();
 assert.ok(academicCredit.includes('已获得学分') && academicCredit.includes('未获得学分'), '展开后课程明细必须显示是否修完');
-assert.ok(academicCredit.includes('3 个课程模块'), '展开后必须按课程模块分类');
+assert.ok(academicCredit.includes('4 个课程模块'), '展开后必须按教务的课程模块分组');
+assert.ok(academicCredit.includes('实践技能任选 · 已获得 0 / 要求 4 学分 · 在修 3 · 待修 4'), '模块行要用教务自己的要求/获得/在修/待修，补位字符串要解析成数字');
+assert.ok(academicCredit.includes('模块 99 · 已获得 0 / 要求 2 学分 · 待修 2'), '字典没这条码时原样显示模块码，不编类名');
 assert.ok(academicCredit.includes('未标注模块 · 1 门 · 已获得 0 / 修读 1 学分'), '没有模块码的课程单独成组，不并进别的模块');
 jwState.expandedCredit.add('required');
 academicCredit = jwAcademicCreditHtml();
-assert.ok(academicCredit.includes('模块 08'), '字典没核实过模块名时原样显示模块码，不编类名');
+assert.ok(academicCredit.includes('军事教育课程 · 已获得 5 / 要求 5 学分 · 1 门'), '模块组要显示教务模块名和挂在这一模块下的课程数');
+assert.ok(academicCredit.includes('公共基础 · 已获得 27 / 要求 43 学分 · 待修 16'), '必修模块必须用教务回的名字，不再显示模块码');
 assert.ok(/data-credit-toggle="required" aria-expanded="true"/.test(academicCredit), '展开中的学分卡要标 aria-expanded');
+jwState.expandedCredit.add('practice');
+academicCredit = jwAcademicCreditHtml();
+assert.ok(academicCredit.includes('毕业论文 · 已获得 0 / 要求 6 学分 · 待修 6'), '培养方案里还没有成绩记录的模块也要露面，否则看不到还欠多少学分');
 jwState.creditHideDone = true;
 academicCredit = jwAcademicCreditHtml();
-assert.ok(!academicCredit.includes('大学英语1') && academicCredit.includes('高等数学（理）2'), '隐藏已修完后只保留未获得学分的课程');
+assert.ok(!academicCredit.includes('军事理论') && academicCredit.includes('高等数学（理）2'), '隐藏已修完后只保留未获得学分的课程');
+assert.ok(academicCredit.includes('已隐藏 1 门'), '隐藏掉的门数要在模块组上交代，不能悄悄少课');
+assert.ok(academicCredit.includes('未标注模块 · 1 门 · 已获得 0 / 修读 1 学分'), '隐藏已修完时没修完的散课仍然要留着，不能跟着一起消失');
 jwState.creditHideDone = false;
 jwState.expandedCredit.clear();
 jwState.data.cxCredit = [{ DECLARE_YEAR_SEMESTER: '20252026-2', SUM_VALUE: 7, APPLYALL: 7, END_VALUE: 4, XQMC: '廊坊校区', XYDMC: '防火工程二队' }];
@@ -670,7 +690,7 @@ const innovationCredit = jwInnovationCreditHtml();
 assert.ok(innovationCredit.includes('创新实践学分') && innovationCredit.includes('申请 7 项 / 已认定 4 项'), '创新学分要保留已发布汇总');
 assert.ok(innovationCredit.includes('人工智能应用基础赛项') && innovationCredit.includes('省部级') && innovationCredit.includes('三等奖'), '创新学分必须显示真实项目、级别和奖项');
 assert.ok(!innovationCredit.includes('CREDIT_APPLICATIONID_ID') && !innovationCredit.includes('STUDENT_XH'), '创新学分页面不得把数据库内部字段当作项目明细');
-assert.ok(source.includes('V_JWBZK_JXJH_JXJH') && source.includes('V_STUDENT_GRADE'), '警大学分必须读取培养计划和成绩接口');
+assert.ok(source.includes('V_JWBZK_JXJH_JXJH') && source.includes('V_JWBZK_XKGL_XKQK') && source.includes('V_STUDENT_GRADE'), '警大学分必须读取培养计划、教务「我的学分」模块进度和成绩接口');
 assert.ok(source.includes('T_SZKP_CXGL_CREDITAPPLICATION_STU'), '创新学分必须读取申报项目明细接口');
 for (const k of Object.keys(jwState.data)) jwState.data[k] = null;
 

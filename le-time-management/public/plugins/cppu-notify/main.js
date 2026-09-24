@@ -563,7 +563,7 @@
   async function clearSavedLogin() {
     state.savedPassword = "";
     jwSid = null;
-    jwState.data = { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, grade: null, cxCredit: null, cxDetail: null };
+    jwState.data = { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, creditModule: null, grade: null, cxCredit: null, cxDetail: null };
     try {
       await tide.vault?.del?.("secret");
       await tide.vault?.del?.("cookies");
@@ -1698,6 +1698,8 @@
     qjRecord: { funcCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ_XSCX", funcId: "jycdtB3HszziSH8rgxn", tableCode: "JWBZK.T_JWBZK_DYKQ_XSQJSQ" },
     qjCourse: { funcCode: "copy from V_JWBZK_PK_XSKBZHCX", funcId: "TtHt7qQKBLbsw4B2DgB", tableCode: "V_JWBZK_PK_XSKBZHCX" },
     creditPlan: { funcCode: "V_JWBZK_JXJH_JXJH", funcId: "oSVuQBmmB2WLat8hLcQ", tableCode: "V_JWBZK_JXJH_JXJH" },
+    // 「我的学分」网格：一行一个课程模块，带 学分要求/获得/在修/待修（XFYQ/HDXF/YXXF/DXXF）。
+    creditModule: { funcCode: "V_JWBZK_XKGL_XKQK", funcId: "0ZqWUFX5iDaobVeNNwy", tableCode: "V_JWBZK_XKGL_XKQK" },
     grade: { funcCode: "V_STUDENT_GRADE", funcId: "UGwUYaFdMocm4gG2cdA", tableCode: "V_STUDENT_GRADE" },
     cxCredit: { funcCode: "V_CXGL_GRADE_STU", funcId: "VqfuoxJmlz2G9QJnoPZ", tableCode: "V_CXGL_GRADEQUERY" },
     cxDetail: { funcCode: "T_SZKP_CXGL_CREDITAPPLICATION_STU", funcId: "Ib0BbzaqbUbrKVOsERB", tableCode: "T_SZKP_CXGL_CREDITAPPLICATION" },
@@ -1709,23 +1711,32 @@
     credit: "学生服务 › 我的学业 › 成绩 › 我的学分",
     cx: "学生服务 › 综合素质考评 › 创新实践 › 成绩查询(学生)",
   };
-  // 校方字典（/je/dd/dd/getDicItemByCodes 的 KCSXDM_1 / KCHJDM_1 / KJDM / QJSQSP）抄一份在用：
+  // 校方字典（/je/dd/dd/getDicItemByCodes 的 KCSXDM_1 / KCHJDM_1 / KJDM / QJSQSP / KCMKDM_1）抄一份在用：
   // 省掉每次开视图多打一跳；未命中的码一律原样显示，绝不猜一个好看的词糊上去。
   const JW_DD = {
     KCSX: { "01": "必修课", "02": "选修课", "03": "课外实践必修", "04": "实践技能选修" },
     HJLX: { "01": "理论", "02": "实验", "03": "实践及实训" },
     JC: { "01": "1-2", "02": "3-4", "03": "5-6", "04": "7-8", "05": "9-10", "06": "11-12" },
     SQZT: { "0": "已撤销", "1": "审批中", "2": "已同意", "3": "未同意" },
-    // 课程模块码（成绩行的 KCMK）。教务只回码不回名称，名称核实后逐条填这里；
-    // 没填的码由 jwModuleLabel 显示成「模块 14」，不猜一个好听的类名糊上去。
-    KCMK: {},
+    // 课程模块码 KCMK ← 字典 KCMKDM_1（2026-09-24 实测：「我的学分」面板自己就按这张翻译，
+    // 31 条全量抄回）。**码和界面顺序完全无关** —— 培养方案第一行「军事教育课程」是 28，
+    // 「公共基础」是 23，所以绝不能按列表次序排 01、02。未命中的码原样显示，不猜类名。
+    KCMK: {
+      "01": "自然科学", "02": "人文社会科学", "03": "军事技能类", "04": "专业基础与专业类", "05": "警种通修类",
+      "06": "专业", "07": "基础类", "08": "专业基础", "09": "公共类", "10": "国防教育",
+      "11": "科学素养", "12": "公安基础", "13": "程序设计限选", "14": "公共艺术课程", "15": "公共体育课程",
+      "16": "创新创业限选", "17": "专业限选", "18": "公共线下课程", "19": "专业任选", "20": "实践技能任选",
+      "21": "公共线上课程", "22": "思想政治理论", "23": "公共基础", "24": "信息素养课程", "25": "法律素养",
+      "26": "公安理论与警察素养", "27": "公安实战技能", "28": "军事教育课程", "29": "实习实践", "30": "毕业论文",
+      "31": "学科基础",
+    },
   };
   const jwDict = (dict, code) => {
     const c = String(code ?? "").trim();
     if (!c) return "";
     return JW_DD[dict]?.[c] || c;
   };
-  const jwKeyLabel = (k) => ({ xkTask: "选课任务", xkResult: "选课结果", qjRecord: "请假记录", qjCourse: "可请假课次", creditPlan: "培养计划", grade: "课程成绩", cxCredit: "创新学分", cxDetail: "创新学分明细" }[k] || k);
+  const jwKeyLabel = (k) => ({ xkTask: "选课任务", xkResult: "选课结果", qjRecord: "请假记录", qjCourse: "可请假课次", creditPlan: "培养计划", creditModule: "课程模块进度", grade: "课程成绩", cxCredit: "创新学分", cxDetail: "创新学分明细" }[k] || k);
 
   let jwSid = null;                 // 已经落上教务 authorization 的那个会话 id
   const jwLive = () => !!jwSid && jwSid === state.sid;
@@ -1751,7 +1762,7 @@
   }
   const jwState = {
     term: null,
-    data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, grade: null, cxCredit: null, cxDetail: null },
+    data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, creditModule: null, grade: null, cxCredit: null, cxDetail: null },
     loading: {}, error: {}, at: {},
     courseScope: "week",            // today | week | term，默认本周（本学期是 200+ 行的紧凑列表）
     leaveCourseId: "",
@@ -1867,7 +1878,7 @@
 
   async function jwSaveCache() {
     const keep = {};
-    for (const k of ["xkTask", "xkResult", "qjRecord", "creditPlan", "grade", "cxCredit", "cxDetail"]) if (Array.isArray(jwState.data[k])) keep[k] = jwState.data[k];
+    for (const k of ["xkTask", "xkResult", "qjRecord", "creditPlan", "creditModule", "grade", "cxCredit", "cxDetail"]) if (Array.isArray(jwState.data[k])) keep[k] = jwState.data[k];
     try { await tide.storage.set("jwCache", { term: jwState.term, at: jwState.at, keep, prefs: { creditHideDone: jwState.creditHideDone } }); } catch { /* 忽略 */ }
   }
   async function jwRestoreCache() {
@@ -2132,24 +2143,52 @@
     if (!c) return "未标注模块";
     return JW_DD.KCMK[c] || `模块 ${c}`;
   };
-  function jwModuleGroups(rows) {
+  // 教务的学分字段是补位到 15 字符的字符串（"              5.0"），一律过一遍再算
+  const jwXf = (v) => Math.round((parseFloat(v) || 0) * 10) / 10;
+  /* 「我的学分」(creditModule) 一行一个课程模块，按培养方案顺序回，且自带 要求/获得/在修/待修，
+     所以分组以它为准，成绩行只负责挂到模块下面 —— 一门课没有的模块（待修 6 学分那种）也要露面。
+     方案里查不到的模块码（重修、转专业等）单独补一组垫底，空码永远最后，不能因为方案没列就丢课。 */
+  function jwCreditGroups(category, moduleRows) {
     const byCode = new Map();
-    for (const r of rows) {
+    for (const r of category.rows) {
       const c = String(r.KCMK ?? "").trim();
       if (!byCode.has(c)) byCode.set(c, []);
       byCode.get(c).push(r);
     }
-    return [...byCode.entries()]
-      .sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]))
-      .map(([code, list]) => ({ code, label: jwModuleLabel(code), rows: list }));
+    const groups = moduleRows
+      .filter((m) => category.codes.includes(String(m.KCSX ?? "")))
+      .map((m) => {
+        const code = String(m.KCMK ?? "").trim();
+        const rows = byCode.get(code) || [];
+        byCode.delete(code);
+        return { label: jwModuleLabel(code), rows, target: jwXf(m.XFYQ), earned: jwXf(m.HDXF), doing: jwXf(m.YXXF), left: jwXf(m.DXXF) };
+      });
+    for (const [code, rows] of [...byCode.entries()].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]))) {
+      groups.push({ label: jwModuleLabel(code), rows, target: null, earned: jwXf(rows.reduce((s, r) => s + (jwGradeDone(r) ? Number(r.XF) || 0 : 0), 0)), planned: jwXf(rows.reduce((s, r) => s + (Number(r.XF) || 0), 0)) });
+    }
+    return groups;
+  }
+  function jwModuleLine(m, hidden) {
+    const bits = [esc(m.label)];
+    if (m.target === null) bits.push(`${m.shown.length} 门`, `已获得 ${m.earned} / 修读 ${m.planned} 学分`);
+    else {
+      bits.push(`已获得 ${m.earned} / 要求 ${m.target} 学分`);
+      if (m.doing) bits.push(`在修 ${m.doing}`);
+      if (m.left) bits.push(`待修 ${m.left}`);
+      if (m.shown.length) bits.push(`${m.shown.length} 门`);
+    }
+    if (hidden) bits.push(`已隐藏 ${hidden} 门`);
+    return bits.join(" · ");
   }
   function jwAcademicCreditHtml() {
     const planRows = jwState.data.creditPlan;
+    const moduleRows = jwState.data.creditModule;
     const grades = jwState.data.grade;
     const planState = jwStateBlock("creditPlan", "正在读取培养计划…");
+    const moduleState = jwStateBlock("creditModule", "正在读取课程模块进度…");
     const gradeState = jwStateBlock("grade", "正在读取课程学分…");
-    if (planState || gradeState) return planState + gradeState;
-    if (!Array.isArray(planRows) || !Array.isArray(grades)) return `<div class="pp-empty">还没有拉取过学分数据，点上方「刷新」</div>`;
+    if (planState || moduleState || gradeState) return planState + moduleState + gradeState;
+    if (!Array.isArray(planRows) || !Array.isArray(moduleRows) || !Array.isArray(grades)) return `<div class="pp-empty">还没有拉取过学分数据，点上方「刷新」</div>`;
     const plan = planRows[0] || {};
     const categories = [
       { id: "required", title: "必修", codes: ["01"], target: Number(plan.KCBXXF) || 0 },
@@ -2188,17 +2227,14 @@
       </div>`;
     };
     const panels = openCategories.map((category) => {
-      const visible = jwState.creditHideDone ? category.rows.filter((r) => !jwGradeDone(r)) : category.rows;
-      const hidden = category.rows.length - visible.length;
       const head = `${category.earned} / ${category.target || "--"} 学分`;
-      if (!visible.length) return jwSection(`${category.title}学分`, head, `<div class="pp-empty">${hidden ? `已隐藏 ${hidden} 门已修完课程` : `暂无${category.title}课程成绩记录`}</div>`);
-      const modules = jwModuleGroups(visible);
-      const body = modules.map((module) => {
-        const got = module.rows.filter(jwGradeDone).reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
-        const planned = module.rows.reduce((sum, r) => sum + (Number(r.XF) || 0), 0);
-        return `<div class="jw-group">${esc(module.label)} · ${module.rows.length} 门 · 已获得 ${got} / 修读 ${planned} 学分</div>${module.rows.map(courseCard).join("")}`;
-      }).join("");
-      return jwSection(`${category.title}学分`, `${head} · ${modules.length} 个课程模块`, body);
+      const groups = jwCreditGroups(category, moduleRows).map((m) => ({
+        ...m, shown: jwState.creditHideDone ? m.rows.filter((r) => !jwGradeDone(r)) : m.rows,
+      })).filter((m) => m.shown.length || m.target !== null);
+      if (!groups.length) return jwSection(`${category.title}学分`, head, `<div class="pp-empty">暂无${category.title}课程成绩记录</div>`);
+      const hiddenAll = groups.reduce((n, m) => n + (m.rows.length - m.shown.length), 0);
+      const body = groups.map((m) => `<div class="jw-group">${jwModuleLine(m, m.rows.length - m.shown.length)}</div>${m.shown.map(courseCard).join("")}`).join("");
+      return jwSection(`${category.title}学分`, `${head} · ${groups.length} 个课程模块${hiddenAll ? ` · 已隐藏 ${hiddenAll} 门` : ""}`, body);
     }).join("");
     return overview + `<div class="jw-credit-detail">${toggle + panels}</div>`;
   }
@@ -2265,9 +2301,9 @@
       body: () => jwLeaveHtml(),
     },
     {
-      id: "cppu-credit", title: "警大学分", icon: "graduation-cap", keys: ["creditPlan", "grade"], menu: JW_MENU.credit,
+      id: "cppu-credit", title: "警大学分", icon: "graduation-cap", keys: ["creditPlan", "creditModule", "grade"], menu: JW_MENU.credit,
       kicker: "教 务 · 学 分 进 度",
-      tip: "按培养计划汇总必修、选修和实践学分；课程是否修完以教务的“是否获得学分”为准。点上面的学分卡，按课程模块看这一类的明细。",
+      tip: "按培养计划汇总必修、选修和实践学分；课程是否修完以教务的“是否获得学分”为准。点上面的学分卡，按教务「我的学分」的课程模块看每一类的要求、已获、在修和待修。",
       body: () => jwAcademicCreditHtml(),
     },
     {
