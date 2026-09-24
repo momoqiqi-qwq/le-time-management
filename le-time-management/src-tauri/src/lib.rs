@@ -658,12 +658,12 @@ async fn ai_chat(
         .body(body.to_string())
         .send()
         .await
-        .map_err(|e| format!("AI 请求失败: {e}"))?;
+        .map_err(|e| format!("AI 请求失败: {}", error_chain(&e)))?;
     let status = resp.status();
     let text = resp
         .text()
         .await
-        .map_err(|e| format!("读取 AI 响应失败: {e}"))?;
+        .map_err(|e| format!("读取 AI 响应失败: {}", error_chain(&e)))?;
     if !status.is_success() {
         let brief: String = text.chars().take(900).collect();
         return Err(format!("AI 接口返回 {}：{}", status.as_u16(), brief));
@@ -1174,6 +1174,30 @@ fn decode_body(bytes: &[u8], content_type: &str) -> String {
     text.into_owned()
 }
 
+/// 把错误的 cause 链摊平成一行。
+///
+/// ⚠️ 打 reqwest 的错**永远不要直接 `{e}`**：0.12 的 `Display` 只有
+/// `error sending request for url (…)` 这一句，真正的成因（DNS 解析失败、TCP 连不上、
+/// TLS 握手断、客户端超时）全藏在 `source()` 里。吞掉 source 的后果是插件界面上
+/// 只剩一句没人能看懂的英文，用户和开发者都只能猜（v0.102.0 警大学分视图就是这样）。
+/// 最多摊三层，再深的是 hyper 的内部包装，只会把提示条撑爆。
+fn error_chain(e: &(dyn std::error::Error + 'static)) -> String {
+    let mut out = e.to_string();
+    let mut cause = e.source();
+    let mut hops = 0;
+    while let Some(next) = cause {
+        if hops == 3 {
+            out.push('…');
+            break;
+        }
+        out.push_str(": ");
+        out.push_str(&next.to_string());
+        cause = next.source();
+        hops += 1;
+    }
+    out
+}
+
 /// 插件网络桥：服务端抓取，绕开 WebView 的 CORS 限制
 #[tauri::command]
 async fn http_get(url: String) -> Result<HttpResp, String> {
@@ -1186,7 +1210,7 @@ async fn http_get(url: String) -> Result<HttpResp, String> {
         .header("Accept", "application/json, text/html;q=0.9, */*;q=0.8")
         .send()
         .await
-        .map_err(|e| format!("请求失败: {e}"))?;
+        .map_err(|e| format!("请求失败: {}", error_chain(&e)))?;
     let status = resp.status().as_u16();
     let final_url = resp.url().to_string();
     let content_type = resp
@@ -1198,7 +1222,7 @@ async fn http_get(url: String) -> Result<HttpResp, String> {
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取响应失败: {e}"))?;
+        .map_err(|e| format!("读取响应失败: {}", error_chain(&e)))?;
     let body = decode_body(&bytes, &content_type);
     Ok(HttpResp {
         status,
@@ -1234,7 +1258,7 @@ async fn http_get_icon(url: String) -> Result<String, String> {
         .header("Accept", "image/*,*/*;q=0.8")
         .send()
         .await
-        .map_err(|e| format!("请求失败: {e}"))?;
+        .map_err(|e| format!("请求失败: {}", error_chain(&e)))?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status().as_u16()));
     }
@@ -1253,7 +1277,7 @@ async fn http_get_icon(url: String) -> Result<String, String> {
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取响应失败: {e}"))?;
+        .map_err(|e| format!("读取响应失败: {}", error_chain(&e)))?;
     if bytes.len() > MAX_ICON_BYTES {
         return Err("图标文件过大".into());
     }
@@ -1725,7 +1749,10 @@ async fn http_fetch(
     if let Some(b) = &body {
         req = req.body(b.clone());
     }
-    let resp = req.send().await.map_err(|e| format!("请求失败: {e}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| format!("请求失败: {}", error_chain(&e)))?;
     let status = resp.status().as_u16();
     let final_url = resp.url().to_string();
     let content_type = resp
@@ -1751,7 +1778,7 @@ async fn http_fetch(
     let bytes = resp
         .bytes()
         .await
-        .map_err(|e| format!("读取响应失败: {e}"))?;
+        .map_err(|e| format!("读取响应失败: {}", error_chain(&e)))?;
     let resp_body = if binary.unwrap_or(false) {
         use base64::Engine as _;
         base64::engine::general_purpose::STANDARD.encode(&bytes)
@@ -2067,5 +2094,53 @@ mod tests {
         let last = tampered.len() - 1;
         tampered[last] ^= 0x01;
         assert!(aead_decrypt(&key, &tampered).is_err());
+    }
+
+    /// 造一条带 cause 链的假错误，形状对齐 reqwest 的
+    /// 「error sending request → client error (Connect) → dns error → 真因」。
+    #[derive(Debug)]
+    struct Chain(&'static str, Option<Box<Chain>>);
+
+    impl std::fmt::Display for Chain {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+
+    impl std::error::Error for Chain {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            self.1.as_ref().map(|b| &**b as &(dyn std::error::Error + 'static))
+        }
+    }
+
+    const CAUSES: [&str; 5] = [
+        "client error (Connect)",
+        "dns error",
+        "failed to lookup address information",
+        "第四层包装",
+        "第五层包装",
+    ];
+
+    /// 顶层恒是 reqwest 那句，`causes` 控制往下挂几层
+    fn chain(causes: usize) -> Chain {
+        let head = CAUSES[..causes]
+            .iter()
+            .rev()
+            .fold(None, |acc, m| Some(Box::new(Chain(m, acc))));
+        Chain("error sending request for url (https://jw.cppu.edu.cn/je/load)", head)
+    }
+
+    #[test]
+    fn error_chain_surfaces_the_root_cause_and_caps_depth() {
+        // 只有顶层一句 = 线索全丢，这正是 v0.102.0 警大学分那张截图的形态
+        assert_eq!(error_chain(&chain(0)), chain(0).to_string());
+        assert_eq!(
+            error_chain(&chain(3)),
+            "error sending request for url (https://jw.cppu.edu.cn/je/load): client error (Connect): dns error: failed to lookup address information"
+        );
+        // 再深的 hyper 包装不进提示条
+        let deep = error_chain(&chain(5));
+        assert!(!deep.contains("第四层包装"), "{deep}");
+        assert!(deep.ends_with("information…"), "{deep}");
     }
 }

@@ -1,4 +1,5 @@
 import * as S from "./store.js";
+import { isGroupColor } from "./pluginGroups.js";
 import { appIcon } from "./icons.js";
 
 const ACCENTS = ["#7C3AED", "#2563EB", "#0F766E", "#D97706", "#DB2777", "#0891B2", "#65A30D", "#EA580C"];
@@ -44,10 +45,22 @@ export function setPluginOverride(id, patch) {
   const next = { ...(table[id] || {}), ...(patch || {}) };
   if (!String(next.name || "").trim()) delete next.name;
   if (!String(next.icon || "").startsWith("data:image/")) delete next.icon;
+  // 分组色只存色 ID（pluginGroups.GROUP_COLORS），色值和自定义值一律不落库
+  if (!isGroupColor(next.color)) delete next.color;
   if (Object.keys(next).length) table[id] = next;
   else delete table[id];
   S.persistSoon();
   return next;
+}
+
+export function pluginColor(id) {
+  const value = getPluginOverride(id).color;
+  return isGroupColor(value) ? value : "";
+}
+
+/** color 传空即取消分组。顺序吸附由调用方负责（见 shell.js 的 normalizePluginOrder）。 */
+export function setPluginColor(id, color) {
+  return setPluginOverride(id, { color: isGroupColor(color) ? color : "" });
 }
 
 export function resetPluginOverride(id) {

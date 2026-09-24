@@ -43,7 +43,7 @@
     ignoredIds: new Set(),
     readOverrides: new Map(),   // id -> true(未读)/false(已读)：本机标记覆盖，不动平台状态
     tab: "inbox",
-    filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部", catType: "全部" },
+    filter: { kw: "", category: "全部", onlyUnread: false, catYear: "全部", catType: "全部", todoSec: "" },
     course: { year: null, searchOpen: false, view: "year" },
     notice: null,
     loading: false,
@@ -451,7 +451,9 @@ const CX_PY_DATA = {
       .cx2-card.late{background:color-mix(in srgb,var(--coral) 9%,var(--panel));border-top-color:color-mix(in srgb,var(--coral) 30%,var(--line));border-right-color:color-mix(in srgb,var(--coral) 30%,var(--line));border-bottom-color:color-mix(in srgb,var(--coral) 30%,var(--line))}
       .cx2-due.late{color:color-mix(in srgb,var(--coral) 62%,var(--ink))}
       .cx2-kpis{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-      .cx2-kpi{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
+      .cx2 .cx2-kpi{background:var(--paper);border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink)}
+      .cx2 button.cx2-kpi:hover{border-color:color-mix(in srgb,var(--deep) 42%,var(--line));color:var(--ink)}
+      .cx2 button.cx2-kpi.on{background:var(--deep);border-color:var(--deep);color:#fff;font-weight:600}
       .cx2 footer{margin-top:24px;border-top:1px solid var(--line);padding-top:12px;font-size:calc(11px * var(--ui-text-scale));color:var(--ink-2)}
       @media(max-width:760px){.cx2{padding:12px}.cx2-grid{grid-template-columns:1fr}.cx2-fields{grid-template-columns:1fr}.cx2-wide{grid-column:auto}.cx2-actions{width:100%}.cx2-actions button{flex:1}.cx2-nav{overflow-x:auto;flex-wrap:nowrap;padding-bottom:8px}.cx2-nav button{white-space:nowrap}.cx2-toolbar .cx2-search{width:100%;flex-basis:100%}}
       @media(pointer:coarse){.cx2 button,.cx2 input,.cx2 select{min-height:46px}.cx2-card-actions button{min-height:40px}}
@@ -627,7 +629,7 @@ const CX_PY_DATA = {
       return true;
     });
   }
-  /* 待办分三档：未截止未提交 / 已逾期未提交 / 已提交但未到截止时间。
+  /* 待办分四档：未截止未提交 / 已逾期未提交 / 已提交但未到截止时间 / 已提交已过期。
      旧版 todos() 用 `>= now` 过滤，截止一到条目就从列表里消失 —— 过期没交的最需要被看见，
      所以这里改成先取出所有带截止时间的，再按 now 切成两份。
      「未提交」不含探到已提交的（那是做完了，只是通知还挂着），探测失败的那批会留在未提交里，宁可偏多不可偏少。 */
@@ -643,6 +645,40 @@ const CX_PY_DATA = {
   function lateAll() { return withDue().filter(isLate); }
   function overdueTodos() { return lateAll().filter((n) => statusOf(n) !== 'grading'); }
   function submittedOverdue() { return lateAll().filter((n) => statusOf(n) === 'grading'); }
+
+  /* ── 第五档：已提交待批改（通知里压根没有结束时间的那批）────────────────────
+     上面四档全建立在「正文能解析出结束时间」上。老师发布作业时不设结束时间很常见
+     （实测 54 条带作业附件的通知里有 44 条只有开始时间），这类作业于是四档都不进、
+     连提交状态都不会被探测 —— 明明早就交了、成绩还没出，待办页却完全看不见它。
+     这里补上，但口径收得很紧：
+       · 只探/只列近 NO_DUE_GRADING_DAYS 天发布的（其余是上学期的遗留，不值得为它多打请求）；
+       · 只列探到已提交（作业页是查看页）的，未提交的不收 —— 没有结束时间就判不出
+         「未截止 / 已逾期」，混进前四档只会让那两档的语义失真。
+     ⚠️ 平台出成绩后作业页仍是查看页，本机信号不会翻回「已批改」，所以这一档不会自动清空，
+     批完了用卡片上的「移除」收掉（只影响本机，不动学习通）。 */
+  const NO_DUE_GRADING_DAYS = 60;
+  const noticeTimeMs = (n) => {
+    const m = String(n?.time || "").match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime();
+    const ms = Number(n?.insertTime) || 0;
+    return ms > 1e11 ? ms : null;   // insertTime 是发布时刻的毫秒戳；测试夹具里那是个小序号，不能当时间用
+  };
+  function noDueWorks() {
+    return visibleInbox().filter((n) => classify(n) === "作业" && parseWorkRef(n) && !deadline(n.body || ""));
+  }
+  function recentNoDueWorks() {
+    const limit = NO_DUE_GRADING_DAYS * 86400000;
+    return noDueWorks().filter((n) => {
+      const t = noticeTimeMs(n);
+      return t === null || Date.now() - t <= limit;   // 认不出发布时间的按近期放行，别把还在等的作业静默丢掉
+    });
+  }
+  function gradingNoDue() {
+    // 等得最久的在前；认不出发布时间的垫底 —— 没有可比的时间，不该占最显眼的位置
+    const t = (n) => String(n.time || "");
+    return recentNoDueWorks().filter((n) => statusOf(n) === 'grading')
+      .sort((a, b) => (t(a) ? 0 : 1) - (t(b) ? 0 : 1) || t(a).localeCompare(t(b)));
+  }
   function overdueDays(n) {
     const ms = Date.now() - dueAt(n);
     return ms >= 86400000 ? `${Math.floor(ms / 86400000)} 天` : `${Math.max(1, Math.round(ms / 3600000))} 小时`;
@@ -760,18 +796,33 @@ const CX_PY_DATA = {
   }
   function todoCardHtml(n, late, submitted) {
     const cat = classify(n);
-    const due = late
-      ? `<div class="cx2-due late">已逾期 ${esc(overdueDays(n))} · 截止 ${esc(n.dueText)}</div>`
-      : `<div class="cx2-due">${submitted ? "已提交 · " : ""}截止 ${esc(n.dueText)}</div>`;
+    // 第五档压根没有截止时间可写，那就交代发布时间 —— 等批改等的就是这段时间
+    const due = !n.dueText
+      ? `<div class="cx2-due">无截止时间 · 发布于 ${esc(n.time || "时间未知")}</div>`
+      : late
+        ? `<div class="cx2-due late">已逾期 ${esc(overdueDays(n))} · 截止 ${esc(n.dueText)}</div>`
+        : `<div class="cx2-due">${submitted ? "已提交 · " : ""}截止 ${esc(n.dueText)}</div>`;
     return `<article class="cx2-card ${catFrameClass(n)}${late ? ' late' : ''}" data-id="${esc(n.id)}"><div class="cx2-title">${esc(n.title)}${gradingBadge(n)}</div><div class="cx2-meta"><span class="cx2-tag ${cat}">${cat}</span><span>${esc(n.sender)}</span>${linkHintHtml(n)}</div>${due}<div class="cx2-body">${esc(n.body)}</div>${cardActionsHtml(n,'todo')}</article>`;
   }
+  /* 五档各给一个分区：「已提交已过期」以前只有计数没有列表，点开了没东西可看。 */
+  const TODO_SECS = [
+    { key: "open", label: "未截止未提交", dot: "dot-amber", sub: "越早截止越靠前", tip: "正文里带「结束时间 / 截止时间」且还没到期、本机没探到已提交", empty: "没有未截止且未提交的作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。" },
+    { key: "late", label: "已逾期未提交", dot: "dot-red", sub: "逾期最久的在前", tip: "截止已过、且本机没探到已提交", empty: "没有已逾期未提交的作业。" },
+    { key: "submitted", head: "已提交但未到截止时间", label: "已提交未截止", dot: "dot-blue", sub: "越早截止越靠前", tip: "本机探到已提交，但截止时间还没到", empty: "没有已提交但未到截止时间的作业。" },
+    { key: "done", label: "已提交已过期", dot: "dot-green", sub: "交过了就不再算逾期", tip: "截止已过，但作业页打开是查看页，说明交过了，不再算逾期", empty: "没有已提交且已过期的作业。" },
+    { key: "grading", label: "已提交待批改", dot: "dot-gray", sub: `近 ${NO_DUE_GRADING_DAYS} 天发布、通知没写结束时间`, tip: "通知里没有结束时间、本机探到已提交（作业页是查看页）的近期作业。⚠️ 平台出成绩后这一档不会自动消失，批完了点卡片「移除」收掉", empty: "没有已提交待批改的作业（只列近期发布、且通知里没写结束时间的作业）。" },
+  ];
   function todoHtml() {
-    const list = todos(), late = overdueTodos(), submitted = submittedOpen(), done = submittedOverdue();
-    return `<div class="cx2-kpis"><span class="cx2-kpi" title="正文里带「结束时间 / 截止时间」且还没到期、本机没探到已提交">未截止未提交 ${list.length}</span><span class="cx2-kpi" title="截止已过、且本机没探到已提交">已逾期未提交 ${late.length}</span><span class="cx2-kpi" title="本机探到已提交，但截止时间还没到">已提交未截止 ${submitted.length}</span>${done.length ? `<span class="cx2-kpi" title="截止已过，但作业页打开是查看页，说明交过了，不再算逾期">已提交已过期 ${done.length}</span>` : ''}${late.length ? `<button class="danger" data-clear-late title="把当前「已逾期未提交」列表全部从本机隐藏；不影响学习通平台，也可用顶部「恢复已移除」放回">一键移除逾期</button>` : ''}</div>
-      <section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-amber"></span>未截止未提交<span class="cx2-grade-sub">${list.length} 条 · 越早截止越靠前</span></h4>${list.length ? `<div class="cx2-todo">${list.map((n) => todoCardHtml(n, false, false)).join('')}</div>` : `<div class="cx2-empty">没有未截止且未提交的作业。识别规则来自 v2 包：正文中的“结束时间/截止时间：YYYY-MM-DD HH:MM”。</div>`}</section>
-      ${late.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-red"></span>已逾期未提交<span class="cx2-grade-sub">${late.length} 条 · 逾期最久的在前</span></h4><div class="cx2-todo">${late.map((n) => todoCardHtml(n, true, false)).join('')}</div></section>` : ''}
-      ${submitted.length ? `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot dot-blue"></span>已提交但未到截止时间<span class="cx2-grade-sub">${submitted.length} 条 · 越早截止越靠前</span></h4><div class="cx2-todo">${submitted.map((n) => todoCardHtml(n, false, true)).join('')}</div></section>` : ''}
-      <div class="cx2-hint">待办按提交状态拆开：未提交的保留在「未截止 / 已逾期」两段；探到已提交且未到截止时间的单独放在下方，避免和真正待处理的作业混在一起。</div>`;
+    const lists = { open: todos(), late: overdueTodos(), submitted: submittedOpen(), done: submittedOverdue(), grading: gradingNoDue() };
+    const sel = TODO_SECS.some((s) => s.key === state.filter.todoSec) ? state.filter.todoSec : "";
+    const kpis = `<div class="cx2-kpis">${TODO_SECS.map((s) => `<button class="cx2-kpi${s.key === sel ? " on" : ""}" data-todo-sec="${s.key}" aria-pressed="${s.key === sel}" title="${s.tip} · 点击只看这一档">${s.label} ${lists[s.key].length}</button>`).join("")}${lists.late.length && (!sel || sel === "late") ? `<button class="danger" data-clear-late title="把当前「已逾期未提交」列表全部从本机隐藏；不影响学习通平台，也可用顶部「恢复已移除」放回">一键移除逾期</button>` : ""}</div>`;
+    const secs = TODO_SECS.filter((s) => !sel || s.key === sel).map((s) => {
+      const list = lists[s.key];
+      if (!list.length && !sel && s.key !== "open") return "";
+      const cards = list.map((n) => todoCardHtml(n, s.key === "late", s.key === "submitted" || s.key === "done")).join('');
+      return `<section class="cx2-cat-sec"><h4 class="cx2-grade-head"><span class="cx2-dot ${s.dot}"></span>${s.head || s.label}<span class="cx2-grade-sub">${list.length} 条 · ${s.sub}</span></h4>${list.length ? `<div class="cx2-todo">${cards}</div>` : `<div class="cx2-empty">${s.empty}</div>`}</section>`;
+    }).join("");
+    return `${kpis}${secs}<div class="cx2-hint">待办按提交状态拆开：未提交的保留在「未截止 / 已逾期」两段；探到已提交的三档单独放在下方，避免和真正待处理的作业混在一起。「已提交待批改」收的是通知里没写结束时间、但已探到已提交的近期作业 —— 成绩没出就还不算完。点上方任意一格只看那一档，再点一次取消。</div>`;
   }
   /* ── 作业提交状态探测：通知正文里没有提交/批改状态，只能拿附件里的作业入口实地看一眼 ──
      附件 iframe 的 name 是 Base64(URL编码的 JSON)，里面带 workId 和作业入口 URL。
@@ -779,7 +830,8 @@ const CX_PY_DATA = {
        · title「作业作答」→ 还能作答，即未提交；
        · title「作答详情 / 查看详情 / 作业详情」→ 已提交后的查看页；
      是否已批改没有静态信号（批改结果页是 Vue 异步渲染），所以已提交统一记为「正在批改」，
-     批改完成以平台通知为准。每轮刷新最多探 6 条未知项、逐条间隔进行，避免触发风控。 */
+     批改完成以平台通知为准。每轮刷新按列表分批探（未截止 ≤6、逾期 ≤4、无截止近期 ≤4），
+     逐条串行进行，避免一次性打太多触发风控。 */
 
   function parseWorkRef(n) {
     const m = String(n?.raw?.rtf_content || "").match(/<iframe[^>]*\bname="([A-Za-z0-9+/=]{40,})"/);
@@ -815,8 +867,9 @@ const CX_PY_DATA = {
   async function probePendingWorks() {
     if (probing || !state.loggedIn) return;
     const unknown = (n) => { const r = parseWorkRef(n); return r && !state.workStatus[r.id]; };
-    // 未截止的先探（≤6）；逾期的一并探一批（≤4）—— 不探就没法把「其实早就交了」的那批从逾期里摘出去
-    const targets = [...todos().filter(unknown).slice(0, 6), ...lateAll().filter(unknown).slice(0, 4)];
+    // 未截止的先探（≤6）；逾期的一并探一批（≤4）—— 不探就没法把「其实早就交了」的那批从逾期里摘出去；
+    // 再给无截止时间的近期作业留一批（≤4），它们不在上面两个列表里，不专门排进来就永远探不到。
+    const targets = [...todos().filter(unknown).slice(0, 6), ...lateAll().filter(unknown).slice(0, 4), ...recentNoDueWorks().filter(unknown).slice(0, 4)];
     if (!targets.length) return;
     probing = true;
     try {
@@ -1025,6 +1078,7 @@ const CX_PY_DATA = {
       if(e.target.closest('[data-cookie-login]')){const c=host.querySelector('[data-cookie]').value.trim(),status=host.querySelector('[data-login-status]');state.remember=host.querySelector('[data-remember]').checked;state.creds=null;status.textContent='正在验证 Cookie…';try{await startCookieSession(c);paintMain();await refreshAll();}catch(err){status.textContent=err.message||err;}return;}
       const tab=e.target.closest('[data-tab]');if(tab){state.tab=tab.dataset.tab;paintMain();return;}
       const catChip=e.target.closest('[data-cat-type]');if(catChip){state.filter.catType=catChip.dataset.catType;savePrefs();paintMain();return;}
+      const todoChip=e.target.closest('[data-todo-sec]');if(todoChip){const k=todoChip.dataset.todoSec;state.filter.todoSec=state.filter.todoSec===k?"":k;savePrefs();paintMain();return;}
       const yearBtn=e.target.closest('[data-year]');if(yearBtn){state.course.year=Number(yearBtn.dataset.year)||0;paintMain();return;}
       const viewBtn=e.target.closest('[data-course-view]');if(viewBtn){state.course.view=viewBtn.dataset.courseView==='timeline'?'timeline':'year';paintMain();return;}
       const openCourse=e.target.closest('[data-course-open]');if(openCourse){const c=state.courses.find((x)=>`${x.courseid}_${x.clazzid}`===openCourse.closest('[data-key]')?.dataset.key);if(c)await openWithLogin(c.url);return;}

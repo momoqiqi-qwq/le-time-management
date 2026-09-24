@@ -3257,18 +3257,159 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 }
 
 /* 侧栏插件实时拖动排序：原项留在普通流中成为空槽，克隆项浮起跟随指针，
-   其余项的逐项追赶由 shell.js 的 WAAPI FLIP 完成。 */
-.plug-list > button[data-plugin-id] { cursor: grab; touch-action: pan-y; }
+   其余项的逐项追赶由 shell.js 的 WAAPI FLIP 完成。
+   v0.102 颜色分组后，拖拽单位从 .plug-list 变成每一段 .plug-seg。 */
+.plug-seg > button[data-plugin-id] { cursor: grab; touch-action: pan-y; }
 .plug-list-sec{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .plug-list-sec small{font-size:calc(10px * var(--ui-text-scale));font-weight:500;letter-spacing:0;color:var(--ink-3);white-space:nowrap}
-.plug-list.plugin-drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
-.plug-list.plugin-drag-live > button[data-plugin-id] { cursor: grabbing; }
-.nav .plug-list > button.nav-dragging {
+.plug-seg.plugin-drag-live { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+.plug-seg.plugin-drag-live > button[data-plugin-id] { cursor: grabbing; }
+.nav .plug-seg > button.nav-dragging {
   opacity: .18;
   background: color-mix(in srgb, var(--deep) 7%, transparent);
   outline: 1.5px dashed color-mix(in srgb, var(--deep) 48%, transparent);
   outline-offset: -3px;
 }
+
+/* ── v0.102 插件颜色分组 ──
+   --gc 由 shell.js 从 pluginGroups.GROUP_COLORS 写在 .plug-group 上。
+   底色一律用 color-mix 往表面色里掺，深浅两套主题都成立，
+   所以这里不出现 [data-theme-mode="dark"] 覆盖。
+   选择器一律带 .nav 前缀：侧栏基线是 .nav button（深色栏那套 color/padding），
+   不带前缀的 .plug-group-fold:hover 特异性打不过它，悬停会把文字刷成白色。 */
+.nav .plug-group {
+  margin: 3px 0;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--gc, var(--grape)) 9%, transparent);
+  box-shadow: inset 3px 0 0 var(--gc, var(--grape)),
+    inset 0 0 0 1px color-mix(in srgb, var(--gc, var(--grape)) 24%, transparent);
+  overflow: hidden;
+}
+.nav .plug-group-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 7px;
+}
+.nav .plug-group-fold {
+  flex: 1;
+  min-width: 0;
+  gap: 7px;
+  min-height: 30px;
+  padding: 4px 5px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  font-size: calc(11.5px * var(--ui-text-scale));
+}
+.nav .plug-group-fold:hover { background: color-mix(in srgb, var(--gc, var(--grape)) 15%, transparent); color: var(--ink); }
+.nav .plug-group-fold .fa-ic { width: 11px; height: 11px; flex: none; opacity: .65; }
+.nav .plug-group-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 700; letter-spacing: .01em;
+}
+.nav .plug-group-count {
+  flex: none; font-size: calc(10px * var(--ui-text-scale)); font-weight: 400;
+  color: var(--ink-3); background: color-mix(in srgb, var(--gc, var(--grape)) 16%, transparent);
+  padding: 1px 6px; border-radius: 8px;
+}
+.nav .plug-group-tools { flex: none; display: flex; gap: 1px; }
+.nav .plug-group-move {
+  width: 21px; height: 21px; flex: none; gap: 0; padding: 0;
+  justify-content: center;
+  border-radius: 6px; color: var(--ink-3);
+}
+.nav .plug-group-move:hover { background: color-mix(in srgb, var(--gc, var(--grape)) 16%, transparent); color: var(--ink); }
+.nav .plug-group-move .fa-ic { width: 10px; height: 10px; }
+.nav .plug-group .plug-seg { padding: 0 4px 4px; }
+.nav .plug-group.collapsed .plug-group-head { padding-bottom: 2px; }
+.nav .plug-group-move:disabled { opacity: .3; cursor: default; background: none; }
+/* 收起的组里有当前页：组头替它亮着，否则当前页在侧栏里就「消失」了 */
+.nav .plug-group.collapsed.has-on .plug-group-fold {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--gc, var(--grape)) 18%, transparent);
+}
+
+/* 分组动效（v0.103.0）
+   - 折叠箭头固定 chevron-down，收起态转 -90°。侧栏组头是就地改类名，过渡直接接上；
+     插件中心组头是重建出来的节点，由 shell.js 的 turnChevron() 用 WAAPI 补转。
+   - 侧栏整段重绘走 FLIP 时（.nav-flip），飞进 / 飞出颜色卡片的插件会越过卡片边界，
+     期间放开卡片的 overflow，否则插件在半路被裁掉、像是凭空出现。
+   减少动效由本文件既有的全局规则（data-ui-motion=reduced / prefers-reduced-motion）统一压时长，
+   JS 侧的 WAAPI 由 reducedMotion() 短路。 */
+.fold-chev { display: inline-flex; flex: none; transition: transform var(--motion-normal, 180ms) var(--motion-out, ease); }
+.collapsed .fold-chev { transform: rotate(-90deg); }
+.nav.nav-flip .plug-group { overflow: visible; }
+
+/* 右键菜单里的分组色点 */
+.plugin-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 3px 9px 8px;
+}
+.plugin-color-dot {
+  width: 17px; height: 17px; flex: none;
+  border: 1px solid color-mix(in srgb, var(--gc, var(--ink-3)) 40%, transparent);
+  border-radius: 50%;
+  background: var(--gc, transparent);
+  transition: transform .16s cubic-bezier(.34, 1.56, .64, 1);
+}
+.plugin-color-dot:hover { transform: scale(1.18); }
+.plugin-color-dot:focus-visible { outline: 2px solid var(--deep); outline-offset: 2px; }
+.plugin-color-dot.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--gc, var(--deep)); }
+.plugin-color-dot.none {
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--ink-3) 70%, transparent);
+  color: var(--ink-3);
+  font-size: calc(10px * var(--ui-text-scale));
+  line-height: 1;
+}
+.plugin-color-dot.none::after { content: "✕"; }
+.plugin-color-dot.none.on { border-style: solid; border-color: var(--deep); box-shadow: none; color: var(--deep); }
+
+/* 组色小圆点：侧栏组头与市场页组头共用 */
+.group-dot {
+  width: 9px; height: 9px; flex: none; border-radius: 50%;
+  background: var(--gc, var(--grape));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gc, var(--grape)) 22%, transparent);
+}
+
+/* 市场页分组：组头是横跨整张网格的一行，卡片仍留在同一个网格里流式排布，
+   这样响应式列数只在 .market-grid 一处定义，不必每组抄一遍。 */
+.market-group-head { grid-column: 1 / -1; margin-top: 4px; }
+/* 颜色段结束、回到未分组时的零高整行：强制换行并多出一道行距，给颜色段封口 */
+.market-group-end { grid-column: 1 / -1; height: 0; }
+.market-group-fold {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 6px 9px; border-radius: 10px; text-align: left; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--gc, var(--grape)) 26%, var(--line));
+  background: color-mix(in srgb, var(--gc, var(--grape)) 9%, var(--panel));
+  color: var(--ink-2); font: inherit;
+}
+.market-group-fold:hover { color: var(--ink); background: color-mix(in srgb, var(--gc, var(--grape)) 15%, var(--panel)); }
+.market-group-fold .fa-ic { width: 11px; height: 11px; flex: none; opacity: .65; }
+.market-group-fold b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(12px * var(--ui-text-scale)); }
+.market-group-count {
+  margin-left: auto; flex: none; padding: 1px 7px; border-radius: 999px;
+  font-size: calc(10px * var(--ui-text-scale)); color: var(--ink-3);
+  background: color-mix(in srgb, var(--gc, var(--grape)) 16%, transparent);
+}
+.market-grid .mcard[data-color] {
+  border-color: color-mix(in srgb, var(--gc) 30%, var(--line));
+  background: color-mix(in srgb, var(--gc) 7%, var(--panel));
+}
+.market-grid .mcard[data-color]:hover { border-color: color-mix(in srgb, var(--gc) 55%, var(--line)); }
+
+/* 手机端没有右键语义，分组与改名走卡片上的「⋯」 */
+.market-card-more {
+  flex: none; width: 30px; padding: 0; display: none;
+  align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--panel); color: var(--ink-2);
+  font: inherit; font-size: calc(15px * var(--ui-text-scale)); line-height: 1; cursor: pointer;
+}
+.market-card-more:hover { color: var(--deep); border-color: color-mix(in srgb, var(--deep) 42%, var(--line)); }
+
 .plugin-nav-ghost {
   position: fixed; left: 0; top: 0; z-index: 1200; box-sizing: border-box;
   display: flex; align-items: center; gap: 9px; padding: 7px 9px;
@@ -3307,6 +3448,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   .market-manage-card .market-card-actions > .btn { display: none; }
   .market-manage-card .market-switch-text { display: none; }
   .market-manage-card .market-switch-control { margin: 0; }
+  /* 触屏没有右键语义，改名 / 换图标 / 分组色收进卡片上的「⋯」 */
+  .market-card-more { display: inline-flex; }
   .market-manage-card .mi { width: 42px; height: 42px; }
   .market-manage-card .mi .app-icon { width: 28px; height: 28px; }
 }

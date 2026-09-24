@@ -155,18 +155,18 @@ function chips(x, y, w, items, kind) {
 function layersDiagram() {
   const W = 1500, LX = 30, LW = 150, CX = 196, CR = 1180, RX = 1212, RW = 258;
   const layers = [
-    { k: "present", n: "① 界面 / 呈现层", d: "外壳、路由、视图、抽屉、命令面板（视图清单按平台裁剪）", c: ["shell.js 1623行", "renderShell() :156", "switchTo() :1139", "backNav.js", "quadrant.js「任务表」", "timeblock.js 时间块·桌面", "timeViews.js", "timeline.js 时间线·APK", "inbox.js 收件箱·桌面", "drawer.js", "settings.js + settings/*", "aboutCard.js", "commandPalette.js", "coreViewIds() 按平台裁视图"] },
-    { k: "cross", n: "② 外观 / 交互横切层", d: "只写 CSS 变量与 DOM 原语，不碰业务数据", c: ["ui.js el()/toast()/pointerDrag()", "theme.js + themeProfiles.js", "theme-derived.css（生成）", "uiScale.js zoom + --ui-vw", "uiPreferences.js data-ui-*", "railWidth.js --rail-w", "motion.js", "icons.js", "switchControl.js", "windowSize.js", "mobileViewport.js", "pinyinInitial.js（生成）"] },
+    { k: "present", n: "① 界面 / 呈现层", d: "外壳、路由、视图、抽屉、命令面板（视图清单按平台裁剪）", c: ["shell.js 1976行", "renderShell() :156", "switchTo() :1139", "backNav.js", "quadrant.js「任务表」", "timeblock.js 时间块·桌面", "timeViews.js", "timeline.js 时间线·APK", "inbox.js 收件箱·桌面", "drawer.js", "settings.js + settings/*", "aboutCard.js", "commandPalette.js", "coreViewIds() 按平台裁视图"] },
+    { k: "cross", n: "② 外观 / 交互横切层", d: "只写 CSS 变量与 DOM 原语，不碰业务数据", c: ["ui.js el()/toast()/pointerDrag()", "theme.js + themeProfiles.js", "theme-derived.css（生成）", "uiScale.js zoom + --ui-vw", "uiPreferences.js data-ui-*", "railWidth.js --rail-w", "motion.js", "notifyStack.js", "icons.js", "switchControl.js", "windowSize.js", "mobileViewport.js", "pinyinInitial.js（生成）"] },
     { k: "flow", n: "③ 功能编排层（用例）", d: "把「一个功能」串起来的无状态逻辑", c: ["capture.js 拖/粘贴入口", "timeParser.js 中文时间", "aiIngest.js AI 兜底", "aiAutomation.js 定时 NL 规则", "scheduleConflict.js 避让", "automation.js", "taskReminder.js", "syncLayer.js WebDAV", "dataCenter.js 备份/ICS/xlsx", "webContent.js 网页抽取", "nativeSchedule.js 原生课表", "globalShortcuts.js", "updateChecker.js"] },
-    { k: "state", n: "④ 状态 / 数据层", d: "唯一的可变状态中枢 + 版本迁移", c: ["store.js S（26 个模块 import）", "normalizeState() :49", "migrations.js migrateState()", "blocksOf 缓存 :190", "changed() :99", "scheduleSave 350ms :91", "queueSave 串行 :87"] },
-    { k: "ext", n: "⑤ 扩展 / 插件层", d: "tide 契约 + 权限位；插件=填文件夹", c: ["pluginHost.js makeApi() :112", "requirePermission() :44", "new Function(\"tide\", code)", "pluginCatalog.js（生成）", "pluginShortcuts.js", "pluginAppearance.js", "public/plugins/ ×15", "views/settings/plugins.js"] },
-    { k: "ipc", n: "⑥ IPC 门面层", d: "一个 api 对象包住所有跨语言调用 + 浏览器兜底", c: ["api.js isTauri :4", "invoke() :6", "35 个 command 名", "localStorage 兜底 :18", "DEV /__cppu 桥 :11"] },
-    { k: "native", n: "⑦ Rust 原生能力层", d: "src-tauri/src —— 文件系统 / 网络 / 系统集成", c: ["lib.rs + 各模块共 34 个 #[tauri::command]", "load_data / save_data :721/734", "list_plugins :753", "http_session_* cookie 会话", "des_ecb_encrypt_hex :1263", "plugin_vault_* AES-256-GCM", "ai_chat :609", "lan.rs tiny_http 遥控", "update.rs 自更新", "system_bar.rs Android", "native_schedule.rs"] },
+    { k: "state", n: "④ 状态 / 数据层", d: "唯一的可变状态中枢 + 版本迁移", c: ["store.js S（28 个模块 import）", "normalizeState() :49", "migrations.js migrateState()", "blocksOf 缓存 :190", "changed() :99", "scheduleSave 350ms :91", "queueSave 串行 :87"] },
+    { k: "ext", n: "⑤ 扩展 / 插件层", d: "tide 契约 + 权限位；插件=填文件夹", c: ["pluginHost.js makeApi() :112", "requirePermission() :44", "new Function(\"tide\", code)", "pluginCatalog.js（生成）", "pluginShortcuts.js", "pluginAppearance.js", "public/plugins/ ×17", "views/settings/plugins.js"] },
+    { k: "ipc", n: "⑥ IPC 门面层", d: "一个 api 对象包住所有跨语言调用 + 浏览器兜底", c: ["api.js isTauri :4", "invoke() :6", "41 个 command 名", "localStorage 兜底 :18", "DEV /__cppu 桥 :11"] },
+    { k: "native", n: "⑦ Rust 原生能力层", d: "src-tauri/src —— 文件系统 / 网络 / 系统集成", c: ["lib.rs + 各模块共 42 个 #[tauri::command]", "load_data / save_data :721/734", "list_plugins :753", "http_session_* cookie 会话", "des_ecb_encrypt_hex :1263", "plugin_vault_* AES-256-GCM", "ai_chat :609", "lan.rs tiny_http 遥控", "update.rs 自更新", "system_bar.rs Android", "native_schedule.rs"] },
     { k: "plat", n: "⑧ 容器 / 构建层", d: "一套代码三端产物", c: ["Tauri 2：WebView2 / WKWebView / Android WebView", "tray-icon · opener · single-instance · global-shortcut", "Vite 6 bundle → dist/ 编进二进制", "MainActivity.kt edge-to-edge + WindowInsets 注入", "build-windows.sh / scripts/build-android-apk.sh"] },
   ];
   let y = 108, body = title(
     "U-Time · 软件层次总图",
-    "依赖方向严格向下：上层可调下层，下层绝不 import 上层。v0.70.0 · 前端 13.6k 行 JS / Rust 2.9k 行 / 15 个内置插件",
+    "依赖方向严格向下：上层可调下层，下层绝不 import 上层。v0.103.0 · 前端 17.1k 行 JS / Rust 3.7k 行 / 17 个内置插件 · 图内行号为 v0.73 快照，以正文为准",
     W
   );
   // 层名 + 说明两行文字占掉的高度：pad14 + 基线12 + 行距22 + 下沉留白14
@@ -202,7 +202,7 @@ function layersDiagram() {
     "gen-pinyin-initial.js",
     "",
     "横切：质量保障层",
-    "npm test → 55 个脚本",
+    "npm test → 80 个脚本",
     "  · 版本一致性 / 主题对比度",
     "  · 插件权限、生成物 --check",
     "  · 安全区回归断言",
@@ -213,7 +213,7 @@ function layersDiagram() {
   const miniChips = ["tools/test-miniprogram-core.js 260 断言", "tools/check-miniprogram.js 静态校验", "gen-miniprogram-tab-icons.js", "core/appMeta.js 版本由 sync-version.js 写", "备份 JSON 与桌面双向可恢复"];
   const miniLines = [
     "⑨ 微信小程序（同源平行栈，不依赖 Tauri、无 npm 构建）",
-    "pages/ 8 页 + 4 tabBar（原生 WXML / WXSS）｜ core/store.js 与桌面同 schema，wx.setStorage 承载",
+    "pages/ 11 页 + 4 tabBar（原生 WXML / WXSS）｜ core/store.js 与桌面同 schema，wx.setStorage 承载",
     "core/timeParser.js 逐行移植（只去掉 lookbehind）｜ core/captureFlow.js 把捕获拆成纯函数",
     "core/pluginRuntime.js = 插件的纯函数平行重写，无 tide、无动态求值｜ core/pluginNet.js 手搓 cookie jar",
     "只有 manifest.platforms.miniprogram === 'native' 的插件才有小程序界面",
@@ -237,7 +237,7 @@ const f01 = () => chain("01-quadrant.svg", "功能链路 ① 任务表（内部 
   [
     { layer: "① 呈现", k: "present", t: ["renderQuadrant()  views/quadrant.js:336", "顶栏文案「任务表 · 先决定，再动手」= shell.js:46 的 VIEWS 条目", "（v0.58.0 由「四象限」更名，代码里的 quadrant / quad 是内部标识符）", "四格定义来自 QUADS（ui.js:157），面积差由 CSS Grid 1.16fr/1fr 给（样式层）"] },
     { layer: "④ 状态（读）", k: "state", t: ["S.tasksOfQuad(q)  store.js:222", "排序三层：done 沉底 → 显式 order（v0.52.0 拖拽）→ due 兜底", "blocks 按日期分桶缓存 blocksOf() :190，失效函数 :63"], arrow: "订阅数据" },
-    { layer: "①② 拖拽", k: "cross", t: ["attachListDrag()  quadrant.js:77-263", "视图自己的 pointer 监听，不是 ui.js 的 pointerDrag（那套给时间块）", "鼠标 6px 位移启动 / 触摸 240ms 长按启动，>8px 判为滚动即取消", "落点用缓存 offsetHeight + rowGap 推算，换位动画走 FLIP 180ms", "松手 → S.moveTaskRelative(dragId, 邻居, 前后)"], arrow: "同格同完成态内拖卡片换位", side: ["⚠ 跨格拖动不存在", "store.js:238 见 quad 或 done 不同直接 no-op；", "改象限走抽屉四键（drawer.js:29-31,191）", "键盘等价：Alt+↑/↓（quadrant.js:287-303）"] },
+    { layer: "①② 拖拽", k: "cross", t: ["attachListDrag()  quadrant.js:77-263", "视图自己的 pointer 监听，不是 ui.js 的 pointerDrag（那套给时间块）", "鼠标 6px 位移启动 / 触摸 240ms 长按启动，>8px 判为滚动即取消", "落点用缓存 offsetHeight + rowGap 推算，换位动画走 FLIP 180ms", "松手 → S.moveTaskRelative(dragId, 邻居, 前后)"], arrow: "拖卡片换位：同格，或跨格放进别的象限", side: ["跨格拖放（v0.73 之后加入）", "指针进入别的象限 → 目标格高亮并算插入点", "松手 S.moveTaskToQuad()：保留完成态、回填 order", "同格内仍只在同完成态之间换位；Alt+↑/↓ 键盘重排"] },
     { layer: "④ 状态（写）", k: "state", t: ["S.moveTaskRelative / toggleTask / addTask / deleteTaskUndoable", "order 只在该格首次拖动时才批量回填（store.js:239-253）", "deleteTaskUndoable 先存快照，toast 里给「撤销」"], arrow: "一次 mutation" },
     { layer: "④ 状态（广播 + 排队）", k: "state", t: ["changed()  store.js:99  做两件事：", "① emitChanged() :95 → window 事件 tide:state-changed + subs 回调", "② scheduleSave() :91 → 350ms 防抖 → queueSave() :87 串行 promise 链"], arrow: "同一个函数既通知 UI 又排写入队", side: ["侧注：抽屉是第二条入口", "openTaskDrawer() views/drawer.js:10", "每个字段 → S.updateTask() → 局部 refresh() :234", "只改自己那一片 DOM，不整屏重建"] },
     { layer: "① 重渲染", k: "present", t: ["quadrant.js:365-369  一个 S.subscribe，回调里逐格 _refresh", "单格用 replaceChildren 重建（:277-282），不做逐卡片 diff", "shell.js:1444  S.subscribe(renderStat)  只刷顶栏统计"], arrow: "订阅者各自刷自己那块" },
@@ -290,14 +290,15 @@ const f04 = () => chain("04-plugin.svg", "功能链路 ④ 插件系统：一个
     { layer: "⑤ 契约 / 权限", k: "ext", t: [
       "makeApi() :112-301 给出全部能力；每个方法第一行 requirePermission() :44",
       "!缺权限是 throw，不是静默降级 —— 插件作者立刻看到",
-      "12 个权限位 :23-36  ui tasks blocks storage notify events http",
-      "                   openUrl timeParse vault schoolImport sound",
+      "14 个权限位  ui tasks blocks storage notify events http",
+      "             openUrl timeParse vault ai messages schoolImport sound",
       "分类：身份(id/manifest/app.links/plugins.list)｜UI(registerView,",
       "  registerTaskAction/navigate/notify/sound)｜数据(tasks/blocks/",
       "  inbox/storage)｜资产(assets.text/json/saveText，路径钳制 :205)",
       "｜事件(events.on/emit)｜网络(http.get/session/fetch/exportCookies,",
-      "  desEncryptHex)｜网页解析(util.web.* 13 个)｜时间(util.*)",
+      "  desEncryptHex)｜网页解析(util.web.* 14 个)｜时间(util.*)",
       "｜凭据(vault → Rust AES)｜教务导入(schoolImporter)",
+      "｜AI(ai.chat / ai.status，复用用户配置)｜跨插件消息(messages.list)",
     ] },
     { layer: "① 注册视图", k: "present", t: ["tide.ui.registerView({id,title,icon,render,immersive}) :180", "shell.js:90 viewDef() 按 settings.pluginOrder 排序 :105", "落在导航「插 件 视 图」分组（shell.js:657），键名 plug:<viewId>"], arrow: "emitNavChanged() :392" },
     { layer: "① 挂载 / 卸载", k: "present", t: ["switchTo → commit()  shell.js:1155（插件段 :1177-1192）", "· immersive 时 .appFrame 加 rail-hidden", "· append .plugview 容器，cleanup = render(box, { refresh })", "· cleanup + 停动效观察器 一起包成 view._unsub，切走时回收", "!render 抛错被 try/catch 接住，就地显示「插件视图出错」:1192", "→ 一个坏插件不会把整个壳打挂"] },
@@ -321,12 +322,12 @@ const f05 = () => chain("05-storage.svg", "功能链路 ⑤ 本地存储：一�
   ]);
 
 const f06 = () => chain("06-update.svg", "功能链路 ⑥ 自更新：为什么不用官方 updater",
-  "手写 GitHub Releases 客户端，只校验 https 和大小，不校验签名 —— 这是明确取舍",
+  "手写 GitHub Releases 客户端，校验 https、大小与 SHA-256 摘要，不校验签名 —— 这是明确取舍",
   [
     { layer: "③ 触发", k: "flow", t: ["initUpdateChecker()  main.js:51 → src/updateChecker.js:191", "UI：views/settings/update.js:24（挂在关于卡片里 aboutCard.js:38）"] },
     { layer: "⑥→⑦ 检查", k: "native", t: ["api.updateCheck → lib.rs(update.rs):266", "GET GitHub Releases API :34（仓库 momoqiqi-qwq/le-time-management）", "Cache-Control: no-cache :275，不吃 CDN 缓存", "parse_version :71 做 semver 比较；asset_score :118 给资产打分挑包"] },
     { layer: "③ 状态机", k: "flow", t: ["check → download :307 → ready :311 → install :360", "进度走 Tauri 事件 update:progress（updateChecker.js:389）"] },
-    { layer: "⑦ 下载", k: "native", t: ["update_download :401：validate_release_url :207 强制 github + https", "流式写 app_cache_dir 的 .part，下完 rename :473", "!只有大小校验，没有 checksum / 签名（:397-399 自己写明）"] },
+    { layer: "⑦ 下载", k: "native", t: ["update_download :401：validate_release_url :207 强制 github + https", "流式写 app_cache_dir 的 .part，下完 rename :473", "!下完校验大小与 GitHub 给的 SHA-256 摘要；不校验独立签名（模块头部写明）"] },
     { layer: "⑦ 安装", k: "native", t: ["Windows :491 起 NSIS 安装器 /S /R 分离进程，然后 app.exit(0) :530", "Android :543 走 ApkInstallerPlugin 的 content:// URI", "!需要 REQUEST_INSTALL_PACKAGES —— 由 sync-android-native.js:51", "!注入到 gen/android 的 AndroidManifest（该目录 gitignored）"] },
   ]);
 
@@ -348,13 +349,13 @@ const f07 = () => chain("07-android.svg", "功能链路 ⑦ Android 适配：同
 const f08 = () => chain("08-miniprogram.svg", "功能链路 ⑧ 小程序同源版：共享什么、分叉什么、靠什么不散",
   "运行时完全独立，靠「同一份工具链 + 同一份数据 schema + 同一套校验脚本」保持同步",
   [
-    { layer: "呈现", k: "mini", t: ["原生 WXML/WXSS，无 Tauri、无 npm 构建", "app.json：8 个 page + 4 个 tabBar（设置 / 任务表 / 时间块 / 捕获）", "darkmode: true + theme.json 变量，跟随系统"] },
+    { layer: "呈现", k: "mini", t: ["原生 WXML/WXSS，无 Tauri、无 npm 构建", "app.json：11 个 page + 4 个 tabBar（设置 / 任务表 / 时间块 / 捕获）", "darkmode: true + theme.json 变量，跟随系统"] },
     { layer: "状态", k: "mini", t: ["core/store.js 与桌面同 schema，wx.setStorage 承载", "设置页导出/导入的 JSON 与桌面端双向可恢复", "appMeta.js 的 version 由 sync-version.js 统一写"] },
     { layer: "解析", k: "mini", t: ["core/timeParser.js:1 自己声明「逐行移植」", "唯一差异：dayOnly 的 lookbehind 换成捕获组 + slice（:45 / :74-76）", "!原因：iOS 16.4 以下 JavaScriptCore 不支持 lookbehind，会解析崩溃", "CJS exports :172"] },
     { layer: "捕获", k: "mini", t: ["core/captureFlow.js 把 handleText 拆成纯函数：", "buildCapture :9-27 / durOptions :30 / createFromCapture :39-62", "pages/capture/index.js:39-45,99 是可编辑预览卡（比桌面的规则路径更显式）", "!砍掉：冲突试算与自动避让、AI 兜底、撤销、toast"] },
-    { layer: "提醒", k: "mini", t: ["core/taskReminder.js:10-12 用固定 setInterval(15s) 取代自适应 setTimeout", "声音：wx.createInnerAudioContext + 随包 /sounds/reminder.wav", "!桌面是 Web Audio 现场合成 7 种预设（sound.js:8-28），零音频文件"] },
-    { layer: "插件", k: "mini", t: ["!没有插件宿主、没有 tide —— 微信禁止动态求值代码", "core/pluginRuntime.js:1「只放纯数据逻辑，页面负责交互」", "= 每个插件的纯函数平行重写：weeklyReport / holidaySummary /", "  futureExams / examFlow / dormDuty* / inboxDrop*", "core/pluginNet.js：wx.request 不持久 cookie，所以手搓 cookie jar :2-5", "UI 硬编码在 pages/plugin/index.js，开关看", "manifest.platforms.miniprogram === 'native'（plugins/index.js:83）"] },
-    { layer: "同源机制", k: "tool", t: ["sync-plugins.js 一次生成：桌面 pluginCatalog.js +", "miniprogram/core/pluginCatalog.js + pluginData/holiday.js（:102）", "+ exams.js（:116，从 exam-calendar 的 main.js 里抠 const DATA）", "+ 插件 PNG 副本（:128）+ 小程序 tab 图标", "sync-version.js 覆盖 miniprogram/core/appMeta.js", "校验：tools/test-miniprogram-core.js（实跑 260 项断言全过）+ check-miniprogram.js"] },
+    { layer: "提醒", k: "mini", t: ["core/taskReminder.js:10-12 用固定 setInterval(15s) 取代自适应 setTimeout", "声音：wx.createInnerAudioContext + 随包 /sounds/reminder.wav", "!桌面是 Web Audio 现场合成 8 种预设（sound.js），零音频文件"] },
+    { layer: "插件", k: "mini", t: ["!没有插件宿主、没有 tide —— 微信禁止动态求值代码", "core/pluginRuntime.js:1「只放纯数据逻辑，页面负责交互」", "= 每个插件的纯函数平行重写：weeklyReport / holidaySummary /", "  futureExams / examFlow / dormDuty* / inboxDrop*", "core/pluginNet.js：wx.request 不持久 cookie，所以手搓 cookie jar :2-5", "UI 硬编码在 pages/plugin/index.js，开关看", "manifest.platforms.miniprogram === 'native'（现 13 个，plugins/index.js:83）"] },
+    { layer: "同源机制", k: "tool", t: ["sync-plugins.js 一次生成：桌面 pluginCatalog.js +", "miniprogram/core/pluginCatalog.js + pluginData/holiday.js（:102）", "+ exams.js（:116，从 exam-calendar 的 main.js 里抠 const DATA）", "+ 插件 PNG 副本（:128）+ 小程序 tab 图标", "sync-version.js 覆盖 miniprogram/core/appMeta.js", "校验：tools/test-miniprogram-core.js（260 项断言）+ check-miniprogram.js"] },
     { layer: "桌面专属", k: "present", t: ["插件沙箱、窗口拖拽 / 截图捕获、图片附件、全局快捷键、", "命令面板、LAN 遥控（桌面是 tiny_http 服务端，手机是客户端）", "!小程序没有的反而更多：暗色跟随系统、7 天日期条、长按放置震动、", "!页面分享（这些是小程序专属，见 README）"] },
   ]);
 
@@ -369,7 +370,7 @@ const f09 = () => chain("09-alert.svg", "功能链路 ⑨ 智能预警机制：�
     { layer: "③ 自动化层", k: "flow", t: ["automation.js:7-12 四条规则（trigger 三类）：", "截止任务自动排程 change（默认开）/ 考试提醒 hourly（开）/", "课程同步时间块 daily（!默认关）/ 每日整理 daily（开）", "调度：启动跑一次 + 60s、3600s 两个间隔 + 变更后 800ms 防抖 :90-96", "running 单一标志防重入 :6,66；变更型只跑真正需要实时的排程"], arrow: "另一条驱动路径：事件与定时", side: ["三重钳制：排程单轮 ≤6 候选、", "只受理未来 0—14 天截止、试排从 due−3 起逐日向后", "（:24-29）；考试节点靠 sourceKey 去重；", "每日整理靠 daily:<日期> 幂等（:36）"] },
     { layer: "④ 留痕与回退", k: "state", t: ["每次自动写库前 snapshot()：tasks / blocks / inbox 三份深拷贝 :17", "log() 带 before，收件箱页每条可「撤销」→ undoLog :19", "!撤销 = 快照整体放回，不依赖事务；日志环形上限 120 条，界面显示 25 条"], arrow: "机器动手必须可回退" },
     { layer: "③ 冲突试算", k: "flow", t: ["previewSchedule()  src/scheduleConflict.js:64 —— 只试算不落库", "findAlternatives() :33：15 分钟步进、正向先于负向、上限 4 个候选", "捕获路径自动落到 alternatives[0] 并 toast 告知 capture.js:132-139", "课程同步无法让位 → 转收件箱「课程冲突：…」automation.js:60"], arrow: "第三种时机：动作发生之前", side: ["侧注：不做后台全量扫描", "冲突只在放置 / 编辑 / 捕获 /", "课程同步四种时机判定，", "以免随机弹提示打断用户"] },
-    { layer: "③ AI 定时任务", k: "flow", t: ["aiAutomation.js：自然语言定义，频率 daily|weekdays|weekly|once", "默认 09:00、规则数 ≤30、按分钟比对 + cycleKey 同周期只跑一次", "单周期 ≤5 个截止任务 :344；执行失败退避 10 分钟 :333", "模型 temp 固定 0.15 :316；产出的是操作意图，逐字段钳制后才写库"], arrow: "可选的第四层（需网络、显式启用）" },
+    { layer: "③ AI 定时任务", k: "flow", t: ["aiAutomation.js：自然语言定义，频率 daily|weekdays|weekly|once", "默认 09:00、规则数 ≤30、按分钟比对 + cycleKey 同周期只跑一次", "每轮 ≤5 条到期规则 :344；执行失败退避 10 分钟 :333", "模型 temp 固定 0.15 :319；产出的是操作意图，逐字段钳制后才写库"], arrow: "可选的第四层（需网络、显式启用）" },
   ]);
 
 const f10 = () => chain("10-fusion.svg", "功能链路 ⑩ 多源数据融合：十三类来源怎么汇成一份可撤销的日程",

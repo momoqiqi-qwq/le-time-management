@@ -24,6 +24,7 @@
 5. **Rust 后端**（`src-tauri/`）—— 数据原子读写、插件目录扫描、应用信息
 6. **设置中心**（`src/views/settings.js`）—— 数据管理、插件启停、重新扫描
 
+> 🌟 想先看它能做什么？→ [`docs/features.html`](./docs/features.html)（功能介绍页：单文件、离线可开，功能点逐条对齐源码）
 > 🧱 想看每一层的具体技术选型（依赖、模块映射、版本快照）？→ [`docs/tech-stack.html`](./docs/tech-stack.html)
 > 📐 想看懂设计取向与各模块方案？→ [`docs/设计原则与整体架构说明.md`](./docs/设计原则与整体架构说明.md)（含任务表 / 时间线 / 收件箱 / 插件系统 / 智能预警五章）
 > 🔍 想按层读代码、看功能如何穿过这些层？→ [`docs/架构层次图.md`](./docs/架构层次图.md)（配 `docs/architecture/*.svg` 十张生成图）

@@ -9,8 +9,8 @@ const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeo
   Image:class{constructor(){this.naturalWidth=0;this.naturalHeight=0;}set src(v){this._src=v;}decode(){return Promise.reject(new Error('cannot decode'));}},
   tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async(k,v)=>{storageData[k]=v;},get:async(k,d)=>(k in storageData?storageData[k]:(d===undefined?null:d))},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;},del:async(key)=>{delete vaultData[key];}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message),assets:{saveBase64:async(name,b64)=>{saved.push([name,b64]);return 'D:/Downloads/'+name;}}}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,explainHttpError,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,explainHttpError,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -547,6 +547,40 @@ assert.equal((await jeLoad('cxCredit'))[0].KCMC, '重取到的课程', '拿到 H
 assert.equal(loadHits, 2, '解析失败只重试一次，不能无限重');
 loadHits = 0; response = (sid, method, url) => (url.includes('/je/load') ? { status: 200, body: '<html>nope</html>', finalUrl: url, location: '', cookies: [] } : (url.includes('tpass/login') ? { status: 302, body: '', finalUrl: url, location: 'https://jw.cppu.edu.cn/cas_callback?ticket=x', cookies: [] } : { status: 200, body: '<html>ok</html>', finalUrl: 'https://jw.cppu.edu.cn/index.html', location: '', cookies: [] }));
 await assert.rejects(() => jeLoad('qjRecord'), /教务数据解析失败/, '两次都拿不到 rows 就把 HTTP 状态报出来，不要静默返回空列表');
+
+/* ── 11.1 传输层抖动：reqwest 的 Display 只有 "error sending request for url (…)" 一句，
+   成因（DNS / 超时 / 连接被掐）全在 cause 链里，由 Rust 侧摊平后送上来。
+   两条要求：① 读查询遇到毛刺要自己重发一次，别把一次抖动变成一整屏报错；
+   ② 重发用尽后要按成因说人话，并把原串留着备查。 */
+const dnsBlip = () => new Error('请求失败: error sending request for url (https://jw.cppu.edu.cn/je/load): client error (Connect): dns error: failed to lookup address information: no such host');
+const jeRouter = (loadReply) => (sid, method, url, opts = {}) => {
+  if (url.endsWith('/je/develop/funcInfo/getStaticFuncByCode')) return jeMetaJson(jeMeta(opts));
+  if (url.startsWith('https://jw.cppu.edu.cn/je/load')) return loadReply();
+  return { status: 404, body: '', finalUrl: url, location: '', cookies: [] };
+};
+let blipHits = 0;
+response = jeRouter(() => { blipHits++; return blipHits === 1 ? Promise.reject(dnsBlip()) : jeJson([{ KCMC: '抖动后取回的课程' }]); });
+assert.equal((await jeLoad('creditModule'))[0].KCMC, '抖动后取回的课程', 'DNS 抖动必须自动重发，一次毛刺不该让整屏没数据');
+assert.equal(blipHits, 2, '重发一次就够，不能无限重');
+
+blipHits = 0;
+response = jeRouter(() => { blipHits++; return Promise.reject(new Error("Cannot read properties of undefined (reading 'rows')")); });
+await assert.rejects(() => jeLoad('grade'), /Cannot read properties/, '代码 bug 这类非传输层错误不许盲目重发');
+assert.equal(blipHits, 1, '非抖动错误一次都不该重发');
+
+blipHits = 0;
+response = jeRouter(() => { blipHits++; return Promise.reject(dnsBlip()); });
+await assert.rejects(() => jeLoad('grade'), /连不上警大的服务器（域名没解析出来）/, '重发用尽要把成因翻成人话');
+assert.equal(blipHits, 3, '退避重发最多两次');
+response = jeRouter(() => jeJson([{ KCMC: '恢复后的查询' }]));
+assert.equal((await jeLoad('grade'))[0].KCMC, '恢复后的查询', '连续失败不会把后续查询永久挡死');
+
+// 分类与「已经是人话就不二次加工」
+assert.match(explainHttpError(new Error('请求失败: error sending request for url (x): operation timed out')), /等待响应超时/);
+assert.match(explainHttpError(new Error('请求失败: error sending request for url (x): client error (Connect): tcp connect error: connection refused (os error 10061)')), /连不上服务器/);
+assert.match(explainHttpError(new Error('请求失败: error sending request for url (x): invalid peer certificate: UnknownIssuer')), /HTTPS 握手/);
+assert.match(explainHttpError(new Error('Failed to fetch')), /浏览器预览/);
+assert.equal(explainHttpError(new Error('教务登录态已失效，请重新登录')), '教务登录态已失效，请重新登录', '本来就是人话的文案原样透出');
 
 // 重启恢复：dump 里已带教务 authorization 就省一次换票；但 sso-jw 域的同名 Cookie 不算
 await clearSavedLogin(); state.sid = null;

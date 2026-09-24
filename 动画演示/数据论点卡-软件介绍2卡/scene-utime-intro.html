@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>U-Time · 数据论点卡（2 卡）</title>
+  <style>
+    /* =========================================================
+       设计变量：配色取自软件自己的主题令牌（src/styles.css :root）
+       换主题只改这里
+       ========================================================= */
+    :root {
+      --bg: #0b0f19;
+      --bg-glow: radial-gradient(circle at 28% 26%, rgba(17, 138, 178, 0.16), transparent 46%),
+                 radial-gradient(circle at 74% 76%, rgba(15, 76, 92, 0.26), transparent 50%);
+      --card-bg: rgba(255, 255, 255, 0.97);
+      --card-shadow: 0 28px 70px rgba(0, 0, 0, 0.38), 0 10px 24px rgba(0, 0, 0, 0.18);
+      --accent: #118ab2;          /* --sea 海蓝 */
+      --accent-light: #4fb8d8;
+      --accent-end: #0f4c5c;      /* --deep 深青 · 软件主操作色 */
+      --green: #2ec4b6;           /* --mint 对照 / 正面指标 */
+      --green-light: #5fd6c4;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --ease-elastic: cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    * { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+
+    html, body {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      overflow: hidden;
+    }
+
+    /* =========================================================
+       舞台与三态卡片
+       ========================================================= */
+    .stage {
+      position: relative; width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-glow);
+    }
+
+    .card-deck { position: absolute; inset: 0; transition: transform 1s var(--ease-out), opacity 0.6s ease; }
+    .card-deck.exit { transform: translateX(-120vw); opacity: 0; }
+
+    .card {
+      position: absolute; top: 50%; left: 50%;
+      width: min(92vw, 940px); max-height: 92vh;
+      min-height: clamp(440px, 66vh, 600px);
+      padding: clamp(1.5rem, 3.6vw, 2.6rem);
+      background: var(--card-bg);
+      border-radius: clamp(18px, 2.5vw, 28px);
+      box-shadow: var(--card-shadow);
+      opacity: 0;
+      transform: translate(-50%, 60vh) scale(0.82);
+      transition: transform 0.8s var(--ease-out), opacity 0.55s ease;
+      will-change: transform, opacity;
+      z-index: 1; overflow-y: auto;
+    }
+
+    .card.active { opacity: 1; transform: translate(-50%, -50%) scale(1); z-index: 10; }
+
+    .card.stacked {
+      opacity: 0.72;
+      transform:
+        translate(calc(-110% - var(--stack-i, 0) * 22%), -50%)
+        scale(calc(0.76 - var(--stack-i, 0) * 0.07))
+        rotate(calc(-4deg - var(--stack-i, 0) * 5deg));
+      z-index: 4;
+    }
+
+    .card-badge {
+      position: absolute; top: clamp(1rem, 2.5vw, 1.6rem); left: clamp(1rem, 2.5vw, 1.6rem);
+      font-size: clamp(2.4rem, 6vw, 4rem); font-weight: 900;
+      color: rgba(15, 76, 92, 0.10); line-height: 1;
+      user-select: none; pointer-events: none;
+    }
+
+    .card-content { position: relative; min-height: 100%; display: flex; flex-direction: column; }
+    .card-header { margin-bottom: clamp(1rem, 2.2vw, 1.6rem); }
+    .card-title { margin: 0 0 0.35rem; font-size: clamp(1.3rem, 3vw, 2rem); font-weight: 900; line-height: 1.25; }
+    .card-title em { font-style: normal; color: var(--accent); }
+    .card-subtitle { margin: 0; font-size: clamp(0.85rem, 1.8vw, 1.1rem); color: var(--muted); line-height: 1.5; }
+    .card-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: clamp(1rem, 2.5vw, 1.6rem); }
+
+    .corner-note {
+      position: absolute; bottom: clamp(0.8rem, 1.8vw, 1.2rem); right: clamp(1rem, 2.5vw, 1.6rem);
+      font-size: clamp(0.65rem, 1.3vw, 0.85rem); color: var(--muted); font-weight: 700;
+      font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace;
+      opacity: 0; transition: opacity 0.5s ease;
+    }
+    .card.active .corner-note { opacity: 1; transition-delay: 2.2s; }
+
+    /* =========================================================
+       通用级联入场
+       ========================================================= */
+    .fade-up { opacity: 0; transform: translateY(18px); transition: opacity 0.5s ease, transform 0.6s var(--ease-out); }
+    .card.active .fade-up { opacity: 1; transform: translateY(0); }
+    .card.active .delay-1 { transition-delay: 0.4s; }
+    .card.active .delay-2 { transition-delay: 0.8s; }
+    .card.active .delay-3 { transition-delay: 1.2s; }
+
+    /* =========================================================
+       组件：大数字 + 环形仪表 + 对比条
+       ========================================================= */
+    .stat-row { display: flex; align-items: center; gap: clamp(1.5rem, 4vw, 3rem); flex-wrap: wrap; }
+    .stat-block { display: flex; flex-direction: column; gap: 0.35rem; }
+    .big-number {
+      font-size: clamp(4rem, 12vw, 7rem); font-weight: 900; line-height: 1;
+      background: linear-gradient(135deg, var(--accent), var(--accent-end));
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .stat-caption { font-size: clamp(0.85rem, 1.8vw, 1.05rem); font-weight: 800; color: var(--accent-end); }
+    .gauge { position: relative; width: clamp(90px, 14vw, 130px); height: clamp(90px, 14vw, 130px); flex-shrink: 0; }
+    .gauge svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .gauge-track { fill: none; stroke: #eef2f4; stroke-width: 8; }
+    .gauge-progress {
+      fill: none; stroke: var(--accent); stroke-width: 8; stroke-linecap: round;
+      stroke-dasharray: 283; stroke-dashoffset: 283;
+      transition: stroke-dashoffset 1.2s var(--ease-out) 0.4s;
+    }
+    .card.active .gauge-progress { stroke-dashoffset: var(--gauge-offset, 283); }
+    .gauge-text {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: clamp(1.1rem, 2.2vw, 1.5rem); color: var(--accent);
+    }
+    .stat-desc { font-size: clamp(0.95rem, 2vw, 1.25rem); color: var(--muted); font-weight: 700; line-height: 1.5; flex: 1; min-width: 200px; }
+    .stat-desc code {
+      font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace; font-size: 0.92em;
+      background: #eef5f8; color: var(--accent-end); padding: 0.05em 0.35em; border-radius: 6px;
+    }
+
+    .bar-group { display: flex; flex-direction: column; gap: 0.7rem; }
+    .bar-row { display: flex; align-items: center; gap: 0.7rem; font-size: clamp(0.8rem, 1.7vw, 0.95rem); font-weight: 700; }
+    .bar-row > span:first-child { width: 7.5em; flex-shrink: 0; }
+    .bar { flex: 1; height: 10px; background: #eef2f4; border-radius: 999px; overflow: hidden; }
+    .bar-fill { height: 100%; width: 0; border-radius: 999px; transition: width 1s var(--ease-out); }
+    .bar-fill.a { background: linear-gradient(90deg, var(--accent), var(--accent-end)); }
+    .bar-fill.b { background: linear-gradient(90deg, var(--green), var(--green-light)); }
+    .card.active .bar-fill.a { width: var(--w, 50%); transition-delay: 1.0s; }
+    .card.active .bar-fill.b { width: var(--w, 50%); transition-delay: 1.3s; }
+    .bar-value { width: 3.2em; text-align: right; flex-shrink: 0; font-family: 'SF Mono', 'JetBrains Mono', Consolas, monospace; }
+
+    /* =========================================================
+       组件：图标卡组 + 金句横幅
+       ========================================================= */
+    .icon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(0.8rem, 2vw, 1.4rem); }
+    .icon-item {
+      display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+      padding: clamp(0.9rem, 2vw, 1.3rem);
+      background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 20px;
+      opacity: 0; transform: translateY(30px) scale(0.92);
+      transition: opacity 0.5s ease, transform 0.5s var(--ease-out);
+    }
+    .card.active .icon-item { opacity: 1; transform: translateY(0) scale(1); }
+    .card.active .icon-item:nth-child(1) { transition-delay: 0.3s; }
+    .card.active .icon-item:nth-child(2) { transition-delay: 0.55s; }
+    .card.active .icon-item:nth-child(3) { transition-delay: 0.8s; }
+    .icon-svg { width: clamp(44px, 7vw, 60px); height: clamp(44px, 7vw, 60px); }
+    .icon-title { font-size: clamp(0.9rem, 1.9vw, 1.15rem); font-weight: 900; text-align: center; }
+    .icon-desc { font-size: clamp(0.72rem, 1.5vw, 0.88rem); color: var(--muted); text-align: center; line-height: 1.5; }
+
+    .banner {
+      width: 100%; padding: clamp(0.7rem, 1.6vw, 1rem) clamp(1rem, 2.5vw, 1.6rem);
+      background: linear-gradient(90deg, var(--accent-end), var(--accent));
+      border-radius: 12px;
+      font-size: clamp(1rem, 2.2vw, 1.5rem); font-weight: 800; color: #fff; text-align: center;
+      opacity: 0; transform: translateY(20px) scaleX(0.96);
+      transition: opacity 0.5s ease, transform 0.6s var(--ease-out);
+    }
+    .card.active .banner { opacity: 1; transform: translateY(0) scaleX(1); transition-delay: 1.8s; }
+
+    /* =========================================================
+       响应式
+       ========================================================= */
+    @media (max-width: 760px) {
+      .icon-grid { grid-template-columns: 1fr; }
+      .card.stacked {
+        opacity: 0.55;
+        transform:
+          translate(calc(-85% - var(--stack-i, 0) * 14%), -50%)
+          scale(calc(0.62 - var(--stack-i, 0) * 0.06))
+          rotate(calc(-4deg - var(--stack-i, 0) * 5deg));
+      }
+    }
+
+    @media (max-width: 520px) {
+      .bar-row > span:first-child { width: 6em; }
+      .stat-desc { min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div class="card-deck" id="deck">
+
+      <!-- ========== 卡 01：本地优先 + 三端形态 ========== -->
+      <article class="card" data-index="0">
+        <span class="card-badge">01</span>
+        <div class="card-content">
+          <div class="card-header">
+            <h2 class="card-title fade-up delay-1">全部数据，只装在<em>一个文件</em>里</h2>
+            <p class="card-subtitle fade-up delay-1">无账号、不注册、不上传 —— 备份就是拷走这一个文件</p>
+          </div>
+          <div class="card-body">
+            <div class="stat-row">
+              <div class="stat-block">
+                <div class="big-number count-up" data-target="1" data-delay="300" data-duration="1000">0</div>
+                <div class="stat-caption">个 JSON 文件</div>
+              </div>
+              <div class="gauge">
+                <svg viewBox="0 0 100 100">
+                  <circle class="gauge-track" cx="50" cy="50" r="45"/>
+                  <circle class="gauge-progress" cx="50" cy="50" r="45" style="--gauge-offset: 0;"/>
+                </svg>
+                <div class="gauge-text count-up" data-target="100" data-suffix="%" data-delay="500" data-duration="1100">0%</div>
+              </div>
+              <div class="stat-desc fade-up delay-2">
+                写在设备的 <code>data.json</code> 里，原子写入不留半截文件；<br>软件本身没有账号体系，也不需要登录。
+              </div>
+            </div>
+
+            <div class="icon-grid">
+              <div class="icon-item">
+                <svg class="icon-svg" viewBox="0 0 64 64" fill="none" stroke="#4b5563" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="8" y="12" width="48" height="32" rx="4"/><path d="M22 52h20" stroke="var(--accent)"/><path d="M32 44v8" stroke="var(--accent)"/>
+                </svg>
+                <div class="icon-title">桌面端</div>
+                <div class="icon-desc">Windows 已验证<br>Linux 同一套代码</div>
+              </div>
+              <div class="icon-item">
+                <svg class="icon-svg" viewBox="0 0 64 64" fill="none" stroke="#4b5563" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="18" y="6" width="28" height="52" rx="6"/><path d="M28 14h8" stroke="var(--accent)"/><circle cx="32" cy="48" r="2.5" stroke="var(--accent)"/>
+                </svg>
+                <div class="icon-title">手机端</div>
+                <div class="icon-desc">Android APK<br>触摸与鼠标通用</div>
+              </div>
+              <div class="icon-item">
+                <svg class="icon-svg" viewBox="0 0 64 64" fill="none" stroke="#4b5563" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="24" cy="26" r="12"/><circle cx="44" cy="38" r="9" stroke="var(--accent)"/><path d="M24 18v16M16 26h16" stroke="var(--accent)"/>
+                </svg>
+                <div class="icon-title">小程序</div>
+                <div class="icon-desc">原生 WXML 单独实现<br>与桌面同一数据格式</div>
+              </div>
+            </div>
+          </div>
+          <div class="corner-note">实测 v0.100.0 · src-tauri/src/lib.rs data.json</div>
+        </div>
+      </article>
+
+      <!-- ========== 卡 02：插件生态规模 ========== -->
+      <article class="card" data-index="1">
+        <span class="card-badge">02</span>
+        <div class="card-content">
+          <div class="card-header">
+            <h2 class="card-title fade-up delay-1">核心只管时间，能力靠<em>插件</em>长出来</h2>
+            <p class="card-subtitle fade-up delay-1">课程表 · 番茄专注 · 考试日历 · 竞赛消息雷达 —— 放进目录即被发现</p>
+          </div>
+          <div class="card-body">
+            <div class="stat-row">
+              <div class="stat-block">
+                <div class="big-number count-up" data-target="16" data-delay="300" data-duration="1100">0</div>
+                <div class="stat-caption">个插件已内置</div>
+              </div>
+              <div class="gauge">
+                <svg viewBox="0 0 100 100">
+                  <circle class="gauge-track" cx="50" cy="50" r="45"/>
+                  <circle class="gauge-progress" cx="50" cy="50" r="45" style="--gauge-offset: 54;"/>
+                </svg>
+                <div class="gauge-text count-up" data-target="81" data-suffix="%" data-delay="600" data-duration="1100">0%</div>
+              </div>
+              <div class="stat-desc fade-up delay-2">
+                其中 <strong>13</strong> 个在桌面、安卓、小程序三端都能用；<br>
+                另外 <strong>3</strong> 个依赖网页抓取与登录态，只跑在桌面和安卓。
+              </div>
+            </div>
+
+            <div class="bar-group fade-up delay-3">
+              <div class="bar-row">
+                <span>三端可用</span>
+                <div class="bar"><div class="bar-fill a" style="--w: 81%;"></div></div>
+                <span class="bar-value count-up" data-target="13" data-suffix=" 个" data-delay="1000" data-duration="800">0 个</span>
+              </div>
+              <div class="bar-row">
+                <span>桌面 + 安卓</span>
+                <div class="bar"><div class="bar-fill b" style="--w: 19%;"></div></div>
+                <span class="bar-value count-up" data-target="3" data-suffix=" 个" data-delay="1300" data-duration="800">0 个</span>
+              </div>
+            </div>
+
+            <div class="banner">不想要的功能，不装就不占界面</div>
+          </div>
+          <div class="corner-note">实测 · public/plugins 16 份 manifest · platforms 字段</div>
+        </div>
+      </article>
+
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      /* =========================================================
+         时间线（毫秒）· 总时长 17.0s
+         口播建议：卡 1 讲「数据在本地 + 三端都有」（约 8s）
+                   卡 2 讲「16 个插件 / 13 个三端可用」（约 8s）
+         卡内最后一个动画在 2.7s 结束，距切卡留 5.3s 阅读时间
+         ========================================================= */
+      const TIMING = {
+        card1: 0,
+        card2: 8000,    // 卡 1 驻留 8s
+        exit: 16000     // 卡 2 驻留 8s 后整副滑出（1s）衔接下一镜头；不要就删掉 add('exit') 那行
+      };
+
+      const cards = document.querySelectorAll('.card');
+      const deck = document.getElementById('deck');
+
+      function activate(index) {
+        cards.forEach((card, i) => {
+          card.classList.remove('active', 'stacked', 'upcoming');
+          card.style.removeProperty('--stack-i');
+          if (i === index) {
+            card.classList.add('active');
+          } else if (i < index) {
+            card.classList.add('stacked');
+            card.style.setProperty('--stack-i', index - 1 - i);
+          } else {
+            card.classList.add('upcoming');
+          }
+        });
+        runCounters(index);
+      }
+
+      function countUp(el, target, duration, suffix, prefix, decimals) {
+        const start = performance.now();
+        const factor = Math.pow(10, decimals);
+        function frame(now) {
+          const p = Math.min((now - start) / duration, 1);
+          const eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = prefix + (Math.round(eased * target * factor) / factor).toFixed(decimals) + suffix;
+          if (p < 1) requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }
+
+      function runCounters(index) {
+        const card = cards[index];
+        if (!card) return;
+        card.querySelectorAll('.count-up').forEach(el => {
+          const target = parseFloat(el.dataset.target || '0');
+          const suffix = el.dataset.suffix || '';
+          const prefix = el.dataset.prefix || '';
+          const decimals = parseInt(el.dataset.decimals || '0', 10);
+          const delay = parseInt(el.dataset.delay || '300', 10);
+          const duration = parseInt(el.dataset.duration || '900', 10);
+          el.textContent = prefix + (0).toFixed(decimals) + suffix;
+          setTimeout(() => countUp(el, target, duration, suffix, prefix, decimals), delay);
+        });
+      }
+
+      function run() {
+        activate(0);
+        setTimeout(() => activate(1), TIMING.card2);
+        setTimeout(() => deck.classList.add('exit'), TIMING.exit);
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', run);
+      } else {
+        run();
+      }
+    })();
+  </script>
+</body>
+</html>

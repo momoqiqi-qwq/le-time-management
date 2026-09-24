@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>U-Time 功能介绍 · Le时间管理</title>
+  <meta name="description" content="U-Time 是一款本地优先的个人时间管理应用：读懂中文时间的消息捕获、四象限决策、时间块规划、多级提醒、17 个内置插件，覆盖 Windows、Android 与微信小程序。">
+  <meta name="theme-color" content="#16213e">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2316213e'/%3E%3Ctext x='32' y='42' font-size='28' text-anchor='middle' fill='%238be1e4' font-family='serif'%3ELe%3C/text%3E%3C/svg%3E">
+  <style>
+    /* 视觉语言与 docs/plugins.html、docs/tech-stack.html 一致：墨蓝 + 潮汐青 + 日出橙，标题用宋体。
+       界面示意的配色取自应用「经典 U-Time」主题（le-time-management/src/styles.css）。
+       单文件、零外部请求：不引网络字体、不引图片，示意全部是 CSS / 内联 SVG。 */
+    :root {
+      --ink: #16213e;
+      --ink-2: #33415c;
+      --muted: #68728a;
+      --paper: #f4f7fb;
+      --sheet: #ffffff;
+      --tide: #188ca5;
+      --tide-dark: #0f6d80;
+      --foam: #d9f2f3;
+      --sun: #ff7a59;
+      --line: #d9e1ec;
+      --shadow: 0 18px 48px rgba(22, 33, 62, .10);
+      --sans: "Noto Sans SC", "Noto Sans CJK SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      --display: "STZhongsong", "Songti SC", "Noto Serif SC", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+      --mono: "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --ease: cubic-bezier(.22, .8, .22, 1);
+
+      /* 应用界面示意：经典 U-Time 主题 */
+      --a-bg: #F2EFEA;
+      --a-paper: #F7F6F2;
+      --a-ink: #22303A;
+      --a-ink-2: #7E8B94;
+      --a-line: #E4DFD6;
+      --a-deep: #0F4C5C;
+      --a-side: #12333D;
+      --a-sea: #118AB2;
+      --a-coral: #FF6B6B;
+      --a-sun: #E3A008;
+      --a-grape: #9B5DE5;
+      --a-mint: #2EC4B6;
+      --q1: #D64545; --q1-bg: #FFE3E0;
+      --q2: #B7852A; --q2-bg: #FCEFD2;
+      --q3: #5B6BE8; --q3-bg: #E6EAFF;
+      --q4: #5B8F7B; --q4-bg: #E1F0EA;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 64px; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font: 16px/1.75 var(--sans); -webkit-font-smoothing: antialiased; }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid var(--sun); outline-offset: 3px; }
+    svg { display: block; max-width: 100%; }
+    .wrap { width: min(1160px, calc(100% - 40px)); margin: 0 auto; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    /* ── 顶栏（与 docs 其它页同一结构） ── */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 22px;
+      padding: 19px clamp(20px, 4vw, 58px); color: #fff; background: var(--ink);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font-weight: 800; letter-spacing: .06em; }
+    .brand-mark {
+      display: grid; place-items: center; width: 37px; aspect-ratio: 1;
+      border: 1px solid rgba(255, 255, 255, .46); border-radius: 50%; color: #8be1e4; font-family: var(--display);
+    }
+    .topbar nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px 22px; font-size: 14px; }
+    .topbar nav a { color: #ccd5e6; text-decoration: none; }
+    .topbar nav a:hover, .topbar nav a[aria-current="page"] { color: #8be1e4; }
+
+    /* ── 首屏 ── */
+    .hero { position: relative; overflow: hidden; color: #fff; background: var(--ink); padding: clamp(36px, 6vh, 70px) 0 clamp(64px, 10vh, 104px); }
+    .hero::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(820px 460px at 88% 8%, rgba(24, 140, 165, .34), transparent 62%),
+        radial-gradient(640px 400px at 6% 108%, rgba(255, 122, 89, .16), transparent 60%);
+    }
+    .hero-grid { position: relative; display: grid; grid-template-columns: minmax(0, .92fr) minmax(0, 1.08fr); gap: clamp(28px, 5vw, 64px); align-items: center; }
+    .eyebrow { margin: 0 0 16px; color: #8be1e4; font: 700 12px/1.2 var(--mono); letter-spacing: .17em; text-transform: uppercase; }
+    h1 { margin: 0; font: 400 clamp(38px, 4.9vw, 62px)/1.12 var(--display); letter-spacing: .01em; }
+    .nw { white-space: nowrap; }
+    h1 em { font-style: normal; color: #8be1e4; }
+    .lede { max-width: 620px; margin: 22px 0 0; color: #ccd5e6; font-size: clamp(16px, 1.6vw, 18.5px); }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 18px;
+      border: 1px solid rgba(255, 255, 255, .34); color: #fff; text-decoration: none; font-size: 14.5px; font-weight: 700;
+      transition: background-color .2s ease, border-color .2s ease, transform .2s var(--ease);
+    }
+    .button:hover { border-color: #8be1e4; transform: translateY(-1px); }
+    .button.primary { border-color: var(--sun); background: var(--sun); color: var(--ink); }
+    .button.primary:hover { background: #ff8e72; }
+    .button.dark { border-color: var(--ink); color: var(--ink); }
+    .button.dark:hover { border-color: var(--tide); color: var(--tide-dark); }
+    .stats { display: grid; grid-template-columns: .8fr .8fr 1.05fr 1.45fr; margin: 34px 0 0; padding: 0; list-style: none; border-top: 1px solid rgba(255, 255, 255, .18); }
+    .stats li { padding: 14px 10px 0 0; }
+    .stats b { display: block; font: 400 36px/1.05 var(--display); color: #fff; }
+    .stats span { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.5; color: #aab6cc; }
+
+    /* ── 应用窗口示意（首屏） ── */
+    .app-window {
+      border-radius: 14px; overflow: hidden; background: var(--a-bg); color: var(--a-ink);
+      box-shadow: 0 34px 90px rgba(0, 0, 0, .42), 0 0 0 1px rgba(255, 255, 255, .10);
+      transform: perspective(1700px) rotateY(-7deg) rotateX(3deg); transform-origin: 60% 50%;
+      font-size: 11px; line-height: 1.45;
+    }
+    .win-bar { display: flex; align-items: center; height: 30px; padding: 0 4px 0 12px; background: #0B2830; color: #9DB4B0; font-weight: 700; letter-spacing: .08em; }
+    .win-bar span { flex: 1; }
+    .win-bar i { width: 34px; height: 30px; display: grid; place-items: center; font-style: normal; color: #7f9a97; font-size: 12px; }
+    .win-body { display: grid; grid-template-columns: 31% 1fr; min-height: 372px; }
+    .win-side { background: var(--a-side); padding: 12px 8px; color: #9DB4B0; }
+    .side-brand { padding: 2px 8px 10px; color: #fff; font: 700 12px var(--sans); letter-spacing: .2em; }
+    .side-item { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 7px; white-space: nowrap; }
+    .side-item .ic { width: 17px; height: 17px; flex: none; display: grid; place-items: center; border-radius: 5px; background: rgba(255, 255, 255, .08); color: #D5E2DF; font-size: 9.5px; font-weight: 700; }
+    .side-item.on { background: rgba(255, 255, 255, .12); color: #fff; font-weight: 700; }
+    .side-item.on .ic { background: var(--a-sun); color: #17323A; }
+    .side-item em { margin-left: auto; padding: 0 5px; border-radius: 6px; background: rgba(255, 255, 255, .12); font-style: normal; font-size: 9px; }
+    .side-sec { margin: 10px 7px 5px; color: #5F7E86; font-size: 8.5px; letter-spacing: .22em; }
+    .side-group { margin: 3px 0; padding: 0 3px 3px; border-radius: 9px; background: color-mix(in srgb, var(--gc) 16%, transparent); box-shadow: inset 2.5px 0 0 var(--gc); }
+    .side-group .sg-head { display: flex; align-items: center; gap: 6px; padding: 5px 6px 2px; color: #cfe0dd; font-weight: 700; font-size: 10px; }
+    .side-group .sg-head i { width: 7px; height: 7px; border-radius: 50%; background: var(--gc); }
+    .side-group .sg-head em { margin-left: auto; font-style: normal; font-weight: 400; opacity: .7; }
+    .win-main { padding: 12px; }
+    .win-top { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 10px; background: #fff; box-shadow: 0 1px 6px rgba(34, 48, 58, .06); }
+    .win-top strong { font-size: 12.5px; }
+    .win-top small { color: var(--a-ink-2); }
+    .win-top .pill { margin-left: auto; padding: 1px 8px; border-radius: 99px; background: var(--a-bg); color: var(--a-ink-2); font-size: 9.5px; }
+    .mini-quad { display: grid; grid-template-columns: 1.22fr 1fr; grid-template-rows: 1.2fr 1fr; gap: 7px; margin-top: 9px; height: 306px; }
+    .mq { border-radius: 10px; padding: 7px; overflow: hidden; }
+    .mq header { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; font-size: 9.5px; font-weight: 700; }
+    .mq header b { display: grid; place-items: center; width: 15px; height: 15px; border-radius: 5px; color: #fff; font-size: 8.5px; }
+    .mq.q1 { background: var(--q1-bg); } .mq.q1 header { color: var(--q1); } .mq.q1 header b { background: var(--q1); }
+    .mq.q2 { background: var(--q2-bg); } .mq.q2 header { color: var(--q2); } .mq.q2 header b { background: var(--q2); }
+    .mq.q3 { background: var(--q3-bg); } .mq.q3 header { color: var(--q3); } .mq.q3 header b { background: var(--q3); }
+    .mq.q4 { background: var(--q4-bg); } .mq.q4 header { color: var(--q4); } .mq.q4 header b { background: var(--q4); }
+    .mcard { display: flex; align-items: center; gap: 6px; margin-top: 5px; padding: 6px 7px; border-radius: 7px; background: #fff; box-shadow: 0 1px 3px rgba(34, 48, 58, .08); font-size: 10px; font-weight: 600; }
+    .mcard small { margin-left: auto; flex: none; padding: 0 5px; border-radius: 5px; background: var(--a-bg); color: var(--a-ink-2); font-size: 8.5px; font-weight: 500; }
+    .mcard small.hot { background: #FFE0DC; color: #B03535; }
+    .mcard .src { width: 13px; height: 13px; flex: none; display: grid; place-items: center; border-radius: 4px; background: var(--a-deep); color: #fff; font-size: 7.5px; }
+
+    /* ── 分节导航 ── */
+    .secnav { position: sticky; top: 0; z-index: 30; background: rgba(244, 247, 251, .9); backdrop-filter: saturate(1.4) blur(10px); border-bottom: 1px solid var(--line); }
+    .secnav .wrap { display: flex; gap: 4px; overflow-x: auto; padding: 9px 0; scrollbar-width: none; }
+    .secnav .wrap::-webkit-scrollbar { display: none; }
+    .secnav a { flex: none; padding: 4px 12px; border: 1px solid transparent; border-radius: 999px; color: var(--ink-2); font-size: 13.5px; text-decoration: none; }
+    .secnav a:hover { border-color: var(--line); background: #fff; color: var(--tide-dark); }
+
+    /* ── 通用分节 ── */
+    .block { padding: clamp(56px, 9vh, 92px) 0; }
+    .block.tint { background: #eaf0f6; }
+    .kicker { margin: 0 0 10px; color: var(--tide-dark); font: 700 11.5px var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    h2 { margin: 0 0 14px; font: 500 clamp(30px, 4vw, 46px)/1.16 var(--display); }
+    h3 { margin: 0; }
+    .lead { max-width: 780px; margin: 0; color: var(--ink-2); font-size: 17px; }
+    .sheet { background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+    .split { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: clamp(28px, 5vw, 64px); align-items: center; margin-top: 34px; }
+    .split.rev > :first-child { order: 2; }
+    .points { display: grid; gap: 12px; margin: 22px 0 0; padding: 0; list-style: none; }
+    .points li { position: relative; padding-left: 24px; color: var(--ink-2); }
+    .points li::before { content: ""; position: absolute; left: 3px; top: .7em; width: 8px; height: 8px; border-radius: 2px; background: var(--tide); transform: rotate(45deg); }
+    .points b { color: var(--ink); }
+    .note { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid var(--sun); background: #fff6f2; color: var(--ink-2); font-size: 14px; }
+    .tag { display: inline-block; padding: 0 8px; border-radius: 6px; background: var(--foam); color: var(--tide-dark); font-size: 12.5px; font-weight: 700; }
+    code { padding: 1px 6px; border-radius: 5px; background: #eef2f7; font: 13px var(--mono); color: var(--ink-2); }
+
+    /* ── 链路 ── */
+    .flow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 34px 0 0; padding: 0; list-style: none; }
+    .flow li { position: relative; padding: 24px 22px 26px; border-right: 1px solid var(--line); }
+    .flow li:last-child { border-right: 0; }
+    .flow li:not(:last-child)::after {
+      content: "→"; position: absolute; right: -12px; top: 24px; z-index: 1; width: 24px; height: 24px; display: grid; place-items: center;
+      border: 1px solid var(--line); border-radius: 50%; background: #fff; color: var(--tide); font-size: 13px;
+    }
+    .flow .num { color: var(--sun); font: 700 12px var(--mono); letter-spacing: .14em; }
+    .flow h3 { margin: 6px 0 6px; font: 500 26px/1.2 var(--display); }
+    .flow p { margin: 0; color: var(--ink-2); font-size: 14.5px; line-height: 1.7; }
+    .flow .where { display: block; margin-top: 10px; color: var(--muted); font: 12px var(--mono); }
+
+    /* ── 捕获演示 ── */
+    .cap-demo { padding: clamp(18px, 3vw, 26px); }
+    .cap-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink-2); font: 13px/1.4 var(--sans); cursor: pointer; transition: border-color .2s ease, background-color .2s ease, color .2s ease; }
+    .chip:hover { border-color: var(--tide); }
+    .chip[aria-pressed="true"] { border-color: var(--tide); background: var(--foam); color: var(--tide-dark); font-weight: 700; }
+    .cap-input { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 13px 15px; border: 1px dashed #c9c2b5; border-radius: 10px; background: var(--a-paper); color: var(--a-ink); font-size: 16px; }
+    .cap-input kbd { flex: none; padding: 2px 7px; border-radius: 6px; background: var(--a-deep); color: #fff; font: 700 11px var(--mono); }
+    .cap-flow { display: flex; align-items: center; gap: 10px; margin: 12px 2px; color: var(--muted); font: 12px var(--mono); }
+    .cap-flow::before, .cap-flow::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }
+    .cap-result { display: grid; grid-template-columns: 1fr 1.25fr .85fr; gap: 8px; margin: 0; }
+    .cap-result > .wide { grid-column: span 2; }
+    .cap-result > div { min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #f7f9fc; }
+    .cap-result dt { color: var(--muted); font: 700 10.5px var(--mono); letter-spacing: .12em; }
+    .cap-result dd { margin: 3px 0 0; font-size: 14px; font-weight: 700; line-height: 1.45; overflow-wrap: anywhere; }
+    .cap-lane { position: relative; height: 86px; margin-top: 14px; border-radius: 10px; background: var(--a-bg); overflow: hidden; }
+    .cap-lane .tick { position: absolute; top: 0; bottom: 0; padding: 4px 0 0 4px; border-left: 1px dashed rgba(34, 48, 58, .13); color: var(--a-ink-2); font: 10px var(--mono); }
+    .cap-lane .blk {
+      position: absolute; top: 50px; height: 26px; left: calc(var(--s) * 100%); width: calc(var(--w) * 100%); min-width: 46px;
+      padding: 0 4px; border-radius: 7px; background: var(--c); color: var(--fg);
+      font: 700 11px/26px var(--mono); text-align: center; white-space: nowrap; overflow: hidden;
+      box-shadow: 0 4px 12px rgba(34, 48, 58, .16);
+      transition: left .5s var(--ease), width .5s var(--ease), background-color .3s ease, color .3s ease;
+    }
+    .cap-lane .lbl { position: absolute; top: 24px; left: calc(var(--s) * 100%); color: var(--a-ink); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: left .5s var(--ease); }
+    .cap-lane.flip .lbl { left: auto; right: calc((1 - var(--s) - var(--w)) * 100%); }
+    .cap-note { margin: 12px 0 0; color: var(--muted); font-size: 12.5px; }
+    .cat { display: inline-block; padding: 0 8px; border-radius: 6px; font-size: 12.5px; font-weight: 700; }
+    .c-work { background: var(--a-sun); color: #17323A; }
+    .c-study { background: var(--a-sea); color: #fff; }
+    .c-sport { background: var(--a-coral); color: #3A1512; }
+    .c-life { background: var(--a-grape); color: #fff; }
+    .c-rest { background: var(--a-mint); color: #0E2A26; }
+    .expr { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 0; padding: 0; list-style: none; }
+    .expr li { padding: 2px 9px; border-radius: 6px; background: #fff; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; }
+
+    /* ── 四象限示意 ── */
+    .quad-mock { padding: 16px; background: var(--a-bg); color: var(--a-ink); }
+    .qm-motto { margin: 0 0 10px; color: var(--a-ink-2); font-size: 12.5px; }
+    .qm-grid { display: grid; grid-template-columns: 1.25fr 1fr; grid-template-rows: auto auto; gap: 10px; }
+    .qm { position: relative; min-height: 150px; padding: 12px; border-radius: 12px; }
+    .qm.q1 { background: var(--q1-bg); min-height: 196px; } .qm.q2 { background: var(--q2-bg); min-height: 196px; }
+    .qm.q3 { background: var(--q3-bg); } .qm.q4 { background: var(--q4-bg); }
+    .qm header { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; }
+    .qm header b { display: grid; place-items: center; width: 21px; height: 21px; border-radius: 6px; color: #fff; font-size: 11px; }
+    .qm.q1 header { color: var(--q1); } .qm.q1 header b { background: var(--q1); }
+    .qm.q2 header { color: var(--q2); } .qm.q2 header b { background: var(--q2); }
+    .qm.q3 header { color: var(--q3); } .qm.q3 header b { background: var(--q3); }
+    .qm.q4 header { color: var(--q4); } .qm.q4 header b { background: var(--q4); }
+    .qm .tip { margin: 1px 0 6px 28px; color: var(--a-ink-2); font-size: 11.5px; }
+    .tcard { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 8px 10px; border-radius: 9px; background: #fff; box-shadow: 0 1px 4px rgba(34, 48, 58, .08); font-size: 13px; font-weight: 600; }
+    .tcard .src { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px; color: #fff; font-size: 10px; }
+    .tcard em { margin-left: auto; flex: none; padding: 0 7px; border-radius: 6px; background: var(--a-bg); color: var(--a-ink-2); font-style: normal; font-size: 11px; font-weight: 500; }
+    .tcard em.hot { background: #FFE0DC; color: #B03535; }
+    .tcard.dragging { position: relative; z-index: 2; transform: rotate(-2.5deg) translate(10px, 4px); box-shadow: 0 16px 30px rgba(34, 48, 58, .22); outline: 2px solid color-mix(in srgb, var(--q2) 55%, transparent); }
+    .tcard.slot { background: transparent; box-shadow: none; outline: 1.5px dashed rgba(34, 48, 58, .28); color: transparent; }
+
+    /* ── 时间块示意 ── */
+    .tb-mock { display: grid; grid-template-columns: 1fr 1.55fr 1fr; gap: 12px; padding: 14px; background: var(--a-bg); color: var(--a-ink); font-size: 12px; }
+    .tb-col-h { margin: 0 0 8px; color: var(--a-ink-2); font-size: 10.5px; letter-spacing: .2em; }
+    .ptask { margin-bottom: 8px; padding: 9px 10px; border-radius: 9px; background: #fff; box-shadow: 0 1px 4px rgba(34, 48, 58, .08); }
+    .ptask b { display: block; font-size: 12.5px; }
+    .ptask .row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .ptask .cat { font-size: 10.5px; }
+    .ptask .auto { margin-left: auto; padding: 1px 8px; border-radius: 6px; background: var(--a-deep); color: #fff; font-size: 10.5px; font-weight: 700; }
+    .tb-axis { position: relative; height: 380px; border-radius: 10px; background: #fff; box-shadow: 0 1px 4px rgba(34, 48, 58, .06); }
+    .tb-track { position: absolute; inset: 14px 0 12px; }
+    .tb-axis .hr { position: absolute; left: 0; right: 0; height: 0; border-top: 1px solid var(--a-line); }
+    .tb-axis .hr span { position: absolute; left: 6px; top: -8px; padding: 0 3px; background: #fff; color: var(--a-ink-2); font: 10px var(--mono); }
+    .tb-axis .blk { position: absolute; left: 50px; right: 10px; display: flex; align-items: center; gap: 8px; padding: 0 9px; border-radius: 7px; font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; }
+    .tb-axis .blk small { font-weight: 500; opacity: .82; font-size: 10.5px; }
+    .tb-axis .now { position: absolute; left: 40px; right: 0; border-top: 2px solid #E5484D; }
+    .tb-axis .now::before { content: "现在"; position: absolute; left: -38px; top: -9px; padding: 0 4px; border-radius: 4px; background: #E5484D; color: #fff; font-size: 9.5px; font-weight: 700; }
+    .tb-axis .ghost { position: absolute; left: 44%; right: 5%; z-index: 2; display: flex; align-items: center; padding: 0 9px; border-radius: 7px; border: 1.5px dashed #B7852A; background: rgba(255, 255, 255, .9); color: var(--a-ink); font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; transform: rotate(-1.5deg); box-shadow: 0 10px 22px rgba(34, 48, 58, .2); }
+    .conflict { position: absolute; right: 8px; z-index: 3; width: 214px; padding: 8px 10px; border-radius: 9px; background: #fff; box-shadow: 0 10px 26px rgba(34, 48, 58, .2); font-size: 11px; line-height: 1.5; }
+    .conflict b { color: #B03535; }
+    .conflict .alts { display: flex; gap: 5px; margin-top: 6px; }
+    .conflict .alts span { padding: 1px 7px; border: 1px solid var(--a-line); border-radius: 6px; color: var(--a-deep); font-weight: 700; }
+    .acard { margin-bottom: 10px; padding: 10px 11px; border-radius: 10px; background: #fff; box-shadow: 0 1px 4px rgba(34, 48, 58, .06); }
+    .acard .big { font: 400 22px/1.2 var(--display); }
+    .acard .big small { font: 11px var(--sans); color: var(--a-ink-2); }
+    .meter { display: flex; height: 7px; margin-top: 7px; border-radius: 99px; overflow: hidden; background: var(--a-bg); }
+    .meter i { display: block; height: 100%; }
+    .bars { display: flex; align-items: flex-end; gap: 5px; height: 48px; margin-top: 6px; }
+    .bars i { flex: 1; border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--a-deep) 70%, #fff); }
+    .bars i:last-child { background: var(--a-sun); }
+    .tomorrow { margin: 6px 0 0; padding: 0; list-style: none; font-size: 11.5px; }
+    .tomorrow li { display: flex; gap: 8px; padding: 3px 0; border-top: 1px dashed var(--a-line); }
+    .tomorrow li:first-child { border-top: 0; }
+    .tomorrow b { font: 700 10.5px var(--mono); color: var(--a-deep); }
+    .views { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+    .view { padding: 10px 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .view svg { width: 100%; height: auto; border-radius: 6px; background: var(--a-bg); }
+    .view b { display: block; margin-top: 8px; font-size: 14px; }
+    .view span { display: block; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    /* ── 提醒 ── */
+    .layers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 30px; }
+    .layer { padding: 22px 22px 20px; }
+    .layer .lv { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+    .layer .lv span { color: var(--sun); font: 700 12px var(--mono); letter-spacing: .14em; }
+    .layer h3 { font: 500 22px/1.3 var(--display); white-space: nowrap; }
+    .layer .drive { margin-left: auto; padding: 0 8px; border-radius: 6px; background: #eef2f7; color: var(--muted); font-size: 12px; }
+    .layer p { margin: 10px 0 0; color: var(--ink-2); font-size: 14.5px; }
+    .levels { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; list-style: none; }
+    .levels li { padding: 2px 9px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font-size: 12.5px; }
+    .levels li.on { border-color: var(--tide); background: var(--foam); color: var(--tide-dark); font-weight: 700; }
+    .alert-demo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 26px; align-items: center; margin-top: 30px; padding: 24px; }
+    .stack-wrap { display: grid; justify-items: stretch; gap: 14px; }
+    .stack { position: relative; height: 92px; margin-top: 24px; }
+    .stack-cap { margin: 0; color: var(--muted); font-size: 12.5px; text-align: center; }
+    .toast { position: absolute; left: 0; right: 0; display: flex; gap: 11px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: #fff; color: var(--a-ink); box-shadow: 0 12px 30px rgba(34, 48, 58, .16); border: 1px solid var(--a-line); }
+    .toast .ico { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px; color: #fff; font-weight: 700; font-size: 13px; }
+    .toast b { display: block; font-size: 14px; }
+    .toast span { display: block; color: var(--a-ink-2); font-size: 12.5px; }
+    .toast.t1 { bottom: 0; z-index: 3; }
+    .toast.t2 { bottom: 0; z-index: 2; transform: translateY(-13px) scale(.95); opacity: .85; }
+    .toast.t3 { bottom: 0; z-index: 1; transform: translateY(-26px) scale(.9); opacity: .6; }
+    .toast.t2 > *, .toast.t3 > * { visibility: hidden; }
+    .undo { margin: 0; padding: 0; list-style: none; font-size: 13.5px; }
+    .undo li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); color: var(--ink-2); }
+    .undo li:first-child { border-top: 0; }
+    .undo time { flex: none; color: var(--muted); font: 12px var(--mono); }
+    .undo .undo-btn { margin-left: auto; flex: none; padding: 2px 10px; border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--tide-dark); font: 700 12px var(--sans); }
+
+    /* ── 收件箱与 AI ── */
+    .duo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 30px; }
+    .duo > .sheet { padding: 24px; }
+    .duo h3 { font: 500 24px/1.3 var(--display); }
+    .duo p { margin: 8px 0 0; color: var(--ink-2); font-size: 14.5px; }
+    .mock-list { margin: 16px 0 0; padding: 12px; border-radius: 12px; background: var(--a-bg); color: var(--a-ink); list-style: none; }
+    .mock-list li { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; background: #fff; box-shadow: 0 1px 3px rgba(34, 48, 58, .07); font-size: 13px; }
+    .mock-list li + li { margin-top: 7px; }
+    .mock-list .src { width: 26px; height: 26px; flex: none; display: grid; place-items: center; border-radius: 7px; color: #fff; font-size: 12px; font-weight: 700; }
+    .mock-list .txt { min-width: 0; flex: 1; }
+    .mock-list .txt b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mock-list .txt small { color: var(--a-ink-2); font-size: 11.5px; }
+    .mock-list .act { flex: none; padding: 2px 9px; border-radius: 7px; background: var(--a-deep); color: #fff; font-size: 11.5px; font-weight: 700; }
+    .mock-list .chk { width: 16px; height: 16px; flex: none; border-radius: 4px; background: var(--a-deep); color: #fff; display: grid; place-items: center; font-size: 11px; }
+    .mock-list .chk.off { background: #fff; border: 1.5px solid #b9c2ca; color: transparent; }
+    .mock-list .kind { flex: none; padding: 0 7px; border-radius: 6px; background: var(--a-bg); color: var(--a-ink-2); font-size: 11px; font-weight: 700; }
+    .mock-list .kind.warn { background: #FFF1D6; color: #8A5A00; }
+    .mock-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    .mock-foot span { padding: 3px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+    .mock-foot .pri { background: var(--a-deep); color: #fff; }
+    .mock-foot .sec { background: #fff; color: var(--a-ink-2); border: 1px solid var(--a-line); }
+    .redlines { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .redlines div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .redlines b { display: block; font: 500 17px/1.35 var(--display); }
+    .redlines span { display: block; margin-top: 5px; color: var(--ink-2); font-size: 13.5px; line-height: 1.65; }
+
+    /* ── 插件 ── */
+    .plugin-groups { display: grid; gap: 26px; margin-top: 30px; }
+    .pg-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+    .pg-head h3 { font: 500 22px var(--display); }
+    .pg-head span { color: var(--muted); font-size: 13.5px; }
+    .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); gap: 12px; }
+    .plug { display: flex; gap: 12px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; transition: border-color .2s ease, transform .2s var(--ease), box-shadow .2s ease; }
+    .plug:hover { border-color: color-mix(in srgb, var(--pc) 55%, var(--line)); transform: translateY(-2px); box-shadow: 0 10px 24px rgba(22, 33, 62, .08); }
+    .plug .tile { width: 40px; height: 40px; flex: none; display: grid; place-items: center; border-radius: 11px; background: var(--pc); color: #fff; font: 500 19px/1 var(--display); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .12); }
+    .plug .tile.sm { font: 700 12.5px/1 var(--sans); letter-spacing: .02em; }
+    .plug b { display: block; font-size: 15px; }
+    .plug p { margin: 3px 0 0; color: var(--ink-2); font-size: 13px; line-height: 1.6; }
+    .plug .plat { display: flex; gap: 4px; margin-top: 8px; }
+    .plug .plat i { padding: 0 6px; border-radius: 5px; background: #eef2f7; color: var(--muted); font: 600 10.5px/1.7 var(--sans); font-style: normal; }
+    .plug .plat i.yes { background: var(--foam); color: var(--tide-dark); }
+    .plug .plat i.no { background: #f3f4f6; color: #a0a8b6; text-decoration: line-through; }
+    .plug-extras { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 16px; margin-top: 26px; }
+    .plug-extras > .sheet { padding: 24px; }
+    .group-mock { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; margin-top: 14px; padding: 14px; border-radius: 12px; background: var(--a-side); color: #9DB4B0; font-size: 12px; }
+    .group-mock .side-item { padding: 6px 8px; }
+    .ctx { width: 192px; padding: 8px; border-radius: 10px; background: #fff; color: var(--a-ink); box-shadow: 0 14px 30px rgba(0, 0, 0, .3); font-size: 12px; }
+    .ctx .row { padding: 5px 8px; border-radius: 6px; }
+    .ctx .row:hover { background: var(--a-bg); }
+    .ctx .dots { display: flex; flex-wrap: wrap; gap: 5px; padding: 4px 8px 8px; }
+    .ctx .dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+    .ctx .dots i.on { box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--c); }
+    .ctx .muted { color: var(--a-ink-2); }
+    .dev-steps { margin: 14px 0 0; padding: 0; list-style: none; counter-reset: s; }
+    .dev-steps li { position: relative; padding: 0 0 12px 34px; color: var(--ink-2); font-size: 14.5px; counter-increment: s; }
+    .dev-steps li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: #fff; font: 700 11px var(--mono); }
+    .tree { margin: 4px 0 14px; padding: 12px 14px; border-radius: 10px; background: #0f1830; color: #cfe0ff; font: 12.5px/1.75 var(--mono); white-space: pre; overflow-x: auto; }
+    .tree .c { color: #7f8db0; }
+
+    /* ── 个性化 ── */
+    .theme-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; margin-top: 28px; }
+    .seg { display: inline-flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: #fff; }
+    .seg button { padding: 5px 16px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); font: 700 13px var(--sans); cursor: pointer; }
+    .seg button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+    .themes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .theme { --bg: var(--lbg); --p: var(--lp); --a: var(--la); padding: 10px 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+    .themes.dark .theme { --bg: var(--dbg); --p: var(--dp); --a: var(--da); }
+    .theme .ui { position: relative; display: grid; grid-template-columns: 28% 1fr; height: 84px; border-radius: 8px; overflow: hidden; background: var(--bg); transition: background-color .45s ease; }
+    .theme .ui i { display: block; transition: background-color .45s ease; }
+    .theme .ui .s { background: color-mix(in srgb, var(--p) 78%, #000); }
+    .theme .ui .m { padding: 9px; }
+    .theme .ui .m::before { content: ""; display: block; width: 62%; height: 8px; border-radius: 4px; background: var(--p); transition: background-color .45s ease; }
+    .theme .ui .m::after { content: ""; display: block; width: 84%; height: 30px; margin-top: 8px; border-radius: 6px; background: color-mix(in srgb, var(--bg) 70%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--p) 16%, transparent); transition: background-color .45s ease; }
+    .themes.dark .theme .ui .m::after { background: color-mix(in srgb, var(--bg) 84%, #fff); }
+    .themes.dark .theme .ui .s { background: color-mix(in srgb, var(--p) 32%, var(--bg)); }
+    .theme .ui .dot { position: absolute; right: 10px; bottom: 10px; width: 16px; height: 16px; border-radius: 50%; background: var(--a); transition: background-color .45s ease; }
+    .theme b { display: block; margin-top: 9px; font-size: 14px; }
+    .theme span { display: block; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .pref-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 26px; }
+    .pref { padding: 18px 18px 16px; }
+    .pref h3 { font: 500 19px/1.35 var(--display); }
+    .pref p { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; }
+
+    /* ── 数据与同步 ── */
+    .data-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 26px; align-items: center; margin-top: 30px; }
+    .data-svg { padding: 18px; }
+    .data-svg text { font-family: var(--sans); }
+
+    /* ── 三端 ── */
+    .devices { display: grid; grid-template-columns: 1.5fr .75fr .75fr; gap: 22px; align-items: end; margin-top: 34px; }
+    .device { text-align: center; }
+    .device figcaption { margin-top: 12px; font: 500 20px var(--display); }
+    .device figcaption small { display: block; color: var(--muted); font: 13px var(--sans); }
+    figure { margin: 0; }
+    .d-desk { border-radius: 12px; overflow: hidden; background: var(--a-bg); box-shadow: var(--shadow), 0 0 0 1px var(--line); }
+    .d-desk .bar { height: 20px; background: #0B2830; }
+    .d-desk .body { display: grid; grid-template-columns: 26% 1fr; height: 190px; }
+    .d-desk .side { background: var(--a-side); padding: 10px 8px; }
+    .d-desk .side i, .d-phone .rows i, .d-mini .rows i { display: block; height: 8px; margin-bottom: 7px; border-radius: 4px; background: rgba(255, 255, 255, .14); }
+    .d-desk .side i:nth-child(2) { background: var(--a-sun); width: 80%; }
+    .d-desk .main { display: grid; grid-template-columns: 1fr 1.6fr 1fr; gap: 6px; padding: 10px; }
+    .d-desk .main span { border-radius: 6px; background: #fff; }
+    .d-desk .main span:nth-child(2) { background: linear-gradient(#fff 0 18%, color-mix(in srgb, var(--a-sea) 45%, #fff) 18% 40%, #fff 40% 52%, color-mix(in srgb, var(--a-sun) 55%, #fff) 52% 70%, #fff 70%); }
+    .d-phone, .d-mini { width: min(150px, 100%); margin: 0 auto; padding: 10px 8px 12px; border-radius: 26px; background: #1b2436; box-shadow: var(--shadow); }
+    .d-phone .scr, .d-mini .scr { height: 250px; border-radius: 18px; overflow: hidden; background: var(--a-bg); display: flex; flex-direction: column; }
+    .d-phone .hd, .d-mini .hd { height: 34px; flex: none; background: #fff; display: flex; align-items: center; justify-content: flex-end; padding: 0 8px; }
+    .d-mini .cap { width: 46px; height: 18px; border-radius: 99px; border: 1px solid #d5d9e0; display: flex; align-items: center; justify-content: space-around; }
+    .d-mini .cap i { width: 4px; height: 4px; border-radius: 50%; background: #333; }
+    .d-phone .tl { position: relative; flex: 1; margin: 8px; }
+    .d-phone .tl::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 2px solid color-mix(in srgb, var(--a-deep) 40%, transparent); }
+    .d-phone .tl span { position: absolute; width: 44%; height: 26px; border-radius: 6px; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+    .d-phone .tl span:nth-child(odd) { left: 0; } .d-phone .tl span:nth-child(even) { right: 0; }
+    .d-phone .nav, .d-mini .nav { height: 30px; flex: none; background: #fff; display: flex; justify-content: space-around; align-items: center; }
+    .d-phone .nav i, .d-mini .nav i { width: 14px; height: 14px; border-radius: 4px; background: #d7dde4; }
+    .d-phone .nav i:first-child, .d-mini .nav i:first-child { background: var(--a-deep); }
+    .d-mini .q { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 8px; }
+    .d-mini .q span { height: 40px; border-radius: 7px; }
+    .d-mini .rows { padding: 0 8px; }
+    .d-mini .rows i { background: #fff; height: 18px; margin-bottom: 5px; }
+    table.cmp { width: 100%; min-width: 640px; margin-top: 30px; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 14px; }
+    table.cmp th, table.cmp td { padding: 11px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    table.cmp thead th { background: var(--ink); color: #fff; font-weight: 700; }
+    table.cmp tbody th { width: 16%; color: var(--ink); font-weight: 700; background: #f7f9fc; }
+    table.cmp td { color: var(--ink-2); }
+    table.cmp tr:last-child th, table.cmp tr:last-child td { border-bottom: 0; }
+    .table-scroll { overflow-x: auto; }
+
+    /* ── 设计理念 / 边界 ── */
+    .principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 30px; }
+    .principle { padding: 22px; }
+    .principle i { display: block; color: var(--sun); font: 700 12px var(--mono); font-style: normal; letter-spacing: .14em; }
+    .principle h3 { margin-top: 6px; font: 500 21px/1.35 var(--display); }
+    .principle p { margin: 8px 0 0; color: var(--ink-2); font-size: 14.5px; }
+    .honest { margin-top: 30px; padding: 24px clamp(20px, 3vw, 30px); border: 1px solid var(--line); border-left: 4px solid var(--tide); border-radius: 10px; background: #fff; }
+    .honest h3 { font: 500 22px var(--display); }
+    .honest ul { margin: 12px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 14.5px; }
+    .honest li + li { margin-top: 6px; }
+
+    /* ── 结尾 ── */
+    .cta { position: relative; overflow: hidden; padding: clamp(56px, 9vh, 88px) 0; color: #fff; background: var(--ink); }
+    .cta::before { content: ""; position: absolute; inset: 0; background: radial-gradient(700px 360px at 80% 0%, rgba(24, 140, 165, .32), transparent 62%); }
+    .cta .wrap { position: relative; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 24px; }
+    .cta h2 { margin: 0; color: #fff; }
+    .cta p { margin: 8px 0 0; color: #ccd5e6; }
+    footer { padding: 26px 20px 34px; color: var(--muted); background: var(--paper); font-size: 13.5px; text-align: center; }
+    footer p { margin: 4px 0; }
+
+    /* ── 滚动显现（仅在 JS 可用且未要求减少动效时启用；无 JS 时内容照常可见） ── */
+    .js [data-reveal] { opacity: 0; transform: translateY(18px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+    .js [data-reveal].in { opacity: 1; transform: none; }
+
+    /* ── 响应式 ── */
+    @media (max-width: 1080px) {
+      .views { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .flow li { border-bottom: 1px solid var(--line); }
+      .flow li:nth-child(3) { border-right: 0; }
+      .flow li:nth-child(3)::after { display: none; }
+    }
+    @media (max-width: 980px) {
+      .hero-grid, .split, .data-grid, .alert-demo, .plug-extras, .duo { grid-template-columns: minmax(0, 1fr); }
+      .split.rev > :first-child { order: 0; }
+      .app-window { transform: none; }
+      .tb-mock { grid-template-columns: 1fr 1.4fr; }
+      .tb-mock .tb-side { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+      .tb-mock .acard { margin: 0; }
+      .principles, .pref-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .themes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .redlines { grid-template-columns: 1fr; }
+      .devices { grid-template-columns: 1fr 1fr; }
+      .devices .device:first-child { grid-column: 1 / -1; }
+    }
+    @media (max-width: 720px) {
+      .topbar { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .topbar nav { justify-content: flex-start; gap: 6px 16px; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .flow { grid-template-columns: 1fr; }
+      .flow li { border-right: 0; }
+      .flow li:not(:last-child)::after { display: none; }
+      .cap-result { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-flow: row dense; }
+      .layers, .principles, .pref-grid { grid-template-columns: 1fr; }
+      .views { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .themes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .tb-mock { grid-template-columns: 1fr; }
+      .tb-mock .tb-side { grid-template-columns: 1fr; }
+      .qm-grid { grid-template-columns: 1fr; }
+      .qm.q1, .qm.q2 { min-height: 0; }
+      .win-body { grid-template-columns: 1fr; }
+      .group-mock { grid-template-columns: minmax(0, 1fr); }
+      .ctx { width: auto; }
+      .cap-lane .lbl { font-size: 11.5px; }
+      .win-side { display: none; }
+      .mini-quad { height: auto; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+      .js [data-reveal] { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="features.html"><span class="brand-mark">Le</span><span>Le时间管理 · 功能介绍</span></a>
+    <nav aria-label="站点导航">
+      <a href="features.html" aria-current="page">功能介绍</a>
+      <a href="index.html">开发手册</a>
+      <a href="plugins.html">插件说明</a>
+      <a href="upload.html">插件工坊</a>
+      <a href="tech-stack.html">技术栈</a>
+      <a href="https://github.com/momoqiqi-qwq/le-time-management" target="_blank" rel="noreferrer">GitHub ↗</a>
+    </nav>
+  </header>
+
+  <section class="hero" id="top">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">U-Time · 功能介绍 · v0.104.0</p>
+        <h1>从一句话，<br>到一段<em class="nw">排好的时间</em></h1>
+        <p class="lede">U-Time 是一款本地优先的个人时间管理应用。把微信消息、学校通知、网页文字丢进来，它读得懂「明天下午 3 点到 4 点」；再用四象限决定先做什么，拖进时间轴排到具体时段，到点提醒，周末复盘。数据只存在你自己的设备上，不需要账号。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/momoqiqi-qwq/le-time-management/releases/latest" target="_blank" rel="noreferrer">下载最新版 ↗</a>
+          <a class="button" href="#flow">看看它能做什么</a>
+          <a class="button" href="index.html">写一个插件</a>
+        </div>
+        <ul class="stats" aria-label="关键数字">
+          <li><b>17</b><span>个内置插件</span></li>
+          <li><b>7</b><span>种时间视图</span></li>
+          <li><b>16</b><span>套主题，均有深色版</span></li>
+          <li><b>3</b><span>端 · Windows、Android、微信小程序</span></li>
+        </ul>
+      </div>
+
+      <div class="app-window" role="img" aria-label="U-Time 桌面端界面示意：左侧是任务表、时间块、收件箱、插件四个入口与按颜色分组的插件列表，右侧是按重要和紧急分成四块的任务表">
+        <div class="win-bar" aria-hidden="true"><span>U-TIME</span><i>─</i><i>▢</i><i>✕</i></div>
+        <div class="win-body" aria-hidden="true">
+          <div class="win-side">
+            <div class="side-brand">U-TIME</div>
+            <div class="side-item on"><b class="ic">任</b>任务表</div>
+            <div class="side-item"><b class="ic">时</b>时间块</div>
+            <div class="side-item"><b class="ic">收</b>收件箱<em>3</em></div>
+            <div class="side-item"><b class="ic">插</b>插件</div>
+            <div class="side-sec">插 件 视 图</div>
+            <div class="side-group" style="--gc:#DC2626">
+              <div class="sg-head"><i></i>学习<em>3</em></div>
+              <div class="side-item"><b class="ic">课</b>课程表</div>
+              <div class="side-item"><b class="ic">通</b>学习通</div>
+              <div class="side-item"><b class="ic">考</b>考试日历</div>
+            </div>
+            <div class="side-group" style="--gc:#2563EB">
+              <div class="sg-head"><i></i>专注<em>2</em></div>
+              <div class="side-item"><b class="ic">番</b>番茄专注</div>
+              <div class="side-item"><b class="ic">周</b>周度报告</div>
+            </div>
+            <div class="side-item"><b class="ic">订</b>RSS 信息流</div>
+          </div>
+          <div class="win-main">
+            <div class="win-top"><strong>任务表</strong><small>· 先决定，再动手</small><span class="pill">待办 7 · 已完成 3</span></div>
+            <div class="mini-quad">
+              <div class="mq q1"><header><b>I</b>重要且紧急 · 立即做</header>
+                <div class="mcard"><span class="src">通</span>提交实验报告<small class="hot">今天 23:59</small></div>
+                <div class="mcard">与导师讨论开题修改<small>明天 15:00</small></div>
+                <div class="mcard">操场跑步 5 公里<small>今晚 20:00</small></div>
+              </div>
+              <div class="mq q2"><header><b>II</b>重要不紧急 · 排计划</header>
+                <div class="mcard">图书馆复习<small>9/28</small></div>
+                <div class="mcard"><span class="src">赛</span>创新项目答辩<small>10/5</small></div>
+              </div>
+              <div class="mq q3"><header><b>III</b>紧急不重要</header>
+                <div class="mcard">社团例会<small>9/30</small></div>
+              </div>
+              <div class="mq q4"><header><b>IV</b>有空再说</header>
+                <div class="mcard">整理网页收藏</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <nav class="secnav" aria-label="本页目录">
+    <div class="wrap">
+      <a href="#flow">一条链路</a>
+      <a href="#capture">中文捕获</a>
+      <a href="#quadrant">四象限</a>
+      <a href="#timeblock">时间块</a>
+      <a href="#alerts">提醒</a>
+      <a href="#inbox-ai">收件箱与 AI</a>
+      <a href="#plugins">插件</a>
+      <a href="#personal">个性化</a>
+      <a href="#data">数据与同步</a>
+      <a href="#platforms">三端</a>
+      <a href="#principles">设计理念</a>
+    </div>
+  </nav>
+
+  <main>
+    <!-- 链路 -->
+    <section class="block" id="flow">
+      <div class="wrap">
+        <p class="kicker">One loop</p>
+        <h2>不只是待办清单，是一条完整的链路</h2>
+        <p class="lead">消息从哪里来都行，U-Time 负责把它变成任务、排进时间、按时提醒，再帮你回头看看这一周。</p>
+        <ol class="flow sheet" data-reveal>
+          <li><span class="num">01</span><h3>收集</h3><p>拖入或粘贴聊天、网页文字；校园与资讯插件自动抓通知；配好 AI 还能读截图和文档。</p><span class="where">捕获 · 收件箱 · 插件</span></li>
+          <li><span class="num">02</span><h3>决定</h3><p>按「重要 × 紧急」分进四个象限，最该做的那一格面积最大。</p><span class="where">任务表</span></li>
+          <li><span class="num">03</span><h3>安排</h3><p>拖进 24 小时时间轴，或一键自动安排；撞了先告诉你，再给候选时段。</p><span class="where">时间块 · 时间线</span></li>
+          <li><span class="num">04</span><h3>提醒</h3><p>多级提前预警、合成提示音；Android 交给系统闹钟，应用关了也会响。</p><span class="where">任务提醒 · 通知</span></li>
+          <li><span class="num">05</span><h3>复盘</h3><p>周度报告、近 7 天节奏，或者让 AI 帮你盘点这一周、挑出拖延已久的事。</p><span class="where">周度报告 · AI 对话</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 捕获 -->
+    <section class="block tint" id="capture">
+      <div class="wrap">
+        <p class="kicker">Capture</p>
+        <h2>一句话丢进来，时间自己落格</h2>
+        <div class="split">
+          <div>
+            <p class="lead">复制一条带时间的消息，在 U-Time 里按 <code>Ctrl+V</code>，或者直接把聊天文字、网页段落、链接、截图拖进窗口。内置的中文时间解析器在本地完成识别，不联网、不需要账号。</p>
+            <ul class="points">
+              <li><b>日期</b>：今天 / 明天 / 后天 / 大后天、周五 / 下周三 / 下下周一、10 月 8 日、8 号、月底</li>
+              <li><b>时刻</b>：凌晨 / 早上 / 上午 / 中午 / 下午 / 晚上几点，几点半、几点几分、14:30，以及「3 点到 4 点」这样的区间</li>
+              <li><b>不乱猜</b>：「今晚 8 点」按晚上 8 点算；没写结束时间就按 60 分钟落格；撞上已有安排会自动挪到第一个空档并告诉你</li>
+              <li><b>顺手分好类</b>：按关键词归到工作 / 学习 / 运动 / 生活 / 休息，两天内到期的直接进象限 I</li>
+            </ul>
+            <p class="note">截图不做本地 OCR：没配 AI 时由你挑时间；配好 AI 后可以交给视觉模型读图（见下文「收件箱与 AI」）。</p>
+          </div>
+          <div class="sheet cap-demo" data-demo data-reveal>
+            <div class="cap-chips" role="group" aria-label="选择一句示例">
+              <button class="chip" type="button" aria-pressed="true" data-i="0">明天下午3点到4点…</button>
+              <button class="chip" type="button" aria-pressed="false" data-i="1">今晚8点 操场跑步…</button>
+              <button class="chip" type="button" aria-pressed="false" data-i="2">周六中午12点 聚餐</button>
+              <button class="chip" type="button" aria-pressed="false" data-i="3">9月28日下午2点到5点…</button>
+              <button class="chip" type="button" aria-pressed="false" data-i="4">下下周一上午10点…</button>
+              <button class="chip" type="button" aria-pressed="false" data-i="5">月底 交材料</button>
+            </div>
+            <div class="cap-input"><kbd>Ctrl+V</kbd><span data-f="s">明天下午3点到4点 与导师讨论开题修改</span></div>
+            <div class="cap-flow" aria-hidden="true">timeParser · 本地解析</div>
+            <dl class="cap-result" aria-live="polite">
+              <div><dt>日期</dt><dd data-f="date">9月25日 周五</dd></div>
+              <div><dt>时间</dt><dd data-f="time">15:00 – 16:00</dd></div>
+              <div><dt>分类</dt><dd data-f="cat"><span class="cat c-work">工作</span></dd></div>
+              <div class="wide"><dt>标题</dt><dd data-f="title">与导师讨论开题修改</dd></div>
+              <div><dt>象限</dt><dd data-f="quad">I · 重要且紧急</dd></div>
+            </dl>
+            <div class="cap-lane" data-f="lane" aria-hidden="true" style="--s:.4706;--w:.0588;--c:var(--a-sun);--fg:#17323A">
+              <span class="tick" style="left:5.88%">08</span>
+              <span class="tick" style="left:17.65%">10</span>
+              <span class="tick" style="left:29.41%">12</span>
+              <span class="tick" style="left:41.18%">14</span>
+              <span class="tick" style="left:52.94%">16</span>
+              <span class="tick" style="left:64.71%">18</span>
+              <span class="tick" style="left:76.47%">20</span>
+              <span class="tick" style="left:88.24%">22</span>
+              <span class="lbl" data-f="lbl">与导师讨论开题修改</span>
+              <span class="blk" data-f="blk">15:00</span>
+            </div>
+            <p class="cap-note">以上结果由应用内置的 <code>timeParser</code> 实际解析得出，基准日为 2026 年 9 月 24 日（周四）；时间轴范围 07:00–24:00，与捕获落格的可用时段一致。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 四象限 -->
+    <section class="block" id="quadrant">
+      <div class="wrap">
+        <p class="kicker">Decide</p>
+        <h2>四象限：先决定做什么</h2>
+        <div class="split rev">
+          <div>
+            <p class="lead">把任务放进象限，就是做决定。任务表按「重要 × 紧急」分成四格，象限 I 的面积最大 —— 因为它值得你最多的时间。</p>
+            <ul class="points">
+              <li><b>拖动排序</b>：鼠标直接拖，触屏长按 240ms 拿起，其余卡片实时让位；键盘也能调整顺序</li>
+              <li><b>就地展开</b>：标题完整换行显示，点一下展开备注与原始消息，不必打开抽屉</li>
+              <li><b>来源一眼可见</b>：插件创建的任务在标题前带插件图标，悬停看是谁放进来的</li>
+              <li><b>详情抽屉</b>：改象限、预计耗时、截止时间、提醒档位、标签与项目</li>
+              <li><b>搜索与整理</b>：按任务、备注、项目搜索，一键清理已完成</li>
+            </ul>
+          </div>
+          <div class="sheet quad-mock" role="img" aria-label="四象限任务表示意：重要且紧急与重要不紧急两格更大，一张卡片正在被拖动到新位置" data-reveal>
+            <p class="qm-motto" aria-hidden="true">把任务放进象限，就是做决定 · 象限 I 的面积最大，因为它值得你最多时间</p>
+            <div class="qm-grid" aria-hidden="true">
+              <div class="qm q1"><header><b>I</b>重要且紧急 · 立即做</header><p class="tip">截止压顶，别再犹豫</p>
+                <div class="tcard"><span class="src" style="background:#0F4C5C">通</span>提交实验报告<em class="hot">今天 23:59</em></div>
+                <div class="tcard">与导师讨论开题修改<em>明天 15:00</em></div>
+              </div>
+              <div class="qm q2"><header><b>II</b>重要不紧急 · 排计划</header><p class="tip">人生的复利都在这里</p>
+                <div class="tcard slot">占位</div>
+                <div class="tcard dragging">图书馆复习<em>9/28 14:00</em></div>
+                <div class="tcard"><span class="src" style="background:#EA580C">赛</span>创新项目答辩<em>10/5</em></div>
+              </div>
+              <div class="qm q3"><header><b>III</b>紧急不重要 · 少快办</header><p class="tip">能批量就批量，能拒绝就拒绝</p>
+                <div class="tcard">社团例会<em>9/30 19:00</em></div>
+              </div>
+              <div class="qm q4"><header><b>IV</b>不重要不紧急 · 有空再说</header><p class="tip">留给真正的休息</p>
+                <div class="tcard">整理网页收藏</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 时间块 -->
+    <section class="block tint" id="timeblock">
+      <div class="wrap">
+        <p class="kicker">Plan</p>
+        <h2>时间块：把任务装进一天的格子</h2>
+        <p class="lead">左边是还没排的任务，中间是一天的时间轴，右边告诉你今天排了多少、这一周节奏如何、明天有什么。</p>
+        <div class="sheet tb-mock" role="img" aria-label="时间块视图示意：左侧任务池带自动安排按钮；中间时间轴上有复习、午饭、组会、跑步四个时间块和红色的现在指示线，拖入的新任务与 15 点的组会冲突，弹出改到 16 点或 18 点的候选；右侧显示当天已排 4 小时 15 分、近 7 天节奏和明日预告" data-reveal style="margin-top:30px">
+          <div class="tb-pool" aria-hidden="true">
+            <p class="tb-col-h">任 务 池</p>
+            <div class="ptask"><b>写开题报告第二章</b><div class="row"><span class="cat c-work">工作</span><span class="auto">自动安排</span></div></div>
+            <div class="ptask"><b>背单词 30 个</b><div class="row"><span class="cat c-study">学习</span></div></div>
+            <div class="ptask"><b>整理本周笔记</b><div class="row"><span class="cat c-study">学习</span></div></div>
+            <div class="ptask"><b>取快递</b><div class="row"><span class="cat c-life">生活</span></div></div>
+          </div>
+          <div class="tb-axis" aria-hidden="true"><div class="tb-track">
+            <div class="hr" style="top:0%"><span>08:00</span></div>
+            <div class="hr" style="top:20%"><span>10:00</span></div>
+            <div class="hr" style="top:40%"><span>12:00</span></div>
+            <div class="hr" style="top:60%"><span>14:00</span></div>
+            <div class="hr" style="top:80%"><span>16:00</span></div>
+            <div class="hr" style="top:100%"><span>18:00</span></div>
+            <div class="blk c-study" style="top:5%;height:15%">高数复习<small>08:30 – 10:00</small></div>
+            <div class="blk c-life" style="top:40%;height:7.5%">午饭<small>12:00 – 12:45</small></div>
+            <div class="blk c-work" style="top:70%;height:10%">与导师讨论开题<small>15:00 – 16:00</small></div>
+            <div class="blk c-sport" style="top:90%;height:10%">操场跑步<small>17:00 – 18:00</small></div>
+            <div class="now" style="top:66.67%"></div>
+            <div class="ghost" style="top:70.5%;height:9.5%">写开题报告第二章</div>
+            <div class="conflict" style="top:48.5%"><b>⚠ 与 15:00「与导师讨论开题」冲突</b><div class="alts"><span>改到 16:00</span><span>改到 18:00</span></div></div>
+          </div></div>
+          <div class="tb-side" aria-hidden="true">
+            <div class="acard"><p class="tb-col-h">这 天 已 排</p><div class="big">4 小时 15 分<small> / 16 小时清醒时间</small></div>
+              <div class="meter"><i style="width:9.4%;background:var(--a-sea)"></i><i style="width:4.7%;background:var(--a-grape)"></i><i style="width:6.25%;background:var(--a-sun)"></i><i style="width:6.25%;background:var(--a-coral)"></i></div></div>
+            <div class="acard"><p class="tb-col-h">近 7 天节奏</p><div class="bars"><i style="height:52%"></i><i style="height:74%"></i><i style="height:38%"></i><i style="height:88%"></i><i style="height:60%"></i><i style="height:30%"></i><i style="height:66%"></i></div></div>
+            <div class="acard"><p class="tb-col-h">明 日 预 告</p><ul class="tomorrow"><li><b>09:00</b>英语听力</li><li><b>14:00</b>实验课</li><li><b>19:30</b>社团招新</li></ul></div>
+          </div>
+        </div>
+        <ul class="points" style="margin-top:26px">
+          <li><b>拖进来或一键排</b>：任务拖进时间轴，或点「自动安排」放到第一个空档；时长按 15 分钟步进调整，五种分类各有颜色</li>
+          <li><b>冲突先试算、不覆盖</b>：落格前先算一遍，撞了就说和谁撞，并给出候选时段；当天没有空档就只提示，不动你已有的安排</li>
+          <li><b>手机上换成时间线</b>：一条中轴贯穿上下，日期骑在轴上，卡片左右交错，点开看完整时间与正文</li>
+        </ul>
+        <div class="views" data-reveal>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><line x1="22" y1="8" x2="112" y2="8" stroke="#E4DFD6"/><line x1="22" y1="28" x2="112" y2="28" stroke="#E4DFD6"/><line x1="22" y1="48" x2="112" y2="48" stroke="#E4DFD6"/><rect x="26" y="11" width="82" height="13" rx="3" fill="#118AB2"/><rect x="26" y="31" width="82" height="9" rx="3" fill="#9B5DE5"/><rect x="26" y="51" width="82" height="12" rx="3" fill="#E3A008"/><line x1="18" y1="44" x2="114" y2="44" stroke="#E5484D" stroke-width="1.5"/></svg><figcaption><b>日时间轴</b><span>当前可拖拽编辑的日程</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><g fill="#fff" stroke="#E4DFD6"><rect x="8" y="8" width="104" height="54" rx="3"/></g><g stroke="#E4DFD6"><line x1="23" y1="8" x2="23" y2="62"/><line x1="38" y1="8" x2="38" y2="62"/><line x1="53" y1="8" x2="53" y2="62"/><line x1="68" y1="8" x2="68" y2="62"/><line x1="83" y1="8" x2="83" y2="62"/><line x1="98" y1="8" x2="98" y2="62"/><line x1="8" y1="22" x2="112" y2="22"/><line x1="8" y1="35" x2="112" y2="35"/><line x1="8" y1="48" x2="112" y2="48"/></g><rect x="24" y="9" width="13" height="12" fill="#118AB2"/><rect x="54" y="23" width="13" height="11" fill="#118AB2"/><rect x="84" y="9" width="13" height="25" fill="#E3A008"/><rect x="39" y="36" width="13" height="11" fill="#FF6B6B"/><rect x="69" y="49" width="13" height="12" fill="#2EC4B6"/></svg><figcaption><b>课时格</b><span>本周时间块按小时铺成节次网格</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><path d="M6 26h28l7 9-7 9H6z" fill="#118AB2"/><path d="M36 26h28l7 9-7 9H36l7-9z" fill="#E3A008"/><path d="M66 26h28l7 9-7 9H66l7-9z" fill="#FF6B6B"/><path d="M96 26h14l5 9-5 9H96l7-9z" fill="#2EC4B6"/><circle cx="20" cy="54" r="2" fill="#7E8B94"/><circle cx="50" cy="54" r="2" fill="#7E8B94"/><circle cx="80" cy="54" r="2" fill="#7E8B94"/></svg><figcaption><b>里程碑</b><span>彩色箭头式阶段时间轴</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><line x1="6" y1="36" x2="114" y2="36" stroke="#0F4C5C" stroke-width="2"/><g fill="#0F4C5C"><circle cx="14" cy="36" r="3"/><circle cx="30" cy="36" r="3"/><circle cx="41" cy="36" r="3"/><circle cx="60" cy="36" r="3"/><circle cx="73" cy="36" r="3"/><circle cx="92" cy="36" r="3"/><circle cx="106" cy="36" r="3"/></g><g fill="#fff" stroke="#E4DFD6"><rect x="8" y="12" width="26" height="14" rx="3"/><rect x="50" y="12" width="26" height="14" rx="3"/><rect x="84" y="12" width="26" height="14" rx="3"/><rect x="24" y="46" width="26" height="14" rx="3"/><rect x="66" y="46" width="26" height="14" rx="3"/></g></svg><figcaption><b>横向时间轴</b><span>高密度事件年表</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><line x1="60" y1="4" x2="60" y2="66" stroke="#0F4C5C" stroke-width="2"/><g fill="#fff" stroke="#E4DFD6"><rect x="12" y="8" width="40" height="14" rx="3"/><rect x="68" y="26" width="40" height="14" rx="3"/><rect x="12" y="44" width="40" height="14" rx="3"/></g><g fill="#E3A008"><circle cx="60" cy="15" r="3.5"/><circle cx="60" cy="33" r="3.5"/><circle cx="60" cy="51" r="3.5"/></g></svg><figcaption><b>卡片时间轴</b><span>左右交错的叙事时间线</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><g stroke="#E4DFD6"><line x1="30" y1="6" x2="30" y2="64"/><line x1="60" y1="6" x2="60" y2="64"/><line x1="90" y1="6" x2="90" y2="64"/></g><rect x="8" y="10" width="46" height="8" rx="4" fill="#118AB2"/><rect x="26" y="24" width="58" height="8" rx="4" fill="#E3A008"/><rect x="48" y="38" width="40" height="8" rx="4" fill="#9B5DE5"/><rect x="70" y="52" width="42" height="8" rx="4" fill="#FF6B6B"/></svg><figcaption><b>年度甘特</b><span>按项目 / 任务展示跨月计划</span></figcaption></figure>
+          <figure class="view"><svg viewBox="0 0 120 70" aria-hidden="true"><g fill="#fff"><rect x="6" y="6" width="108" height="16" rx="3"/><rect x="6" y="27" width="108" height="16" rx="3"/><rect x="6" y="48" width="108" height="16" rx="3"/></g><rect x="14" y="10" width="30" height="8" rx="3" fill="#E3A008"/><rect x="56" y="10" width="22" height="8" rx="3" fill="#E3A008"/><rect x="24" y="31" width="40" height="8" rx="3" fill="#118AB2"/><rect x="84" y="31" width="22" height="8" rx="3" fill="#118AB2"/><rect x="40" y="52" width="26" height="8" rx="3" fill="#FF6B6B"/></svg><figcaption><b>阶段甘特</b><span>按分类分泳道查看时间占用</span></figcaption></figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- 提醒 -->
+    <section class="block" id="alerts">
+      <div class="wrap">
+        <p class="kicker">Remind</p>
+        <h2>提醒：在来不及之前说清楚</h2>
+        <p class="lead">预警的目标不是「多提醒」，而是提前一步说明原因、给出处置选项，同一件事不重复打扰。机制分四层，前三层完全在本地运行。</p>
+        <div class="layers">
+          <article class="sheet layer" data-reveal>
+            <div class="lv"><span>LAYER 1</span><h3>截止提醒</h3><em class="drive">时间驱动</em></div>
+            <p>每个任务可设多级提前预警，全局默认提前 60 分、10 分和到点三档。应用内横幅 + 7 种现场合成的提示音，可导入自定义音频、到点持续长鸣；Android 端交给系统通知与精确闹钟，应用被划掉也照样响。</p>
+            <ul class="levels" aria-label="可选的提前量">
+              <li>提前 1 天</li><li>2 小时</li><li class="on">1 小时</li><li>30 分</li><li class="on">10 分</li><li>5 分</li><li class="on">到点</li>
+            </ul>
+          </article>
+          <article class="sheet layer" data-reveal>
+            <div class="lv"><span>LAYER 2</span><h3>内置自动化</h3><em class="drive">事件驱动</em></div>
+            <p>有截止日但还没排的任务，自动找空档放进时间轴；考试日历里未来 7 天的报名、打印准考证、考试节点写进收件箱；每天把逾期任务的截止日归到今天。按教学周把课程展开成时间块也可以打开。</p>
+          </article>
+          <article class="sheet layer" data-reveal>
+            <div class="lv"><span>LAYER 3</span><h3>冲突与占用预警</h3><em class="drive">动作驱动</em></div>
+            <p>发生在落库之前：排程先试算，返回撞了几个、和谁撞了，以及可以改到哪几个时段。找不到空档就停下来问你，绝不覆盖已有的时间块。</p>
+          </article>
+          <article class="sheet layer" data-reveal>
+            <div class="lv"><span>LAYER 4</span><h3>AI 自动任务</h3><em class="drive">可选 · 自然语言</em></div>
+            <p>用一句话定义周期任务，例如「每天检查未完成任务，把最重要的 3 个安排到明天」，按每天、指定星期、每周或仅一次执行。模型只给出操作意图，由应用校验后执行。</p>
+          </article>
+        </div>
+        <div class="sheet alert-demo" data-reveal>
+          <div class="stack-wrap">
+          <div class="stack" role="img" aria-label="通知叠成一张的示意：最新一条在最前面，旧的依次缩小叠在后面，鼠标悬停时展开">
+            <div class="toast t3" aria-hidden="true"><span class="ico" style="background:#118AB2">考</span><div><b>CET-4 报名今天截止</b><span>考试日历 · 来自收件箱</span></div></div>
+            <div class="toast t2" aria-hidden="true"><span class="ico" style="background:#0F4C5C">通</span><div><b>学习通：新作业</b><span>《数据结构》实验三 · 周五 23:59 截止</span></div></div>
+            <div class="toast t1" aria-hidden="true"><span class="ico" style="background:#E5484D">!</span><div><b>10 分钟后截止</b><span>提交实验报告 · 今天 23:59</span></div></div>
+          </div>
+          <p class="stack-cap">多条通知叠成一张，鼠标悬停时展开</p>
+          </div>
+          <div>
+            <h3 style="font:500 22px/1.3 var(--display)">机器改动，全部可以撤回</h3>
+            <p style="margin:8px 0 12px;color:var(--ink-2);font-size:14.5px">每一次自动化写入之前，都先存下任务、时间块、收件箱三份快照。收件箱里的自动化日志保留最近 25 条，逐条可撤销。</p>
+            <ul class="undo" aria-label="自动化日志示意">
+              <li><time>09:00</time>把 2 个逾期任务的截止日归到今天<span class="undo-btn" aria-hidden="true">撤销</span></li>
+              <li><time>08:12</time>「写开题报告第二章」排进 16:00–17:00<span class="undo-btn" aria-hidden="true">撤销</span></li>
+              <li><time>07:30</time>考试日历：CET-4 报名今天截止<span class="undo-btn" aria-hidden="true">撤销</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 收件箱与 AI -->
+    <section class="block tint" id="inbox-ai">
+      <div class="wrap">
+        <p class="kicker">Inbox &amp; AI</p>
+        <h2>先收下，再决定</h2>
+        <p class="lead">不确定该怎么处理的东西不会被硬塞进日历：插件抓来的通知、拖进来的消息、自动化的提醒都先进收件箱，你看过再决定。</p>
+        <div class="duo">
+          <div class="sheet" data-reveal>
+            <h3>收件箱</h3>
+            <p>每条都带来源插件的图标，一眼看出是谁放进来的；点「建任务」一键转成任务（附件截图一起带过去），或排成时间块。</p>
+            <ul class="mock-list" role="img" aria-label="收件箱示意：三条分别来自学习通、学校通知和拖入收纳的消息，每条右侧有建任务按钮">
+              <li aria-hidden="true"><span class="src" style="background:#0F4C5C">通</span><span class="txt"><b>《数据结构》实验三提交</b><small>学习通 · 周五 23:59 截止</small></span><span class="act">建任务</span></li>
+              <li aria-hidden="true"><span class="src" style="background:#2563EB">校</span><span class="txt"><b>关于国庆节放假安排的通知</b><small>学校通知网站 · 9 月 24 日</small></span><span class="act">建任务</span></li>
+              <li aria-hidden="true"><span class="src" style="background:#7C3AED">纳</span><span class="txt"><b>班群：周三晚 7 点在 B204 开班会</b><small>拖入消息收纳 · 附 1 张截图</small></span><span class="act">建任务</span></li>
+            </ul>
+          </div>
+          <div class="sheet" data-reveal>
+            <h3>AI 解析（可选）</h3>
+            <p>把截图、通知、课表照片、文档交给视觉模型，抽成结构化事件，再路由到任务、时间块、收件箱或课程表。兼容 OpenAI 格式的接口，凭据在本机加密保存。</p>
+            <ul class="mock-list" role="img" aria-label="AI 解析确认面板示意：识别出三条事件，其中一条课程被标注为待确认，用户勾选后再保存">
+              <li aria-hidden="true"><span class="chk">✓</span><span class="txt"><b>高数期中考试</b><small>9 月 26 日 09:00 – 11:30</small></span><span class="kind">时间块</span></li>
+              <li aria-hidden="true"><span class="chk">✓</span><span class="txt"><b>提交实验报告</b><small>10 月 8 日 14:30 截止</small></span><span class="kind">任务</span></li>
+              <li aria-hidden="true"><span class="chk off">✓</span><span class="txt"><b>第 3–4 节 大学物理</b><small>请确认：是节次，不是 3 月 4 日</small></span><span class="kind warn">课程 · 待确认</span></li>
+            </ul>
+            <div class="mock-foot" aria-hidden="true"><span class="sec">取消</span><span class="pri">保存所选 2 条</span></div>
+          </div>
+        </div>
+        <div class="redlines" data-reveal>
+          <div><b>AI 只负责读懂，不负责写入</b><span>模型返回的每条事件都要过白名单：不存在的日期、越界的时长、未知的分类一律兜底，由应用自己的接口落盘。</span></div>
+          <div><b>结果先确认，再保存</b><span>模型会认错，比如把「第 3–4 节」读成 3 月 4 日。识别结果一律先进确认面板，勾选、改类型、改时间后才写入。</span></div>
+          <div><b>没配 AI 也能用</b><span>没有凭据时整条链路退回本地捕获与手动选时间；AI 对话插件同样需要你主动配置接口。</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 插件 -->
+    <section class="block" id="plugins">
+      <div class="wrap">
+        <p class="kicker">Plugins</p>
+        <h2>17 个内置插件，按场景生长</h2>
+        <p class="lead">主程序只管核心链路，其余能力都以插件的形式加进来：课程、校园通知、专注、资讯、提醒推送……它们创建的任务和提醒都回到同一套任务表与时间轴里。</p>
+        <div class="plugin-groups">
+          <div data-reveal>
+            <div class="pg-head"><h3>学习与校园</h3><span>课表、教务、通知与考试，一处看全</span></div>
+            <div class="pgrid">
+              <article class="plug" style="--pc:#118AB2"><span class="tile">课</span><div><b>课程表</b><p>一屏显示整周节次；选学校登录教务一键导入，或导入 XLSX / CSV / HTML 课表。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#0F4C5C"><span class="tile">通</span><div><b>学习通</b><p>通知与待办收件箱，识别作业 / 考试截止时间，一键转成提醒；桌面端与 Android 端的待办按提交状态分五档，点任意一档只看那一档。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#1D4E89"><span class="tile">警</span><div><b>警大门户通知</b><p>登录一次后自动续登；通知、教务、学分、请假、一卡通等校园服务集中查看。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="no">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#2563EB"><span class="tile">校</span><div><b>学校通知网站</b><p>填入学校公告网址即可订阅，自动识别常见高校 CMS 列表，公告可转成提醒。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="no">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#C0452E"><span class="tile">考</span><div><b>考试日历</b><p>四六级、考研、教资、计算机等级、普通话等国家级考试的倒计时与报名、打印、考试节点。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#EA580C"><span class="tile">赛</span><div><b>竞赛消息雷达</b><p>聚合摩课云、赛氪、我要参赛网等竞赛源，也能自己添加网址；关键词过滤，带时间的条目可转提醒。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+            </div>
+          </div>
+          <div data-reveal>
+            <div class="pg-head"><h3>专注与复盘</h3><span>做事的时候专心，做完了回头看</span></div>
+            <div class="pgrid">
+              <article class="plug" style="--pc:#E5484D"><span class="tile">番</span><div><b>番茄专注</b><p>环形番茄钟，挑一个任务开始专注；时长精确到秒，专注与休息结束可分别设置通知和提示音。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#9B5DE5"><span class="tile">周</span><div><b>周度报告</b><p>按周汇总每天的时间块分布、分类占比与任务完成度。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#10A37F"><span class="tile sm">AI</span><div><b>AI 对话</b><p>把本机任务、近三天时间块和插件消息整理成快照交给 AI：总结今天、盘点本周、把通知分成「要办 / 要知道 / 可忽略」。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="no">小程序</i></div></div></article>
+            </div>
+          </div>
+          <div data-reveal>
+            <div class="pg-head"><h3>信息收集与推送</h3><span>把散落各处的信息收进来，把提醒送出去</span></div>
+            <div class="pgrid">
+              <article class="plug" style="--pc:#7C3AED"><span class="tile">纳</span><div><b>拖入消息收纳</b><p>微信 / QQ 聊天文字、通知截图、网页段落直接拖进来，识别来源与时间后收进收件箱。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#D97706"><span class="tile">订</span><div><b>RSS 信息流</b><p>订阅 RSS / Atom 并聚合成一条信息流，按源与关键词过滤、未读与星标，条目可转提醒。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#0891B2"><span class="tile">网</span><div><b>网页收集</b><p>拖入网址自动读取站点名称与图标，备注、搜索、一键打开。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#24292F"><span class="tile sm">Git</span><div><b>GitHub 文档</b><p>追踪仓库 README，按 GitHub 风格渲染表格、代码块、任务清单与目录。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="no">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#16A34A"><span class="tile">推</span><div><b>微信提醒推送</b><p>经 PushPlus 把时间块、任务截止与插件新消息推送到微信，可以细到单个插件。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+            </div>
+          </div>
+          <div data-reveal>
+            <div class="pg-head"><h3>生活与工具</h3><span>放假、值日这些小事，也交给它</span></div>
+            <div class="pgrid">
+              <article class="plug" style="--pc:#DB2777"><span class="tile">假</span><div><b>中国节假日</b><p>法定节假日、调休上班日与下次休息日，内置 2024–2026 年离线数据。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#4C9272"><span class="tile">值</span><div><b>轮换值日</b><p>宿舍值日、公区卫生等按成员顺序轮换，多套轮换各有成员、周期与提醒时刻。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+              <article class="plug" style="--pc:#607D8B"><span class="tile">说</span><div><b>插件使用说明</b><p>按分类用卡片查看每个内置插件的用途、使用步骤、平台支持与注意事项。</p><div class="plat"><i class="yes">Windows</i><i class="yes">Android</i><i class="yes">小程序</i></div></div></article>
+            </div>
+          </div>
+        </div>
+        <p class="cap-note" style="margin-top:14px">「小程序」标签表示该插件有微信小程序原生版；划线表示小程序端暂不提供。</p>
+
+        <div class="plug-extras">
+          <div class="sheet" data-reveal>
+            <h3 style="font:500 24px/1.3 var(--display)">侧栏按你的习惯排</h3>
+            <p style="margin:8px 0 0;color:var(--ink-2);font-size:14.5px">右键给插件挑一个颜色，同色的插件自动并成一张颜色卡片，可以改组名、收起、整组上下换位；插件可以拖动排序、改名换图标，按 <code>Alt</code> + 字母直接打开。</p>
+            <div class="group-mock" role="img" aria-label="侧栏颜色分组示意：红色的学习组包含课程表和学习通，蓝色的专注组已收起；旁边的右键菜单里有八个色点可选">
+              <div aria-hidden="true">
+                <div class="side-group" style="--gc:#DC2626"><div class="sg-head"><i></i>学习<em>2</em></div><div class="side-item"><b class="ic">课</b>课程表</div><div class="side-item"><b class="ic">通</b>学习通</div></div>
+                <div class="side-group" style="--gc:#2563EB"><div class="sg-head"><i></i>专注（已收起）<em>2</em></div></div>
+                <div class="side-item"><b class="ic">订</b>RSS 信息流</div>
+                <div class="side-item"><b class="ic">网</b>网页收集</div>
+              </div>
+              <div class="ctx" aria-hidden="true">
+                <div class="row">重命名</div>
+                <div class="row">修改图标…</div>
+                <div class="dots"><i style="--c:#DC2626" class="on"></i><i style="--c:#EA580C"></i><i style="--c:#CA8A04"></i><i style="--c:#16A34A"></i><i style="--c:#0891B2"></i><i style="--c:#2563EB"></i><i style="--c:#7C3AED"></i><i style="--c:#DB2777"></i></div>
+                <div class="row">分组名称 · 学习</div>
+                <div class="row">快捷键 · Alt+K</div>
+                <div class="row muted">恢复默认名称与图标</div>
+              </div>
+            </div>
+          </div>
+          <div class="sheet" data-reveal>
+            <h3 style="font:500 24px/1.3 var(--display)">写一个插件，只要一个文件夹</h3>
+            <div class="tree" aria-label="插件文件夹结构"><span class="c"># 放进数据目录的 plugins/ 下</span>
+my-plugin/
+├─ manifest.json  <span class="c"># 名称、版本、权限声明</span>
+└─ main.js        <span class="c"># 通过 tide.* 调用宿主能力</span></div>
+            <ol class="dev-steps">
+              <li>宿主提供视图注册、任务与时间块、存储、事件、网络、中文时间解析等受控能力，按清单里声明的权限开放。</li>
+              <li>设置里点「重新扫描」即可发现；也可以打包成 ZIP 导入，支持批量启停与导出。</li>
+              <li>完整接口与范例见 <a href="index.html">插件开发手册</a>，做好了可以在 <a href="upload.html">插件工坊</a> 分享。</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 个性化 -->
+    <section class="block tint" id="personal">
+      <div class="wrap">
+        <p class="kicker">Make it yours</p>
+        <h2>16 套主题，每一套都有深色版</h2>
+        <p class="lead">除了「夜间护眼」本身就是深色，其余 15 套主题的深色调色板都由浅色版按对比度规则派生，深色模式下依然各有性格。切换深浅时，画面从你点击的位置圆形揭开。</p>
+        <div class="theme-bar">
+          <div class="seg" role="group" aria-label="预览模式">
+            <button type="button" aria-pressed="true" data-mode="light">浅色</button>
+            <button type="button" aria-pressed="false" data-mode="dark">深色</button>
+          </div>
+          <span class="cap-note" style="margin:0">色值取自应用源码 <code>themeProfiles.js</code> 与生成的深色预览表。</span>
+        </div>
+        <div class="themes" id="themes" data-reveal>
+          <div class="theme" style="--lbg:#F2EFEA;--lp:#0F4C5C;--la:#FF6B6B;--dbg:#181613;--dp:#21A7CA;--da:#14A6D6"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>经典 U-Time</b><span>温暖纸面，适合日常任务管理</span></div>
+          <div class="theme" style="--lbg:#ECF7F5;--lp:#106C72;--la:#28BFA9;--dbg:#111A18;--dp:#1DC3CE;--da:#1AB7D0"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>清爽海盐</b><span>更亮、更轻，长时间看也不累</span></div>
+          <div class="theme" style="--lbg:#111820;--lp:#37A6A0;--la:#F0B84C;--dbg:#111820;--dp:#37A6A0;--da:#4AB6D2"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>夜间护眼</b><span>低亮度深色界面，本身就是深色主题</span></div>
+          <div class="theme" style="--lbg:#EAF1F8;--lp:#174C72;--la:#277DA1;--dbg:#11161A;--dp:#3C97D8;--da:#3099C5"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>深海蓝</b><span>冷静的蓝色系，适合学习与代码场景</span></div>
+          <div class="theme" style="--lbg:#FBF0F3;--lp:#8A4E65;--la:#E66F89;--dbg:#1A1114;--dp:#B57D92;--da:#7F8BBB"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>樱花粉</b><span>柔和暖粉，降低大面积白色的刺眼感</span></div>
+          <div class="theme" style="--lbg:#EDF3EE;--lp:#355E4A;--la:#4C9272;--dbg:#131814;--dp:#5AA07E;--da:#5D9D99"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>松林绿</b><span>低饱和自然绿，适合长时间规划</span></div>
+          <div class="theme" style="--lbg:#F1EFF8;--lp:#58507B;--la:#8066B2;--dbg:#13111A;--dp:#8D85B0;--da:#6D8CBB"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>暮光紫</b><span>轻紫与蓝灰搭配，视觉层级更明显</span></div>
+          <div class="theme" style="--lbg:#EFEFEE;--lp:#40484C;--la:#607D8B;--dbg:#171715;--dp:#87939A;--da:#7995A2"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>极简灰</b><span>低彩度、高信息密度的中性主题</span></div>
+          <div class="theme" style="--lbg:#F7F7F5;--lp:#10A37F;--la:#202123;--dbg:#171714;--dp:#14D7A7;--da:#15D6A6"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>ChatGPT 白瓷</b><span>克制的中性色与翡翠绿</span></div>
+          <div class="theme" style="--lbg:#F4F0E8;--lp:#C15F3C;--la:#2D2926;--dbg:#1A1711;--dp:#D27D62;--da:#6B9C97"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>Claude 手稿</b><span>温暖纸色与陶土橙，适合阅读与深度思考</span></div>
+          <div class="theme" style="--lbg:#FAFAFA;--lp:#18181B;--la:#3B82F6;--dbg:#171515;--dp:#8E8E9A;--da:#4D8DF7"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>Shadcn 锌灰</b><span>中性锌灰与近黑主按钮</span></div>
+          <div class="theme" style="--lbg:#EDF2EE;--lp:#3D6B5B;--la:#C96A5E;--dbg:#141815;--dp:#5A9E86;--da:#689A9F"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>青瓷釉色</b><span>南宋龙泉窑的粉青釉，安静温润</span></div>
+          <div class="theme" style="--lbg:#F4E8D5;--lp:#2F5D68;--la:#C0452E;--dbg:#1A1711;--dp:#4F9DB0;--da:#5B9CAA"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>敦煌暮色</b><span>石青主色、朱砂点缀、沙金纸面</span></div>
+          <div class="theme" style="--lbg:#EEF3F9;--lp:#1D4E89;--la:#E15A33;--dbg:#11151A;--dp:#5592DB;--da:#4195D3"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>晒图蓝</b><span>普鲁士蓝与安全橙，适合学习与工程</span></div>
+          <div class="theme" style="--lbg:#FFF6E9;--lp:#CE5F05;--la:#2B8AC4;--dbg:#1A1611;--dp:#ED6D06;--da:#3A9AD4"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>蜜柑汽水</b><span>夏日下午的橘子汽水，明亮有元气</span></div>
+          <div class="theme" style="--lbg:#ECEFF4;--lp:#5E81AC;--la:#8FBC72;--dbg:#121519;--dp:#7290B6;--da:#6B91BD"><div class="ui" aria-hidden="true"><i class="s"></i><i class="m"></i><i class="dot"></i></div><b>极光晨雾</b><span>极地雪原与冻雾蓝，冷静克制</span></div>
+        </div>
+        <div class="pref-grid">
+          <div class="sheet pref" data-reveal><h3>大小与密度</h3><p>界面整体缩放与文字大小各自 80%–150% 可调；紧凑 / 标准 / 宽松三档密度，以及「舒适」「高密度」「低干扰」预设。</p></div>
+          <div class="sheet pref" data-reveal><h3>动效随你</h3><p>完整动效、减少动效或跟随系统。选了减少动效，拖拽、收放、切换都会直接落定。</p></div>
+          <div class="sheet pref" data-reveal><h3>命令面板</h3><p><code>Ctrl+K</code> 统一搜索任务、时间块、插件与常用命令；系统级快捷键可以随时呼出快速捕获。</p></div>
+          <div class="sheet pref" data-reveal><h3>关键词标注</h3><p>通知里的日期和时间自动标红，自定义关键词可以设字体颜色或荧光笔背景，重点一眼可见。</p></div>
+          <div class="sheet pref" data-reveal><h3>侧栏与启动</h3><p>任务表、时间块等页面可以改名换图标；设置启动后进入的页面、启动窗口大小，关闭时退出或隐藏到托盘。</p></div>
+          <div class="sheet pref" data-reveal><h3>通知不刷屏</h3><p>多条通知叠成一张，鼠标悬停时展开；设置里也能全局搜索任意一个选项。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 数据与同步 -->
+    <section class="block" id="data">
+      <div class="wrap">
+        <p class="kicker">Local-first</p>
+        <h2>数据在你手里</h2>
+        <div class="data-grid">
+          <div>
+            <p class="lead">核心链路不依赖网络、不要求账号、不上传数据。需要跨设备时，由你决定何时、用哪条通道传。</p>
+            <ul class="points">
+              <li><b>一个文件</b>：全部数据存在应用目录的 <code>data.json</code>；保存时先写临时文件再改名，不会留下写了一半的文件</li>
+              <li><b>备份与交换</b>：完整 JSON 备份 / 恢复；任务与时间块可导出 CSV、Excel，日历可导入导出 ICS</li>
+              <li><b>自动恢复点</b>：按每日或每周自动留快照，保留数量可设，也能手动创建</li>
+              <li><b>可选同步</b>：WebDAV（坚果云、Nextcloud 等）手动推送 / 拉取快照，不在后台自动上传；应用密码用 AES-256-GCM 存在本机密钥库，不进数据文件与备份</li>
+              <li><b>局域网直连</b>：电脑和手机在同一 Wi-Fi 下，扫码或输入配对码直接传，不经过任何服务器</li>
+              <li><b>应用内更新</b>：检查 GitHub Releases 上的新版本，Windows 下载后静默安装并重启，Android 交给系统安装器</li>
+            </ul>
+          </div>
+          <div class="sheet data-svg" data-reveal>
+            <svg viewBox="0 0 560 330" role="img" aria-label="数据流向示意：本机的 data.json 是唯一事实源，向下连着完整备份、表格与日历交换、自动恢复点；虚线连着可选的 WebDAV 网盘和局域网里的手机，两条都由用户手动发起">
+              <defs>
+                <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#188ca5"/></marker>
+                <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#ff7a59"/></marker>
+              </defs>
+              <rect x="196" y="112" width="168" height="84" rx="14" fill="#16213e"/>
+              <text x="280" y="146" text-anchor="middle" fill="#8be1e4" font-size="12" font-weight="700" letter-spacing="2">本机 · 唯一事实源</text>
+              <text x="280" y="174" text-anchor="middle" fill="#fff" font-size="21" font-family="Consolas, monospace">data.json</text>
+              <g font-size="13" fill="#16213e">
+                <rect x="20" y="252" width="150" height="54" rx="10" fill="#fff" stroke="#d9e1ec"/>
+                <text x="95" y="275" text-anchor="middle" font-weight="700">完整备份</text><text x="95" y="294" text-anchor="middle" fill="#68728a" font-size="11.5">JSON 导出 / 恢复</text>
+                <rect x="205" y="252" width="150" height="54" rx="10" fill="#fff" stroke="#d9e1ec"/>
+                <text x="280" y="275" text-anchor="middle" font-weight="700">表格与日历</text><text x="280" y="294" text-anchor="middle" fill="#68728a" font-size="11.5">CSV · Excel · ICS</text>
+                <rect x="390" y="252" width="150" height="54" rx="10" fill="#fff" stroke="#d9e1ec"/>
+                <text x="465" y="275" text-anchor="middle" font-weight="700">自动恢复点</text><text x="465" y="294" text-anchor="middle" fill="#68728a" font-size="11.5">每日 / 每周快照</text>
+              </g>
+              <g stroke="#188ca5" stroke-width="1.6" fill="none" marker-end="url(#arr)">
+                <path d="M240 198 C 200 226, 130 222, 100 248"/>
+                <path d="M280 198 L 280 248"/>
+                <path d="M320 198 C 360 226, 430 222, 460 248"/>
+              </g>
+              <g font-size="13" fill="#16213e">
+                <rect x="20" y="24" width="160" height="58" rx="10" fill="#fff6f2" stroke="#ffb8a3"/>
+                <text x="100" y="48" text-anchor="middle" font-weight="700">WebDAV 网盘</text><text x="100" y="67" text-anchor="middle" fill="#68728a" font-size="11.5">手动推送 / 拉取快照</text>
+                <rect x="380" y="24" width="160" height="58" rx="10" fill="#fff6f2" stroke="#ffb8a3"/>
+                <text x="460" y="48" text-anchor="middle" font-weight="700">局域网 · 手机</text><text x="460" y="67" text-anchor="middle" fill="#68728a" font-size="11.5">扫码配对，直接传</text>
+              </g>
+              <g stroke="#ff7a59" stroke-width="1.6" fill="none" stroke-dasharray="5 5" marker-end="url(#arr2)" marker-start="url(#arr2)">
+                <path d="M182 60 C 222 64, 236 84, 250 108"/>
+                <path d="M378 60 C 338 64, 324 84, 310 108"/>
+              </g>
+              <text x="280" y="42" text-anchor="middle" fill="#ff7a59" font-size="12" font-weight="700">可选 · 由你发起</text>
+              <text x="280" y="60" text-anchor="middle" fill="#68728a" font-size="11.5">没有账号体系，不在后台上传</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 三端 -->
+    <section class="block tint" id="platforms">
+      <div class="wrap">
+        <p class="kicker">Everywhere</p>
+        <h2>三端，一套数据格式</h2>
+        <p class="lead">桌面端与 Android 是同一套代码（Tauri 2 + 原生 JavaScript），微信小程序是同源的原生实现，共用同一份数据格式与同一个中文时间解析引擎，备份可以互相恢复。各端按形态裁剪，不硬把桌面体验塞进手机。</p>
+        <div class="devices" data-reveal>
+          <figure class="device">
+            <div class="d-desk" aria-hidden="true"><div class="bar"></div><div class="body"><div class="side"><i></i><i></i><i></i><i></i></div><div class="main"><span></span><span></span><span></span></div></div></div>
+            <figcaption>Windows<small>侧栏 + 任务表 / 时间块 / 收件箱 / 插件</small></figcaption>
+          </figure>
+          <figure class="device">
+            <div class="d-phone" aria-hidden="true"><div class="scr"><div class="hd"></div><div class="tl"><span style="top:6%"></span><span style="top:26%"></span><span style="top:46%"></span><span style="top:66%"></span></div><div class="nav"><i></i><i></i><i></i></div></div></div>
+            <figcaption>Android<small>底栏 + 四象限 / 时间线 / 插件</small></figcaption>
+          </figure>
+          <figure class="device">
+            <div class="d-mini" aria-hidden="true"><div class="scr"><div class="hd"><span class="cap"><i></i><i></i></span></div><div class="q"><span style="background:#FFE3E0"></span><span style="background:#FCEFD2"></span><span style="background:#E6EAFF"></span><span style="background:#E1F0EA"></span></div><div class="rows"><i></i><i></i><i></i></div><div class="nav" style="margin-top:auto"><i></i><i></i><i></i><i></i></div></div></div>
+            <figcaption>微信小程序<small>任务表 / 时间块 / 捕获 / 设置</small></figcaption>
+          </figure>
+        </div>
+        <div class="table-scroll">
+          <table class="cmp">
+            <thead><tr><th scope="col">能力</th><th scope="col">Windows</th><th scope="col">Android</th><th scope="col">微信小程序</th></tr></thead>
+            <tbody>
+              <tr><th scope="row">核心视图</th><td>任务表 · 时间块（7 种视图）· 收件箱 · 插件</td><td>四象限 · 时间线 · 插件</td><td>2×2 象限块与任务列表 · 时间块 · 捕获 · 设置</td></tr>
+              <tr><th scope="row">中文捕获</th><td>拖入 / <code>Ctrl+V</code> / 系统级快捷键</td><td>粘贴与插件收纳</td><td>读取剪贴板或手动输入，实时解析预览</td></tr>
+              <tr><th scope="row">提醒</th><td>应用内横幅 + 提示音，可常驻托盘</td><td>系统通知 + 精确闹钟，应用关掉也会响</td><td>—</td></tr>
+              <tr><th scope="row">插件</th><td>17 个</td><td>17 个</td><td>13 个有原生版</td></tr>
+              <tr><th scope="row">数据</th><td>JSON 备份 · WebDAV · 局域网</td><td>JSON 备份 · WebDAV · 局域网</td><td>备份与桌面端互通</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 设计理念 -->
+    <section class="block" id="principles">
+      <div class="wrap">
+        <p class="kicker">Principles</p>
+        <h2>为什么这样设计</h2>
+        <div class="principles">
+          <article class="sheet principle" data-reveal><i>01</i><h3>本地优先</h3><p>全部核心链路不依赖网络、不要求账号、不上传数据；跨设备只走你亲手发起的通道。</p></article>
+          <article class="sheet principle" data-reveal><i>02</i><h3>不确定就不猜</h3><p>可能改动你已有数据的操作，遇到拿不准的情况就停下来问：宁可提示，不可覆盖。</p></article>
+          <article class="sheet principle" data-reveal><i>03</i><h3>机器改动必须可撤回</h3><p>自动化的价值取决于它能不能撤销。每次自动写入前留快照，出错了一键放回。</p></article>
+          <article class="sheet principle" data-reveal><i>04</i><h3>功能以插件形式生长</h3><p>宿主只管核心链路，新能力做成插件：一个文件夹，声明权限，调用受控的 <code>tide.*</code> 接口。</p></article>
+          <article class="sheet principle" data-reveal><i>05</i><h3>跨端一致，按端裁剪</h3><p>同一份数据格式、同一个时间解析引擎；手机上换成更顺手的时间线和底栏，而不是缩小的桌面。</p></article>
+          <article class="sheet principle" data-reveal><i>06</i><h3>零框架，最小依赖</h3><p>原生 JavaScript + Vite，无前端框架；约定都写成可校验的测试，改坏了会被拦下。</p></article>
+        </div>
+        <div class="honest" data-reveal>
+          <h3>如实说明</h3>
+          <ul>
+            <li>本地优先不等于完全离线：AI 解析与对话、WebDAV 同步、联网插件（教务、学习通、RSS、竞赛等）和更新检查会访问网络，都需要你主动配置或启用。</li>
+            <li>AI 功能需要自备兼容 OpenAI 格式的接口与 API Key；识别结果一律经你确认后才保存。</li>
+            <li>校园类插件依赖学校系统与你自己的账号，对方接口变动时可能暂时不可用。</li>
+            <li>部分能力按端提供：插件右键菜单、拖动排序与整组换位等在桌面端；系统级闹钟在 Android 端；小程序端暂无推送提醒。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section class="cta">
+    <div class="wrap">
+      <div>
+        <h2>把下一件事，放进时间里</h2>
+        <p>本地优先，源码公开在 GitHub。Windows 安装包与 Android APK 在 GitHub Releases 下载。</p>
+      </div>
+      <div class="hero-actions" style="margin:0">
+        <a class="button primary" href="https://github.com/momoqiqi-qwq/le-time-management/releases/latest" target="_blank" rel="noreferrer">下载最新版 ↗</a>
+        <a class="button" href="https://github.com/momoqiqi-qwq/le-time-management" target="_blank" rel="noreferrer">查看源码 ↗</a>
+        <a class="button" href="plugins.html">插件使用说明</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>U-Time · Le时间管理 · 本地优先的时间管理平台 · 本页功能以 v0.104.0 源码为准</p>
+    <p><a href="features.html">功能介绍</a> · <a href="index.html">开发手册</a> · <a href="plugins.html">插件说明</a> · <a href="upload.html">插件工坊</a> · <a href="tech-stack.html">技术栈</a> · <a href="https://github.com/momoqiqi-qwq/le-time-management" target="_blank" rel="noreferrer">GitHub 仓库</a></p>
+  </footer>
+
+  <script>
+    (() => {
+      const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.documentElement.classList.add("js");
+
+      /* 捕获演示：以下数据由应用内置 timeParser（le-time-management/src/timeParser.js）
+         以 2026-09-24 10:00（周四）为基准实际解析得出；没写结束时间按 60 分钟、
+         没写时刻从 09:00 找 60 分钟空档，与 capture.js 的落格规则一致。 */
+      const CAT = {
+        work: ["工作", "var(--a-sun)", "#17323A", "c-work"],
+        study: ["学习", "var(--a-sea)", "#fff", "c-study"],
+        sport: ["运动", "var(--a-coral)", "#3A1512", "c-sport"],
+        life: ["生活", "var(--a-grape)", "#fff", "c-life"],
+      };
+      const QUAD = { 1: "I · 重要且紧急", 2: "II · 重要不紧急" };
+      const DEMO = [
+        { s: "明天下午3点到4点 与导师讨论开题修改", date: "9月25日 周五", start: 900, end: 960, title: "与导师讨论开题修改", cat: "work", quad: 1 },
+        { s: "今晚8点 操场跑步5公里", date: "9月24日 周四", start: 1200, end: null, title: "操场跑步5公里", cat: "sport", quad: 1 },
+        { s: "周六中午12点 和室友聚餐", date: "9月26日 周六", start: 720, end: null, title: "和室友聚餐", cat: "life", quad: 2 },
+        { s: "9月28日下午2点到5点 图书馆复习", date: "9月28日 周一", start: 840, end: 1020, title: "图书馆复习", cat: "study", quad: 2 },
+        { s: "下下周一上午10点 创新项目答辩", date: "10月5日 周一", start: 600, end: null, title: "创新项目答辩", cat: "study", quad: 2 },
+        { s: "月底 交创新学分材料", date: "9月30日 周三", start: null, end: null, title: "交创新学分材料", cat: "study", quad: 2 },
+      ];
+      const LANE_START = 7 * 60, LANE_SPAN = 17 * 60;
+      const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      const demo = document.querySelector("[data-demo]");
+      if (demo) {
+        const f = (name) => demo.querySelector(`[data-f="${name}"]`);
+        const show = (i) => {
+          const d = DEMO[i];
+          const start = d.start ?? 540;
+          const end = d.end ?? start + 60;
+          const [label, color, fg, cls] = CAT[d.cat];
+          f("s").textContent = d.s;
+          f("date").textContent = d.date;
+          f("time").textContent = d.start == null ? "未写时刻 · 从 09:00 找 60 分钟空档"
+            : d.end == null ? `${hhmm(d.start)} 起 · 默认 60 分钟` : `${hhmm(d.start)} – ${hhmm(d.end)}`;
+          f("title").textContent = d.title;
+          f("cat").innerHTML = `<span class="cat ${cls}">${label}</span>`;
+          f("quad").textContent = QUAD[d.quad];
+          const lane = f("lane");
+          const s0 = (start - LANE_START) / LANE_SPAN;
+          lane.style.setProperty("--s", s0.toFixed(4));
+          lane.style.setProperty("--w", ((end - start) / LANE_SPAN).toFixed(4));
+          lane.style.setProperty("--c", color);
+          lane.style.setProperty("--fg", fg);
+          lane.classList.toggle("flip", s0 > .6);
+          f("lbl").textContent = d.title;
+          f("blk").textContent = hhmm(start);
+          demo.querySelectorAll(".chip").forEach((chip) => chip.setAttribute("aria-pressed", String(Number(chip.dataset.i) === i)));
+        };
+        demo.addEventListener("click", (event) => {
+          const chip = event.target.closest(".chip");
+          if (chip) show(Number(chip.dataset.i));
+        });
+      }
+
+      /* 主题预览：浅色 / 深色 */
+      const themes = document.getElementById("themes");
+      document.querySelectorAll("[data-mode]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const dark = button.dataset.mode === "dark";
+          themes.classList.toggle("dark", dark);
+          document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+        });
+      });
+
+      /* 滚动显现：减少动效或不支持 IntersectionObserver 时直接显示 */
+      const items = document.querySelectorAll("[data-reveal]");
+      if (reduce || !("IntersectionObserver" in window)) {
+        items.forEach((node) => node.classList.add("in"));
+      } else {
+        const io = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            entry.target.classList.add("in");
+            io.unobserve(entry.target);
+          }
+        }, { rootMargin: "0px 0px -8% 0px", threshold: .08 });
+        items.forEach((node) => io.observe(node));
+      }
+    })();
+  </script>
+</body>
+</html>

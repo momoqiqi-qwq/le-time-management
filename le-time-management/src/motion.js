@@ -1,9 +1,12 @@
+import { getUiScaleFactor } from "./uiScale.js";
+
 const CLOSING_CLASS = "motion-closing";
 const PRESS_CLASS = "motion-pressing";
 const CLICK_CLASS = "motion-clicked";
 const CLOSE_CONTROL_CLASS = "motion-close-control";
 let initialized = false;
 const pressedControls = new Set();
+const FLIP_EASING = "cubic-bezier(.22,.8,.22,1)";
 
 export function reducedMotion() {
   const setting = document.documentElement.dataset.uiMotion;
@@ -180,4 +183,123 @@ export function removeWithMotion(element) {
   };
   element.addEventListener("animationend", onAnimationEnd);
   window.setTimeout(finish, 240);
+}
+
+/* ── 整段重绘的 FLIP（v0.103.0 插件分组）──────────────────────────────────────
+ * 侧栏与插件中心都是「状态 → 整段 replaceChildren() 重建」，每次重建节点身份都会换，
+ * 所以这里不认节点只认 key：mutate() 之前按 key 记下视觉位置，重建后同 key 的新节点
+ * 从旧位置滑到新位置 —— 只动 transform，由合成层完成，不逐帧重排。
+ * - 嵌套：最近的 key 祖先已经在走的那段位移要从子节点里扣掉，否则子节点会叠加走两遍；
+ * - 新出现的节点交给 enter(node) 给关键帧（默认淡入 + 轻微放大），返回 null 表示不动；
+ *   消失的节点直接离场 —— 需要离场动画的调用方先播完（见 fadeAway）再调 mutate；
+ * - getBoundingClientRect 是 zoom 之后的视觉像素，transform 用元素自己的 CSS 像素，
+ *   位移必须除以 getUiScaleFactor()（与 toolbarDrag.js 同一口径，否则非 100% 缩放下起点会跳）；
+ * - 快照取的是「当前视觉位置」（含进行中的 transform），连点时从半路接着走，不会先跳回原位。
+ * reducedMotion() 时只执行 mutate()。返回全部动画结束（或被取消）的 Promise。
+ */
+export function flipByKey(root, {
+  selector,
+  key,
+  mutate,
+  enter = fadeScaleIn,
+  duration = 220,
+  easing = FLIP_EASING,
+  stagger = 16,
+} = {}) {
+  if (typeof mutate !== "function") return Promise.resolve();
+  if (!root || reducedMotion() || typeof root.animate !== "function") {
+    mutate();
+    return Promise.resolve();
+  }
+  const scale = getUiScaleFactor() || 1;
+  const before = new Map();
+  for (const node of root.querySelectorAll(selector)) {
+    const id = key(node);
+    if (id && !before.has(id)) before.set(id, node.getBoundingClientRect());
+  }
+  mutate();
+  const shifts = new Map();
+  const running = [];
+  let entering = 0;
+  for (const node of root.querySelectorAll(selector)) {
+    const now = node.getBoundingClientRect();
+    if (!now.width && !now.height) continue;
+    const id = key(node);
+    const old = id ? before.get(id) : null;
+    if (!old) {
+      const frames = enter?.(node);
+      if (frames) {
+        running.push(node.animate(frames, {
+          duration, easing, delay: Math.min(entering++, 8) * stagger, fill: "backwards",
+        }));
+      }
+      continue;
+    }
+    const shift = { dx: (old.left - now.left) / scale, dy: (old.top - now.top) / scale };
+    shifts.set(node, shift);
+    const parent = keyedAncestorShift(node, root, shifts);
+    const dx = shift.dx - parent.dx;
+    const dy = shift.dy - parent.dy;
+    if (Math.abs(dx) + Math.abs(dy) < 0.5) continue;
+    running.push(node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], { duration, easing }));
+  }
+  return settleAll(running);
+}
+
+const NO_SHIFT = { dx: 0, dy: 0 };
+
+function keyedAncestorShift(node, root, shifts) {
+  for (let up = node.parentElement; up && up !== root; up = up.parentElement) {
+    const shift = shifts.get(up);
+    if (shift) return shift;
+  }
+  return NO_SHIFT;
+}
+
+function fadeScaleIn() {
+  return [{ opacity: 0, transform: "scale(.96)" }, { opacity: 1, transform: "none" }];
+}
+
+function settleAll(animations) {
+  return Promise.all(animations.map((animation) => animation.finished.catch(() => {}))).then(() => {});
+}
+
+/* ── 折叠段的高度动画 ──
+ * 收起的成员不渲染（shell.js：collapsed ? null : plugSegNode(views)），接不上 CSS transition：
+ * 展开是「新挂上的段从 0 长到自然高度」，收起是「旧段收到 0，结束后由调用方摘掉」。
+ * 高度动画会逐帧重排，只给侧栏这种几十个节点的小列表用；下方兄弟随布局自然跟走，不必再 FLIP。
+ * 返回动画结束（或被取消）的 Promise；reducedMotion() 时立即 resolve。 */
+export function foldOpen(node, { duration = 220, easing = FLIP_EASING } = {}) {
+  return foldHeight(node, true, duration, easing);
+}
+
+export function foldClose(node, { duration = 180, easing = "cubic-bezier(.4,0,.2,1)" } = {}) {
+  return foldHeight(node, false, duration, easing);
+}
+
+function foldHeight(node, opening, duration, easing) {
+  if (!node || reducedMotion() || typeof node.animate !== "function") return Promise.resolve();
+  const style = getComputedStyle(node);
+  const open = {
+    height: `${node.getBoundingClientRect().height / (getUiScaleFactor() || 1)}px`,
+    paddingTop: style.paddingTop,
+    paddingBottom: style.paddingBottom,
+    opacity: 1,
+  };
+  const shut = { height: "0px", paddingTop: "0px", paddingBottom: "0px", opacity: 0 };
+  node.style.overflow = "hidden";
+  const animation = node.animate(opening ? [shut, open] : [open, shut], {
+    duration, easing, fill: opening ? "none" : "forwards",
+  });
+  return animation.finished.then(() => { if (opening) node.style.overflow = ""; }, () => {});
+}
+
+/** 一批节点淡出并轻微缩小（fill: forwards 停在终态），给「先离场、再整段重绘」的调用方等。 */
+export function fadeAway(nodes, { duration = 110, easing = "cubic-bezier(.4,0,1,1)" } = {}) {
+  const list = [...(nodes || [])].filter((node) => node?.isConnected && typeof node.animate === "function");
+  if (!list.length || reducedMotion()) return Promise.resolve();
+  return settleAll(list.map((node) => node.animate(
+    [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(.96)" }],
+    { duration, easing, fill: "forwards" },
+  )));
 }

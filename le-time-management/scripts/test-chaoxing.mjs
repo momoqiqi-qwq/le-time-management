@@ -48,13 +48,15 @@ const context = vm.createContext({
   tide,
 });
 
-const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,submittedOpen,lateAll,overdueTodos,submittedOverdue,todoHtml,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks,noticeAcademicYear,catYears,catsHtml,inboxCardHtml,cxInitials,cxKwHit}';
+const EXPORTS = '{state,pickTargetLink,isAnonymousUrl,linkScore,cardActionsHtml,ignoreNotice,restoreIgnored,visibleInbox,filteredInbox,todos,submittedOpen,lateAll,overdueTodos,submittedOverdue,noDueWorks,recentNoDueWorks,gradingNoDue,noticeTimeMs,todoHtml,openTarget,fetchInbox,LOGIN_JUMP,loadCourses,termOf,currentTerm,gradeOf,detectEnrollYear,courseStatus,courseCardHtml,coursesHtml,parseWorkRef,statusOf,gradingBadge,probeWorkStatus,probePendingWorks,noticeAcademicYear,catYears,catsHtml,inboxCardHtml,cxInitials,cxKwHit}';
 vm.runInContext(
   source.replace('  tide.ui.registerView({', `  globalThis.cx = ${EXPORTS};\n  tide.ui.registerView({`),
   context,
 );
 const { state, pickTargetLink, isAnonymousUrl, cardActionsHtml, ignoreNotice, restoreIgnored,
-  visibleInbox, filteredInbox, todos, submittedOpen, lateAll, overdueTodos, submittedOverdue, todoHtml, openTarget, fetchInbox, LOGIN_JUMP,
+  visibleInbox, filteredInbox, todos, submittedOpen, lateAll, overdueTodos, submittedOverdue,
+  noDueWorks, recentNoDueWorks, gradingNoDue, noticeTimeMs,
+  todoHtml, openTarget, fetchInbox, LOGIN_JUMP,
   loadCourses, termOf, currentTerm, gradeOf, detectEnrollYear, courseStatus, courseGroups, coursesHtml,
   parseWorkRef, statusOf, gradingBadge, probeWorkStatus, probePendingWorks,
   noticeAcademicYear, catYears, catsHtml, inboxCardHtml, cxInitials, cxKwHit } = context.cx;
@@ -170,7 +172,7 @@ assert.equal(opened.at(-1), LOGIN_JUMP(HW), '没有本机会话时按需要登�
 /* ── 6. 权限与清单：openUrl 必须在 manifest 里声明，否则按钮点了没反应 ── */
 assert.ok(source.includes('tide.util.openUrl('), '插件确实调用了 openUrl');
 assert.ok((manifest.permissions || []).includes('openUrl'), 'manifest 必须声明 openUrl 权限');
-assert.equal(manifest.version, '2.12.2');
+assert.equal(manifest.version, '2.13.0');
 const catalog = fs.readFileSync(new URL('src/pluginCatalog.js', root), 'utf8');
 const entry = catalog.slice(catalog.indexOf('"id": "chaoxing-notify"'));
 const block = entry.slice(0, entry.indexOf('},\n  {'));
@@ -527,18 +529,124 @@ assert.deepEqual(overdueTodos().map((n) => n.id), ['late-old', 'late-new'], '逾
 assert.deepEqual(submittedOverdue().map((n) => n.id), ['sent'], '过期但已提交的单独一档');
 
 const todoView = todoHtml();
-assert.match(todoView, /未截止未提交 1<\/span>.*已逾期未提交 2<\/span>.*已提交未截止 1<\/span>.*已提交已过期 1<\/span>/, '统计条四类状态各给数');
+assert.match(todoView, /未截止未提交 1<\/button>.*已逾期未提交 2<\/button>.*已提交未截止 1<\/button>.*已提交已过期 1<\/button>/, '统计条四类状态各给数');
+assert.match(todoView, /class="cx2-kpi" data-todo-sec="open" aria-pressed="false"[^>]*>未截止未提交 1</, '统计条是可点按钮，默认一档都没选中');
 assert.match(todoView, /class="cx2-card cat-sun late"/, '逾期卡要带 late 类');
 assert.match(todoView, /cx2-due late">已逾期 \d+ 天 · 截止 2020-01-01 09:00</, '逾期卡要写明逾期多久');
 assert.match(todoView, /未截止未提交<span class="cx2-grade-sub">1 条/, '未截止未提交分区标题带条数');
 assert.match(todoView, /已逾期未提交<span class="cx2-grade-sub">2 条/, '逾期未提交分区标题带条数');
 assert.match(todoView, /已提交但未到截止时间<span class="cx2-grade-sub">1 条/, '已提交未截止分区标题带条数');
+assert.match(todoView, /已提交已过期<span class="cx2-grade-sub">1 条/, '已提交已过期也要有自己的分区，否则顶部那格的数字点不开任何东西');
 assert.match(todoView, />作业:open-sent</, '已提交但未截止的作业要显示在待办页');
 assert.match(todoView, /已提交 · 截止 2099-02-02 09:00/, '已提交未截止卡片要标明已提交');
-assert.doesNotMatch(todoView, />作业:sent</, '探到已提交的那条不该再出现在逾期列表里');
+const lateSec = todoView.match(/<section[^>]*>(?:(?!<\/section>)[\s\S])*已逾期未提交[\s\S]*?<\/section>/)[0];
+assert.doesNotMatch(lateSec, />作业:sent</, '探到已提交的那条不该再出现在逾期列表里');
+assert.match(todoView, /class="cx2-grade-head"><span class="cx2-dot dot-green"><\/span>已提交已过期[\s\S]*?>作业:sent</, '已提交已过期那条要落在自己的分区里');
 assert.match(source, /class="cx2-pill cx2-late"/, '顶部标签页要给出逾期胶囊');
 assert.match(styleBlock, /\.cx2-card\.late\{[^}]*border-top-color/, '逾期卡描边只让三边，左边框留给类型色');
 assert.doesNotMatch(styleBlock, /\.cx2-card\.late\{[^}]*[^-]border-color:/, '用 border-color 简写会吞掉类型色的左边框');
+
+/* ── 10b. 统计条可点筛选：点一档只看那一档，再点取消 ──
+   旧版那四格是 <span>，点了没反应；分类页的胶囊筛选没有对齐到待办页。 */
+state.filter.todoSec = 'late';
+const onlyLate = todoHtml();
+assert.match(onlyLate, /class="cx2-kpi on" data-todo-sec="late" aria-pressed="true"/, '选中的那档要亮起来');
+assert.match(onlyLate, /已逾期未提交<span class="cx2-grade-sub">2 条/, '筛选后逾期分区还在');
+assert.doesNotMatch(onlyLate, /未截止未提交<span class="cx2-grade-sub>/, '筛选后其它分区不再渲染');
+assert.doesNotMatch(onlyLate, /已提交但未到截止时间<span/, '筛选后已提交未截止分区也不渲染');
+assert.equal((onlyLate.match(/<section class="cx2-cat-sec"/g) || []).length, 1, '筛选后只剩一个分区');
+state.filter.todoSec = 'done';
+assert.match(todoHtml(), />作业:sent</, '点「已提交已过期」要能看到那一条');
+state.filter.todoSec = 'open';
+assert.doesNotMatch(todoHtml(), />作业:sent</, '筛选只删内容，不该把别的档带出来');
+state.filter.todoSec = '';
+assert.match(todoHtml(), /已提交已过期<span class="cx2-grade-sub">1 条/, '取消筛选回到全部五段');
+state.inbox = [mkDue('open', '2099-01-01 09:00')];
+state.filter.todoSec = 'late';
+assert.match(todoHtml(), /已逾期未提交<span class="cx2-grade-sub">0 条[\s\S]{0,80}<div class="cx2-empty">/, '选中空档时给空态说明，不能整段消失');
+assert.match(todoHtml(), /data-todo-sec="late" aria-pressed="true"[^>]*>已逾期未提交 0</, '计数为 0 的那档也要给按钮，不能因为空就收掉');
+state.filter.todoSec = '';
+
+/* ── 10b2. 第五档「已提交待批改」：通知里压根没写结束时间的那批作业 ─────────────
+   前四档全建立在可解析的截止时间上。老师发布作业时不设结束时间很常见
+   （真实账号 54 条带作业附件的通知里 44 条只有开始时间），这类作业四档都不进、
+   连提交状态都不会被探测，于是「早就交了、成绩还没出」的作业在待办页完全看不见。 */
+state.ignoredIds.clear(); state.newIds.clear(); state.readOverrides.clear(); state.workStatus = {};
+state.loggedIn = true; state.filter.todoSec = '';
+const at = (daysAgo) => {
+  const d = new Date(Date.now() - daysAgo * 86400000);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+const mkNoDue = (id, time, workId) => ({
+  id, title: `作业:${id}`, sender: '学习通知', time, insertTime: 5,
+  body: `课程名称：X\n作业名称：${id}\n开始时间：${time}`,
+  raw: { rtf_content: `<p>开始时间：${time}</p>${iframeHtml(workId)}` },
+});
+const freshTime = at(3), staleTime = at(200);
+state.inbox = [
+  mkDue('with-due', '2099-01-01 09:00', 9100),
+  mkNoDue('fresh', freshTime, 9101),
+  mkNoDue('stale', staleTime, 9102),
+  mkNoDue('no-time', '', 9103),
+];
+assert.deepEqual(noDueWorks().map((n) => n.id), ['fresh', 'stale', 'no-time'], '带作业附件、正文又解析不出结束时间的才算无截止');
+state.workStatus = { 9101: 'grading', 9102: 'grading', 9103: 'grading' };
+assert.deepEqual(gradingNoDue().map((n) => n.id), ['fresh', 'no-time'], '只留近 60 天的；认不出发布时间的按近期放行，上学期的遗留不进待办');
+assert.equal(todos().length, 1, '第五档不并进未提交那份 —— 侧标「待办作业 N」仍是真正待处理的条数');
+const noDueView = todoHtml();
+assert.match(noDueView, /已提交待批改<span class="cx2-grade-sub">2 条/, '第五档要有自己的分区与条数');
+assert.ok(noDueView.includes(`无截止时间 · 发布于 ${freshTime}`), '无截止的卡片要交代发布时间，不能渲染成「截止 」空一半');
+assert.match(noDueView, /发布于 时间未知/, '认不出发布时间的也要交代一句，不能留空');
+state.workStatus = { 9101: 'unsent', 9102: 'grading', 9103: 'grading' };
+assert.deepEqual(gradingNoDue().map((n) => n.id), ['no-time'], '无截止里未提交的不收 —— 没有截止时间就判不出是否逾期，混进前四档只会让那两档语义失真');
+state.workStatus = {};
+const probeBefore = fetched.filter((u) => /intoexamorwork/.test(u)).length;
+response = (url) => ({ status: 200, finalUrl: url, body: '<html><title>查看详情</title></html>' });
+await probePendingWorks();
+assert.equal(state.workStatus['9100'], 'grading', '带截止的那条照旧在探测队列里');
+assert.equal(state.workStatus['9101'], 'grading', '无截止的近期作业必须被探测，否则第五档永远是空的');
+assert.equal(state.workStatus['9103'], 'grading', '认不出发布时间的同样进探测队列');
+assert.equal(state.workStatus['9102'], undefined, '超出 60 天的旧作业不探，省得为上学期的遗留多打请求');
+assert.equal(fetched.filter((u) => /intoexamorwork/.test(u)).length - probeBefore, 3, '一轮只探这三条，不多打');
+
+/* ── 10c. 点击链路：真跑一遍 wire()，确认统计条点得动、筛选会存下来 ── */
+{
+  const st = { filter: { todoSec: 'late' } };
+  const host2 = { innerHTML: '', handlers: {}, addEventListener(ev, fn) { (host2.handlers[ev] ||= []).push(fn); } };
+  let view = null;
+  const ctx = vm.createContext({
+    URL, Set, Map, Date, console, JSON, Number, String, Array, Object, Promise, RegExp,
+    setTimeout: (fn, ms) => { const t = setTimeout(fn, Math.min(ms, 5)); t.unref?.(); return t; },
+    clearTimeout,
+    document: { createElement: () => ({ set textContent(v) { this.value = v; } }), getElementById: () => null, head: { append() {} } },
+    atob,
+    tide: {
+      ...tide,
+      ui: { registerView: (v) => { view = v; } },
+      storage: { async get(key, fallback = null) { return key in st ? st[key] : fallback; }, async set(key, value) { st[key] = value; } },
+    },
+  });
+  vm.runInContext(source.replace('  tide.ui.registerView({', `  globalThis.booted = ${EXPORTS};\n  tide.ui.registerView({`), ctx);
+  assert.ok(view, '插件必须注册视图');
+  await view.render(host2);
+  assert.equal(ctx.booted.state.filter.todoSec, 'late', 'loadPrefs 要把上次的待办筛选读回来');
+
+  const s = ctx.booted.state;
+  s.loggedIn = true; s.tab = 'todo'; s.workStatus = { 9003: 'grading', 9004: 'grading' };
+  s.inbox = [mkDue('late-old', '2020-01-01 09:00'), mkDue('sent', '2020-06-06 09:00', 9003), mkDue('open', '2099-01-01 09:00')];
+  const clickChip = async (sec) => {
+    await host2.handlers.click[0]({ target: { closest: (sel) => (sel === '[data-todo-sec]' ? { dataset: { todoSec: sec } } : null) } });
+    await new Promise((r) => setTimeout(r, 0));
+  };
+  await clickChip('open');
+  assert.match(host2.innerHTML, /未截止未提交<span class="cx2-grade-sub">1 条/, '点「未截止未提交」只剩那一档');
+  assert.doesNotMatch(host2.innerHTML, /已逾期未提交<span class="cx2-grade-sub>/, '点完别的档，逾期分区要收掉');
+  assert.equal(st.filter.todoSec, 'open', '点击结果要落进持久化的 filter');
+  await clickChip('open');
+  assert.match(host2.innerHTML, /已逾期未提交<span class="cx2-grade-sub">1 条/, '再点一次取消筛选，回到全部四段');
+  assert.equal(st.filter.todoSec, '', '取消筛选后存的必须是空值，不能留旧档');
+}
 
 state.inbox = [{ id: 'ex1', title: '期末考试时间安排', sender: '教务处', insertTime: 1, body: '<p>结束时间：2099-05-01 09:00</p>' }];
 assert.match(todoHtml(), /<span class="cx2-tag 考试">考试</, '待办卡片按 classify 打类型标签，不再一律写成「作业」');

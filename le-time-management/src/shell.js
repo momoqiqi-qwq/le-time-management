@@ -10,13 +10,14 @@ import { renderSettings } from "./views/settings.js";
 import { renderInbox } from "./views/inbox.js";
 import { openQuickCapture } from "./capture.js";
 import { pluginViews, onNavChanged, getRegistry, setEnabled, rescan, removeExternalPlugin } from "./pluginHost.js";
-import { getPluginOverride, pluginAccent, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginOverride } from "./pluginAppearance.js";
+import { getPluginOverride, pluginAccent, pluginColor, pluginDisplayIcon, pluginDisplayName, resetPluginOverride, setPluginColor, setPluginOverride } from "./pluginAppearance.js";
+import { GROUP_COLORS, groupColorMeta, groupName, groupRuns, isGroupColor, isGroupCollapsed, moveGroupInOrder, normalizePluginOrder, renameGroup, toggleGroupCollapsed } from "./pluginGroups.js";
 import { hasNavOverride, navDisplayIcon, navDisplayName, resetNavOverride, setNavOverride } from "./navAppearance.js";
 import { PLUGIN_SHORTCUT_MODIFIER, attachPluginShortcutKeys, computePluginShortcutMap, effectivePluginShortcutLetter, getPluginShortcutCustoms, normalizeShortcutLetter, setPluginShortcut } from "./pluginShortcuts.js";
 import { pluginShortcutEntries } from "./pluginShortcutEntries.js";
 import { getUiPreferences, coreViewIds } from "./uiPreferences.js";
 import { listRailActions, normalizeRailActionOrder, registerRailAction, slotIndexFor } from "./railActions.js";
-import { closeLayer, observePluginMotion, reducedMotion, removeWithMotion } from "./motion.js";
+import { closeLayer, fadeAway, flipByKey, foldClose, foldOpen, observePluginMotion, reducedMotion, removeWithMotion } from "./motion.js";
 import { FOCUS_WINDOW_SIZE, isDesktopRuntime, isFocusWindowActive, toggleFocusWindow } from "./windowSize.js";
 import { canGoBack, goBack, initBackNav, noteViewChange } from "./backNav.js";
 import { getThemeMode, resolveThemeMode, setThemeMode } from "./theme.js";
@@ -123,6 +124,41 @@ function orderedPluginViews() {
     if (ar !== br) return ar - br;
     return String(a.title || a.id).localeCompare(String(b.title || b.id), "zh-CN");
   });
+}
+
+// 当前显示顺序下的插件 ID 完整排列（同色已吸附成段）。改色、整组移动、段内拖拽都从这里取，
+// 保证「看到的顺序」与「落库的顺序」是同一个口径。
+function currentPluginOrder() {
+  return normalizePluginOrder(orderedPluginViews().map((pv) => pv.pluginId), pluginColor);
+}
+
+// 侧栏 FLIP 的 key：插件项按 data-view 认领（桌面端之外没有 data-plugin-id），颜色卡片与组头按色认领。
+function navFlipKey(node) {
+  if (node.matches(".plug-group")) return `group:${node.dataset.color}`;
+  if (node.matches(".plug-group-head")) return `head:${node.parentElement?.dataset.color || ""}`;
+  return node.dataset.view ? `view:${node.dataset.view}` : "";
+}
+
+// 新出现的颜色卡片只把底色与描边淡进来 —— 整卡淡入会把里面本来就在的插件也闪一下；
+// 组头与新出现的插件项轻轻落下。
+function navFlipEnter(node) {
+  if (node.matches(".plug-group")) {
+    const style = getComputedStyle(node);
+    return [
+      { backgroundColor: "transparent", boxShadow: "none" },
+      { backgroundColor: style.backgroundColor, boxShadow: style.boxShadow },
+    ];
+  }
+  return [{ opacity: 0, transform: "translateY(-4px)" }, { opacity: 1, transform: "none" }];
+}
+
+// 插件中心的组头每次都是重建出来的新节点，接不上 CSS 过渡：用 WAAPI 从旧角度转到新角度。
+function turnChevron(chev, collapsed) {
+  if (!chev || reducedMotion() || typeof chev.animate !== "function") return;
+  chev.animate(
+    [{ transform: `rotate(${collapsed ? 0 : -90}deg)` }, { transform: `rotate(${collapsed ? -90 : 0}deg)` }],
+    { duration: 180, easing: "cubic-bezier(.22,.8,.22,1)" },
+  );
 }
 
 function movePluginBefore(sourcePluginId, targetPluginId) {
@@ -506,6 +542,9 @@ export function renderShell(root) {
   let contextMenu = null;
   // 挑图标的 <input type=file> 也只有一份，靠这个字段记住「这次是给谁挑」
   let pendingIconTarget = null; // { kind: "plugin" | "nav", id }
+  // 插件中心挂着时由 renderMarket 填上「就地重排」入口；没挂着时调用也什么都不做（见 renderMarket）。
+  let repaintMarket = null;
+  let navFlips = 0; // 在飞的侧栏 FLIP 数：全部落定才摘 .nav-flip
   const pluginZipInput = el("input", { type: "file", accept: ".zip,application/zip", multiple: true, hidden: true });
   const pluginIconInput = el("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,image/svg+xml", hidden: true });
   root.append(pluginZipInput, pluginIconInput);
@@ -518,6 +557,31 @@ export function renderShell(root) {
   function refreshPluginPresentation() {
     renderNav();
     if (activeView === "market" || activeView.startsWith("plug:")) switchTo(activeView, undefined, { history: false });
+  }
+
+  /* 分组相关的改动（改色 / 组名 / 收起 / 整组换位 / 段内排序）只影响侧栏与插件中心，
+     所以不走上面的 switchTo：那会把当前插件页整个重挂（插件内部状态丢失、联网插件重新拉数据），
+     也会把插件中心滚回顶部、让全部卡片重播入场动画。这里只重绘侧栏（FLIP 过渡），
+     插件中心若挂着就就地重排。 */
+  function refreshPluginGroups() {
+    flipNav(renderNav);
+    repaintMarket?.();
+  }
+
+  // 侧栏整段重绘的 FLIP。飞进 / 飞出颜色卡片的插件在半路会越过卡片边界，
+  // 动画期间给 .nav 挂 nav-flip 放开卡片的 overflow（styles.css），否则插件像是凭空出现。
+  function flipNav(mutate) {
+    navFlips += 1;
+    nav.classList.add("nav-flip");
+    return flipByKey(nav, {
+      selector: "button[data-view], .plug-group[data-color], .plug-group-head",
+      key: navFlipKey,
+      mutate,
+      enter: navFlipEnter,
+    }).finally(() => {
+      navFlips -= 1;
+      if (!navFlips) nav.classList.remove("nav-flip");
+    });
   }
 
   /* 核心页改名 / 换图标后只刷外壳：侧栏条目 + 顶栏标题卡。
@@ -612,6 +676,22 @@ export function renderShell(root) {
     requestAnimationFrame(() => menu.querySelector("button:not(:disabled)")?.focus());
   }
 
+  // 改色即吸附：先按改色前的显示顺序取一份完整排列 → 写色 → 按新颜色吸附成连续段 → 刷侧栏与插件中心。
+  // 落库的永远是「当前有视图的插件 ID 的一个完整排列」。以显示顺序为底（而不是 pluginOrder
+  // 再按注册顺序补尾）：没拖过序的插件是按标题排的，按注册顺序补尾会让它们因为别人上色而整体洗牌。
+  function applyPluginColor(pluginId, colorId) {
+    const next = isGroupColor(colorId) ? colorId : "";
+    if (pluginColor(pluginId) === next) return;
+    const order = currentPluginOrder();
+    setPluginColor(pluginId, next);
+    S.getState().settings.pluginOrder = normalizePluginOrder(order, pluginColor);
+    S.persistSoon();
+    refreshPluginGroups();
+    const rec = getRegistry().find((item) => item.id === pluginId);
+    const name = pluginDisplayName(pluginId, rec?.manifest?.name || pluginViews.find((pv) => pv.pluginId === pluginId)?.title || pluginId);
+    toast(next ? `「${name}」已归入「${groupName(next)}」` : `「${name}」已移出分组`);
+  }
+
   function openPluginContextMenu(event, pluginId) {
     event.preventDefault();
     event.stopPropagation();
@@ -619,7 +699,9 @@ export function renderShell(root) {
     if (!rec) return;
     const fallbackName = rec.manifest?.name || pluginViews.find((item) => item.pluginId === pluginId)?.title || pluginId;
     const displayName = pluginDisplayName(pluginId, fallbackName);
+    const override = getPluginOverride(pluginId);
     const effSc = effectiveShortcutLetter(pluginId);
+    const currentColor = pluginColor(pluginId);
     const menu = el("div", { class: "plugin-context-menu", role: "menu", "aria-label": `${displayName}插件菜单` },
       el("div", { class: "plugin-context-head" }, pluginDisplayIcon(pluginId, displayName), el("span", {}, el("b", {}, displayName), el("small", {}, rec.source === "builtin" ? "内置插件" : "用户插件"))),
       contextMenuItem("重命名", async () => {
@@ -633,6 +715,37 @@ export function renderShell(root) {
         pendingIconTarget = { kind: "plugin", id: pluginId };
         pluginIconInput.click();
       }),
+      el("div", { class: "plugin-color-row", role: "group", "aria-label": "分组颜色" },
+        ...GROUP_COLORS.map((color) => el("button", {
+          class: `plugin-color-dot${currentColor === color.id ? " on" : ""}`,
+          type: "button",
+          style: `--gc:${color.hex}`,
+          title: currentColor === color.id ? `取消${color.label}分组` : `归入${color.label}组`,
+          "aria-label": color.label,
+          "aria-pressed": String(currentColor === color.id),
+          onclick: () => { closeContextMenu(); applyPluginColor(pluginId, currentColor === color.id ? "" : color.id); },
+        })),
+        el("button", {
+          class: `plugin-color-dot none${!currentColor ? " on" : ""}`,
+          type: "button",
+          title: "不分组",
+          "aria-label": "不分组",
+          "aria-pressed": String(!currentColor),
+          onclick: () => { closeContextMenu(); applyPluginColor(pluginId, ""); },
+        }),
+      ),
+      contextMenuItem(`分组名称 · ${currentColor ? groupName(currentColor) : "未分组"}`, async () => {
+        if (!currentColor) return;
+        const value = await appPrompt("重命名分组", {
+          label: `这张${groupColorMeta(currentColor).label}卡片的名称（留空恢复默认）`,
+          value: groupName(currentColor),
+          confirmText: "保存",
+        });
+        if (value === null) return;
+        renameGroup(currentColor, value);
+        refreshPluginGroups();
+        toast(value.trim() ? "分组名称已更新" : "已恢复默认组名");
+      }, { disabled: !currentColor }),
       contextMenuItem(`快捷键 · ${effSc ? `${PLUGIN_SHORTCUT_MODIFIER}+${effSc}` : "未设置"}`, async () => {
         const value = await appPrompt("设置插件快捷键", {
           label: `输入一个字母（A–Z），按 ${PLUGIN_SHORTCUT_MODIFIER} + 字母直接打开「${displayName}」。留空恢复自动分配（按插件 ID 首字母，先到先得）。`,
@@ -655,10 +768,11 @@ export function renderShell(root) {
         }
       }),
       contextMenuItem("恢复默认名称与图标", () => {
-        resetPluginOverride(pluginId);
+        // 只清名称和图标：分组色是「你在哪个组」而不是「你长什么样」，不该被顺手抹掉
+        setPluginOverride(pluginId, { name: "", icon: "" });
         refreshPluginPresentation();
         toast("已恢复插件默认外观");
-      }, { disabled: !Object.keys(getPluginOverride(pluginId)).length }),
+      }, { disabled: !(override.name || override.icon) }),
       el("div", { class: "plugin-context-separator", role: "separator" }),
       contextMenuItem("导入插件…", () => pluginZipInput.click()),
       contextMenuItem("删除插件", async () => {
@@ -713,24 +827,174 @@ export function renderShell(root) {
     nav.replaceChildren();
     // v0.52.0：导航按平台清单渲染（APK 端 = 四象限 / 时间线 / 插件）
     for (const id of coreViewIds()) nav.append(navBtn(id));
-    if (pluginViews.length) {
-      // 桌面端侧栏仍保留插件直达列表；移动端底栏只留核心入口（.plug-list 被隐藏）
-      const box = el("div", { class: "plug-list" },
-        el("div", { class: "sec plug-list-sec" },
-          el("span", {}, "插 件 视 图"),
-          desktopWindow ? el("small", {}, "上下拖动排序") : null,
-        ),
-      );
-      for (const pv of orderedPluginViews()) box.append(navBtn(`plug:${pv.id}`, true));
-      if (desktopWindow) {
-        attachPluginListDrag(box, () => {
-          S.getState().settings.pluginOrder = [...box.querySelectorAll("button[data-plugin-id]")].map((item) => item.dataset.pluginId);
-          S.persistSoon();
-          toast("插件顺序已保存，并会随同步快照一起同步");
-        });
-      }
-      nav.append(box);
+    if (!pluginViews.length) return;
+    // 桌面端侧栏仍保留插件直达列表；移动端底栏只留核心入口（.plug-list 被隐藏）
+    const box = el("div", { class: "plug-list" },
+      el("div", { class: "sec plug-list-sec" },
+        el("span", {}, "插 件 视 图"),
+        desktopWindow ? el("small", {}, "上下拖动排序") : null,
+      ),
+    );
+    // 一个插件可以注册多个视图（cppu-notify 就有通知 / 一卡通 / 教务四视图共 6 个）。
+    // 颜色与顺序都是插件级的：先按插件归拢，它的视图整串跟着插件走，一个都不能丢。
+    const viewsOf = new Map();
+    for (const pv of orderedPluginViews()) {
+      if (!viewsOf.has(pv.pluginId)) viewsOf.set(pv.pluginId, []);
+      viewsOf.get(pv.pluginId).push(pv);
     }
+    // 改色时已经把同色吸附成连续段（normalizePluginOrder），这里再归一次兜底：
+    // 别的设备同步过来的顺序可能还没吸附。
+    const runs = groupRuns(normalizePluginOrder([...viewsOf.keys()], pluginColor), pluginColor);
+    runs.forEach(({ color, ids }, index) => {
+      const views = ids.flatMap((id) => viewsOf.get(id) || []);
+      if (!views.length) return;
+      box.append(color
+        ? plugGroupNode(color, views, { first: index === 0, last: index === runs.length - 1 })
+        : plugSegNode(views));
+    });
+    nav.append(box);
+  }
+
+  /* 一段可拖拽容器：直接子节点必须正好是插件按钮 —— attachPluginListDrag 的落点
+     推演按「等高连续兄弟」累加高度，中间插进组头就会整体偏移。所以组头挂在容器外。
+     跨段（跨卡片）拖动不支持，换组走右键改色。 */
+  function plugSegNode(views) {
+    const seg = el("div", { class: "plug-seg" }, views.map((pv) => navBtn(`plug:${pv.id}`, true)));
+    if (desktopWindow && views.length > 1) {
+      attachPluginListDrag(seg, () => saveSegmentOrder(
+        [...seg.querySelectorAll(":scope > button[data-plugin-id]")].map((node) => node.dataset.pluginId),
+      ));
+    }
+    return seg;
+  }
+
+  // 段内新顺序写回全局顺序：只回填这一段占着的那几个格子，别的段原地不动。
+  // 同一插件的多个视图各有一个按钮（data-plugin-id 相同），先按首次出现去重 ——
+  // 否则回填时重复 ID 会占掉别人的格子，把别的插件挤出排列。
+  function saveSegmentOrder(domIds) {
+    const ids = [...new Set(domIds)];
+    const full = currentPluginOrder();
+    const slots = new Set(ids);
+    let at = 0;
+    S.getState().settings.pluginOrder = full.map((id) => (slots.has(id) ? ids[at++] : id));
+    S.persistSoon();
+    repaintMarket?.();
+    // 多视图插件被拖散（它的两个视图之间插进了别的插件）：落位动画播完再按插件归拢一次
+    if (domIds.filter((id, i) => id !== domIds[i - 1]).length > ids.length) setTimeout(() => flipNav(renderNav), 260);
+    toast("插件顺序已保存，并会随同步快照一起同步");
+  }
+
+  /* 一张颜色卡片 = 组头（折叠钮 + 整组 ↑/↓）+ 成员段。收起时成员段不渲染。
+     收起 / 展开由 foldNavGroup 就地增删成员段并做高度动画，不整段重绘 —— 箭头的 CSS 过渡才接得上。 */
+  function plugGroupNode(color, views, { first = false, last = false } = {}) {
+    const collapsed = isGroupCollapsed(color);
+    const hasOn = views.some((pv) => activeView === `plug:${pv.id}`);
+    const group = el("div", {
+      class: `plug-group${collapsed ? " collapsed" : ""}${hasOn ? " has-on" : ""}`,
+      "data-color": color,
+      role: "group",
+      "aria-label": groupName(color),
+      style: `--gc:${groupColorMeta(color).hex}`,
+    },
+      el("div", { class: "plug-group-head" },
+        groupFoldButton("plug-group", color, views.length, collapsed, () => toggleNavGroup(group, color)),
+        desktopWindow ? el("span", { class: "plug-group-tools" },
+          groupMoveButton(color, -1, first),
+          groupMoveButton(color, 1, last),
+        ) : null,
+      ),
+      collapsed ? null : plugSegNode(views),
+    );
+    group._views = views;
+    return group;
+  }
+
+  // 侧栏组头与插件中心组头共用的折叠钮：箭头 + 色点 + 组名 + 成员数。
+  // 箭头固定用 chevron-down，收起态由 CSS 转 -90°（带过渡），不再整颗换图标。
+  // data-motion="off"：退出全局按钮反馈。标题里带「收起」会被 motion.js 认成关闭钮，
+  // 松手时播 rotate(3deg) 的关闭回弹；插件中心的折叠钮是整行宽，一转两端就歪出去二十多像素，
+  // 按下的 scale(.965) 也会让整条缩一截。收放的反馈交给箭头旋转与内容动画。
+  function groupFoldButton(prefix, color, count, collapsed, onToggle) {
+    const name = groupName(color);
+    return el("button", {
+      class: `${prefix}-fold`,
+      type: "button",
+      "data-motion": "off",
+      title: `${collapsed ? "展开" : "收起"}「${name}」`,
+      "aria-expanded": String(!collapsed),
+      onclick: onToggle,
+    },
+      el("span", { class: "fold-chev", "aria-hidden": "true" }, faIcon("chevron-down")),
+      el("span", { class: "group-dot", "aria-hidden": "true" }),
+      el(prefix === "market-group" ? "b" : "span", { class: `${prefix}-name` }, name),
+      el("span", { class: `${prefix}-count` }, String(count)),
+    );
+  }
+
+  // 整组 ↑/↓：到顶 / 到底直接置灰，不必点了才弹「没有可换位的插件段」
+  function groupMoveButton(color, delta, atEdge) {
+    const label = delta < 0 ? "整组上移" : "整组下移";
+    return el("button", {
+      class: "plug-group-move",
+      type: "button",
+      "data-dir": String(delta),
+      title: label,
+      "aria-label": label,
+      disabled: atEdge ? true : null,
+      onclick: () => moveNavGroup(color, delta),
+    }, faIcon(delta < 0 ? "arrow-up" : "arrow-down"));
+  }
+
+  function moveNavGroup(color, delta) {
+    const full = currentPluginOrder();
+    const next = moveGroupInOrder(full, color, delta, pluginColor);
+    if (next.join(" ") === full.join(" ")) {
+      toast(delta > 0 ? "下面没有可换位的插件段" : "上面没有可换位的插件段");
+      return;
+    }
+    const hadFocus = nav.contains(document.activeElement);
+    S.getState().settings.pluginOrder = next;
+    S.persistSoon();
+    refreshPluginGroups();
+    if (!hadFocus) return;
+    // 整段重绘换掉了按钮节点：焦点还给同一组的同向按钮（到边了就给折叠钮），键盘连按 ↑/↓ 不断档
+    const group = nav.querySelector(`.plug-group[data-color="${color}"]`);
+    const again = group?.querySelector(`.plug-group-move[data-dir="${delta}"]`);
+    (again && !again.disabled ? again : group?.querySelector(".plug-group-fold"))?.focus({ preventScroll: true });
+  }
+
+  // 侧栏组的收起 / 展开：先落状态，再就地收放；插件中心若挂着就跟着一起收放。
+  function toggleNavGroup(group, color) {
+    if (group.dataset.folding) return; // 动画进行中的第二下忽略，免得成员段被重复挂载
+    const collapsed = toggleGroupCollapsed(color);
+    foldNavGroup(group, color, collapsed);
+    repaintMarket?.({ fold: { color, collapsed } });
+  }
+
+  // 只动 DOM、不碰状态：侧栏自己点、插件中心点，都走这里把侧栏那张卡片收放到位。
+  function foldNavGroup(group, color, collapsed) {
+    if (!group?.isConnected || group.classList.contains("collapsed") === collapsed) return;
+    if (group.dataset.folding) {
+      flipNav(renderNav); // 上一次收放还没播完就又反向：直接按最新状态重绘，不叠两段动画
+      return;
+    }
+    group.classList.toggle("collapsed", collapsed);
+    const fold = group.querySelector(".plug-group-fold");
+    if (fold) {
+      fold.title = `${collapsed ? "展开" : "收起"}「${groupName(color)}」`;
+      fold.setAttribute("aria-expanded", String(!collapsed));
+    }
+    group.dataset.folding = "1";
+    const done = () => { delete group.dataset.folding; };
+    if (collapsed) {
+      const seg = group.querySelector(":scope > .plug-seg");
+      if (!seg) return done();
+      foldClose(seg).then(() => { seg.remove(); done(); });
+      return;
+    }
+    const seg = plugSegNode(group._views || []);
+    group.append(seg);
+    foldOpen(seg).then(done);
   }
   function navBtn(id, isPlug = false) {
     const def = viewDef(id);
@@ -1311,21 +1575,90 @@ export function renderShell(root) {
       if (!q) return true;
       return `${man.name || ""} ${rec.id} ${man.description || ""} ${man.author || ""}`.toLowerCase().includes(q);
     }
-    function paintCards() {
+    // flip=false：首次挂载 / 搜索 / 筛选，沿用逐张入场动画。
+    // flip=true：分组相关的就地重排（改色、收放、整组换位、拖拽排序）—— 卡片从旧位置滑到新位置，
+    // 不重播入场动画，滚动位置也不动。
+    function paintCards({ flip = false } = {}) {
+      if (!flip) return fillCards(true);
+      return flipByKey(grid, {
+        selector: ":scope > .mcard[data-card-id], :scope > .market-group-head[data-color]",
+        key: (node) => (node.dataset.cardId ? `card:${node.dataset.cardId}` : `head:${node.dataset.color}`),
+        mutate: () => fillCards(false),
+      });
+    }
+    // 组收放：收起先让本组卡片淡出，再整段重排（后面的卡片滑上来补位）；展开直接重排，
+    // 本组卡片按 FLIP 的 enter 淡入。
+    function foldMarketGroup(color, collapsed) {
+      const leaving = collapsed ? grid.querySelectorAll(`:scope > .mcard[data-color="${color}"]`) : [];
+      const head = () => grid.querySelector(`:scope > .market-group-head[data-color="${color}"]`);
+      const hadFocus = !!head()?.contains(document.activeElement);
+      return fadeAway(leaving).then(() => {
+        if (!grid.isConnected) return;
+        paintCards({ flip: true });
+        const fresh = head();
+        turnChevron(fresh?.querySelector(".fold-chev"), collapsed);
+        // 组头是重建出来的新节点：键盘操作时把焦点还给新的折叠钮
+        if (hadFocus) fresh?.querySelector(".market-group-fold")?.focus({ preventScroll: true });
+      });
+    }
+    repaintMarket = ({ fold } = {}) => {
+      if (!grid.isConnected) return;
+      if (fold) foldMarketGroup(fold.color, fold.collapsed);
+      else paintCards({ flip: true });
+    };
+    function fillCards(entrance) {
       const customOrder = pluginOrderState();
       const rank = new Map(customOrder.map((id, index) => [id, index]));
-      const rows = getRegistry().filter(match).sort((a, b) => {
+      const sorted = getRegistry().filter(match).sort((a, b) => {
         const ar = rank.has(a.id) ? rank.get(a.id) : Number.MAX_SAFE_INTEGER;
         const br = rank.has(b.id) ? rank.get(b.id) : Number.MAX_SAFE_INTEGER;
         return ar - br || (a.manifest?.order || 999) - (b.manifest?.order || 999) || String(a.manifest?.name || a.id).localeCompare(String(b.manifest?.name || b.id), "zh-CN");
       });
+      // 与侧栏同一口径吸附同色：没有视图、没进 pluginOrder 的已上色插件（例如已停用的）也归进本组，
+      // 不会在列表末尾再冒出一个同名组头。
+      const slot = new Map(normalizePluginOrder(sorted.map((rec) => rec.id), pluginColor).map((id, index) => [id, index]));
+      const rows = sorted.sort((a, b) => slot.get(a.id) - slot.get(b.id));
       count.textContent = `显示 ${rows.length} / ${getRegistry().length}`;
       grid.replaceChildren();
       if (!rows.length) {
         grid.append(el("div", { class: "market-empty" }, query ? `没有找到“${query}”相关插件` : "当前筛选下没有插件"));
         return;
       }
+      // 分组色带：组头是一条横跨整个网格的行，卡片仍留在同一个网格里流式排布，
+      // 这样响应式列数只在 .market-grid 一处定义，不必给每组再抄一遍。
+      const colorCount = new Map();
+      for (const rec of rows) {
+        const color = pluginColor(rec.id);
+        if (color) colorCount.set(color, (colorCount.get(color) || 0) + 1);
+      }
+      const groupHead = (color) => {
+        const collapsed = isGroupCollapsed(color);
+        return el("div", {
+          class: `market-group-head${collapsed ? " collapsed" : ""}`,
+          "data-color": color,
+          style: `--gc:${groupColorMeta(color).hex}`,
+        }, groupFoldButton("market-group", color, colorCount.get(color) || 0, collapsed, () => {
+          const next = toggleGroupCollapsed(color);
+          foldMarketGroup(color, next);
+          foldNavGroup(nav.querySelector(`.plug-group[data-color="${color}"]`), color, next);
+        }));
+      };
+      let sectionColor = null;
+      let hiddenSection = false;
       for (const [rowIndex, rec] of rows.entries()) {
+        const recColor = pluginColor(rec.id);
+        if (recColor !== sectionColor) {
+          // 离开颜色段、回到未分组：插一条零高的整行分隔，强制换行并多留一道行距 ——
+          // 否则后面的未分组卡片会接着填满该组最后一行，看起来就像是这个组的成员。
+          if (sectionColor && !recColor) grid.append(el("div", { class: "market-group-end", "aria-hidden": "true" }));
+          sectionColor = recColor;
+          hiddenSection = false;
+          if (recColor) {
+            grid.append(groupHead(recColor));
+            hiddenSection = isGroupCollapsed(recColor);
+          }
+        }
+        if (hiddenSection) continue;
         const man = rec.manifest || {};
         const pluginName = pluginDisplayName(rec.id, man.name || rec.id);
         const enabled = S.pluginState(rec.id).enabled !== false;
@@ -1364,8 +1697,10 @@ export function renderShell(root) {
           toggle,
         );
         const card = el("div", {
-          class: `mcard market-manage-card market-card-enter${enabled ? "" : " disabled"}`,
-          style: `--market-enter-index:${Math.min(rowIndex, 8)}`,
+          class: `mcard market-manage-card${entrance ? " market-card-enter" : ""}${enabled ? "" : " disabled"}`,
+          "data-card-id": rec.id,
+          "data-color": recColor || null,
+          style: `--market-enter-index:${Math.min(rowIndex, 8)}${recColor ? `;--gc:${groupColorMeta(recColor).hex}` : ""}`,
           role: pv ? "button" : null,
           tabindex: pv ? "0" : null,
           onclick: (e) => {
@@ -1386,7 +1721,13 @@ export function renderShell(root) {
           el("p", { class: "market-card-desc" }, man.description || "（无描述）"),
           el("div", { class: "market-card-meta" }, `${man.author ? `作者 ${man.author}` : rec.source === "builtin" ? "内置扩展" : "用户插件"}${rec.error ? " · 加载失败" : ""}`),
           rec.error ? el("div", { class: "perr" }, rec.error) : null,
-          el("div", { class: "market-card-actions" }, open, switchControl),
+          el("div", { class: "market-card-actions" }, open, switchControl, el("button", {
+            class: "market-card-more",
+            type: "button",
+            title: "重命名、改图标与分组颜色",
+            "aria-label": `${pluginName} 更多操作`,
+            onclick: (e) => { e.stopPropagation(); openPluginContextMenu(e, rec.id); },
+          }, "⋯")),
         );
         card.addEventListener("contextmenu", (event) => openPluginContextMenu(event, rec.id));
         grid.append(card);
@@ -1490,6 +1831,9 @@ export function renderShell(root) {
  * 被拖项仍留在 flex 流里充当明确空槽；body 上的克隆项跟随指针。激活后用 rAF
  * 每帧按缓存的 item 高度重新推演落点，DOM 一变，其余项各自用 FLIP 追赶新位置。
  * 指针停下时槽位不再变化，所有项自然停在当前布局，不会自动滑向列表端点。
+ * 几何量一律是视口坐标（zoom 之后的视觉像素：指针、getBoundingClientRect），
+ * 写进 transform / 宽高之前除以 st.scale —— 与 toolbarDrag.js 同一口径；
+ * 否则界面缩放不是 100% 时浮起项会偏离指针、FLIP 起点会跳。
  */
 function attachPluginListDrag(list, onCommit) {
   let pd = null;
@@ -1499,7 +1843,7 @@ function attachPluginListDrag(list, onCommit) {
     document.removeEventListener("pointerup", st.docUp, true);
     document.removeEventListener("pointercancel", st.docCancel, true);
   };
-  const moveGhost = (st) => st.ghost?.style.setProperty("transform", `translate(${st.x - st.gx}px, ${st.y - st.gy}px) scale(1.025)`);
+  const moveGhost = (st) => st.ghost?.style.setProperty("transform", `translate(${(st.x - st.gx) / st.scale}px, ${(st.y - st.gy) / st.scale}px) scale(1.025)`);
   const stopFrame = (st) => { if (st.frame) cancelAnimationFrame(st.frame); st.frame = 0; };
   const endSession = (st) => {
     clearLong(st); stopFrame(st); detachDoc(st);
@@ -1520,7 +1864,7 @@ function attachPluginListDrag(list, onCommit) {
     let top = st.contentTop;
     const mids = [];
     for (const item of items().filter((node) => node !== st.card)) {
-      const height = st.heights[item.dataset.pluginId] || item.offsetHeight;
+      const height = st.heights.get(item) ?? item.getBoundingClientRect().height;
       mids.push(top + height / 2);
       top += height + st.gap;
     }
@@ -1532,7 +1876,7 @@ function attachPluginListDrag(list, onCommit) {
     list.insertBefore(st.card, peers[slot] ?? null);
     if (reducedMotion()) return;
     for (const node of peers) {
-      const dy = before.get(node) - node.getBoundingClientRect().top;
+      const dy = (before.get(node) - node.getBoundingClientRect().top) / st.scale;
       if (dy) node.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }],
         { duration: 185, easing: "cubic-bezier(.22,.8,.22,1)" });
     }
@@ -1554,7 +1898,7 @@ function attachPluginListDrag(list, onCommit) {
     if (ghostRect && !reducedMotion()) {
       const landed = st.card.getBoundingClientRect();
       st.card.animate([
-        { transform: `translate(${ghostRect.left - landed.left}px, ${ghostRect.top - landed.top}px) scale(1.025)` },
+        { transform: `translate(${(ghostRect.left - landed.left) / st.scale}px, ${(ghostRect.top - landed.top) / st.scale}px) scale(1.025)` },
         { transform: "none" },
       ], { duration: 210, easing: "cubic-bezier(.22,.8,.22,1)" });
     }
@@ -1564,18 +1908,20 @@ function attachPluginListDrag(list, onCommit) {
     if (!list.contains(st.card) || st.active) return;
     st.active = true; clearLong(st);
     st.originOrder = [...list.children];
+    st.scale = getUiScaleFactor() || 1;
     const rect = st.card.getBoundingClientRect();
     st.gx = st.x - rect.left; st.gy = st.y - rect.top;
-    st.gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+    st.gap = (parseFloat(getComputedStyle(list).rowGap) || 0) * st.scale;
     st.contentTop = items()[0]?.getBoundingClientRect().top || list.getBoundingClientRect().top;
-    st.heights = Object.fromEntries(items().map((node) => [node.dataset.pluginId, node.offsetHeight]));
+    // 按节点缓存视觉高度：多视图插件的几个按钮 data-plugin-id 相同，按 ID 缓存会互相覆盖
+    st.heights = new Map(items().map((node) => [node, node.getBoundingClientRect().height]));
     st.card.classList.add("nav-dragging"); list.classList.add("plugin-drag-live");
     if (!reducedMotion()) {
       st.ghost = st.card.cloneNode(true);
       st.ghost.classList.remove("nav-dragging", "on");
       st.ghost.classList.add("plugin-nav-ghost");
       st.ghost.removeAttribute("data-plugin-id");
-      st.ghost.style.width = `${rect.width}px`; st.ghost.style.height = `${rect.height}px`;
+      st.ghost.style.width = `${rect.width / st.scale}px`; st.ghost.style.height = `${rect.height / st.scale}px`;
       document.body.append(st.ghost);
     }
     navigator.vibrate?.(10);
@@ -1594,7 +1940,7 @@ function attachPluginListDrag(list, onCommit) {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const card = event.target.closest?.("button[data-plugin-id]");
     if (!card || !list.contains(card)) return;
-    pd = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false, longTimer: null, frame: 0, ghost: null, swallowClick: null, docUp: null, docCancel: null };
+    pd = { card, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, scale: 1, active: false, longTimer: null, frame: 0, ghost: null, swallowClick: null, docUp: null, docCancel: null };
     if (event.pointerType !== "mouse") pd.longTimer = setTimeout(() => { if (pd?.card === card && !pd.active) begin(pd); }, 240);
   });
   list.addEventListener("pointermove", (event) => {

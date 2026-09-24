@@ -227,13 +227,28 @@
       return target.href;
     } catch { return ""; }
   }
+  /* Rust 桥回的是摊平后的整条 cause 链 —— reqwest 自己的 Display 只有
+     "error sending request for url (…)" 一句，DNS / 连不上 / 超时全藏在后面。
+     直接甩给用户等于让人查英文词典，所以按成因分类翻成人话，原串垫在末尾备查。 */
+  const NET_WHY = [
+    [/operation timed out|timed out/i, "等待响应超时"],
+    [/\bdns\b|failed to lookup|getaddrinfo|name not resolved/i, "域名没解析出来"],
+    [/certificate|\btls\b|rustls|handshake/i, "HTTPS 握手没通过"],
+    [/connection refused|tcp connect|error trying to connect|connect error/i, "连不上服务器"],
+    [/connection closed|reset by peer|broken pipe|closed connection/i, "连接被中途掐断"],
+  ];
   function explainHttpError(e) {
     const msg = String(e && (e.message || e) || "");
     if (/Failed to fetch|Load failed|NetworkError/i.test(msg)) {
       return "网络桥不可用：浏览器预览会被智慧警大跨域策略拦截，请在桌面版 U-Time 中打开本插件。";
     }
-    return msg || "网络请求失败";
+    if (!msg) return "网络请求失败";
+    if (!/请求失败|读取响应失败|error sending request/i.test(msg)) return msg;
+    const why = (NET_WHY.find(([re]) => re.test(msg)) || [])[1] || "网络没走通";
+    return `连不上警大的服务器（${why}），这类抖动稍等片刻再试一次通常就好了。原始：${msg}`;
   }
+  /** 传输层抖动（不是登录态失效）：这类失败服务端压根没答话，原样重发是安全的。 */
+  const isTransportBlip = (msg) => /error sending request|operation timed out|读取响应失败|\bdns\b|failed to lookup|connection refused|connection closed|broken pipe|getaddrinfo/i.test(String(msg || ""));
 
   function ensureStyle() {
     if (document.getElementById("pp-notify-style")) return;
@@ -1688,6 +1703,7 @@
   const JW_LOAD = JWAPP + "/je/load";
   const JW_FUNC_INFO = JWAPP + "/je/develop/funcInfo/getStaticFuncByCode";
   const JW_NOW_TERM = JWAPP + "/je/system/getNowXnxq";
+  const JW_RETRY_MS = [400, 1600];     // 教务查询遇到传输层抖动的退避表（最多重发两次）
   const JW_TICKET_ENTRY = { service: JWAPP + "/cas_callback", origin: JWAPP, path: "/cas_callback" };
   // funcId 是功能自身的 id（实测取自面板的 funcData.info.funcId），不是菜单 id。
   // qjCourse 那条 funcCode 里带空格和 "copy from" 前缀不是笔误 —— 校方就是这么配的，
@@ -1816,7 +1832,7 @@
     const res = await tide.http.fetch(state.sid, "POST", JW_FUNC_INFO, {
       headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Referer: JW_INDEX },
       body: tide.util.web.formEncode({ refresh: "false", tableCode: "JE_CORE_FUNCINFO", FUNCINFO_FUNCCODE: f.funcCode, perm: "true" }),
-    });
+    }).catch((e) => { throw new Error(explainHttpError(e)); });
     let j = null;
     try { j = JSON.parse(String(res.body || "")); } catch { j = null; }
     const info = j?.funcInfo || {};
@@ -1848,14 +1864,27 @@
         body: tide.util.web.formEncode(params),
       });
     };
-    let res = await post().catch((e) => { throw new Error(explainHttpError(e)); });
+    // 传输层抖动（校园网出口偶发 DNS 解析失败、连接被中途掐断）跟「登录态失效」是两回事：
+    // 前者服务端压根没答话，原样重发就通；后者要重新换票，走下面 rows 为空那条路。
+    // 教务这边刻意只读，重发不存在二次提交。退避给到秒级 —— Windows 解析器会把失败
+    // 结果短期缓存，立刻重发往往撞上同一条负面缓存。最多两次，不能把抖动变成无限重。
+    const postThrough = async () => {
+      for (let i = 0; ; i++) {
+        try { return await post(); }
+        catch (e) {
+          if (i >= JW_RETRY_MS.length || !isTransportBlip(e && (e.message || e))) throw new Error(explainHttpError(e));
+          await new Promise((r) => setTimeout(r, JW_RETRY_MS[i]));
+        }
+      }
+    };
+    let res = await postThrough();
     let rows = jeRowsOf(res);
     if (!rows) {
       // 会话过期的表现不是 401，而是 POST 被 302 回登录页、拿回来一整页 HTML
       delete jwFuncMeta[key];
       if (!await ensureJwSession(true) && !await ensureJwLogin(true)) throw new Error("教务登录态已失效，请重新登录");
       meta = await jwFuncInfo(key);
-      res = await post().catch((e) => { throw new Error(explainHttpError(e)); });
+      res = await postThrough();
       rows = jeRowsOf(res);
       if (!rows) throw new Error(`教务数据解析失败（HTTP ${res.status}）`);
     }
