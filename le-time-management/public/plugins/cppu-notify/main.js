@@ -388,6 +388,13 @@
       .jw-tag.ok{background:rgba(46,196,182,.14);border-color:rgba(46,196,182,.45);color:#0B6B60}
       .jw-tag.warn{background:rgba(242,217,166,.24);border-color:#E3C384;color:#8A6420}
       .jw-tag.live{background:rgba(220,53,69,.13);border-color:rgba(220,53,69,.52);color:#B42318;font-weight:700}
+      /* 上面三个语义色是浅色硬编码，深色面板上实测只有 1.38~2.17:1 —— 「1 学分」这种
+         10.5px 小字几乎读不出。深色必须整组重给：底色改成同色相浅掺（比 --panel 更深，
+         沿用 --q*-bg 的「深底亮字」路子），文字把强调色与 --ink 混亮。
+         公式与宿主 styles.css 的「内置插件深色兼容层」一致，16 套主题下都过 5.3:1。 */
+      [data-theme-mode="dark"] .jw-tag.ok{background:color-mix(in srgb,var(--mint) 18%,var(--panel));border-color:color-mix(in srgb,var(--mint) 42%,transparent);color:color-mix(in srgb,var(--mint) 55%,var(--ink))}
+      [data-theme-mode="dark"] .jw-tag.warn{background:color-mix(in srgb,var(--sun) 18%,var(--panel));border-color:color-mix(in srgb,var(--sun) 42%,transparent);color:color-mix(in srgb,var(--sun) 55%,var(--ink))}
+      [data-theme-mode="dark"] .jw-tag.live{background:color-mix(in srgb,var(--danger) 18%,var(--panel));border-color:color-mix(in srgb,var(--danger) 42%,transparent);color:color-mix(in srgb,var(--danger) 55%,var(--ink))}
       .jw-task-card{display:block;width:100%;font:inherit;text-align:left;color:inherit;cursor:pointer;transition:border-color .16s ease,background .16s ease,opacity .16s ease;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
       .jw-task-card:hover{border-color:var(--deep);background:var(--paper)}
       .jw-task-card:focus-visible{outline:3px solid #2EC4B6;outline-offset:2px}
@@ -437,6 +444,11 @@
       .yk-total small,.yk-spent small,.yk-balance small{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-bottom:4px}
       .yk-total b,.yk-spent b,.yk-balance b{display:block;color:var(--deep);font-size:calc(30px * var(--ui-text-scale));line-height:1.15}
       .yk-spent b{color:#8A6420}
+      /* 「已消费」这三处同样是浅色硬编码的 #8A6420（深色 --panel 上 2.6~3.0:1）；
+         它们直接落在面板上，不需要掺底色，只把文字混亮。 */
+      [data-theme-mode="dark"] .yk-status.warn,
+      [data-theme-mode="dark"] .yk-spent b,
+      [data-theme-mode="dark"] .yk-ledger-row.out b{color:color-mix(in srgb,var(--sun) 55%,var(--ink))}
       .yk-total span,.yk-spent span,.yk-balance span{display:block;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));line-height:1.7;margin-top:4px}
       .yk-login{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;display:grid;grid-template-columns:minmax(140px,1fr) minmax(160px,1fr) auto;gap:8px;align-items:center}
       .yk-login input{min-width:0;height:36px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);padding:0 10px;font:inherit;font-size:calc(12px * var(--ui-text-scale))}

@@ -182,4 +182,48 @@ assert.match(stylesCss, /\.popmenu button\.warn\s*\{\s*color:\s*var\(--danger\)/
 /* ── 8. deriveDark 是纯函数：同样输入必须同样输出 ── */
 assert.deepEqual(deriveDark(light.classic), darkOverrides.classic);
 
-console.log(`PASS: 主题对比度（${themeIds.length} 套主题 × 浅/深两套色板，均过 WCAG 门槛，深色版互不相同）`);
+/* ── 9. 内置插件的语义标签：深色模式必须自己把文字色翻亮 ──
+ * 踩过的坑：cppu-notify 的教务视图注释写着「一律用主题变量，深色模式自动跟随」，
+ * 但 .jw-tag.ok / .warn / .live 三个语义色仍是浅色硬编码（#0B6B60 / #8A6420 / #B42318）。
+ * 压在深色标签底上实测只有 1.38~2.17:1 —— 「1 学分」这种 10.5px 小字几乎读不出。
+ * 宿主 styles.css 的「内置插件深色兼容层」白名单里没有 .jw-* / .yk-*，兜不住这一族，
+ * 所以插件侧必须自带 [data-theme-mode="dark"] 覆盖。这里按公式实算，不达 WCAG AA 就红。 */
+const pluginSrc = read("../public/plugins/cppu-notify/main.js");
+/** color-mix(in srgb, A p%, B) 与 rgba 叠加都是 sRGB 通道线性插值，共用一个 blend */
+const blend = (top, bottom, p) => {
+  const A = hexToRgb(top), B = hexToRgb(bottom);
+  const c = (k) => Math.round(A[k] * p + B[k] * (1 - p));
+  return `#${["r", "g", "b"].map((k) => c(k).toString(16).padStart(2, "0")).join("")}`;
+};
+const MIX_RE = /color-mix\(in srgb,\s*var\((--[\w-]+)\)\s+([\d.]+)%,\s*var\((--[\w-]+)\)\)/;
+const tagRules = [...pluginSrc.matchAll(/\[data-theme-mode="dark"\]\s*\.jw-tag\.(ok|warn|live)\s*\{([^}]*)\}/g)];
+assert.equal(tagRules.length, 3, "三个语义标签都必须有 [data-theme-mode=\"dark\"] 覆盖");
+const sunTextRules = [...pluginSrc.matchAll(/\[data-theme-mode="dark"\][^{]*\.yk-(?:status\.warn|spent b|ledger-row\.out b)[^{]*\{([^}]*)\}/g)];
+assert.ok(sunTextRules.length >= 1, "一卡通的「已消费」文字色必须有深色覆盖");
+
+for (const id of themeIds) {
+  const lt = Object.assign({}, light[id], lightFixes[id] || {});
+  const dt = id === "night" ? Object.assign({}, lt) : darkOverrides[id];
+  for (const [, variant, body] of tagRules) {
+    const bg = MIX_RE.exec(/background:([^;]*)/.exec(body)[1]);
+    const fg = MIX_RE.exec(/(?:^|;)color:([^;]*)/.exec(body)[1]);
+    assert.ok(bg && fg, `${id} 的 .jw-tag.${variant} 深色覆盖必须用 color-mix 成对给出底色与文字色`);
+    const bgHex = blend(dt[bg[1]], dt[bg[3]], Number(bg[2]) / 100);
+    record(`${id}(深色)`, `.jw-tag.${variant}`, blend(dt[fg[1]], dt[fg[3]], Number(fg[2]) / 100), bgHex, 4.5);
+  }
+  for (const [, body] of sunTextRules) {
+    const fg = MIX_RE.exec(/color:([^;]*)/.exec(body)[1]);
+    assert.ok(fg, `${id} 的 .yk-* 告警文字色必须用 color-mix 翻亮`);
+    record(`${id}(深色)`, ".yk-* 告警文字", blend(dt[fg[1]], dt[fg[3]], Number(fg[2]) / 100), dt["--panel"], 4.5);
+  }
+}
+/* 反向守卫：深色覆盖写好了，浅色那三个硬编码值也不许被顺手换成 var() ——
+   浅色 --mint / --sun 直接当文字色只有 2~3:1，这正是本次要修的同一族问题。 */
+for (const variant of ["ok", "warn", "live"]) {
+  const lightRule = new RegExp(`^\\s*\\.jw-tag\\.${variant}\\{[^}]*color:#[0-9A-Fa-f]{6}`, "m").exec(pluginSrc);
+  assert.ok(lightRule, `.jw-tag.${variant} 的浅色规则必须保留硬编码文字色（浅色下才达标）`);
+}
+
+assert.deepEqual(failures, [], `对比度不达标：\n  ${failures.join("\n  ")}`);
+
+console.log(`PASS: 主题对比度（${themeIds.length} 套主题 × 浅/深两套色板 + 内置插件语义标签，均过 WCAG 门槛，深色版互不相同）`);
