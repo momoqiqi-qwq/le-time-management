@@ -419,6 +419,9 @@ export function createInterfaceCard({ rerender = () => {} } = {}) {
     toggleRow("显示顶部任务统计", prefs.showTopStats, (value) => setUiPreferences({ showTopStats: value })),
     toggleRow("顶部任务统计居中", prefs.centerTopStats, (value) => setUiPreferences({ centerTopStats: value })),
     toggleRow("显示页面副标题", prefs.showViewSubtitle, (value) => setUiPreferences({ showViewSubtitle: value })),
+    // 堆叠靠 hover 才展得开，触屏设备（手机端）CSS 里整条不生效 —— 那里摆了开关也拧不动什么，
+    // 所以跟着窗口尺寸那一组一起只在桌面出现。
+    desktopWindow ? toggleRow("通知叠成一张（鼠标悬停展开）", prefs.notifyStack, (value) => setUiPreferences({ notifyStack: value })) : null,
     toggleRow("触摸左右滑动返回上一页", prefs.swipeNavigation, (value) => setUiPreferences({ swipeNavigation: value })),
     el("div", { class: "setting-row" }, el("span", { class: "setting-copy" }, el("b", {}, "启动后进入")), startup),
     desktopWindow ? windowRow : null,

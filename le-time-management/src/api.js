@@ -69,6 +69,12 @@ export const api = {
     return invoke("save_download", { name, contents });
   },
 
+  // 二进制落盘：收 base64（与 httpFetch 的 binary: true 同格式），走同一个下载目录
+  async saveDownloadBase64(name, base64) {
+    if (!isTauri) throw new Error("保存文件仅在 Tauri 环境可用");
+    return invoke("save_download_base64", { name, base64 });
+  },
+
   async appInfo() {
     if (!isTauri) return { version: "web-dev", os: "browser", arch: navigator.platform || "web", dataDir: "localStorage（浏览器调试模式）" };
     return invoke("app_info");

@@ -728,11 +728,35 @@ body.rail-resizing iframe { pointer-events: none !important; }
 /* 边距 ÷ --ui-scale（推导与实测见 .settings-modal 处）。
    ⚠️ 别再写 `calc(var(--ui-vh) - 22px)`：那等价于「距屏幕顶 22px」，提示条会跑到屏幕顶部去
    （v0.48.0 ~ v0.49.1 就是这个状态，实测 top=22）。 */
-#toasts { position: fixed; right: 22px; bottom: calc(22px / var(--ui-scale, 1)); z-index: 100; display: flex; flex-direction: column; gap: 9px; }
+#toasts { position: fixed; right: 22px; bottom: calc(22px / var(--ui-scale, 1)); z-index: 100; display: flex; flex-direction: column; gap: var(--ns-gap, 9px); }
 .toast { background: #1E2A31; color: #F2F5F4; border-radius: 12px; padding: 12px 17px; font-size: calc(13px * var(--ui-text-scale));
   box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 14px; animation: slidein .18s ease-out; max-width: 380px; }
 .toast button { color: #7FE8B2; font-weight: 700; font-size: calc(12.5px * var(--ui-text-scale)); flex: none; }
 @keyframes slidein { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* ── 通知堆叠：桌面把多条横幅叠成一张，鼠标移上去背后那张向上散开 ──
+   折叠量 = 露出的边 - 自身高 - 原有间距，`--item-h` 由 src/notifyStack.js 实测写入。
+   容器是贴底定位的，所以只有「后面那张」向上退，最前面那张一动不动 —— 看着像牌堆被掀开。
+   `--item-h` 缺失时（0px 兜底）退化成不重叠：宁可摊平，也不要叠出错位。 */
+.notify-stack { --ns-gap: 9px; --ns-peek: 11px; --ns-fold: 1; }
+/* 「通知叠成一张」开关（设置 › 界面与交互）：把折叠系数归零，折叠公式整条算出来就是 0，
+   于是回到逐条竖排。用系数而不是删规则 —— 拨开关当场就变，不必等卡片重建或重排。 */
+:root[data-notify-stack="off"] .notify-stack { --ns-fold: 0; }
+/* 触屏与窄屏手机整套不参与：折叠要靠 hover 才展得开，手机上「叠起来」等于「看不到」。
+   判据只问指针、不问宽度（`pointer: fine` 手机恒为 false）—— 桌面窗口即使拖窄，
+   鼠标照样能 hover 回来，没有藏东西的风险。 */
+@media (hover: hover) and (pointer: fine) {
+  .notify-stack > * {
+    transition: margin-bottom .34s var(--motion-spring, cubic-bezier(.2, .9, .25, 1.18));
+  }
+  .notify-stack.is-stacked > *:not(:last-child) {
+    margin-bottom: calc((var(--ns-peek) - var(--item-h, 0px) - var(--ns-gap)) * var(--ns-fold));
+  }
+  /* hover 与键盘焦点都算「用户要看清楚」；常驻卡（[data-pin]）压根不会被折叠，
+     判据在 notifyStack.js 的 refreshStack()，不在这里重复。 */
+  .notify-stack.is-stacked:hover > *,
+  .notify-stack.is-stacked:focus-within > * { margin-bottom: 0; }
+}
 
 /* 菜单弹出层 */
 .popmenu { position: fixed; z-index: 60; background: var(--panel); border-radius: 12px; box-shadow: var(--shadow-lg);
@@ -3999,6 +4023,10 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   bottom: calc(22px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
   z-index: 1890;
   width: min(340px, calc(var(--ui-vw, 100vw) - 44px));
+  /* 容器只管定位与宽度；外观全在 .update-toast-card（堆叠的单元）。 */
+  display: flex; flex-direction: column; gap: var(--ns-gap, 9px);
+}
+.update-toast-card {
   padding: 13px 15px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -4008,7 +4036,7 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
   animation: update-toast-in .22s cubic-bezier(.22,.8,.22,1);
 }
 @keyframes update-toast-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .update-toast { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .update-toast-card { animation: none; } }
 .update-toast-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .update-toast-head b { font-size: calc(13.5px * var(--ui-text-scale)); }
 .update-toast-x {
@@ -4019,6 +4047,31 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
 .update-toast-note { margin: 5px 0 11px; font-size: calc(12px * var(--ui-text-scale)); color: var(--ink-2); }
 .update-toast-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 
+/* 下载 / 安装进行中的那张卡：spinner + 标题 + 一行 git 风格的进度读数。
+   照 git 自己的写法（`10% (1573/15068), 16.42 MiB | 1.08 MiB/s`）而不是画一条进度条 ——
+   数字在跳才看得出「真的在下」，静止的进度条反而像卡住了。 */
+.update-live-row { display: flex; align-items: flex-start; gap: 10px; }
+.update-live-body { min-width: 0; flex: 1; }
+.update-live-title { display: block; font-size: calc(13.5px * var(--ui-text-scale)); }
+.update-live-meter {
+  display: block; margin-top: 4px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+  font-size: calc(11.5px * var(--ui-text-scale)); line-height: 1.5; color: var(--ink-2);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+/* 失败原因走 .update-toast-note：那条给版本提示卡排版（下方留 11px），
+   这张卡自己已经用 --ns-gap 撑开了，照搬会在文字和按钮之间多出一道空档。 */
+.update-live .update-toast-note { margin: 4px 0 0; }
+.update-live .update-toast-actions { margin-top: 9px; }
+.ns-spinner {
+  flex: none; display: block; width: 15px; height: 15px; margin-top: 2px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--ink-3) 32%, transparent);
+  border-top-color: var(--deep);
+  animation: ns-spin .85s linear infinite;
+}
+@keyframes ns-spin { to { transform: rotate(360deg); } }
+
 /* 设置 › 关于 › 软件更新（面板宿主 .update-panel 无样式，
    两个开关行复用全局 .setting-row，无需额外规则） */
 /* [hidden] 兜底：作者样式里写了 display 的元素会把 UA 的 `[hidden]{display:none}` 压过去
@@ -4028,6 +4081,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
    （同类坑见 `.settings-acc[hidden]`，那里的 !important 也是这个原因。） */
 .update-progress[hidden],
 .update-notes[hidden],
+.update-live-meter[hidden],
+.ns-spinner[hidden],
 .setting-row[hidden] { display: none !important; }
 
 /* ── 关键词标注 ──────────────────────────────────────────────────────────────
@@ -4138,8 +4193,8 @@ input, select, textarea { font-size: calc(13px * var(--ui-text-scale)); }
     left: 12px; right: 12px;
     bottom: calc(86px / var(--ui-scale, 1) + var(--sab, env(safe-area-inset-bottom, 0px)));
     width: auto;
-    padding: 12px 13px;
   }
+  .update-toast-card { padding: 12px 13px; }
   .update-toast-actions .btn { flex: 1 1 auto; min-height: 34px; }
   .update-actions { flex-direction: column; }
   .update-actions .btn { width: 100%; min-height: 34px; }

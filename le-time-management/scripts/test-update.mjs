@@ -346,6 +346,68 @@ assert.equal(readyState.downloadedPath, "C:/Users/x/AppData/Local/com.yile.letim
   "下载返回的路径要存住，安装时要用");
 assert.equal(readyState.installReady.ready, true);
 
+/* ── ⑤b 左下角进度卡：git 风格的下载读数，卡片就地换文案而不是重建 ── */
+let resolveDownload;
+handler = (cmd) => {
+  if (cmd === "update_check") return { ...RELEASE };
+  if (cmd === "update_download") return new Promise((done) => { resolveDownload = done; });
+  if (cmd === "update_ready") return { ready: true, platform: "windows", reason: "" };
+  throw new Error(`未打桩的命令：${cmd}`);
+};
+await U.checkForUpdates();
+const downloadPromise = U.startUpdate();
+assert.equal(U.getUpdateState().phase, "downloading", "打桩的下载还没 resolve，此刻必须停在 downloading");
+const liveCard = updateToast();
+assert.ok(liveCard, "下载中左下角必须出现进度卡（用户不该为了看进度去开设置页）");
+assert.ok(liveCard.querySelector("ns-spinner"), "进度卡要有 spinner：数字没动的时候它才是「还在下」的唯一凭据");
+assert.match(liveCard.textContent, /正在下载更新包 v0\.38\.1/, "进度卡要写明在下哪个版本");
+assert.match(liveCard.textContent, /-- B\/s/, "第一个采样点算不出速率，要写 -- 而不是 0 B/s（0 读起来像卡住了）");
+assert.equal(buttonByText(liveCard, "稍后"), null, "正在下载的卡不给「稍后」：Rust 侧没有取消通道，收掉它只会让人以为下载停了");
+
+/* 进度事件：received/total 直接来自 Rust，速率由前端按时间差算（见 createSpeedMeter）。 */
+const meter = U.formatDownloadMeter({ received: 16 * 1048576, total: 150 * 1048576, speed: 1.08 * 1048576 });
+assert.equal(meter, "10% (16.00 MiB/150.00 MiB) | 1.08 MiB/s", "进度行要照 git 的写法：百分比 + (已下/总量) + 速率");
+assert.equal(U.formatDownloadMeter({ received: 1048576, total: 0, speed: 0 }), "(1.00 MiB) | -- B/s",
+  "release 没给 asset_size 时省掉百分比，只报已下体积 —— 猜分母会让进度条从 30% 跳回 90%");
+assert.equal(U.formatBytes(512), "512 B");
+assert.equal(U.formatBytes(2048), "2.0 KiB");
+assert.equal(U.formatBytes(0), "0 B");
+const speed = U.createSpeedMeter({ minIntervalMs: 100 });
+assert.equal(speed.sample(0, 1000), 0, "第一个点没有区间，速率只能是 0（渲染层再把它显示成 --）");
+assert.equal(speed.sample(10 * 1024 * 1024, 2000), 10 * 1024 * 1024, "第二个点即瞬时值");
+assert.ok(Math.abs(speed.sample(10 * 1024 * 1024 + 5 * 1024 * 1024, 3000) - 10 * 1024 * 1024) < 2 * 1024 * 1024,
+  "滑动平均：一次慢包只能把读数往下拉一截，不能直接跳到 5 MiB/s");
+
+resolveDownload("C:/x/LeTime-0.38.1-x64-setup.exe");
+await downloadPromise;
+assert.equal(updateToast(), liveCard, "下载完成要复用同一张卡（重建会把入场动画重放，进度一秒刷两次就一直「在跳」）");
+assert.match(liveCard.textContent, /更新包已下载完成（v0\.38\.1）/);
+assert.equal(liveCard.querySelector("ns-spinner").hidden, true, "下完要把 spinner 收掉，它只在该有「正在做」的事时转");
+assert.ok(buttonByText(liveCard, "关闭并安装"), "完成卡要就地给出安装入口");
+
+/* 检查失败必须继续静默：左下角那张卡只认下载/安装段的错误。 */
+handler = (cmd) => {
+  if (cmd === "update_check") throw new Error("网络不可用");
+  throw new Error(`未打桩的命令：${cmd}`);
+};
+assert.equal(await U.checkForUpdates({ manual: true }), null);
+assert.equal(U.getUpdateState().errorStage, "check", "检查段的失败要标成 check");
+assert.equal(updateToast(), null, "离线 / GitHub 限流不该在左下角弹「失败」卡（启动静默检查的同一条约定）");
+
+/* 下载段的失败才弹，而且要能一键续一次。 */
+handler = (cmd) => {
+  if (cmd === "update_check") return { ...RELEASE };
+  if (cmd === "update_download") throw new Error("下载中断：连接重置");
+  throw new Error(`未打桩的命令：${cmd}`);
+};
+await U.checkForUpdates();
+assert.equal(await U.startUpdate(), false);
+const errorCard = updateToast();
+assert.ok(errorCard, "下载失败必须在左下角显示，而不是只写进设置页里");
+assert.match(errorCard.textContent, /下载失败/);
+assert.match(errorCard.textContent, /下载中断：连接重置/, "失败原因要原样显示");
+assert.ok(buttonByText(errorCard, "重试"), "失败卡必须给重试入口");
+
 // Android：未授权未知来源 → installUpdate 必须改走授权页，而不是硬装
 handler = (cmd) => {
   if (cmd === "update_check") return { ...RELEASE };

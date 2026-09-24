@@ -25,6 +25,11 @@ assert.equal(normalizeUiPreferences({ centerTopStats: "true" }).centerTopStats, 
 assert.equal(normalizeUiPreferences({ showViewSubtitle: false }).showViewSubtitle, false);
 assert.equal(normalizeUiPreferences({}).showSettingsDescriptions, true);
 assert.equal(normalizeUiPreferences({ showSettingsDescriptions: false }).showSettingsDescriptions, false);
+// 通知堆叠：默认开，只有显式 false 才回到逐条竖排（与 centerTopStats 同一套 !==false 约定，
+// 老存档里没有这个键 ⇒ 落到新默认，不会被误判成「用户关过」）
+assert.equal(normalizeUiPreferences({}).notifyStack, true);
+assert.equal(normalizeUiPreferences({ notifyStack: false }).notifyStack, false);
+assert.equal(normalizeUiPreferences({ notifyStack: "off" }).notifyStack, true);
 // 底栏高度档位：非法值回标准档，三档合法值原样保留（CSS 变量消费，见 styles.css :root[data-navbar]）
 assert.equal(normalizeUiPreferences({ navBarSize: "weird" }).navBarSize, "standard");
 for (const id of ["compact", "standard", "relaxed"]) {

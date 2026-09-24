@@ -96,10 +96,13 @@ const cfg = await tide.assets.json("data/config.json");
 const text = await tide.assets.text("README.txt");
 // 把文本真正保存到系统下载目录（重名自动加序号），返回落盘的完整路径
 const path = await tide.assets.saveText("导出说明.md", text);
+// 二进制同理：base64 直接喂进来，不要拼 data: URI 用 <a download>（WebView 里会静默失败）
+const blob = await tide.http.fetch(sid, "GET", fileUrl, { binary: true });
+const saved = await tide.assets.saveBase64("附件.docx", blob.body);
 ```
 
 资源路径必须是插件目录内的相对路径，不能使用绝对路径或 `..`。
-`saveText` 需要 `ui` 权限；平台没有下载目录时保存到应用数据目录。
+`saveText` / `saveBase64` 需要 `ui` 权限；平台没有下载目录时保存到应用数据目录。
 
 ### 通知与事件
 

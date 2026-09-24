@@ -267,6 +267,12 @@ function makeApi(man, source) {
         requirePermission(man, pid, "ui");
         return api.saveDownload(String(filename || ""), String(text ?? ""));
       },
+      // 二进制落盘（附件、图片）：base64 与 tide.http.fetch 的 binary: true 同格式。
+      // 别拿 saveText 存二进制 —— 那个按文本写，docx / pdf 会坏。
+      async saveBase64(filename, base64) {
+        requirePermission(man, pid, "ui");
+        return api.saveDownloadBase64(String(filename || ""), String(base64 ?? ""));
+      },
     },
 
     notify: (msg, opts) => { requirePermission(man, pid, "notify"); return toast(`${man.name}：${msg}`, opts); },

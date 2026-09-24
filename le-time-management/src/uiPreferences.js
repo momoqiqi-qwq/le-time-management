@@ -34,6 +34,9 @@ export const DEFAULT_UI_PREFERENCES = Object.freeze({
   // 老数据里没写过这个键 → 落新默认 true；显式关过（false）的用户保持关闭。
   centerTopStats: true,
   showViewSubtitle: true,
+  // 多条横幅叠成一张、鼠标移上去才展开（src/notifyStack.js）。关掉回到逐条竖排。
+  // 只在有真实指针的设备上有意义，触屏恒定走竖排（判据在 CSS 的媒体查询里）。
+  notifyStack: true,
   // 设置中心的辅助说明：默认显示；“无描述”预设只隐藏说明，不影响标题、控件和状态反馈。
   showSettingsDescriptions: true,
   startupView: "last",
@@ -99,6 +102,7 @@ export function normalizeUiPreferences(raw = {}) {
   // 没有该键的老用户会永远停在「不居中」，新默认形同虚设。
   next.centerTopStats = next.centerTopStats !== false;
   next.showViewSubtitle = next.showViewSubtitle !== false;
+  next.notifyStack = next.notifyStack !== false;
   next.showSettingsDescriptions = next.showSettingsDescriptions !== false;
   if (!WINDOW_SIZE_MODES_SET.has(next.startupWindowMode)) next.startupWindowMode = DEFAULT_UI_PREFERENCES.startupWindowMode;
   next.startupWindowWidth = Math.round(clamp(next.startupWindowWidth, CUSTOM_SIZE_LIMITS.minWidth, CUSTOM_SIZE_LIMITS.maxWidth));
@@ -127,6 +131,8 @@ export function applyUiPreferences(raw = null, { animate = false } = {}) {
   root.dataset.centerTopStats = cfg.centerTopStats ? "on" : "off";
   root.dataset.showViewSubtitle = cfg.showViewSubtitle ? "on" : "off";
   root.dataset.settingsDescriptions = cfg.showSettingsDescriptions ? "on" : "off";
+  // dataset.notifyStack → data-notify-stack（写成 data-notifyStack 之类 CSS 匹配不上）
+  root.dataset.notifyStack = cfg.notifyStack ? "on" : "off";
   root.style.setProperty("--ui-text-scale", String(cfg.textScale / 100));
   // 界面整体缩放走独立模块（挂 zoom + 注入 --ui-vw/--ui-vh，见 src/uiScale.js）。
   // 放在这里而不是 applyUiScale 的调用点，是为了「任何写入偏好的路径都会重算缩放」——

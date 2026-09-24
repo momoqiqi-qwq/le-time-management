@@ -18,17 +18,25 @@
   const THREAD_KEY = "thread";
   const CTX_KEY = "withContext";
   const NOTICE_KEY = "notices";
+  const ID_KEY = "identity";     // 双方头像与名称
+  const DRAFT_KEY = "draft";     // 没发出去的输入
   const KEEP = 40;          // 本地留存的对话条数
   const SEND_TURNS = 10;    // 送给模型的最近条数（含本轮提问，24 条上限留足余量）
   const SNAP_CAP = 25;      // 快照每段最多列几条
   const NOTICE_KEEP = 120;  // 消息环形队列长度（与宿主抄收队列同宽）
   const NOTICE_PER_SOURCE = 6;
+  const NAME_MAX = 12;      // 名称上限，再长气泡上方的标签就顶到边了
+  const AVATAR_SIDE = 128;  // 头像统一压成正方形边长（圆形显示用）
+  const DEFAULT_NAME = { me: "我", ai: "AI 助手" };
 
   let thread = [];
   let notices = [];         // 跨插件消息（新的在前），跨重启保留
+  let identity = normalizeIdentity(null);
   let loaded = false;
   let busy = false;
   let withContext = true;
+  let draft = "";           // 输入到一半的话，切走再回来还在
+  let seenLastAt = 0;       // 上次渲染时最后一条消息的时间，用来判断「来了新消息但人没在看底部」
   let modelLabel = "";
   let configured = false;
   let ui = null;          // 当前渲染出来的 DOM（切走再回来会重建）
@@ -63,26 +71,81 @@
     return "日一二三四五六"[new Date(y, m - 1, d).getDay()];
   }
 
-  /** 极简 markdown：先整体转义，再补粗体 / 行内码 / 短列表 / 换行。 */
+  const LEAD_PREFIX = /^\s*(?:结论|一句话结论|一句话|总结|要点|摘要)\s*[：:]\s*/;
+  const idLabel = new Map();   // id → 标题，由 snapshot() 填，tameIds() 读
+
+  /**
+   * 正文里的内部 id 换成人话，或者抹掉。
+   *
+   * 真机截图上出现过「（id=b_hrc882934078e）（id=b_hrc882934078e）」—— 模型把快照行的尾巴抄了两遍。
+   * 一串随机字符对用户没有信息量，所以不再"折成小字留着核对"：
+   *   · 同一行已经写了标题（含这一行前面刚替进去的）→ 连括号整段丢；
+   *   · 认得这条但行里没提标题 → 换成标题，括号成对时保留括号；
+   *   · 对不上号（编造的、或已经删掉的）→ 丢。编造该拦的地方是建议块，那里 normalizeSuggestion 会标红。
+   * 映射表由 snapshot() 顺手填；关掉「带本机数据」时表是空的，效果等于一律抹掉。
+   */
+  function tameIds(escapedLine) {
+    const seen = new Set();
+    return escapedLine
+      .replace(/(?:([（([【])\s*)?(?:id\s*[=＝:：]\s*)?([tb]_[A-Za-z0-9]{3,})(?:\s*([）)\]】]))?/gi, (all, open, id, close) => {
+        const label = idLabel.get(id);
+        if (!label || seen.has(label) || escapedLine.includes(esc(label))) return "";
+        seen.add(label);
+        return open && close ? `${open}${esc(label)}${close}` : esc(label);
+      })
+      .replace(/[（(]\s*[)）]/g, "")
+      .replace(/^\s*[-*·•]\s*$/, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
+  /**
+   * 极简 markdown：先整体转义，再抹 id / 补粗体 / 行内码 / 列表 / 换行。
+   *
+   * 四条兜底是照着真机回答的漏法加的（v0.100.0 截图）：
+   *   · 正文漏内部 id → 见 tameIds；
+   *   · 模型爱用「1. 2. 3.」或「1、2、」列点，之前只会当普通段落糊成一坨；
+   *   · 提示词让它用「一、二、」分块，那是要当小标题看的，不能也折成 1. 的项目符号；
+   *     它偶尔仍漏出 `### 标题` 和 `[文字](网址)`，一并收掉；
+   *   · 第一行按提示词是一句结论，给它一个左侧色块的锚点。
+   */
   function md(text) {
     const inline = (s) => s
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/`([^`]+)`/g, "<code>$1</code>");
     const out = [];
     let list = null;
-    String(text || "").split("\n").forEach((raw) => {
-      const line = esc(raw).trimEnd();
+    let leadFree = true;
+    String(text || "").split("\n").forEach((rawLine) => {
+      const line = tameIds(esc(rawLine));
       const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
-      if (bullet) {
-        if (!list) { out.push("<ul>"); list = true; }
-        out.push(`<li>${inline(bullet[1])}</li>`);
+      // 「1. 」「1、」「1）」「1）」都算序号；但 "1.5 小时" 不是列表 —— 点号后必须跟空格。
+      const numbered = /^\s*(?:\d+\.\s+|\d+[、)）]\s*)(.+)$/.exec(line);
+      if (bullet || numbered) {
+        const tag = bullet ? "ul" : "ol";
+        if (list !== tag) { if (list) out.push(`</${list}>`); out.push(`<${tag}>`); list = tag; }
+        out.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+        leadFree = false;
         return;
       }
-      if (list) { out.push("</ul>"); list = null; }
-      if (!line.trim()) out.push("");
-      else out.push(`<p>${inline(line)}</p>`);
+      if (list) { out.push(`</${list}>`); list = null; }
+      // 小标题：中文序号要连「一、」一起留（那是读出来的序号），markdown 井号只取文字。
+      const hash = /^\s*#{1,6}\s*(.+)$/.exec(line);
+      const cjk = /^\s*([一二三四五六七八九十]+[、.])\s*(.+)$/.exec(line);
+      if (hash || cjk) {
+        out.push(`<p class="sec">${inline(hash ? hash[1] : cjk[1] + cjk[2])}</p>`);
+        leadFree = false;
+        return;
+      }
+      if (!line) { out.push(""); return; }
+      // 只有真的很短才当结论；模型偶尔第一行就是一坨 150 字的整段，那样加粗反而更糊。
+      const lead = leadFree && line.length <= 60;
+      const body = leadFree ? line.replace(LEAD_PREFIX, "") : line;
+      leadFree = false;
+      out.push(`<p${lead ? ' class="lead"' : ""}>${inline(body)}</p>`);
     });
-    if (list) out.push("</ul>");
+    if (list) out.push(`</${list}>`);
     return out.join("\n").replace(/(<p><\/p>)+/g, '<p class="gap"></p>');
   }
 
@@ -92,6 +155,89 @@
     return box;
   }
 
+  /* ───────────────────────── 头像与名称 ───────────────────────── */
+
+  // 默认头像用内联 SVG：插件沙箱里拿不到宿主的图标字体，画在 currentColor 上还能跟着主题走。
+  const ICON = {
+    me: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="7.6" r="4.1"/><path d="M3.6 21c0-4.5 3.8-7.2 8.4-7.2s8.4 2.7 8.4 7.2z"/></svg>',
+    ai: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="4.4" y="8.4" width="15.2" height="11" rx="3.2"/><circle cx="9.6" cy="13.6" r="1.5" fill="currentColor" stroke="none"/><circle cx="14.4" cy="13.6" r="1.5" fill="currentColor" stroke="none"/><path d="M12 5.4v3M9.6 19.4h4.8"/><circle cx="12" cy="3.7" r="1.5" fill="currentColor" stroke="none"/></svg>',
+  };
+
+  const displayName = (role) => identity[role].name || DEFAULT_NAME[role];
+
+  /** 名称首字：英文取首字母大写，中文和其他文字直接取第一个字（Array.from 防代理对截半）。 */
+  const initialOf = (name) => {
+    const c = Array.from(String(name || "").trim())[0] || "";
+    return /[a-z]/i.test(c) ? c.toUpperCase() : c;
+  };
+
+  /** 上传的图 > 没改名时的线条图标 > 名称首字。只给内容，外壳由调用方决定是 span 还是 button。 */
+  function avatarInner(role) {
+    const name = displayName(role);
+    if (identity[role].avatar) return `<img src="${esc(identity[role].avatar)}" alt="">`;
+    return name === DEFAULT_NAME[role] ? ICON[role] : esc(initialOf(name));
+  }
+
+  const avatarHtml = (role) => `<span class="aichat-avatar ${role}" aria-hidden="true">${avatarInner(role)}</span>`;
+
+  function normalizeIdentity(raw) {
+    const one = (o) => ({
+      name: typeof o?.name === "string" ? o.name.trim().slice(0, NAME_MAX) : "",
+      // 只收图片 dataURL：别的值（外链、半截字符串）渲染出来就是坏图或注入面。
+      avatar: typeof o?.avatar === "string" && o.avatar.startsWith("data:image/") ? o.avatar : "",
+    });
+    const r = raw && typeof raw === "object" ? raw : {};
+    return { me: one(r.me), ai: one(r.ai) };
+  }
+
+  function saveIdentity() {
+    tide.storage.set(ID_KEY, identity);
+    paintIdentityPanel();
+    renderThread();
+  }
+
+  /** 只刷面板里两个头像预览：改名时走这条，免得把正在输入的光标抢走。 */
+  function paintAvatars() {
+    if (!ui) return;
+    ui.idPanel.querySelectorAll("[data-pick]").forEach((b) => {
+      b.innerHTML = avatarInner(b.dataset.pick);
+      b.title = `${displayName(b.dataset.pick)} · 点击换头像`;
+    });
+  }
+
+  function paintIdentityPanel() {
+    if (!ui || !ui.idPanel) return;
+    paintAvatars();
+    ui.idPanel.querySelectorAll("[data-name]").forEach((i) => { i.value = identity[i.dataset.name].name; });
+  }
+
+  /** 头像文件 → 边长 128 的方形 dataURL。
+      为什么一定要压：整份应用状态是一起写盘的，一张 4MB 截图 base64 后约 5.3MB，
+      而浏览器调试模式下的 localStorage 配额只有 5MB —— 不压就写不进去，
+      还会连带把整个 store 的保存链一起卡挂。居中裁方是因为头像按圆形显示，直接缩放会压扁。
+      统一出 PNG：128 见方最坏也就 88KB 上下，换来透明底的图标不会被填成黑底，值。 */
+  function readAvatar(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error("图片读取失败"));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error("图片格式不支持"));
+        img.onload = () => {
+          const cv = document.createElement("canvas");
+          cv.width = AVATAR_SIDE; cv.height = AVATAR_SIDE;
+          const ctx = cv.getContext("2d");
+          if (!ctx) { resolve(String(fr.result || "")); return; }
+          const cut = Math.min(img.width, img.height);
+          ctx.drawImage(img, (img.width - cut) / 2, (img.height - cut) / 2, cut, cut, 0, 0, AVATAR_SIDE, AVATAR_SIDE);
+          resolve(cv.toDataURL("image/png"));
+        };
+        img.src = String(fr.result || "");
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
   /* ───────────────────────── 本机数据快照 ───────────────────────── */
 
   /** 把任务与时间块压成一段文本喂给模型：只给事实，不给判断。 */
@@ -99,6 +245,8 @@
     const today = tide.util.today();
     const plus7 = tide.util.addDays(today, 7);
     const tasks = tide.tasks.list();
+    idLabel.clear();
+    tasks.forEach((t) => t && t.id && idLabel.set(String(t.id), String(t.title || "")));
     const buckets = { overdue: [], today: [], soon: [], later: [], free: [] };
     tasks.filter((t) => !t.done).forEach((t) => {
       if (!t.due) buckets.free.push(t);
@@ -142,6 +290,7 @@
       const tag = i === 0 ? "今天" : i === 1 ? "明天" : "后天";
       blockLines.push(`【${tag} ${ds}（周${weekday(ds)}）】`);
       bs.slice(0, 20).forEach((b) => {
+        if (b.id) idLabel.set(String(b.id), String(b.title || ""));
         const bits = [`- ${b.start} 起 ${b.durMin} 分钟 ${b.title}`];
         if (b.cat) bits.push(b.cat);
         if (b.taskId) bits.push(`关联 id=${b.taskId}`);
@@ -180,16 +329,36 @@
 
   function systemPrompt() {
     const head = [
-      "你是 U-Time（一款时间块 + 四象限任务管理应用）里的助手，用户就在应用内与你对话。",
+      `你是「${displayName("ai")}」，U-Time（一款时间块 + 四象限任务管理应用）里的助手，用户就在应用内与你对话。`,
       "规则：",
       "1. 只依据下面给出的本机数据回答；数据里没有的事实直说不知道，绝不编造任务、日期或 id。",
-      "2. 中文回答，尽量短：先一句结论，再给要点；不要 Markdown 标题与表格，不要 emoji。",
+      "2. 中文回答。",
       "3. 涉及日期一律写 YYYY-MM-DD，涉及时间写 HH:MM。",
-      "4. 快照里可能有【其他插件推来的消息】一段，那是门户 / 学习通 / 学校通知 / 竞赛 / RSS 等插件推来的新消息；"
+      "4. 本机数据里可能有【其他插件推来的消息】一段，那是门户 / 学习通 / 学校通知 / 竞赛 / RSS 等插件推来的新消息；"
       + "它们只代表「收到了」，不代表用户已经处理过。要据此提醒或安排时，说清是哪来的消息。",
     ].join("\n");
-    if (!withContext) return `${head}\n\n（用户已关闭「带本机数据」，本轮没有任何本机数据，只能回答通用问题。）`;
-    return `${head}\n\n本机数据快照：\n${snapshot()}\n\n当用户要你「整理 / 安排 / 拆分 / 改期」时，除了正文说明，在回复**最后**单独输出一个 json 代码块（不要包在正文里），格式严格如下：\n`
+    const fmt = [
+      "输出格式（严格遵守 —— 回答显示在手机屏幕的气泡里，宽度很窄）：",
+      "① 第一行只写一句结论，不超过 40 字。界面会把这一行做成带色块的醒目摘要，"
+      + "所以直接写结论本身，不要加「结论：」「总结如下：」这类前缀，也不要用它引出下文。",
+      "② 之后用「一、」「二、」「三、」分块，最多 3 块；每块先一句话说明，紧跟不超过 5 条 \"- \" 短要点，"
+      + "每条一行写完、不超过 25 字。不要写成整段的长句子。",
+      "③ 正文里绝对不许出现内部标识：形如 t_xxx、b_xxx 的 id（写了也会被系统抹掉，白占字数），"
+      + "也不许出现「id=」「字段」「快照」「关联」「分类码」这些系统词，不要写 rest / work / study 这类内部取值 —— "
+      + "要指代某条任务或时间块，直接写它的标题，分类说「学习」「休息」这样的中文。",
+      "④ 不复述用户的问题，不以「好的」「以下是」开头，不说「根据你提供的数据」。",
+      "⑤ 问「有多少」这类数数题：小标题里的「共 N 条」是准数，可以直接报；但某一段如果写着「其余 N 条略」，"
+      + "说明那部分没列出来，只能报「至少 X 条，另有 N 条未列出」，不许把没看到的算进去。"
+      + "「作业」「复习」这类按字面归类的问题，要顺带说一句你是按标题字样认的。",
+      "⑥ 小标题只用「一、」这种中文序号，不要用 # 号；链接直接写文字，不要写 [文字](网址)；"
+      + "不要 Markdown 标题、表格、emoji、加粗和斜体。",
+      "⑦ 数据不够回答时**只写一句**：查不到什么、缺的是哪一项、下一步做哪一件最省事的事。"
+      + "不要为此硬凑「现状 / 建议 / 操作」三块，也不要把时间块的原样格式（几点起多少分钟什么分类）抄进正文。",
+    ].join("\n");
+    if (!withContext) {
+      return `${head}\n\n${fmt}\n\n（用户已关闭「带本机数据」，本轮没有任何本机数据，只能回答通用问题。）`;
+    }
+    return `${head}\n\n${fmt}\n\n本机数据快照：\n${snapshot()}\n\n当用户要你「整理 / 安排 / 拆分 / 改期」时，除了正文说明，在回复**最后**单独输出一个 json 代码块（不要包在正文里），格式严格如下：\n`
       + '```json\n{"suggestions":[{"action":"create-task","title":"…","due":"YYYY-MM-DD","dueTime":"HH:MM","quad":2,"estMin":45,"note":"…"}]}\n```\n'
       + "action 只能取：create-task（新建任务）、create-block（新建时间块，字段 date/start/durMin/title/cat，cat 取 work|study|sport|life|rest）、update-task（改已有任务，字段 id + 要改的字段）、done-task（标记完成，字段 id）。"
       + "id 必须是上面快照里出现过的真实 id。没有要落库的东西就输出 {\"suggestions\":[]}。";
@@ -252,21 +421,39 @@
 
     // 落地前就能判掉的非法项直接标出来，不等用户点了才发现写不进去。
     if (action === "create-task" && !out.title) out.reason = "缺任务标题";
-    if (action === "create-block" && (!out.title || !out.date || !out.start)) out.reason = "缺 date/start/title";
+    if (action === "create-block" && (!out.title || !out.date || !out.start)) out.reason = "缺日期、开始时间或标题";
     if ((action === "update-task" || action === "done-task")) {
-      if (!out.id) out.reason = "缺任务 id";
-      else if (!tide.tasks.list().some((t) => t.id === out.id)) out.reason = `id ${out.id} 不在本机任务里`;
+      if (!out.id) out.reason = "没说改哪条任务";
+      else if (!tide.tasks.list().some((t) => t.id === out.id)) out.reason = "本机任务里找不到这一条";
     }
     return out;
   }
 
+  /** 建议行上要说的是「哪条任务」，不是那串随机 id。
+      tide.tasks.list() 每次调用都把整张任务表深拷一遍，所以按「一轮渲染取一次」缓存；
+      renderThread() 开头作废它，用户中途改了标题下一轮也能跟上。
+      快照里填的 idLabel 作二级兜底：任务在回答之后被删掉时，至少还认得它当时的名字。 */
+  let taskIndex = null;
+  function taskTitleOf(id) {
+    if (!id) return "";
+    const key = String(id);
+    if (!taskIndex) {
+      taskIndex = new Map();
+      (tide.tasks.list() || []).forEach((t) => { if (t && t.id) taskIndex.set(String(t.id), String(t.title || "")); });
+    }
+    return taskIndex.get(key) || idLabel.get(key) || "";
+  }
+
+  const targetName = (id) => taskTitleOf(id) || "未指明任务";
+
   function describe(s) {
     const head = ACTIONS[s.action];
-    if (s.action === "done-task") return `${head}：${s.title || s.id}`;
+    // update-task 的 s.title 是「要改成的新标题」，被改的那条叫什么得回查任务表。
+    if (s.action === "done-task") return `${head}：${s.title || targetName(s.id)}`;
     if (s.action === "update-task") {
       const to = [s.due ? `改到 ${s.due}${s.dueTime ? " " + s.dueTime : ""}` : "", s.title ? `标题「${s.title}」` : "", s.quad ? QUAD_LABEL[s.quad] : ""]
         .filter(Boolean).join("、") || "（模型没给出要改的字段）";
-      return `${head} ${s.id}：${to}`;
+      return `${head}「${targetName(s.id)}」：${to}`;
     }
     if (s.action === "create-block") return `${head} · ${s.title} · ${s.date} ${s.start}${s.durMin ? ` 起 ${s.durMin} 分钟` : ""}`;
     return `${head} · ${s.title} · ${s.due ? `${s.due}${s.dueTime ? " " + s.dueTime : ""}` : "无截止"}`;
@@ -301,7 +488,7 @@
           if (r.moved) s.movedTo = r.block.start;
         } else {
           const before = tide.tasks.list().find((t) => t.id === s.id);
-          if (!before) throw new Error(`找不到任务 ${s.id}`);
+          if (!before) throw new Error("本机任务里找不到这一条");
           const patch = s.action === "done-task" ? { done: true }
             : ["title", "note", "due", "dueTime", "quad", "estMin"].reduce((acc, k) => {
               if (s[k] !== undefined) acc[k] = s[k];
@@ -314,7 +501,8 @@
         }
         s.applied = true;
       } catch (e) {
-        errors.push(`${s.title || s.id || s.action}：${e.message || e}`);
+        // 有 id 的就是在改已有任务，报错要报那条任务叫什么；新建类的才用模型给的标题。
+        errors.push(`${s.id ? targetName(s.id) : (s.title || ACTIONS[s.action])}：${e.message || e}`);
         s.reason = String(e.message || e).slice(0, 60);
       }
     });
@@ -373,6 +561,15 @@
     { label: "处理逾期", ask: "逐条给出逾期任务的处理建议：改到哪一天、还是直接关掉，并说明理由。" },
     { label: "最近的通知", ask: "把最近收到的插件消息按「要办事 / 要知道 / 可忽略」分三类，各条说清是哪个来源推来的。" },
   ];
+  // 关掉「带本机数据」时上面那组全在问本机的事，点了只能得到一句「查不到」，所以换一组不依赖本机数据的。
+  const CHIPS_BLANK = [
+    { label: "四象限怎么用", ask: "四象限法该怎么给任务定优先级？哪些事真正属于「重要但不紧急」那一格。" },
+    { label: "拖着不想开始", ask: "一件事迟迟不想动手，一般是什么原因？给几个立刻能用的起步办法。" },
+    { label: "番茄工作法", ask: "番茄工作法的专注时长和休息该怎么定？常见的误用有哪些。" },
+    { label: "拆模糊目标", ask: "把「学好英语」这类模糊目标拆成能执行的任务，通常怎么拆？举个具体例子。" },
+    { label: "一天怎么排", ask: "一天里哪些时段更适合做费脑子的安排？按普遍的精力规律给个排法。" },
+  ];
+  const activeChips = () => (withContext ? CHIPS : CHIPS_BLANK);
 
   function ensureStyle() {
     if (document.getElementById("ai-chat-style")) return;
@@ -386,17 +583,37 @@
 .aichat-chip{font-size:calc(11.5px * var(--ui-text-scale));border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);color:var(--ink-2,#7E8B94);border-radius:999px;padding:4px 11px;cursor:pointer;flex:none}
 .aichat-chip.on{background:var(--deep,#0F4C5C);border-color:var(--deep,#0F4C5C);color:var(--on-deep,#fff);font-weight:600}
 .aichat-log{flex:1;min-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 0}
+.aichat-jump{align-self:center;flex:none;height:26px;padding:0 12px;border-radius:999px;border:1px solid var(--line,#E4DFD6);background:var(--panel,#fff);color:var(--ink-2,#7E8B94);font-family:inherit;font-size:calc(11px * var(--ui-text-scale));cursor:pointer}
+.aichat-jump:hover{border-color:var(--deep,#0F4C5C);color:var(--deep,#0F4C5C)}
 .aichat-feed{font-size:calc(11px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);flex:none}
 .aichat-empty{border:1px dashed var(--line,#E4DFD6);border-radius:14px;padding:18px;background:var(--panel,#fff)}
 .aichat-empty b{display:block;font-size:calc(13.5px * var(--ui-text-scale));margin-bottom:6px}
 .aichat-empty p{margin:0 0 10px;font-size:calc(12px * var(--ui-text-scale));line-height:1.7;color:var(--ink-2,#7E8B94)}
+.aichat-row{display:flex;align-items:flex-start;gap:8px}
+.aichat-row.ai{align-self:stretch}
+.aichat-row.me{align-self:flex-end;flex-direction:row-reverse;max-width:82%}
+.aichat-body{min-width:0;flex:1}
+/* 用户侧不撑满、按内容收，但要允许被行宽压回来：flex:none 会让长句按 max-content 溢出到容器外。 */
+.aichat-row.me .aichat-body{flex:0 1 auto}
+.aichat-avatar{width:28px;height:28px;flex:none;border:0;border-radius:50%;overflow:hidden;display:grid;place-items:center;font-family:inherit;font-size:calc(12.5px * var(--ui-text-scale));font-weight:700;line-height:1}
+.aichat-avatar.ai{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);color:var(--deep,#0F4C5C)}
+.aichat-avatar.me{background:var(--deep,#0F4C5C);color:var(--on-deep,#fff)}
+.aichat-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.aichat-avatar svg{width:16px;height:16px}
+.aichat-who{margin:0 0 3px;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aichat-row.me .aichat-who{text-align:right}
 .aichat-msg{border-radius:14px;padding:10px 13px;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.75}
-.aichat-msg.user{align-self:flex-end;max-width:82%;background:var(--deep,#0F4C5C);color:var(--on-deep,#fff);border-bottom-right-radius:5px}
-.aichat-msg.ai{align-self:stretch;background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-bottom-left-radius:5px}
+.aichat-msg.me{background:var(--deep,#0F4C5C);color:var(--on-deep,#fff);border-bottom-right-radius:5px}
+.aichat-msg.ai{background:var(--panel,#fff);border:1px solid var(--line,#E4DFD6);border-bottom-left-radius:5px}
 .aichat-msg.err{align-self:stretch;background:color-mix(in srgb,var(--danger,#B03535) 7%,var(--panel,#fff));border:1px solid color-mix(in srgb,var(--danger,#B03535) 34%,var(--line,#E4DFD6));color:var(--danger,#B03535)}
 .aichat-msg p{margin:0 0 6px}.aichat-msg p:last-child{margin-bottom:0}
+.aichat-msg .lead{margin:0 0 9px;font-weight:700;color:var(--ink,#22303A);line-height:1.6}
+.aichat-msg .lead::before{content:"";float:left;width:3px;height:1.15em;margin:1px 8px 0 0;border-radius:2px;background:var(--deep,#0F4C5C)}
 .aichat-msg .gap{height:6px}
-.aichat-msg ul{margin:0 0 6px;padding-left:18px}.aichat-msg li{margin:2px 0}
+.aichat-msg ul,.aichat-msg ol{margin:0 0 6px;padding-left:19px}.aichat-msg li{margin:2px 0}
+.aichat-msg ol{list-style-type:decimal}
+.aichat-msg .sec{margin:11px 0 4px;font-weight:800;color:var(--ink,#1F2A33);letter-spacing:.02em}
+.aichat-msg .sec:first-child{margin-top:0}
 .aichat-msg code{background:var(--paper,#F7F6F2);border:1px solid var(--line,#E4DFD6);border-radius:5px;padding:0 4px}
 .aichat-when{margin-top:6px;font-size:calc(10.5px * var(--ui-text-scale));color:var(--ink-3,#A9B2BA)}
 .aichat-think{display:inline-flex;gap:5px;align-items:center;color:var(--ink-2,#7E8B94)}
@@ -417,7 +634,15 @@
 .aichat-bar{display:flex;gap:8px;align-items:flex-end;flex:none;padding-top:2px}
 .aichat-input{flex:1;min-width:0;resize:none;max-height:130px;min-height:40px;border:1px solid var(--line,#E4DFD6);border-radius:12px;padding:10px 12px;background:var(--panel,#fff);color:var(--ink,#22303A);font:inherit;font-size:calc(12.5px * var(--ui-text-scale));line-height:1.5}
 .aichat-input:focus{outline:none;border-color:var(--deep,#0F4C5C)}
-@media (max-width:640px){.aichat-msg.user{max-width:90%}.aichat{gap:8px}}
+.aichat-id{flex:none;border:1px solid var(--line,#E4DFD6);border-radius:14px;background:var(--panel,#fff);padding:12px 13px;display:flex;flex-direction:column;gap:10px}
+.aichat-id-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.aichat-id-name{flex:1 1 150px;min-width:0;display:flex;align-items:center;gap:8px;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-2,#7E8B94)}
+.aichat-id-name input{flex:1;min-width:0;height:30px;border:1px solid var(--line,#E4DFD6);border-radius:9px;padding:0 10px;background:var(--paper,#F7F6F2);color:var(--ink,#22303A);font:inherit;font-size:calc(12.5px * var(--ui-text-scale))}
+.aichat-id-name input:focus{outline:none;border-color:var(--deep,#0F4C5C)}
+.aichat-id-tip{margin:0;font-size:calc(11px * var(--ui-text-scale));line-height:1.7;color:var(--ink-3,#A9B2BA)}
+button.aichat-avatar{padding:0;cursor:pointer}
+.aichat-avatar:disabled{opacity:.5;cursor:default}
+@media (max-width:640px){.aichat-row.me{max-width:90%}.aichat{gap:8px}}
 `;
     document.head.append(st);
   }
@@ -425,14 +650,35 @@
   function renderThread() {
     if (!ui) return;
     const log = ui.log;
+    taskIndex = null;                  // 任务标题缓存一轮一取，中途改了标题下一轮能跟上
+    const prevTop = log.scrollTop;
+    const prevHeight = log.scrollHeight;
+    // 重建前先问一句「用户是不是贴着底部」。只有贴着才跟着滚到最新；否则原地不动
+    // （按内容高度变化补偿 scrollTop）—— 改名、勾选建议、切「带本机数据」这类
+    // 重渲染不该把正在往上翻记录的人甩回底部。
+    const stick = !prevHeight || prevHeight - prevTop - log.clientHeight < 40;
+    // 按最后一条的时间判断「有没有新消息」，不能数条数：thread 满 40 条后是滑动的，
+    // 新消息进来条数不变，「有新回复」就永远不亮了。
+    const lastAt = thread.length ? Number(thread[thread.length - 1].at) || 0 : 0;
+    const grew = lastAt !== seenLastAt;
+    seenLastAt = lastAt;
     log.innerHTML = "";
-    if (!thread.length) { log.append(node(emptyHtml())); wireEmpty(); }
-    thread.forEach((m, idx) => { log.append(node(messageHtml(m, idx))); wireMessage(log.lastChild, m); });
+    // 逐条 append 真实元素而不是套一层 div：.aichat-log 是 flex 列，多出来的匿名包裹会
+    // 吃掉行上的 align-self（用户气泡因此一直是靠左的）。
+    if (!thread.length) { log.append(node(emptyHtml()).firstElementChild); wireEmpty(); }
+    thread.forEach((m, idx) => {
+      const row = node(messageHtml(m, idx)).firstElementChild;
+      log.append(row);
+      wireMessage(row, m);
+    });
     if (busy) {
-      const t = node('<div class="aichat-msg ai"><span class="aichat-think"><i></i><i></i><i></i> 正在思考…</span></div>');
-      log.append(t);
+      log.append(node(`<div class="aichat-row ai">${avatarHtml("ai")}<div class="aichat-body"><div class="aichat-who">${esc(displayName("ai"))}</div><div class="aichat-msg ai"><span class="aichat-think"><i></i><i></i><i></i> 正在思考…</span></div></div></div>`).firstElementChild);
     }
-    log.scrollTop = log.scrollHeight;
+    if (stick) log.scrollTop = log.scrollHeight;
+    else log.scrollTop = Math.max(0, prevTop + (log.scrollHeight - prevHeight));
+    // 有新消息而人又没在看底部时，给个入口；一旦回到底部就收起（下一次渲染 stick 为真）。
+    if (grew && !stick) ui.jump.hidden = false;
+    if (stick) ui.jump.hidden = true;
   }
 
   function emptyHtml() {
@@ -445,13 +691,15 @@
     }
     return `<div class="aichat-empty">
       <b>问点什么</b>
-      <p>我会把你本机未完成的任务、近三天的时间块，以及其他插件推来的消息读成一份数据快照一起发过去，所以回答只依据你真实存在的事，不会凭空编。${withContext ? "" : "（当前已关闭「带本机数据」，只能问通用问题。）"}</p>
-      <div class="aichat-sug-act">${CHIPS.map((c, i) => `<button class="aichat-btn" data-chip="${i}">${esc(c.label)}</button>`).join("")}</div>
+      <p>${withContext
+        ? "我会把你本机未完成的任务、近三天的时间块，以及其他插件推来的消息读成一份数据快照一起发过去，所以回答只依据你真实存在的事，不会凭空编。"
+        : "当前已关闭「带本机数据」，这一轮不会把任何本机内容发给模型，只能回答通用的时间管理问题。要让它照着你的任务和时间块说话，把上面那个开关打开。"}</p>
+      <div class="aichat-sug-act">${activeChips().map((c, i) => `<button class="aichat-btn" data-chip="${i}">${esc(c.label)}</button>`).join("")}</div>
     </div>`;
   }
 
   function messageHtml(m, idx) {
-    const cls = m.role === "user" ? "user" : m.role === "error" ? "err" : "ai";
+    const role = m.role === "user" ? "me" : m.role === "error" ? "err" : "ai";
     const when = new Date(m.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     const body = m.role === "error"
       ? `<p>这次没成功：${esc(m.text)}</p><div class="aichat-sug-act"><button class="aichat-btn" data-retry="${idx}">重试这一条</button></div>`
@@ -470,14 +718,17 @@
           </label>`).join("")}
         <div class="aichat-sug-act"><button class="aichat-btn pri" data-apply="${idx}">写入所选</button></div>
       </div>`;
-    return `<div class="aichat-msg ${cls}">${body}<div class="aichat-when">${when}</div>${sug}</div>`;
+    const bubble = `<div class="aichat-msg ${role}">${body}<div class="aichat-when">${when}</div>${sug}</div>`;
+    // 报错是系统插话、不是谁说的话，所以不带头像和名称。
+    if (role === "err") return bubble;
+    return `<div class="aichat-row ${role}">${avatarHtml(role)}<div class="aichat-body"><div class="aichat-who">${esc(displayName(role))}</div>${bubble}</div></div>`;
   }
 
   function wireEmpty() {
     const go = ui.log.querySelector("[data-go-ai]");
     if (go) go.onclick = () => window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: "ai" } }));
     ui.log.querySelectorAll("[data-chip]").forEach((btn) => {
-      btn.onclick = () => ask(CHIPS[Number(btn.dataset.chip)].ask);
+      btn.onclick = () => ask(activeChips()[Number(btn.dataset.chip)].ask);
     });
   }
 
@@ -537,6 +788,8 @@
     withContext = await tide.storage.get(CTX_KEY, true) !== false;
     thread = await tide.storage.get(THREAD_KEY, []) || [];
     notices = (await tide.storage.get(NOTICE_KEY, [])) || [];
+    identity = normalizeIdentity(await tide.storage.get(ID_KEY, null));
+    draft = String((await tide.storage.get(DRAFT_KEY, "")) || "");
     loaded = true;
   }
 
@@ -572,10 +825,24 @@
         <span class="aichat-eyebrow">A I 对 话</span>
         <span class="aichat-model"></span>
         <button class="aichat-chip" data-ctx>带本机数据</button>
+        <button class="aichat-chip" data-id>头像与名称</button>
         <button class="aichat-chip" data-clear>新对话</button>
+      </div>
+      <div class="aichat-id" hidden>
+        ${["me", "ai"].map((role) => `
+          <div class="aichat-id-row">
+            <button type="button" class="aichat-avatar ${role}" data-pick="${role}"></button>
+            <label class="aichat-id-name"><span>${role === "me" ? "我的名称" : "AI 名称"}</span>
+              <input type="text" data-name="${role}" maxlength="${NAME_MAX}" placeholder="${esc(DEFAULT_NAME[role])}" autocomplete="off" spellcheck="false">
+            </label>
+            <button type="button" class="aichat-btn" data-reset="${role}">恢复默认</button>
+          </div>`).join("")}
+        <p class="aichat-id-tip">头像与名称只存进本机数据，不会发给模型。改过名称后头像自动换成名称首字，上传过图片则以图片为准。</p>
+        <input type="file" class="aichat-file" accept="image/*" hidden>
       </div>
       <div class="aichat-feed"></div>
       <div class="aichat-log"></div>
+      <button type="button" class="aichat-jump" hidden>↓ 有新回复</button>
       <div class="aichat-bar">
         <textarea class="aichat-input" rows="1" placeholder="问点什么，例如：帮我把这周的事理一遍"></textarea>
         <button class="aichat-btn pri" data-send>发送</button>
@@ -591,32 +858,89 @@
       feed: root.querySelector(".aichat-feed"),
       ctx: root.querySelector("[data-ctx]"),
       clear: root.querySelector("[data-clear]"),
+      jump: root.querySelector(".aichat-jump"),
+      idBtn: root.querySelector("[data-id]"),
+      idPanel: root.querySelector(".aichat-id"),
     };
     ui.model.textContent = configured ? (modelLabel || "已配置模型") : "未配置模型";
     ui.ctx.classList.toggle("on", withContext);
     ui.ctx.onclick = () => setContext(!withContext);
+    ui.jump.onclick = () => {
+      ui.log.scrollTop = ui.log.scrollHeight;
+      ui.jump.hidden = true;
+    };
     ui.clear.onclick = () => {
       thread = [];
       tide.storage.set(THREAD_KEY, thread);
       renderThread();
       tide.notify("已开新对话（之前的记录不再带给模型）");
     };
+    ui.idBtn.onclick = () => {
+      ui.idPanel.hidden = !ui.idPanel.hidden;
+      ui.idBtn.classList.toggle("on", !ui.idPanel.hidden);
+    };
+    // 一次只挑一个头像：文件框是共用的，点哪个按钮先记下角色。
+    let picking = "";
+    const file = root.querySelector(".aichat-file");
+    file.onchange = async () => {
+      const f = file.files?.[0];
+      const role = picking;
+      file.value = "";
+      picking = "";
+      if (!f || !role) return;
+      if (f.size > 8 * 1024 * 1024) { tide.notify("头像图片请控制在 8MB 以内"); return; }
+      try {
+        identity[role].avatar = await readAvatar(f);
+        saveIdentity();
+      } catch (e) {
+        tide.notify(`头像读取失败：${(e && e.message) || e}`);
+      }
+    };
+    ui.idPanel.querySelectorAll("[data-pick]").forEach((b) => {
+      b.onclick = () => { picking = b.dataset.pick; file.click(); };
+    });
+    ui.idPanel.querySelectorAll("[data-name]").forEach((input) => {
+      input.oninput = () => {
+        identity[input.dataset.name].name = input.value.trim().slice(0, NAME_MAX);
+        tide.storage.set(ID_KEY, identity);
+        paintAvatars();
+        renderThread();
+      };
+    });
+    ui.idPanel.querySelectorAll("[data-reset]").forEach((b) => {
+      b.onclick = () => {
+        identity[b.dataset.reset] = { name: "", avatar: "" };
+        saveIdentity();
+        tide.notify("已恢复默认头像与名称");
+      };
+    });
+    paintIdentityPanel();
+
+    const autosize = () => {
+      ui.input.style.height = "auto";
+      ui.input.style.height = `${Math.min(130, ui.input.scrollHeight)}px`;
+    };
     const send = () => {
       const q = ui.input.value.trim();
       if (!q) return;
       ui.input.value = "";
       ui.input.style.height = "auto";
+      draft = "";
+      tide.storage.set(DRAFT_KEY, "");
       ask(q);
     };
     ui.send.onclick = send;
     ui.input.oninput = () => {
-      ui.input.style.height = "auto";
-      ui.input.style.height = `${Math.min(130, ui.input.scrollHeight)}px`;
+      autosize();
+      draft = ui.input.value;
+      tide.storage.set(DRAFT_KEY, draft);
     };
     // 中文输入法回车是在选词，不能当发送；Shift+Enter 留作换行。
     ui.input.onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
     };
+    ui.input.value = draft;
+    if (draft) autosize();
     paintBusy();
     paintFeed();
     // 进页面先抄一次：消息类插件多半在启动阶段就广播完了，晚加载的这一轮才补得回来。

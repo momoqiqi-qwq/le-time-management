@@ -184,19 +184,6 @@
   function safeFileName(name) {
     return String(name || "附件").replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "附件";
   }
-  function mimeOf(name) {
-    const ext = String(name || "").toLowerCase().split(".").pop();
-    return ({
-      pdf: "application/pdf", doc: "application/msword",
-      docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      xls: "application/vnd.ms-excel",
-      xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      ppt: "application/vnd.ms-powerpoint",
-      pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      zip: "application/zip", rar: "application/vnd.rar", txt: "text/plain",
-      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-    })[ext] || "application/octet-stream";
-  }
   function extractAttachments(raw, contentHtml = "") {
     const out = [], seen = new Set();
     const push = (name, url) => {
@@ -431,6 +418,10 @@
       .jw-credit-stat b{display:block;color:var(--deep);font-size:calc(22px * var(--ui-text-scale));line-height:1.2}
       .jw-credit-stat span{display:block;color:var(--ink-3);font-size:calc(10.5px * var(--ui-text-scale));margin-top:4px}
       .jw-credit-stat em{display:block;color:var(--ink-3);font-style:normal;font-size:calc(10px * var(--ui-text-scale));margin-top:7px}
+      .jw-credit-detail{animation:jw-credit-in .26s ease both}
+      .jw-credit-detail.out{animation:jw-credit-out .2s ease both}
+      @keyframes jw-credit-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+      @keyframes jw-credit-out{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-8px)}}
       .jw-credit-bar{height:7px;border-radius:99px;background:var(--paper);border:1px solid var(--line-soft);overflow:hidden;margin-top:9px}
       .jw-credit-bar i{display:block;height:100%;background:#2EC4B6;border-radius:inherit}
       .jw-credit-course.done{opacity:.62}
@@ -843,6 +834,64 @@
 
   /* ── 自动登录：恢复票据 → 静默续期 → 密码 + 验证码识别兜底 ── */
   const AUTO_ATTEMPTS = 6;
+  let loginHint = null;              // 自动登录没成时要摆给人工看的那句话 + 最后一次识别结果
+
+  /* 密码 + 验证码自动识别登录。刻意不碰任何 DOM：警大的六个视图共用这一份登录代码，
+     谁都能在自己页面里把它跑完，不必绕道「警大通知」。失败原因留在 loginHint，
+     由调用方决定画在哪。 */
+  async function passwordAutoLogin() {
+    loginHint = null;
+    if (!state.autoLogin || !state.username || !state.savedPassword) return false;
+    // 残留会话是登录 HTTP 500 的常见来源——恢复的旧 JSESSIONID / 过期票据会让 CAS
+    // 对 POST 里的 execution 校验错乱（服务端异常而非验证码错误）。登录前丢弃
+    // 恢复的会话，用全新 Cookie 走完整链路：登录页 → execution → 验证码 → 提交。
+    state.sid = null;
+    await newSession();
+    let lastOcr = "";
+    let confirmed = null;
+    for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
+      try {
+        // pending 必须带全 username/password：submitLogin 直接从这里读取提交体字段
+        state.pending = { username: state.username, password: state.savedPassword, execution: await fetchLoginHtml() };
+        await fetchCaptcha();
+      } catch (e) {
+        loginHint = { msg: String(e.message || e), code: "" };
+        return false;
+      }
+      const ocr = await OCR.recognize(state.captcha);
+      if (!ocr.code) continue;           // 没认出来：换一张再来
+      lastOcr = ocr.code;
+      confirmed = ocr.samples;
+      try {
+        await submitLogin(ocr.code);
+        // 登录成功 → 密码/票据入库 + 本次识别样本确认
+        await persistCredentials(state.savedPassword);
+        OCR.confirmSamples(confirmed);
+        await saveCookies();
+        tide.notify("已自动完成登录（含验证码识别）");
+        return true;
+      } catch (e) {
+        if (e && e.fatal) break;         // 密码不对：自动登录无解，转人工表单
+        if (e && e.status >= 500) {
+          // 服务端 5xx：会话可能已被污染，换全新会话再试剩余次数
+          state.sid = null;
+          await newSession();
+        }
+        // 其余失败（多半是验证码）：换图重试
+      }
+    }
+    loginHint = { msg: "自动登录未成功，已填好账号密码，请核对验证码后点「登 录」", code: lastOcr };
+    return false;
+  }
+
+  // 人工登录表单要能立刻提交，得先把 execution 和一张验证码抓回来
+  async function prepareLoginForm() {
+    try {
+      await newSession();
+      state.pending = { execution: await fetchLoginHtml() };
+      await fetchCaptcha();
+    } catch { state.captcha = ""; }
+  }
 
   async function autoLogin(el) {
     // ① 恢复上次会话票据（CASTGC 有效期内直达，不碰验证码）
@@ -862,50 +911,17 @@
       loadPage(1);
       return true;
     }
-    // ② 票据失效：有保存的密码就走「验证码识别 + 换图重试」全自动登录。
-    // 残留会话是登录 HTTP 500 的常见来源——恢复的旧 JSESSIONID / 过期票据会让 CAS
-    // 对 POST 里的 execution 校验错乱（服务端异常而非验证码错误）。登录前丢弃
-    // 恢复的会话，用全新 Cookie 走完整链路：登录页 → execution → 验证码 → 提交。
-    if (!state.autoLogin || !state.username || !state.savedPassword) return false;
-    state.sid = null;
-    await newSession();
-    let lastOcr = "";
-    let confirmed = null;
-    for (let attempt = 1; attempt <= AUTO_ATTEMPTS; attempt++) {
-      try {
-        // pending 必须带全 username/password：submitLogin 直接从这里读取提交体字段
-        state.pending = { username: state.username, password: state.savedPassword, execution: await fetchLoginHtml() };
-        await fetchCaptcha();
-      } catch (e) {
-        paintLogin(el, String(e.message || e));
-        return false;
-      }
-      const ocr = await OCR.recognize(state.captcha);
-      if (!ocr.code) continue;           // 没认出来：换一张再来
-      lastOcr = ocr.code;
-      confirmed = ocr.samples;
-      try {
-        await submitLogin(ocr.code);
-        // 登录成功 → 密码/票据入库 + 本次识别样本确认
-        await persistCredentials(state.savedPassword);
-        OCR.confirmSamples(confirmed);
-        await saveCookies();
-        tide.notify("已自动完成登录（含验证码识别），正在打开通知");
-        buildMain(el);
-        loadPage(1);
-        return true;
-      } catch (e) {
-        if (e && e.fatal) break;         // 密码不对：自动登录无解，转人工表单
-        if (e && e.status >= 500) {
-          // 服务端 5xx：会话可能已被污染，换全新会话再试剩余次数
-          state.sid = null;
-          await newSession();
-        }
-        // 其余失败（多半是验证码）：换图重试
-      }
+    // ② 票据失效：有保存的密码就走「验证码识别 + 换图重试」全自动登录
+    if (await passwordAutoLogin()) {
+      buildMain(el);
+      loadPage(1);
+      return true;
     }
-    // ③ 兜底：登录表单，账号/密码/最后一次识别结果全部预填，人工只需核对
-    paintLogin(el, "自动登录未成功，已填好账号密码，请核对验证码后点「登 录」", { prefillCode: lastOcr });
+    // ③ 兜底：登录表单，账号/密码/最后一次识别结果全部预填，人工只需核对。
+    // 压根没存过凭据时 loginHint 是空的，交给 render 摆一张空白表单。
+    if (!loginHint) return false;
+    await prepareLoginForm();
+    paintLogin(el, loginHint.msg, { prefillCode: loginHint.code });
     return false;
   }
 
@@ -1134,23 +1150,19 @@
   }
 
   async function downloadAttachment(att) {
+    const name = safeFileName(att.name);
     try {
       const res = await tide.http.fetch(state.sid, "GET", att.url, {
         headers: { "Referer": referer(), "Cookie": "tp_up=" + state.token },
         binary: true,
       });
       if (res.status !== 200 || !res.body) throw new Error(`附件接口 HTTP ${res.status}`);
-      const a = document.createElement("a");
-      a.href = `data:${mimeOf(att.name)};base64,${res.body}`;
-      a.download = safeFileName(att.name);
-      a.style.display = "none";
-      document.body?.appendChild?.(a);
-      a.click?.();
-      a.remove?.();
-      tide.notify(`已开始下载：${safeFileName(att.name)}`);
+      // 门户票据过期时下载链接会 200 返回一张登录页，不拦就会存下一个打不开的"附件"
+      if (/text\/html/i.test(res.contentType || "")) throw new Error("门户会话已过期，请重新打开插件登录后再下载");
+      const path = await tide.assets.saveBase64(name, res.body);
+      tide.notify(`已保存到下载目录：${path}`, { ms: 8000 });
     } catch (e) {
-      tide.util.openUrl(att.url);
-      tide.notify("应用内下载失败，已打开附件链接");
+      tide.notify(`「${name}」下载失败：${explainHttpError(e)}`);
     }
   }
 
@@ -1705,6 +1717,26 @@
 
   let jwSid = null;                 // 已经落上教务 authorization 的那个会话 id
   const jwLive = () => !!jwSid && jwSid === state.sid;
+  let jwBootPromise = null;         // 同时挂两个教务视图时合流，别各跑一遍验证码登录
+
+  /* 教务取数前的统一引导：恢复密钥库 Cookie → 换票建教务会话 → 不行就用保存的密码
+     走验证码自动识别 → 再换一次票。登录代码全插件只有这一份，从侧栏点进哪个警大
+     视图都一样，不需要先绕去「警大通知」手工登录。 */
+  function ensureJwLogin(force = false) {
+    if (!force && jwLive()) return Promise.resolve(true);
+    if (!force && jwBootPromise) return jwBootPromise;
+    const p = (async () => {
+      await loadPrefs();
+      if (!state.sid) await restoreCookies();
+      if (await ensureJwSession()) return true;
+      return await passwordAutoLogin() && await ensureJwSession(true);
+    })();
+    jwBootPromise = p;
+    // 只合流并发、不缓存结果：点「刷新」时该再试一次，别拿着上次的 false 一直不回本
+    const clear = () => { if (jwBootPromise === p) jwBootPromise = null; };
+    p.then(clear, clear);
+    return p;
+  }
   const jwState = {
     term: null,
     data: { xkTask: null, xkResult: null, qjRecord: null, qjCourse: null, creditPlan: null, grade: null, cxCredit: null, cxDetail: null },
@@ -1778,7 +1810,7 @@
   async function jeLoad(key, groups = []) {
     const f = JW_FUNC[key];
     if (!f) throw new Error(`未登记的教务功能：${key}`);
-    if (!state.sid || !await ensureJwSession()) throw new Error("教务登录态未建立：请先在「警大通知」里完成登录");
+    if (!await ensureJwLogin()) throw new Error("警大统一身份认证未建立：请在下方完成登录后重试");
     let meta = await jwFuncInfo(key);
     const post = () => {
       const params = {
@@ -1798,7 +1830,7 @@
     if (!rows) {
       // 会话过期的表现不是 401，而是 POST 被 302 回登录页、拿回来一整页 HTML
       delete jwFuncMeta[key];
-      if (!await ensureJwSession(true)) throw new Error("教务登录态已失效，请重新登录");
+      if (!await ensureJwSession(true) && !await ensureJwLogin(true)) throw new Error("教务登录态已失效，请重新登录");
       meta = await jwFuncInfo(key);
       res = await post().catch((e) => { throw new Error(explainHttpError(e)); });
       rows = jeRowsOf(res);
@@ -1809,7 +1841,7 @@
 
   async function loadJwTerm(force = false) {
     if (!force && jwState.term) return jwState.term;
-    if (!state.sid || !await ensureJwSession()) return jwState.term;
+    if (!await ensureJwLogin()) return jwState.term;
     try {
       const res = await tide.http.fetch(state.sid, "POST", JW_NOW_TERM, {
         headers: { "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", Referer: JW_INDEX },
@@ -2156,7 +2188,7 @@
       }).join("");
       return jwSection(`${category.title}学分`, `${head} · ${modules.length} 个课程模块`, body);
     }).join("");
-    return overview + toggle + panels;
+    return overview + `<div class="jw-credit-detail">${toggle + panels}</div>`;
   }
 
   function jwInnovationCreditHtml() {
@@ -2338,8 +2370,15 @@
       const creditBtn = e.target.closest("[data-credit-toggle]");
       if (creditBtn) {
         const key = creditBtn.dataset.creditToggle || "";
-        if (jwState.expandedCredit.has(key)) jwState.expandedCredit.delete(key); else jwState.expandedCredit.add(key);
-        jwPaint();
+        const closing = jwState.expandedCredit.has(key);
+        if (closing) jwState.expandedCredit.delete(key); else jwState.expandedCredit.add(key);
+        const detail = closing ? el.querySelector(".jw-credit-detail") : null;
+        if (!detail || detail.classList.contains("out")) { jwPaint(); return; }
+        // 明细整块是 innerHTML 重绘的，先重绘就等于把淡出掐死在半路，得等它播完
+        const finish = () => { if (detail.isConnected) jwPaint(); };
+        detail.addEventListener("animationend", (ev) => { if (ev.target === detail) finish(); });
+        setTimeout(finish, 400);
+        detail.classList.add("out");
         return;
       }
     });
@@ -2350,6 +2389,22 @@
       await jwRestoreCache();
       jwPaint();
       await jwEnsureKeys(cfg.keys);
+      // 自动登录没成（多半是没存过密码或验证码六次没认出来）：就地摆出登录卡，
+      // 人工登完回到本视图继续拉数据 —— 警大的登录只有那一份，不必绕道警大通知。
+      if (!jwLive() && el.isConnected) {
+        await prepareLoginForm();
+        paintLogin(el, loginHint?.msg || "", {
+          prefillCode: loginHint?.code || "",
+          // 只换回页面内容，不重跑 mountJwView：那两个 el 上的监听器挂在容器本身，
+          // 再挂一遍会让「刷新」一次点触发两轮拉取。
+          onDone: () => {
+            el.innerHTML = jwShellHtml(cfg);
+            bindSide(el);
+            loadLinkMeta(el);
+            jwEnsureKeys(cfg.keys);
+          },
+        });
+      }
     })();
     return () => { jwMounted.delete(cfg.id); };
   }
@@ -2863,7 +2918,9 @@
         else if (state._manualSamples && code === state._manualCode) OCR.confirmSamples(state._manualSamples);
         state.savedPassword = state.autoLogin ? password : "";
         passEl.value = "";
-        tide.notify("登录成功，正在获取门户通知");
+        // onDone：登录卡是六个视图共用的，教务视图摆出来的那张登完要回它自己那一页
+        tide.notify(opts.onDone ? "登录成功，正在回到本页" : "登录成功，正在获取门户通知");
+        if (opts.onDone) { opts.onDone(); return; }
         buildMain(el);
         loadPage(1);
       } catch (e2) {
@@ -3021,11 +3078,7 @@
       const ok = await autoLogin(el);
       // autoLogin 失败路径里已经 paintLogin（含预填）；这里只兜「无凭据直接表单」
       if (!ok && !el.querySelector(".pp-login")) {
-        try {
-          await newSession();
-          state.pending = { execution: await fetchLoginHtml() };
-          await fetchCaptcha();
-        } catch { state.captcha = ""; }
+        await prepareLoginForm();
         paintLogin(el, "");
       }
     });

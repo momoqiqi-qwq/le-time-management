@@ -167,7 +167,8 @@ vm.runInContext(
     "  tide.ui.registerView({",
     "  globalThis.__fx = {\n"
     + "    parseReply, normalizeSuggestion, snapshot, systemPrompt, buildMessages, describe,\n"
-    + "    applySuggestions, undoRecord, taskPatch, md, ask, CHIPS, SEND_TURNS, KEEP, ACTIONS,\n"
+    + "    applySuggestions, undoRecord, taskPatch, md, ask, CHIPS, CHIPS_BLANK, activeChips,\n"
+    + "    taskTitleOf, SEND_TURNS, KEEP, ACTIONS,\n"
     + "    get thread() { return thread; }, set thread(v) { thread = v; },\n"
     + "    get notices() { return notices; }, set notices(v) { notices = v; },\n"
     + "    syncNotices, noticeBlock,\n"
@@ -199,11 +200,12 @@ assert.ok(fx && typeof fx.parseReply === "function", "插件源码没暴露内�
   assert.equal(fx.normalizeSuggestion({ action: "delete-task", title: "x" }), null, "action 不在白名单里直接丢");
   assert.equal(fx.normalizeSuggestion("不是对象"), null);
   assert.match(fx.normalizeSuggestion({ action: "create-task" }).reason, /缺任务标题/);
-  assert.match(fx.normalizeSuggestion({ action: "create-block", title: "只有标题" }).reason, /缺 date\/start\/title/,
-    "时间块缺了 date/start 就落不了地，要在勾选阶段就标红");
-  assert.match(fx.normalizeSuggestion({ action: "done-task" }).reason, /缺任务 id/);
+  assert.match(fx.normalizeSuggestion({ action: "create-block", title: "只有标题" }).reason, /缺日期、开始时间或标题/,
+    "时间块缺了日期或开始时间就落不了地，要在勾选阶段就标红");
+  assert.match(fx.normalizeSuggestion({ action: "done-task" }).reason, /没说改哪条任务/);
   const bad = fx.normalizeSuggestion({ action: "update-task", id: "t_999", title: "x" });
-  assert.match(bad.reason, /不在本机任务里/, "编造的 id 必须当场标出来，不能等写库");
+  assert.match(bad.reason, /本机任务里找不到这一条/, "编造的 id 必须当场标出来，不能等写库");
+  assert.ok(!/t_999/.test(bad.reason), "标红的话术是给人看的，不要把内部 id 印上去");
   assert.equal(fx.normalizeSuggestion({ action: "update-task", id: "t_1", title: "x" }).reason, undefined, "真实 id 不该被拦");
   assert.ok(!("title" in fx.normalizeSuggestion({ action: "update-task", id: "t_1", due: "2026-09-30" })),
     "模型没给 title 时不能挂一个空串下去，否则写库会把任务标题清空");
@@ -215,6 +217,17 @@ assert.ok(fx && typeof fx.parseReply === "function", "插件源码没暴露内�
   assert.ok(s.note.length <= 200, "备注要截断");
   assert.equal(s.title, "跑 5 公里", "标题要 trim");
   assert.match(fx.describe({ action: "create-block", title: "背书", date: "2026-09-24", start: "08:00", durMin: 45 }), /2026-09-24 08:00 起 45 分钟/);
+
+  /* 建议行要说的是「哪条任务」，不是那串随机字符 —— 用户看不到任务表里的 id，印上去也没意义。 */
+  assert.equal(fx.taskTitleOf("t_1"), "交报告", "被点名的任务要回任务表查标题");
+  assert.equal(fx.describe({ action: "update-task", id: "t_1", due: "2026-09-30" }), "改任务「交报告」：改到 2026-09-30");
+  assert.ok(!/t_1/.test(fx.describe({ action: "update-task", id: "t_1", due: "2026-09-30" })),
+    "内部 id 不许出现在建议行上");
+  assert.match(fx.describe({ action: "update-task", id: "t_1", title: "新名" }), /改任务「交报告」：标题「新名」/,
+    "update-task 的 title 是「改成的新标题」，不能拿它当被改那条的名字");
+  assert.equal(fx.describe({ action: "done-task", id: "t_2" }), "标记完成：取快递", "done-task 没给标题时同样回查");
+  assert.match(fx.describe({ action: "update-task", id: "t_404", due: "2026-09-30" }), /未指明任务/,
+    "查不到的（模型编的 id）宁可说「未指明任务」，也不印 id —— 拦它靠的是 reason 标红");
 }
 
 /* 3. 快照：带真实 id、分段正确、条数与总长都封顶 */
@@ -233,10 +246,29 @@ assert.ok(fx && typeof fx.parseReply === "function", "插件源码没暴露内�
   assert.match(big, /其余 15 条略/, "单段必须封顶，否则一次请求就撞上 60000 字符上限");
   assert.ok(big.length < 9200, `快照总长必须封顶（当前 ${big.length}）`);
   tasks = saved;
-  assert.match(fx.systemPrompt(), /绝不编造/, "提示词要明令不许编");
+  const sp = fx.systemPrompt();
+  assert.match(sp, /绝不编造/, "提示词要明令不许编");
+  /* 格式收紧（真机截图：正文漏 id、要点写成整段）*/
+  assert.match(sp, /输出格式/, "提示词里要有一节专门讲排版");
+  assert.match(sp, /第一行只写一句结论/, "要先给一句结论");
+  assert.match(sp, /「一、」「二、」「三、」分块/, "分块方式要写死，模型才会跟着走");
+  assert.match(sp, /不超过 5 条/, "要点条数要封顶");
+  assert.match(sp, /形如 t_xxx、b_xxx 的 id/, "要点名禁止内部 id，光说「别泄露字段」没用");
+  assert.match(sp, /写了也会被系统抹掉/, "告诉模型 id 会被抹掉，它才不会反复拿它当依据");
+  assert.match(sp, /rest \/ work \/ study/, "分类码这类内部取值也要禁掉（截图里漏过「分类 rest」）");
+  assert.match(sp, /直接写它的标题/, "禁了 id 得给出替代说法");
+  assert.match(sp, /数据不够回答时\*\*只写一句\*\*/, "查不到就一句话讲清，别硬凑三块（截图那三块全是废话）");
+  assert.match(sp, /不要为此硬凑「现状 \/ 建议 \/ 操作」三块/);
+  assert.match(sp, /不复述用户的问题/);
+  assert.match(sp, /其余 N 条略/, "数数题要交代截断：省略掉的那部分不许算进总数");
+  assert.match(sp, /至少 X 条，另有 N 条未列出/);
+  assert.match(sp, /按标题字样认的/, "「作业」这类按字面归类的要自己说明口径");
+  assert.match(sp, /不要 Markdown 标题/);
+  assert.ok(sp.indexOf("输出格式") < sp.indexOf("本机数据快照"), "格式说明要在数据前面，模型才先读到排版要求");
   fx.withContext = false;
   assert.match(fx.systemPrompt(), /已关闭「带本机数据」/, "关掉开关后提示词里不能出现任何本机数据");
   assert.ok(!fx.systemPrompt().includes("交报告"), "关了就真的一个字都不发");
+  assert.match(fx.systemPrompt(), /第一行只写一句结论/, "不带数据时同样要管格式");
   fx.withContext = true;
 }
 
@@ -317,6 +349,59 @@ assert.ok(fx && typeof fx.parseReply === "function", "插件源码没暴露内�
   assert.match(html, /<code>code<\/code>/);
   assert.match(html, /<ul>\s*<li>第一条<\/li>\s*<li>第二条<\/li>\s*<\/ul>/s, "连续短行要收成列表");
   assert.equal((html.match(/<ul>/g) || []).length, (html.match(/<\/ul>/g) || []).length, "列表标签必须配平");
+
+  /* 真机截图的毛病：正文抄出内部 id，还连排两遍「（id=b_xxx）（id=b_xxx）」。
+     id 用生产里的真实形状（store.js：前缀 + Date.now 的 36 进制 + 5 位随机），短 id 只活在别的用例里。 */
+  const savedTasks = tasks;
+  const savedBlocks = sandbox.tide.blocks.list;
+  tasks = savedTasks.concat([{ id: "t_mu4wrhhrc751i", title: "交报告", done: false, due: TODAY, dueTime: "18:00", quad: 1 }]);
+  sandbox.tide.blocks.list = (date) => (date === TODAY
+    ? [{ id: "b_hrc882934078e", date, start: "08:00", durMin: 45, title: "睡觉", cat: "rest", taskId: null }]
+    : []);
+  fx.snapshot();   // 走真路径填 id → 标题 映射
+  assert.equal(fx.md("交报告（id=t_mu4wrhhrc751i）（id=t_mu4wrhhrc751i）"), '<p class="lead">交报告</p>',
+    "同一行已经有标题，id 连同括号整段抹掉");
+  assert.equal(fx.md("关联 id=t_mu4wrhhrc751i 的那条"), '<p class="lead">关联 交报告 的那条</p>',
+    "行里没提标题时把 id 换成人话，而不是留一串随机字符（前后的空格不能顺手吃掉）");
+  assert.equal(fx.md("时间块（id=b_hrc882934078e）"), '<p class="lead">时间块（睡觉）</p>',
+    "时间块的 id 也认（映射由快照里的块填），行里没提标题就换成标题并保住括号");
+  assert.equal(fx.md("关联明天 08:00 的时间块（id=b_hrc882934078e）（id=b_hrc882934078e）"),
+    '<p class="lead">关联明天 08:00 的时间块（睡觉）</p>', "同一条替过一次之后，第二遍就是纯噪音");
+  assert.ok(!fx.md("看这条 id=t_9zzzzzzzzzzz").includes("t_9zzzzzzzzzzz"), "对不上号的（模型编的）抹掉；编造该报的是建议块");
+  assert.equal(fx.md("- id=t_mu4wrhhrc751i"), "<ul>\n<li>交报告</li>\n</ul>", "整行只有 id 时换成标题，这条要点还有意义");
+  assert.equal(fx.md("- id=t_9zzzzzzzzzzz"), "", "整行只有个对不上号的 id 时不要留个光秃秃的项目符号");
+  tasks = savedTasks;
+  sandbox.tide.blocks.list = savedBlocks;
+  fx.snapshot();   // 复位映射，别把长 id 带进后面的用例
+  assert.ok(!fx.md("1.5 小时就够了").includes("<ol>"), "「1.5 小时」是数字不是序号，点号后没空格就不算列表");
+  const ol = fx.md("1. 先交报告\n2、再报名\n3）最后背书");
+  assert.match(ol, /<ol>\s*<li>先交报告<\/li>\s*<li>再报名<\/li>\s*<li>最后背书<\/li>\s*<\/ol>/s, "1./1、/1） 都要收成有序列表");
+  assert.equal((ol.match(/<ol>/g) || []).length, (ol.match(/<\/ol>/g) || []).length, "ol 标签必须配平");
+  assert.match(fx.md("1. 甲\n- 乙"), /<\/ol>\s*<ul>/s, "序号接项目符号时要换列表，不能把 li 混在一种标签里");
+
+  /* 提示词让模型用「一、二、」分块 —— 那是小标题，不该被折成 1. 的项目符号。 */
+  const sec = fx.md("一、今晚必须处理\n- 交报告\n二、明天再说\n- 报名");
+  assert.match(sec, /<p class="sec">一、今晚必须处理<\/p>/, "中文序号要保留原文当小标题");
+  assert.ok(!sec.includes("<ol>"), "「一、」不是列表项");
+  assert.match(sec, /<p class="sec">二、明天再说<\/p>\s*<ul>/s);
+  assert.ok(!fx.md("一是准备材料").includes("class=\"sec\""), "「一是…」是句子不是序号");
+
+  /* 结论行：第一行有内容的正文做成带色块的摘要，「结论：」这类前缀不重复显示。 */
+  assert.match(fx.md("今晚只需动三件事。\n\n一、别的"), /^<p class="lead">今晚只需动三件事。<\/p>/);
+  assert.match(fx.md("结论：今晚只需动三件事。\n正文"), /<p class="lead">今晚只需动三件事。<\/p>/,
+    "模型自己写的「结论：」前缀要吃掉，摘要行已经有视觉标记");
+  assert.match(fx.md("总结：还行"), /<p class="lead">还行<\/p>/);
+  assert.match(fx.md("\n\n第一行就是结论"), /<p class="lead">第一行就是结论<\/p>/, "开头空行不占结论位");
+  assert.ok(!fx.md("- 只有列表\n- 没有结论").includes("lead"), "开头就是列表时不硬造摘要行");
+  assert.equal((fx.md("结论：甲\n\n结论：乙").match(/class="lead"/g) || []).length, 1, "摘要只给第一行");
+  assert.ok(!fx.md(`${"很长".repeat(40)}的第一行`).includes("lead"),
+    "第一行本身就是一坨长段落时不许加粗 —— 那是模型没听话，加粗只会更糊");
+  assert.match(fx.md(`结论：${"很长".repeat(40)}的第一行`), /^<p>很长/, "不吃摘要样式也要把「结论：」前缀去掉");
+
+  /* markdown 漏出来也要能收住 */
+  assert.match(fx.md("### 建议排法"), /<p class="sec">建议排法<\/p>/, "井号小标题归到 .sec");
+  assert.match(fx.md("结论在此\n\n点这个 [提交通知](https://example.com/a?x=1&y=2) 看"), /<p>点这个 提交通知 看<\/p>/,
+    "链接语法只留文字，窄气泡里不铺 URL");
 }
 
 /* 8. 端到端一轮问答：等待态复位、建议入库、历史落盘 */
@@ -421,6 +506,16 @@ assert.ok(fx && typeof fx.parseReply === "function", "插件源码没暴露内�
 assert.equal(fx.CHIPS.length, 5, "快捷提问至少给五条，空界面不该让用户自己想问题");
 assert.ok(fx.CHIPS.some((c) => /通知/.test(c.label)), "消息收集是新能力，界面上要给一条现成的问法");
 assert.ok(fx.CHIPS.every((c) => c.label && c.ask), "每条快捷提问都要有短标签与完整问法");
+/* 关掉「带本机数据」后，上面那组全在问本机的事，点了只能得到一句「查不到」，所以要换一组。 */
+assert.equal(fx.CHIPS_BLANK.length, 5, "通用那组也要给满五条，别留空界面");
+assert.ok(fx.CHIPS_BLANK.every((c) => c.label && c.ask), "通用那组同样要标签与问法齐");
+assert.ok(fx.CHIPS_BLANK.every((c) => !/本机|我的|本周|今天|逾期|通知/.test(c.ask)),
+  "通用那组不许在问用户自己的事 —— 那一轮根本没把本机数据发过去");
+assert.ok(fx.CHIPS.every((a) => !fx.CHIPS_BLANK.some((b) => b.ask === a.ask)), "两组问题不许重叠");
+fx.withContext = false;
+assert.equal(fx.activeChips(), fx.CHIPS_BLANK, "开关关掉就要切到通用那组");
+fx.withContext = true;
+assert.equal(fx.activeChips(), fx.CHIPS, "打开时回到本机数据那组");
 assert.ok(Object.keys(fx.ACTIONS).every((a) => /create|update|done/.test(a)), "写库动作白名单只能增改，不许出现删除类动作");
 
 console.log("PASS: AI 对话插件 —— tide.ai 权限闸门 / 三端产物与图标同源 / 快照封顶与不外发 / 建议白名单 / 勾选落库与撤销 / 回复解析与转义 / 一轮问答端到端");

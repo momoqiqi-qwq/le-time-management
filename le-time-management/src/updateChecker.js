@@ -16,11 +16,15 @@
 // - **「忽略此版本」按版本号记住**：`settings.update.skipVersion`。发了更新的版本号
 //   之后它自然失效（只比对相等），不需要用户回来清理。
 // - **「稍后」只活本次会话**：不落盘，重启还会再提示 —— 否则用户关了提示就再也看不到更新。
+// - **左下角那张卡只认「值得打扰」的状态**：下载中 / 已下载完 / 失败 / 安装中，外加静默检查
+//   发现的新版本。检查失败（离线、GitHub 限流）永远不打扰 —— 靠 `errorStage` 区分是哪一段
+//   栽的，判据集中在 `noticeKind()`。
 // - **下载完不等于装完**：Android 上返回成功只代表「系统安装界面已拉起」，
 //   用户在系统界面点取消我们是收不到信号的，所以文案一律说「已交给系统安装」。
 import { api } from "./api.js";
 import * as S from "./store.js";
 import { el, toast, appConfirm } from "./ui.js";
+import { observeStack, refreshStack } from "./notifyStack.js";
 
 /** 静默检查的最小间隔（6 小时）。 */
 const CHECK_THROTTLE_MS = 6 * 60 * 60 * 1000;
@@ -67,7 +71,11 @@ const state = {
   phase: "idle",
   info: null,
   progress: { received: 0, total: 0 },
+  /** 下载速率（字节/秒）。Rust 侧只报 received/total，速率由前端按事件时间差算。 */
+  speed: 0,
   error: "",
+  /** 错误出自哪一段：check（网络/限流，静默）| download | install。决定要不要打扰用户。 */
+  errorStage: "",
   message: "",
   /**
    * 本次会话里**最近一次成功检查**的时刻（ms）。失败不覆盖。
@@ -92,6 +100,8 @@ function snapshot() {
 
 function emit() {
   const value = snapshot();
+  // 左下角通知堆叠是状态的另一个消费者：每次状态变化都同步一次卡片。
+  renderUpdateNotice();
   for (const fn of subscribers) {
     try { fn(value); } catch (error) { console.error("更新状态订阅回调出错", error); }
   }
@@ -140,6 +150,62 @@ export function withCheckStamp(base, ms, { prefix = "", suffix = "检查" } = {}
   return `${base} · ${prefix}${at}${suffix ? ` ${suffix}` : ""}`;
 }
 
+/** 字节数 → 人话体积（1024 进制，MiB / KiB / B）。 */
+export function formatBytes(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n <= 0) return "0 B";
+  if (n >= 1048576) return `${(n / 1048576).toFixed(2)} MiB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KiB`;
+  return `${Math.round(n)} B`;
+}
+
+/**
+ * git 风格的下载进度行：`12% (16.42 MiB/150.68 MiB) | 1.08 MiB/s`。
+ *
+ * 两个退化写法都是刻意的：
+ * - `total` 未知（release 没给 asset_size）时省掉百分比，只报已下体积 ——
+ *   猜一个分母会让那条进度条从 30% 突然跳回 90%，比不报更糟。
+ * - 速率还没采到第二个点时显示 `-- B/s` 而不是 `0 B/s`：0 读起来像「卡住了」，
+ *   实际只是第一个采样点。
+ */
+export function formatDownloadMeter({ received = 0, total = 0, speed = 0 } = {}) {
+  const sizePart = total > 0 ? `${formatBytes(received)}/${formatBytes(total)}` : formatBytes(received);
+  const pct = total > 0 ? `${Math.min(100, Math.floor((received / total) * 100))}% ` : "";
+  return `${pct}(${sizePart}) | ${speed > 0 ? `${formatBytes(speed)}/s` : "-- B/s"}`;
+}
+
+/**
+ * 下载速率采样器：指数滑动平均。
+ *
+ * Rust 侧按总量切约 200 步长发事件，每个事件之间网络抖一下，瞬时速率就能差几倍，
+ * 直接显示会让数字跳成筛子。取 α=0.35 的滑动平均：一次抖动压不住真实提速，
+ * 但连续几个慢包能在两三秒内把读数拉下来。
+ */
+export function createSpeedMeter({ minIntervalMs = 200, alpha = 0.35 } = {}) {
+  let lastAt = 0;
+  let lastBytes = 0;
+  let value = 0;
+  return {
+    reset() { lastAt = 0; lastBytes = 0; value = 0; },
+    /** @returns 平滑后的字节/秒 */
+    sample(received, at = Date.now()) {
+      const bytes = Number(received) || 0;
+      if (!lastAt) { lastAt = at; lastBytes = bytes; return value; }
+      const dt = at - lastAt;
+      if (dt < minIntervalMs) return value;
+      const instant = (bytes - lastBytes) / (dt / 1000);
+      if (Number.isFinite(instant) && instant >= 0) {
+        value = value > 0 ? value * (1 - alpha) + instant * alpha : instant;
+      }
+      lastAt = at;
+      lastBytes = bytes;
+      return value;
+    },
+  };
+}
+
+const speedMeter = createSpeedMeter();
+
 /** 人话版的当前状态（状态回显，设置页与提示条共用）。 */
 export function describeUpdateState(value = snapshot()) {
   if (!isUpdaterSupported()) return "浏览器调试模式下不检查更新";
@@ -149,11 +215,8 @@ export function describeUpdateState(value = snapshot()) {
       return withCheckStamp(`已是最新版本（v${value.info?.current || "?"}）`, value.checkedAt);
     case "available":
       return withCheckStamp(`发现新版本 v${value.info?.latest}，当前 v${value.info?.current}`, value.checkedAt);
-    case "downloading": {
-      const { received, total } = value.progress;
-      const pct = total > 0 ? Math.floor((received / total) * 100) : 0;
-      return total > 0 ? `正在下载更新包 ${pct}%（${mb(received)} / ${mb(total)}）` : `正在下载更新包（${mb(received)}）`;
-    }
+    case "downloading":
+      return `正在下载更新包 ${formatDownloadMeter({ ...value.progress, speed: value.speed })}`;
     case "ready": return value.message || "更新包已下载，可以安装了";
     case "installing": return "已交给系统安装，应用即将关闭";
     case "error": return value.error || "更新失败";
@@ -165,10 +228,6 @@ export function describeUpdateState(value = snapshot()) {
         value.checkedAt,
       );
   }
-}
-
-function mb(bytes) {
-  return `${(Number(bytes) / 1048576).toFixed(1)} MB`;
 }
 
 /* ───────────────────────── 检查 ───────────────────────── */
@@ -186,7 +245,7 @@ export async function checkForUpdates({ manual = false } = {}) {
     return null;
   }
   if (state.phase === "checking" || state.phase === "downloading") return state.info;
-  patchState({ phase: "checking", error: "", message: "" });
+  patchState({ phase: "checking", error: "", errorStage: "", message: "" });
   try {
     const info = await api.updateCheck();
     // 成功拿到结果才记时刻：失败不能盖掉上一次成功的时间（否则用户会以为刚查过）。
@@ -208,7 +267,8 @@ export async function checkForUpdates({ manual = false } = {}) {
   } catch (error) {
     const message = String(error?.message || error || "检查更新失败");
     // 失败时保留旧的 checkedAt：面板上「上次成功检查于 HH:MM」是判断结果新鲜度的唯一线索。
-    patchState({ phase: "error", error: message });
+    // errorStage 标成 check —— 左下角那张卡只认 download/install，检查失败继续静默。
+    patchState({ phase: "error", error: message, errorStage: "check" });
     if (manual) toast(message);
     return null;
   }
@@ -232,23 +292,223 @@ export async function silentUpdateCheck() {
   // 「有新版本时弹窗提示」关掉后：仍然照常检查、照常把状态写进 state（关于页看得到），
   // 只是不在左下角弹通知 —— 所以这一条必须放在最后，别提前 return 掉检查本身。
   if (!getUpdateSettings().notify) return;
-  showUpdateToast(info);
+  armVersionNotice(info);
 }
 
-/* ───────────────────────── 提示条 ───────────────────────── */
+/* ─────────────────── 左下角通知堆叠（更新） ─────────────────── */
 
-let toastNode = null;
-/** 本次会话是否已经主动关掉过提示（「稍后」/× 都算）。 */
+let stackEl = null;
+/**
+ * 当前那张卡的种类："" | "version" | "live"。
+ * 同种类只改文字、绝不重建节点 —— 重建会把入场动画重放一遍，
+ * 而下载进度一秒要刷好几次，卡片就会一直「在跳」。
+ */
+let cardKind = "";
+/** live 卡里随进度变化的节点引用（仅 cardKind === "live" 时有效）。 */
+let liveRefs = null;
+/** 「发现新版本」卡的内容；null = 不显示。 */
+let versionNotice = null;
+/** 本次会话是否已经主动关掉过版本提示（「稍后」/× 都算）。 */
 let dismissedThisSession = false;
+/** 用户收掉过下载结果卡（「稍后」）；下次真的开始下载时复位。 */
+let liveDismissed = false;
 
-function closeUpdateToast() {
-  toastNode?.remove();
-  toastNode = null;
+/**
+ * 当前该显示哪张卡："" 不显示 / "version" 新版本提示 / "live" 下载与安装。
+ *
+ * live 优先：一旦真的在下载，进度就是唯一要看的东西 —— 版本号已经写进进度卡标题，
+ * 再留一张版本提示卡在后面，只是把它的「立即升级」按钮藏进堆叠里而已。
+ */
+function noticeKind() {
+  const live = state.phase === "downloading" || state.phase === "ready" || state.phase === "installing"
+    || (state.phase === "error" && (state.errorStage === "download" || state.errorStage === "install"));
+  if (live) return liveDismissed ? "" : "live";
+  return versionNoticeActive() ? "version" : "";
 }
 
-function dismissForSession() {
-  dismissedThisSession = true;
-  closeUpdateToast();
+/**
+ * 「发现新版本」卡现在该不该亮。
+ *
+ * 闸门放在渲染时而不是只放在点亮的那一刻：卡片是常驻的，中途用户点了「忽略此版本」、
+ * 或把「弹窗提示」开关关掉，都得当场把已经亮着的那张收掉 —— 只在点亮时查一次的话，
+ * 已忽略的版本会一直挂在左下角。
+ */
+function versionNoticeActive() {
+  const info = versionNotice;
+  if (!info) return false;
+  const cfg = getUpdateSettings();
+  return cfg.notify && cfg.skipVersion !== info.latest;
+}
+
+function ensureStack() {
+  // 容器被外部摘掉（测试直接 remove 节点、热重载换了 body）时必须连「已经建过卡」这个
+  // 印象一起清掉：否则下面 renderUpdateNotice 以为卡还在，往新容器里什么都不塞 ——
+  // 屏幕上什么都看不到，而且不报任何错。
+  if (stackEl && stackEl.parentNode !== document.body) {
+    stackEl = null;
+    cardKind = "";
+    liveRefs = null;
+  }
+  if (!stackEl) {
+    stackEl = el("div", { class: "update-toast notify-stack", role: "status", "aria-live": "polite" });
+    document.body.append(stackEl);
+    observeStack(stackEl);
+  }
+  return stackEl;
+}
+
+/** 把卡片同步到当前状态。由 emit() 挂在每次状态变化后面，所以必须幂等。 */
+function renderUpdateNotice() {
+  const kind = noticeKind();
+  if (!kind) {
+    stackEl?.remove();
+    stackEl = null;
+    cardKind = "";
+    liveRefs = null;
+    return;
+  }
+  const box = ensureStack();
+  if (kind !== cardKind) {
+    box.replaceChildren(kind === "version" ? buildVersionCard() : buildLiveCard());
+    cardKind = kind;
+  } else if (kind === "live") {
+    paintLive();
+  }
+  refreshStack(box);
+}
+
+/** 点亮「发现新版本」卡。只有静默检查与「恢复提示」会调用 —— 手动检查走 toast 回执。 */
+function armVersionNotice(info) {
+  if (dismissedThisSession) return;
+  versionNotice = info;
+  renderUpdateNotice();
+}
+
+function buildVersionCard() {
+  const info = versionNotice;
+  const dismiss = () => {
+    dismissedThisSession = true;
+    versionNotice = null;
+    renderUpdateNotice();
+  };
+  return el("div", { class: "update-toast-card" },
+    el("div", { class: "update-toast-head" },
+      el("b", {}, `发现新版本 v${info.latest}`),
+      el("button", {
+        class: "update-toast-x", type: "button", "aria-label": "关闭", title: "关闭（本次启动不再提示）",
+        onclick: dismiss,
+      }, "×"),
+    ),
+    el("p", { class: "update-toast-note" }, `当前版本 v${info.current}`),
+    el("div", { class: "update-toast-actions" },
+      el("button", {
+        class: "btn pri sm", type: "button",
+        onclick: () => { versionNotice = null; renderUpdateNotice(); jumpToUpdateSettings(); },
+      }, "立即升级"),
+      el("button", {
+        class: "btn ghost sm", type: "button",
+        title: `不再提示 v${info.latest}（设置 › 关于 里可恢复）`,
+        onclick: () => {
+          setUpdateSettings({ skipVersion: info.latest });
+          dismiss();
+          toast(`已忽略 v${info.latest}，可在「设置 › 关于 › 软件更新」恢复`);
+        },
+      }, "忽略此版本"),
+      el("button", { class: "btn ghost sm", type: "button", onclick: dismiss }, "稍后"),
+    ),
+  );
+}
+
+/** 「稍后」：收掉结果卡。正在跑的那次下载不受影响（Rust 侧没有取消通道）。 */
+function laterButton() {
+  return el("button", {
+    class: "btn ghost sm", type: "button",
+    onclick: () => { liveDismissed = true; renderUpdateNotice(); },
+  }, "稍后");
+}
+
+function liveActions(st) {
+  if (st.phase === "ready") {
+    const needPermission = st.installReady && st.installReady.ready === false;
+    return [
+      el("button", {
+        class: "btn pri sm", type: "button",
+        onclick: () => (needPermission ? openInstallPermission() : installUpdate()),
+      }, needPermission ? "去开启安装权限" : "关闭并安装"),
+      laterButton(),
+    ];
+  }
+  if (st.phase === "error") {
+    return [
+      el("button", {
+        class: "btn pri sm", type: "button",
+        onclick: () => {
+          liveDismissed = false;
+          // 下载失败时 info 还在，直接续一次；只有没拿到产物时才重新查。
+          if (st.errorStage === "download" && st.info?.asset_url) startUpdate();
+          else checkForUpdates({ manual: true });
+        },
+      }, "重试"),
+      laterButton(),
+    ];
+  }
+  // downloading / installing 不给按钮：进度卡自己会走到头。中途能点的只有「稍后」，
+  // 而收掉一张正在跑的进度卡只会让人以为下载被取消了。
+  return [];
+}
+
+function buildLiveCard() {
+  const refs = {
+    spinner: el("span", { class: "ns-spinner", "aria-hidden": "true" }),
+    title: el("b", { class: "update-live-title" }),
+    meter: el("span", { class: "update-live-meter" }),
+    note: el("p", { class: "update-toast-note", hidden: true }),
+    actions: el("div", { class: "update-toast-actions" }),
+  };
+  liveRefs = refs;
+  const card = el("div", { class: "update-toast-card update-live", "data-pin": "" },
+    el("div", { class: "update-live-row" },
+      refs.spinner,
+      el("div", { class: "update-live-body" }, refs.title, refs.meter, refs.note),
+    ),
+    refs.actions,
+  );
+  paintLive();
+  return card;
+}
+
+/** 只改文字与按钮，不动卡片结构（见 cardKind 那段注释）。 */
+function paintLive() {
+  const refs = liveRefs;
+  if (!refs) return;
+  const st = snapshot();
+  const failed = st.phase === "error";
+  const downloaded = st.progress.total || st.progress.received;
+  refs.spinner.hidden = st.phase !== "downloading" && st.phase !== "installing";
+  refs.note.hidden = !failed;
+  refs.meter.hidden = failed;
+  switch (st.phase) {
+    case "downloading":
+      refs.title.textContent = `正在下载更新包 v${st.info?.latest || "?"}…`;
+      refs.meter.textContent = formatDownloadMeter({ ...st.progress, speed: st.speed });
+      break;
+    case "ready":
+      refs.title.textContent = `更新包已下载完成（v${st.info?.latest || "?"}）`;
+      refs.meter.textContent = formatBytes(downloaded);
+      break;
+    case "installing":
+      refs.title.textContent = "已交给系统安装，应用即将关闭";
+      refs.meter.textContent = formatBytes(downloaded);
+      break;
+    case "error":
+      refs.title.textContent = st.errorStage === "install" ? "安装失败" : "下载失败";
+      refs.note.textContent = st.error || "更新失败";
+      break;
+    default:
+      refs.title.textContent = "正在处理更新…";
+      refs.meter.textContent = "";
+  }
+  refs.actions.replaceChildren(...liveActions(st));
 }
 
 /** 「立即升级」不在这里直接下载，而是把用户带到「关于 › 软件更新」—— 那里有进度、说明与安装按钮。 */
@@ -256,38 +516,6 @@ function jumpToUpdateSettings() {
   window.dispatchEvent(new CustomEvent("tide:open-settings", { detail: { section: "about" } }));
 }
 
-function showUpdateToast(info) {
-  if (dismissedThisSession) return;
-  closeUpdateToast();
-  const node = el("div", { class: "update-toast", role: "status", "aria-live": "polite" },
-    el("div", { class: "update-toast-head" },
-      el("b", {}, `发现新版本 v${info.latest}`),
-      el("button", {
-        class: "update-toast-x", type: "button", "aria-label": "关闭", title: "关闭（本次启动不再提示）",
-        onclick: dismissForSession,
-      }, "×"),
-    ),
-    el("p", { class: "update-toast-note" }, `当前版本 v${info.current}`),
-    el("div", { class: "update-toast-actions" },
-      el("button", {
-        class: "btn pri sm", type: "button",
-        onclick: () => { closeUpdateToast(); jumpToUpdateSettings(); },
-      }, "立即升级"),
-      el("button", {
-        class: "btn ghost sm", type: "button",
-        title: `不再提示 v${info.latest}（设置 › 关于 里可恢复）`,
-        onclick: () => {
-          setUpdateSettings({ skipVersion: info.latest });
-          dismissForSession();
-          toast(`已忽略 v${info.latest}，可在「设置 › 关于 › 软件更新」恢复`);
-        },
-      }, "忽略此版本"),
-      el("button", { class: "btn ghost sm", type: "button", onclick: dismissForSession }, "稍后"),
-    ),
-  );
-  document.body.append(node);
-  toastNode = node;
-}
 
 /* ───────────────────────── 下载与安装 ───────────────────────── */
 
@@ -297,10 +525,15 @@ export async function startUpdate() {
   if (!info.supported) { toast(info.message || "当前平台暂不支持应用内更新"); return false; }
   if (state.phase === "downloading") return false;
 
+  // 每次下载从零开始算速率：上一次下载的平均值接到这一次头上会先跳一段假数字。
+  speedMeter.reset();
+  liveDismissed = false;
   patchState({
     phase: "downloading",
     progress: { received: 0, total: Number(info.asset_size) || 0 },
+    speed: 0,
     error: "",
+    errorStage: "",
     message: "",
   });
   try {
@@ -325,7 +558,7 @@ export async function startUpdate() {
     }
     return true;
   } catch (error) {
-    patchState({ phase: "error", error: String(error?.message || error || "下载失败") });
+    patchState({ phase: "error", errorStage: "download", error: String(error?.message || error || "下载失败") });
     return false;
   }
 }
@@ -360,13 +593,13 @@ export async function installUpdate() {
     { confirmText: "关闭并安装", cancelText: "稍后" },
   );
   if (!ok) return false;
-  patchState({ phase: "installing", error: "" });
+  patchState({ phase: "installing", error: "", errorStage: "" });
   try {
     await api.updateInstall(state.downloadedPath);
     return true;
   } catch (error) {
     // 能走到这里说明应用还活着 —— 那是真失败（权限被拒 / 文件被清理）。
-    patchState({ phase: "error", error: String(error?.message || error || "安装失败") });
+    patchState({ phase: "error", errorStage: "install", error: String(error?.message || error || "安装失败") });
     return false;
   }
 }
@@ -378,7 +611,7 @@ export function clearSkippedVersion() {
   // 用户主动要求恢复时还把它留着，按钮就得等到下次启动才起作用 —— 看起来像坏了。
   dismissedThisSession = false;
   // 但「有新版本时弹窗提示」是用户自己关的全局开关，恢复忽略不等于绕过它。
-  if (getUpdateSettings().notify && state.info?.has_update && state.info.supported) showUpdateToast(state.info);
+  if (getUpdateSettings().notify && state.info?.has_update && state.info.supported) armVersionNotice(state.info);
   toast("已恢复更新提示");
 }
 
@@ -395,7 +628,11 @@ async function bindProgress() {
       const payload = event.payload || {};
       // 只在下载阶段刷新，避免迟到的进度事件把「已下载完」的状态打回 downloading。
       if (state.phase !== "downloading") return;
-      patchState({ progress: { received: Number(payload.received) || 0, total: Number(payload.total) || 0 } });
+      const received = Number(payload.received) || 0;
+      patchState({
+        progress: { received, total: Number(payload.total) || 0 },
+        speed: Math.round(speedMeter.sample(received)),
+      });
     });
   } catch (error) {
     console.warn("更新进度事件订阅失败（不影响下载，只是没有进度条）:", error);

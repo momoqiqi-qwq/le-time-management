@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../public/plugins/cppu-notify/main.js',import.meta.url),'utf8');
-let response, calls=[], vaultData={}, opened=[], notices=[], views=[];
+let response, calls=[], vaultData={}, storageData={}, opened=[], notices=[], views=[], saved=[];
 const context = vm.createContext({URL,Set,Map,Date,console,setTimeout,clearTimeout,setInterval,clearInterval,
-  document:{createElement:()=>({set innerHTML(x){this.value=x;}})},
-  tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async()=>{},get:async()=>null},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message)}
+  document:{createElement:()=>({set innerHTML(x){this.value=x;}}),querySelectorAll:()=>[]},
+  // 解码不了的验证码图 = OCR 认不出来，用来把「换图重试」循环逼到次数上限
+  Image:class{constructor(){this.naturalWidth=0;this.naturalHeight=0;}set src(v){this._src=v;}decode(){return Promise.reject(new Error('cannot decode'));}},
+  tide:{ui:{registerView:(def)=>{views.push(def);}},http:{session:async()=>'s1',restoreCookies:async(dump)=>{calls.push(['restore',dump]);return 'restored-sid';},fetch:async(...args)=>{calls.push(args);return typeof response==='function'?response(...args):response;}},storage:{set:async(k,v)=>{storageData[k]=v;},get:async(k,d)=>(k in storageData?storageData[k]:(d===undefined?null:d))},vault:{get:async(key)=>vaultData[key]||null,set:async(key,value)=>{vaultData[key]=value;},del:async(key)=>{delete vaultData[key];}},util:{openUrl:(url)=>opened.push(url),web:{formEncode:(fields)=>Object.entries(fields).map(([k,v])=>`${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&'),detectLoginForm:(html,base)=>html.includes('name="uid"')?{action:new URL('/coremail/index.jsp?cus=1',base).href,method:'POST',usernameField:'uid',passwordField:'password',captchaField:'',fields:[{name:'action',value:'login'}]}:null}},notify:(message)=>notices.push(message),assets:{saveBase64:async(name,b64)=>{saved.push([name,b64]);return 'D:/Downloads/'+name;}}}
 });
-vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense};\n  tide.ui.registerView({'),context);
-const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense}=context.testApi;
+vm.runInContext(source.replace('  tide.ui.registerView({','  globalThis.testApi = {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense};\n  tide.ui.registerView({'),context);
+const {state,cardHtml,loadDetail,loadPage,newSession,cleanText,noticeKind,extractAttachments,downloadAttachment,OCR,restoreCookies,silentRenew,submitLogin,finishPortalLogin,openSideLink,openMailLink,jeLoad,ensureJwSession,ensureJwLogin,jwLive,jwDict,jwTermName,clearSavedLogin,jwState,jwTaskStatus,jwTaskDetailHtml,jwTaskHtml,jwResultHtml,jwLeaveHtml,jwGradeDone,jwAcademicCreditHtml,jwInnovationCreditHtml,cardState,cardIsRecharge,cardNormalizeBill,cardTotals,cardStatsHtml,cardBalanceFromDetail,cardFetchBalance,cardFetchBills,cardIsExpense}=context.testApi;
 const item={RESOURCE_ID:'test',PIM_TITLE:'Test <notice>',CREATE_TIME:1};
 assert.match(cardHtml(item),/展开正文/);
 assert.match(cardHtml(item),/class="pp-detail-shell" aria-hidden="true"/);
@@ -51,10 +53,22 @@ assert.match(cardHtml(attachmentItem),/下载附件/);
 const attachmentCalls=calls.length;
 await loadDetail('attach');
 assert.equal(calls.length,attachmentCalls,'Only-attachment detail should also use cached detail');
-response={status:500,body:''};opened=[];notices=[];
+response={status:500,body:''};opened=[];notices=[];saved=[];
 await downloadAttachment(foundAttachments[0]);
-assert.equal(opened.at(-1),foundAttachments[0].url,'Attachment download should fall back to opening original link');
-assert.match(notices.at(-1),/打开附件链接/);
+assert.equal(opened.length,0,'附件下载不得退回打开原链接');
+assert.equal(saved.length,0);
+assert.match(notices.at(-1),/下载失败/);
+/* 点击即落盘：抓到的 base64 交给宿主写进系统下载目录，toast 回报完整路径。 */
+response={status:200,body:'U1ZL',contentType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
+await downloadAttachment(foundAttachments[0]);
+assert.deepEqual(saved,[['实施方案.pdf','U1ZL']]);
+assert.match(notices.at(-1),/已保存到下载目录.*实施方案\.pdf/);
+/* 门户票据过期时下载链接会 200 返回登录页，必须拦下，否则会存下一个打不开的"附件"。 */
+response={status:200,body:'PGh0bWw+',contentType:'text/html;charset=UTF-8'};
+saved=[];notices=[];
+await downloadAttachment(foundAttachments[0]);
+assert.equal(saved.length,0,'HTML 响应不能落盘成附件');
+assert.match(notices.at(-1),/会话已过期/);
 response={status:200,body:'{"list":[]}'};
 await loadPage(1);
 assert.match(calls.at(-1)[2],/\/tp_up\/up\/pim\/allpim\//);
@@ -659,5 +673,63 @@ assert.ok(!innovationCredit.includes('CREDIT_APPLICATIONID_ID') && !innovationCr
 assert.ok(source.includes('V_JWBZK_JXJH_JXJH') && source.includes('V_STUDENT_GRADE'), '警大学分必须读取培养计划和成绩接口');
 assert.ok(source.includes('T_SZKP_CXGL_CREDITAPPLICATION_STU'), '创新学分必须读取申报项目明细接口');
 for (const k of Object.keys(jwState.data)) jwState.data[k] = null;
+
+/* ── 13. 教务视图冷启动自举：不先打开「警大通知」也必须能自动登录 ──────────
+   创新学分 / 选课 / 请假 / 警大学分四个视图与通知视图同属一个插件，但门户会话的引导
+   过去只写在通知视图的 render() 里 —— 从侧栏直接点进教务视图永远拿不到登录态，
+   只能甩一句「请先在警大通知里完成登录」。现在登录代码只有一份，教务取数自带引导。 */
+assert.ok(!source.includes('请先在「警大通知」里完成登录'), '教务取数不得再把用户支回警大通知手工登录');
+const jwFlow = (rows = [{ XH: '2025290058' }]) => (sid, method, url, opts = {}) => {
+  if (url.startsWith('https://sso-jw.cppu.edu.cn/tpass/login')) return { status: 302, body: '', finalUrl: url, location: 'https://jw.cppu.edu.cn/cas_callback?ticket=ST-boot', cookies: [] };
+  if (url.startsWith('https://jw.cppu.edu.cn/cas_callback')) return { status: 200, body: '<html>智慧教务</html>', finalUrl: 'https://jw.cppu.edu.cn/index.html', location: '', cookies: [] };
+  if (url.endsWith('/je/develop/funcInfo/getStaticFuncByCode')) return jeMetaJson(jeMeta(opts));
+  if (url.startsWith('https://jw.cppu.edu.cn/je/load')) return jeJson(rows);
+  return { status: 404, body: '', finalUrl: url, location: '', cookies: [] };
+};
+
+// ① 冷启动：密钥库里只有门户 Cookie（没有教务 authorization）→ 恢复会话 → 换票 → 拉到数据
+await clearSavedLogin();
+state.sid = null; state.token = ''; delete storageData.username;
+vaultData.cookies = JSON.stringify([{ url: 'https://portal-jw.cppu.edu.cn', cookie: 'tp_up=old-ticket' }]);
+calls = []; response = jwFlow();
+assert.equal(await ensureJwLogin(), true, '只恢复门户 Cookie 也要把教务登录态建起来');
+assert.equal(jwLive(), true, '引导成功后教务会话必须落在当前会话上');
+assert.equal(calls[0][0], 'restore', '引导的第一步是恢复密钥库里的 Cookie');
+assert.equal((await jeLoad('cxCredit'))[0].XH, '2025290058', '登录态建好后取数不该再要求先打开警大通知');
+
+// ② 单飞：两个教务视图同时挂载只引导一次（否则会并排跑两套验证码登录）
+await clearSavedLogin();
+state.sid = null; state.token = '';
+vaultData.cookies = JSON.stringify([{ url: 'https://portal-jw.cppu.edu.cn', cookie: 'tp_up=old-ticket' }]);
+calls = []; response = jwFlow();
+assert.deepEqual(await Promise.all([ensureJwLogin(), ensureJwLogin()]), [true, true]);
+assert.equal(calls.filter((c) => c[0] === 'restore').length, 1, '并发引导必须合流');
+
+/* 门户会话彻底没了的样子：要票只回一张登录页，验证码那张图解码不了（= OCR 认不出） */
+const jwDead = (sid, method, url, opts = {}) => {
+  if (url.includes('/tpass/captcha.jpg')) return { status: 200, body: '', finalUrl: url, location: '', cookies: [] };
+  if (url.includes('/tpass/login')) return { status: 200, body: '<html>name="execution" value="exec-9"</html>', finalUrl: url, location: '', cookies: [] };
+  return jwFlow()(sid, method, url, opts);
+};
+
+// ③ 票据彻底失效但存过密码：自己去走「验证码自动识别」，认不出来就如实报未登录
+await clearSavedLogin();
+state.sid = null; state.token = '';
+storageData.username = '2025290058'; vaultData.secret = JSON.stringify({ password: 'pw' });
+calls = []; response = jwDead;
+assert.equal(await ensureJwLogin(), false, '验证码一张都没认出来时不能谎报已登录');
+assert.equal(calls.filter((c) => String(c[2]).includes('/tpass/captcha.jpg')).length, 6, '自动登录必须把换图重试的次数用满');
+await assert.rejects(() => jeLoad('cxCredit'), /登录/, '登录没成就要明确报错，不能静默交空列表');
+
+// ④ 既没 Cookie 也没密码：不去白抓验证码，直接判需要人工登录
+await clearSavedLogin();
+state.sid = null; state.token = ''; delete storageData.username;
+calls = []; response = jwDead;
+assert.equal(await ensureJwLogin(), false);
+assert.equal(calls.filter((c) => String(c[2]).includes('/tpass/captcha.jpg')).length, 0, '没有凭据就不要去抓验证码');
+
+// ⑤ 人工兜底复用同一张登录卡：登录成功后回到发起它的那个视图，而不是跳去通知列表
+assert.match(source, /function paintLogin\(el, errMsg, opts = \{\}\)/, '登录卡必须带 opts 才能被各视图复用');
+assert.ok(source.includes('opts.onDone'), '登录卡必须能回调到发起登录的那个视图');
 
 console.log('PASS: expand/collapse, loading, late response, cache, retry, paragraph preservation, API paths, bounded renewal and read-only 教务 views');

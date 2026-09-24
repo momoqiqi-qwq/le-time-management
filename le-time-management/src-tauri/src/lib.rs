@@ -977,7 +977,25 @@ fn export_plugins_zip(app: AppHandle, ids: Vec<String>) -> Result<String, String
 /// WebView 里 <a download> 对 blob: 的下载在部分平台静默失败，统一走这里真正落盘。
 #[tauri::command]
 fn save_download(app: AppHandle, name: String, contents: String) -> Result<String, String> {
-    let name = name.trim();
+    save_to_download_dir(&app, &name, contents.as_bytes())
+}
+
+/// 二进制版落盘：收 base64，解码后写进同一个下载目录。
+/// 走 `save_download` 传附件会直接坏掉 —— 那个按 UTF-8 文本写入，docx / pdf 这类
+/// 二进制根本进不来。入参格式与 `http_fetch` 的 `binary: true` 一致（STANDARD 字母表），
+/// 插件抓到即可存，不用自己再转一遍。
+#[tauri::command]
+fn save_download_base64(app: AppHandle, name: String, base64: String) -> Result<String, String> {
+    use base64::Engine as _;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.trim().as_bytes())
+        .map_err(|e| format!("附件数据不完整（base64 解码失败）: {e}"))?;
+    save_to_download_dir(&app, &name, &bytes)
+}
+
+/// 下载目录落盘的公共部分：校验文件名 → 定位目录 → 重名追加 " (n)" → 写字节。
+fn save_to_download_dir(app: &AppHandle, raw_name: &str, bytes: &[u8]) -> Result<String, String> {
+    let name = raw_name.trim();
     if name.is_empty() || name.chars().any(|c| matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|')) {
         return Err("文件名不合法".into());
     }
@@ -1008,7 +1026,7 @@ fn save_download(app: AppHandle, name: String, contents: String) -> Result<Strin
         });
         counter += 1;
     }
-    fs::write(&final_path, contents.as_bytes()).map_err(|e| format!("写入文件失败: {e}"))?;
+    fs::write(&final_path, bytes).map_err(|e| format!("写入文件失败: {e}"))?;
     Ok(final_path.to_string_lossy().into_owned())
 }
 
@@ -1981,6 +1999,7 @@ pub fn run() {
             import_plugin_zip,
             export_plugins_zip,
             save_download,
+            save_download_base64,
             app_info,
             http_get,
             http_get_icon,

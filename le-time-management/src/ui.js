@@ -1,5 +1,6 @@
 // 通用 UI 小件：toast、弹出菜单、dom 助手
 import { removeWithMotion } from "./motion.js";
+import { observeStack, refreshStack } from "./notifyStack.js";
 
 /** 仅让卡片自身的 Enter/Space 触发激活，不抢内部原生控件或输入法的按键。 */
 export function isSelfActivationKey(event) {
@@ -36,12 +37,15 @@ export function newBadge(visible = true) {
  *   action / actionLabel 带一个动作按钮（默认文案「撤销」）
  *   ms 停留时长；**0 = 常驻不自动消失**（长鸣那种必须用户明确处置的横幅），默认 4200
  *   class 额外类名（如 "alarm"）
+ *   pin 钉住这条：不缩进堆叠里被别的横幅盖住。`ms: 0` 隐含 pin（常驻卡都带按钮，
+ *   藏起来等于按钮消失）；要「常驻但允许被盖」才显式写 `pin: false`
  * @returns {{close:Function,node:HTMLElement}} 调用方可以提前收掉它；旧调用方忽略返回值即可。
  *   close 幂等：按钮自身与调用方都会收，重复调用不会把动效跑两遍。
  */
 export function toast(msg, opts = {}) {
   const box = document.getElementById("toasts");
   const t = el("div", { class: `toast${opts.class ? ` ${opts.class}` : ""}` }, el("span", {}, msg));
+  if (opts.pin !== undefined ? opts.pin : opts.ms === 0) t.setAttribute("data-pin", "");
   let removed = false;
   const close = () => {
     if (removed) return;
@@ -51,7 +55,10 @@ export function toast(msg, opts = {}) {
   if (opts.action) {
     t.append(el("button", { onclick: () => { opts.action(); close(); } }, opts.actionLabel || "撤销"));
   }
+  box.classList.add("notify-stack");
   box.append(t);
+  observeStack(box);
+  refreshStack(box);
   let timer = null;
   if (opts.ms !== 0) timer = setTimeout(close, opts.ms || 4200);
   return { close: () => { if (timer) clearTimeout(timer); close(); }, node: t };
