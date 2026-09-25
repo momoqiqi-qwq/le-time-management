@@ -550,6 +550,30 @@
   let rootEl = null;
   let timer = null;
 
+  /* 仓库卡片的右键菜单：改名 / 备注 / 图标。与宿主侧栏菜单同一套形状，
+     但插件拿不到宿主的菜单与弹窗 API，所以菜单自己画、输入借 window.prompt。
+     step 为空是一级动作表，"icon" 是二级图标面板（写法同 dorm-duty 的导入子菜单）。 */
+  let repoMenu = null;
+  let repoMenuBound = false;
+  /** 长按弹过菜单后浏览器还会补一个 click —— 不吞掉的话长按的同时顺手把阅读页打开了。 */
+  let longPressed = false;
+  const LONG_PRESS_MS = 550;
+  const MENU_W = 196;
+  const MENU_H = 168;
+  const ICON_MENU_H = 252;
+  const REPO_ICONS = ["📦", "📚", "🔧", "⚡", "🔒", "🤖", "🌱", "🚀", "🧪", "📝", "🎯", "🧭"];
+
+  const promptFn = (msg, value) => {
+    try {
+      // Android 侧 Tauri 生成的 RustWebChromeClient 实现了 onJsPrompt，APK 上这个框是真能用的
+      if (typeof window !== "undefined" && typeof window.prompt === "function") return window.prompt(msg, value);
+    } catch { /* 拿不到弹窗就当作取消，不许把改名流程卡死 */ }
+    return null;
+  };
+
+  /** 卡片与阅读页共用的显示名：没改过名就是 owner/仓库名。 */
+  const repoTitle = (r) => r.alias || repoKey(r);
+
   function ensureStyle() {
     if (document.getElementById("github-readme-style")) return;
     const st = document.createElement("style");
@@ -576,6 +600,19 @@
       .gh-foot{display:flex;justify-content:flex-end;margin-top:4px}
       .gh-del{font:inherit;font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3);background:transparent;border:0;border-radius:8px;padding:0 10px;min-width:44px;min-height:40px;cursor:pointer}
       .gh-del:hover{color:var(--coral,#F07167);background:var(--paper)}
+      .gh-ico{display:inline-block;margin-right:7px;font-style:normal;font-weight:400}
+      .gh-note{margin-top:3px;color:var(--ink-3);font-size:calc(11px * var(--ui-text-scale));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .gh-note-line{flex-basis:100%;color:var(--ink)}
+      /* 右键菜单钉在视口坐标上（left/top 由 JS 写内联样式），所以这里刻意不写 top/left/right/bottom
+         —— 一写就等于把宿主安全区当 0，手机上菜单会压进状态栏。 */
+      .gh-menu{position:fixed;z-index:60;width:196px;max-height:min(340px,72vh);overflow:auto;display:grid;gap:2px;padding:6px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(20,30,36,.18)}
+      .gh-menu-title{color:var(--deep);font-size:calc(11.5px * var(--ui-text-scale));font-weight:750;padding:6px 9px 7px;margin-bottom:4px;border-bottom:1px solid var(--line-soft);overflow-wrap:anywhere}
+      .gh-menu-item{display:block;width:100%;min-height:38px;padding:0 9px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-family:inherit;font-size:calc(12.5px * var(--ui-text-scale));text-align:left;cursor:pointer;overflow-wrap:anywhere}
+      .gh-menu-item:hover{background:var(--paper)}
+      .gh-icon-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:2px 3px 6px}
+      .gh-icon-cell{min-height:40px;font-size:calc(18px * var(--ui-text-scale));line-height:1;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--ink);cursor:pointer}
+      .gh-icon-cell.none{font-size:calc(11.5px * var(--ui-text-scale));color:var(--ink-3)}
+      .gh-icon-cell.on{border-color:var(--deep);background:var(--paper)}
       .gh-err{color:var(--coral,#C4534A);font-size:calc(11px * var(--ui-text-scale));margin-top:6px;overflow-wrap:anywhere}
       .gh-empty{color:var(--ink-3);font-size:calc(12.5px * var(--ui-text-scale));text-align:center;padding:26px 14px;border:1px dashed var(--line);border-radius:13px;line-height:1.8}
       .gh-md{color:var(--ink);font-size:calc(13.5px * var(--ui-text-scale));line-height:1.78}
@@ -637,13 +674,74 @@
   function repoCard(r) {
     const k = repoKey(r);
     const c = r.commit || {};
-    return `<div class="gh-card" role="button" tabindex="0" data-gh-open="${esc(k)}" aria-label="阅读 ${esc(k)} 的 README">
-      <b>${esc(k)}${r.unread ? '<i class="gh-dot" aria-label="有未读更新"></i>' : ""}</b>
+    return `<div class="gh-card" role="button" tabindex="0" data-gh-open="${esc(k)}" title="右键可修改名称、添加备注、更改图标" aria-label="阅读 ${esc(k)} 的 README">
+      <b>${r.icon ? `<i class="gh-ico">${esc(r.icon)}</i>` : ""}${esc(repoTitle(r))}${r.unread ? '<i class="gh-dot" aria-label="有未读更新"></i>' : ""}</b>
+      ${r.note ? `<div class="gh-note">${esc(r.note)}</div>` : ""}
       <p>${esc(c.title || "（还没读到提交记录）")}</p>
       <div class="gh-meta">${esc(r.branch)} · ${esc(c.author || "作者未知")} · ${esc(fmtTime(c.time))} · README ${esc(kb(r.size))}</div>
       ${r.error ? `<div class="gh-err">${esc(r.error)}</div>` : ""}
       <div class="gh-foot"><button type="button" class="gh-del" data-gh-del="${esc(k)}" aria-label="从列表移除 ${esc(k)}">移除</button></div>
     </div>`;
+  }
+
+  /** 右键菜单。菜单项刻意与卡片上已有的动作分开命名空间（data-gh-menu-act），
+      否则事件委托里 [data-gh-open] 分支会先把点击抢走。 */
+  function repoMenuHtml() {
+    if (!repoMenu) return "";
+    const r = state.repos.find((x) => repoKey(x) === repoMenu.key);
+    if (!r) return "";
+    const item = (act, label) => `<button type="button" role="menuitem" class="gh-menu-item" data-gh-menu-act="${act}">${esc(label)}</button>`;
+    const head = `<div class="gh-menu" data-gh-menu role="menu" aria-label="仓库操作" style="left:${repoMenu.x}px;top:${repoMenu.y}px">`
+      + `<span class="gh-menu-title">${esc(r.icon ? `${r.icon} ` : "")}${esc(repoTitle(r))}</span>`;
+    if (repoMenu.step === "icon") {
+      const cells = `<button type="button" class="gh-icon-cell none${r.icon ? "" : " on"}" data-gh-icon="" aria-label="不显示图标">无</button>`
+        + REPO_ICONS.map((ic) => `<button type="button" class="gh-icon-cell${r.icon === ic ? " on" : ""}" data-gh-icon="${esc(ic)}" aria-label="图标 ${esc(ic)}">${esc(ic)}</button>`).join("");
+      return `${head}<div class="gh-icon-grid">${cells}</div>${item("back", "← 返回")}</div>`;
+    }
+    return `${head}${item("name", "修改名称")}${item("note", r.note ? "修改备注" : "添加备注")}${item("icon", "更改图标")}</div>`;
+  }
+
+  function openRepoMenu(key, x, y) {
+    // ⚠️ 视口坐标从屏幕角量起，而 fixed 的包含块是宿主 .view 的 padding box —— .view 垫掉的
+    // 安全区拦不住 fixed 后代，夹取必须自己减掉四边（读法同宿主 bottomInsetPx()）。
+    const px = (v) => { try { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0; } catch { return 0; } };
+    const [sat, sab, sal, sar] = [px("--sat"), px("--sab"), px("--sal"), px("--sar")];
+    const h = repoMenu && repoMenu.key === key && repoMenu.step === "icon" ? ICON_MENU_H : MENU_H;
+    repoMenu = {
+      key,
+      x: Math.max(8 + sal, Math.min(x, (window.innerWidth || 1024) - sar - MENU_W)),
+      y: Math.max(8 + sat, Math.min(y, (window.innerHeight || 768) - sab - h)),
+      step: "",
+    };
+    paint();
+  }
+  function closeRepoMenu() { if (!repoMenu) return; repoMenu = null; paint(); }
+
+  function runRepoMenu(act, picked) {
+    if (!repoMenu) return;
+    const r = state.repos.find((x) => repoKey(x) === repoMenu.key);
+    if (!r) { repoMenu = null; return paint(); }
+    if (act === "icon") { repoMenu = { ...repoMenu, step: "icon" }; return paint(); }
+    if (act === "back") { repoMenu = { ...repoMenu, step: "" }; return paint(); }
+    repoMenu = null;
+    if (act === "seticon") {
+      r.icon = String(picked || "").slice(0, 8);
+    } else if (act === "name") {
+      const next = promptFn(`给 ${repoKey(r)} 改个显示名称（留空恢复 owner/仓库名）`, r.alias || repoKey(r));
+      if (next == null) return paint();
+      r.alias = next.trim().slice(0, 40);
+    } else if (act === "note") {
+      const next = promptFn(`给 ${repoTitle(r)} 记一句备注（留空清空）`, r.note || "");
+      if (next == null) return paint();
+      r.note = next.replace(/\s+/g, " ").trim().slice(0, 80);
+    } else {
+      return paint();
+    }
+    state.persist();
+    paint();
+    tide.notify(act === "name" ? (r.alias ? `卡片上显示为「${r.alias}」` : `已恢复显示 ${repoKey(r)}`)
+      : act === "note" ? (r.note ? "备注已保存，显示在卡片名称下面" : "备注已清空")
+        : (r.icon ? `图标已换成 ${r.icon}` : "已去掉图标"));
   }
 
   function listHtml() {
@@ -664,6 +762,7 @@
       ${state.error ? `<div class="gh-err">${esc(state.error)}</div>` : ""}
       ${cards}
       <label class="gh-auto"><input type="checkbox" data-gh-auto${state.auto ? " checked" : ""}>开着本页时每 10 分钟自动同步</label>
+      ${repoMenuHtml()}
     </div>`;
   }
 
@@ -680,8 +779,9 @@
     return `<div class="gh-wrap">
       <div class="gh-bar">
         <button type="button" class="gh-back" data-gh-back>← 返回</button>
-        <b class="gh-title">${esc(repoKey(r))}</b>
+        <b class="gh-title">${r.icon ? `<span class="gh-ico">${esc(r.icon)}</span>` : ""}${esc(repoTitle(r))}</b>
         <span class="gh-sub">${esc(r.branch)} · ${esc(r.path)}</span>
+        ${r.note ? `<span class="gh-sub gh-note-line">${esc(r.note)}</span>` : ""}
       </div>
       <div class="gh-bar">
         <span class="gh-sub">最近改动：${esc(c.title || "未知")} · ${esc(c.author || "未知")} · ${esc(fmtTime(c.time))}</span>
@@ -757,10 +857,16 @@
 
   function bind(el) {
     el.addEventListener("click", async (e) => {
+      const act = e.target.closest("[data-gh-menu-act]");
+      if (act) { runRepoMenu(act.dataset.ghMenuAct); return; }
+      const ic = e.target.closest("[data-gh-icon]");
+      if (ic) { runRepoMenu("seticon", ic.dataset.ghIcon); return; }
       const del = e.target.closest("[data-gh-del]");
-      if (del) { removeRepo(del.dataset.ghDel); return; }
+      if (del) { repoMenu = null; removeRepo(del.dataset.ghDel); return; }
       const open = e.target.closest("[data-gh-open]");
       if (open) {
+        if (longPressed) { longPressed = false; return; }   // 长按弹过菜单，这个 click 是它的尾巴
+        repoMenu = null;
         page.at = "reader";
         page.key = open.dataset.ghOpen;
         // 读过了就清未读点：否则回到列表它一直红着，点多少次都不消失
@@ -769,7 +875,7 @@
         paint();
         return;
       }
-      if (e.target.closest("[data-gh-back]")) { page.at = "list"; page.key = ""; paint(); return; }
+      if (e.target.closest("[data-gh-back]")) { repoMenu = null; page.at = "list"; page.key = ""; paint(); return; }
       if (e.target.closest("[data-gh-add]")) { await doAdd(el); return; }
       if (e.target.closest("[data-gh-sync]") || e.target.closest("[data-gh-sync-one]")) { await doSync(); return; }
       const repo = state.repos.find((r) => repoKey(r) === page.key);
@@ -780,7 +886,7 @@
       if (e.target.closest("[data-gh-todo]") && repo) {
         const c = repo.commit || {};
         tide.tasks.create({
-          title: `看 ${repoKey(repo)} 的 README 更新：${c.title || "（无说明）"}`.slice(0, 120),
+          title: `看 ${repoTitle(repo)} 的 README 更新：${c.title || "（无说明）"}`.slice(0, 120),
           quad: 1,
           tags: ["GitHub 文档"],
           note: [`仓库：${repoKey(repo)}`, `分支：${repo.branch}`, `改动：${c.title || ""}`, `作者：${c.author || ""}`, `时间：${fmtTime(c.time)}`, c.url || ""].filter(Boolean).join("\n"),
@@ -790,10 +896,56 @@
         paint();
       }
     });
+    // 右键仓库卡片 → 改名 / 备注 / 图标。只对卡片 preventDefault：
+    // 别处保留浏览器原生菜单（右键往输入框里粘仓库链接还用得上）。
+    el.addEventListener("contextmenu", (e) => {
+      const card = e.target.closest?.("[data-gh-open]");
+      if (!card) return;
+      e.preventDefault();
+      openRepoMenu(card.dataset.ghOpen, e.clientX, e.clientY);
+    });
+    // Android WebView 长按普通节点不一定触发 contextmenu，只能自己数时间（同 dorm-duty 的标签页）。
+    // 按下后挪开 10px 以上算滑动，不该弹菜单。
+    let pressTimer = null;
+    let pressAt = null;
+    const clearPress = () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } };
+    el.addEventListener("pointerdown", (e) => {
+      const card = e.target.closest?.("[data-gh-open]");
+      clearPress();
+      // 新的一次按下就是新意图：不清掉上次残留的标志，它会白吞掉一次正常点击
+      longPressed = false;
+      if (!card || e.button === 2) return;
+      pressAt = { x: e.clientX, y: e.clientY };
+      pressTimer = setTimeout(() => {
+        pressTimer = null;
+        longPressed = true;
+        openRepoMenu(card.dataset.ghOpen, pressAt.x, pressAt.y);
+      }, LONG_PRESS_MS);
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (pressTimer && pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 10) clearPress();
+    });
+    el.addEventListener("pointerup", clearPress);
+    el.addEventListener("pointercancel", clearPress);
     el.addEventListener("keydown", async (e) => {
       if (e.key === "Enter" && e.target.matches("[data-gh-input]")) { e.preventDefault(); await doAdd(el); }
       if (e.key === "Enter" && e.target.matches("[data-gh-open]")) { page.at = "reader"; page.key = e.target.dataset.ghOpen; paint(); }
     });
+    // 菜单的收起：点别处 / 滚动 / 改窗口尺寸。挂在 document 上且只绑一次 ——
+    // 宿主元素每次 render 可能重建，绑在 el 上会随重建丢失。
+    if (!repoMenuBound) {
+      repoMenuBound = true;
+      document.addEventListener("pointerdown", (e) => {
+        const t = e.target;
+        // 点菜单自身留给 click；点卡片由上面的长按分支负责重新定位
+        if (t instanceof Element && (t.closest("[data-gh-menu]") || t.closest("[data-gh-open]"))) return;
+        if (e.button === 2) return;
+        closeRepoMenu();
+      }, true);
+      document.addEventListener("scroll", () => closeRepoMenu(), true);
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRepoMenu(); });
+      window.addEventListener("resize", () => closeRepoMenu());
+    }
     el.addEventListener("change", (e) => {
       if (!e.target.matches("[data-gh-auto]")) return;
       state.auto = e.target.checked;

@@ -31,9 +31,9 @@ const context = vm.createContext({
 });
 vm.runInContext(source.replace(
   '  tide.ui.registerView({',
-  '  globalThis.testApi = { parseRepoRef, parseReadmeMeta, atomEntries, atomUrlOf, rawUrlOf, addRepo, syncAll, markSeen, restore, state };\n  tide.ui.registerView({',
+  '  globalThis.testApi = { parseRepoRef, parseReadmeMeta, atomEntries, atomUrlOf, rawUrlOf, addRepo, syncAll, markSeen, restore, state, repoTitle };\n  tide.ui.registerView({',
 ), context);
-const { parseRepoRef, parseReadmeMeta, atomEntries, atomUrlOf, rawUrlOf, addRepo, syncAll, markSeen, restore, state } = context.testApi;
+const { parseRepoRef, parseReadmeMeta, atomEntries, atomUrlOf, rawUrlOf, addRepo, syncAll, markSeen, restore, state, repoTitle } = context.testApi;
 
 /* vm 里造的对象带着 context 的 Object.prototype，deepStrictEqual 会连原型一起比、
    跨 realm 永远不相等。断言前先搬回宿主 realm。 */
@@ -210,4 +210,23 @@ const emitted = emits.length;
 await syncAll();
 assert.equal(emits.length, emitted, '🔴 恢复后 sha 快照还在，同一批提交不得重推');
 
-console.log('PASS: github-readme —— 地址解析 / README 元信息 / Atom 解析 / 首轮只播种 / 一轮一广播 / 载荷契约 / items 截断 / 广播抛错不吞抓取 / 限流与网络降级 / 落盘恢复');
+/* ── 13. 卡片右键菜单的三项外观：别名 / 备注 / 图标，只影响显示 ── */
+const ICON = String.fromCodePoint(0x1F527);
+assert.equal(repoTitle(state.repos[0]), 'o/r', '没改过名就显示 owner/仓库名');
+state.repos[0].alias = '网关服务';
+state.repos[0].note = '每周一看看有没有新方案';
+state.repos[0].icon = ICON;
+assert.equal(repoTitle(state.repos[0]), '网关服务', '改过名之后卡片与阅读页都用别名');
+assert.equal(atomUrlOf(state.repos[0]), 'https://github.com/o/r/commits/main/README.md.atom', '🔴 改名不许动取数地址（别名只是给人看的）');
+await state.persist();
+state.repos.length = 0;
+assert.equal(await restore(), true, '带外观字段的记录能恢复');
+assert.deepEqual({ alias: state.repos[0].alias, note: state.repos[0].note, icon: state.repos[0].icon },
+  { alias: '网关服务', note: '每周一看看有没有新方案', icon: ICON }, '三项都落盘，重启后还在');
+// 老数据（这个功能之前存的）没有这三个字段：不能因此显示 undefined，也不能报错
+store.repos = [{ owner: 'o', repo: 'r', branch: 'main', dir: '', path: 'README.md', sha: '', commit: null, at: 0, size: 0, error: '', unread: 0 }];
+await restore();
+assert.equal(repoTitle(state.repos[0]), 'o/r', '🔴 旧记录缺字段时退回 owner/仓库名');
+assert.equal(state.repos[0].note, undefined, '旧记录没有备注位，界面按"没有备注"渲染');
+
+console.log('PASS: github-readme —— 地址解析 / README 元信息 / Atom 解析 / 首轮只播种 / 一轮一广播 / 载荷契约 / items 截断 / 广播抛错不吞抓取 / 限流与网络降级 / 落盘恢复 / 卡片别名备注图标');
