@@ -95,7 +95,7 @@ assert.match(
 // .view 那条必须真的把为底栏预留的 padding 塌掉，而不是留着 var(--nav-pad)。
 assert.match(
   styles.slice(viewIdx).match(/\.app\.rail-hidden \.view\s*\{[^}]*\}/)[0],
-  /padding-bottom:\s*calc\(4px\s*\+\s*var\(--sab/,
+  /padding-bottom:\s*calc\(\(?4px\s*\+\s*var\(--sab/,
   "沉浸式 .view 的 padding-bottom 必须塌到 4px + 安全区（不许保留 --nav-pad）",
 );
 
@@ -107,8 +107,24 @@ assert.match(
 const immersiveViewRule = styles.slice(viewIdx).match(/\.app\.rail-hidden \.view\s*\{[^}]*\}/)[0];
 assert.match(
   immersiveViewRule,
-  /padding-top:\s*calc\(2px\s*\+\s*var\(--sat,\s*env\(safe-area-inset-top,\s*0px\)\)\)/,
-  "沉浸式 .view 的 padding-top 必须只剩安全区 + 2px（46px 顶栏让位要收掉）",
+  /padding-top:\s*calc\(\(2px\s*\+\s*var\(--sat,\s*env\(safe-area-inset-top,\s*0px\)\)\)\s*\/\s*var\(--ui-scale,\s*1\)\)/,
+  "沉浸式 .view 的 padding-top 必须只剩安全区 + 2px（46px 顶栏让位要收掉），且整条 ÷ --ui-scale",
+);
+/* v0.105.1 回归：沉浸式视图没有 46px 顶栏让位兜着，安全区一旦被 zoom 乘掉就直接压进
+   状态栏（真机 288/291 CSS px 宽的手机上 narrowAutoFactor 自动 <1，用户把界面缩放调到
+   100% 以下同理）。四条边各自钉住：上、下在这一条，左右在媒体块外的 .view 基线条。
+   量过的数（无头 Chrome 探针 output/probe-sg-safearea.mjs，注入 --sat 40 / --sab 24 /
+   --sal --sar 18）：不除时 zoom 0.889 顶栏上移 2.7px、0.8 移 6.4px、0.7 移 10.6px；
+   除了之后六档（0.7 / 0.8 / 0.889 / 1 / 1.25 / 1.5）内容起点都恰好落在 inset 上。 */
+assert.match(
+  immersiveViewRule,
+  /padding-bottom:\s*calc\(\(4px\s*\+\s*var\(--sab,\s*env\(safe-area-inset-bottom,\s*0px\)\)\)\s*\/\s*var\(--ui-scale,\s*1\)\)/,
+  "🔴 沉浸式 .view 的 padding-bottom 必须 ÷ --ui-scale，否则缩放 80% 时课表底部被导航栏压掉 20% 导航条高",
+);
+assert.match(
+  styles,
+  /\.view\s*\{[^}]*padding-left:\s*calc\(\(?\s*var\(--sal,\s*env\(safe-area-inset-left,\s*0px\)\)\s*\)?\s*\/\s*var\(--ui-scale,\s*1\)\)/,
+  "🔴 宿主 .view 的左安全区必须 ÷ --ui-scale（横向没有任何大让位，漏了就整类视图都少让 20%）",
 );
 assert.match(
   styles,

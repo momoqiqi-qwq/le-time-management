@@ -165,14 +165,21 @@ assert.match(sn, /x: Math\.max\(8 \+ sal,[\s\S]{0,80}- sar - W/, "🔴 菜单 x 
 assert.match(sn, /y: Math\.max\(8 \+ sat,[\s\S]{0,80}- sab - H/, "🔴 菜单 y 夹取必须让开状态栏与导航栏");
 
 // ── E. 宿主侧的四条边必须齐全，且 .plugview 不参与 ──────────────────────────
-const viewLeftRight = css.match(/\.view\s*\{[^}]*padding-left:\s*var\(--sal,[^}]*padding-right:\s*var\(--sar[^}]*\}/);
+// 🔴 四条边全部要 ÷ --ui-scale（v0.105.1）：界面缩放是 documentElement 上的 CSS zoom，
+// 布局长度会被乘掉，而状态栏 / 导航栏 / 挖孔是原生浮层、物理尺寸恒定。左右这一条
+// 一点大让位都没有，不除就是「横屏挖孔只让开 0.8×」。
+const viewLeftRight = css.match(/\.view\s*\{[^}]*padding-left:\s*calc\(\s*var\(--sal,[^}]*padding-right:\s*calc\(\s*var\(--sar[^}]*\}/);
 assert.ok(viewLeftRight, "🔴 宿主必须给 .view 垫左右安全区（--sal/--sar），这是插件页唯一的横向负责人");
-assert.ok(cssRaw.indexOf("@media") > cssRaw.indexOf("padding-left: var(--sal"),
+assert.match(viewLeftRight[0], /padding-left:\s*calc\(\s*var\(--sal,[^)]*\)\)\s*\/\s*var\(--ui-scale,\s*1\)/,
+  "🔴 .view 的 --sal 必须 ÷ --ui-scale（zoom 会把安全区一起缩掉）");
+assert.match(viewLeftRight[0], /padding-right:\s*calc\(\s*var\(--sar,[^)]*\)\)\s*\/\s*var\(--ui-scale,\s*1\)/,
+  "🔴 .view 的 --sar 必须 ÷ --ui-scale");
+assert.ok(cssRaw.indexOf("@media") > cssRaw.indexOf("padding-left: calc(var(--sal"),
   "左右安全区必须写在任何媒体块之外：横屏挖孔与侧边导航栏在宽屏上也会出现");
 assert.ok(!/\.plugview\s*\{[^}]*--s(?:at|ab|al|ar)/.test(css),
   ".plugview 不能再引用安全区变量，会和 .view 上的那份叠加成双重计算");
-assert.match(css, /\.app\.rail-hidden \.view\s*\{[^}]*padding-top:\s*calc\(2px \+ var\(--sat/,
-  "沉浸式插件页的上下安全区由 .view 负责，不能因为收掉留白一起被删");
+assert.match(css, /\.app\.rail-hidden \.view\s*\{[^}]*padding-top:\s*calc\(\(2px \+ var\(--sat[^}]*\)\s*\/\s*var\(--ui-scale,\s*1\)/,
+  "沉浸式插件页的上下安全区由 .view 负责，不能因为收掉留白一起被删、也不许漏掉 ÷ --ui-scale");
 
 // ── F. ②③④ 号规则在现网上的结果 ─────────────────────────────────────────────
 const rest = flagged.filter((s) => !s.startsWith("没提宿主变量"));

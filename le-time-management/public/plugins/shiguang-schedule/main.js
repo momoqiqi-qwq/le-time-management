@@ -403,10 +403,15 @@
    里 env() 恒为 0）。底部那条加在面板自身而不是滚动区：抽屉底部留白要一直存在，否则
    「恢复默认」会被导航栏压住。左右两条加在基线规则（不是媒体块）里：横屏时挖孔与侧边
    三键栏落在左/右，而 fixed 的包含块是 .view 的 padding box —— 宿主垫的左右边拦不住它。
-   竖屏与桌面这两个变量都取 0，实测过的 0..390 通栏尺寸不受影响。 */
+   竖屏与桌面这两个变量都取 0，实测过的 0..390 通栏尺寸不受影响。
+   🔴 而且这三条 inset 一律要 ÷ --ui-scale（v0.105.1）：宿主的界面缩放是 documentElement
+   上的 CSS zoom，属布局级缩放 ⇒ 这里写的布局长度会被乘掉，而导航栏 / 挖孔是原生浮层、
+   物理尺寸恒定。同一条规则里的 bottom:calc(18px / var(--ui-scale,1)) 早就按这个约定写了
+   （见 AGENTS.md 铁律四与 uiScale.js 契约第 1 条），安全区是同一类量，不能漏。
+   缩放 80% 时不除就是「让开 0.8×导航栏」——「恢复默认」按钮会被导航栏压掉一截。 */
 .sg .style-mask{position:fixed;inset:0;z-index:58;border:0;border-radius:0;padding:0;background:rgba(15,23,42,.34);cursor:default;animation:sg-mask-in .18s ease both}
 .sg .style-sheet{position:fixed;left:0;right:0;bottom:calc(18px / var(--ui-scale,1));z-index:59;display:flex;flex-direction:column;
-  width:100%;max-width:920px;margin-inline:auto;padding-inline:var(--sal,env(safe-area-inset-left,0px)) var(--sar,env(safe-area-inset-right,0px));max-height:calc(var(--ui-vh,100dvh) * .66);
+  width:100%;max-width:920px;margin-inline:auto;padding-inline:calc(var(--sal,env(safe-area-inset-left,0px)) / var(--ui-scale,1)) calc(var(--sar,env(safe-area-inset-right,0px)) / var(--ui-scale,1));max-height:calc(var(--ui-vh,100dvh) * .66);
   background:var(--sg-card);border:1px solid var(--sg-line);border-radius:18px;box-shadow:0 22px 56px rgba(15,35,45,.26);overflow:hidden;
   animation:sg-sheet-up .26s cubic-bezier(.22,.7,.3,1) both}
 @keyframes sg-sheet-up{from{transform:translateY(calc(100% + 26px))}to{transform:none}}
@@ -435,7 +440,7 @@
    高度上限比桌面端给得多一点（.72 vs .66）—— 手机上一列排开四个滑杆本来就高，
    再压就全得靠滚；但也不能顶满，抽屉上方总要留出一截课表当实时预览。 */
 @media(max-width:900px){
- .sg .style-sheet{bottom:0;border-width:1px 0 0;border-radius:18px 18px 0 0;max-height:calc(var(--ui-vh,100dvh) * .72);padding-bottom:var(--sab,env(safe-area-inset-bottom,0px))}
+ .sg .style-sheet{bottom:0;border-width:1px 0 0;border-radius:18px 18px 0 0;max-height:calc(var(--ui-vh,100dvh) * .72);padding-bottom:calc(var(--sab,env(safe-area-inset-bottom,0px)) / var(--ui-scale,1))}
  .sg .sheet-head{padding-top:16px}
  .sg .sheet-grabber{display:block}
 }

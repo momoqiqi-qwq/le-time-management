@@ -570,8 +570,15 @@ assert.match(ui, /\.sg \.style-sheet\{position:fixed;left:0;right:0;bottom:/,
   '抽屉必须 fixed 贴内容区底部（absolute 会跟着 .plugview 滚走）');
 assert.match(ui, /\.sg \.style-sheet\{[^}]*max-height:calc\(var\(--ui-vh,100dvh\)/,
   '抽屉高度要按 --ui-vh 给上限（裸 100vh 在自定义缩放下会溢出屏幕）');
-assert.match(ui, /@media\(max-width:900px\)\{[\s\S]*?\.sg \.style-sheet\{bottom:0[^}]*padding-bottom:var\(--sab,env\(safe-area-inset-bottom,0px\)\)/,
+assert.match(ui, /@media\(max-width:900px\)\{[\s\S]*?\.sg \.style-sheet\{bottom:0[^}]*padding-bottom:calc\(var\(--sab,env\(safe-area-inset-bottom,0px\)\) \/ var\(--ui-scale,1\)\)/,
   '窄屏抽屉要贴住底边并把安全区垫进面板自身，否则「恢复默认」被导航栏压住');
+// v0.105.1：抽屉是 position:fixed 浮层，宿主的 .view padding 拦不住它，四边只能自己让；
+// 而界面缩放（documentElement 上的 CSS zoom）会把这里写的布局长度一起乘掉 —— 原生浮栏
+// 不跟着缩，所以 inset 必须 ÷ --ui-scale 才真的让开（左右漏了的后果是横屏挖孔压在滑杆上）。
+assert.match(ui, /padding-inline:calc\(var\(--sal,env\(safe-area-inset-left,0px\)\) \/ var\(--ui-scale,1\)\) calc\(var\(--sar,env\(safe-area-inset-right,0px\)\) \/ var\(--ui-scale,1\)\)/,
+  '🔴 抽屉的左右安全区必须各自 ÷ --ui-scale');
+assert.match(ui, /\.sg \.style-sheet\{position:fixed;left:0;right:0;bottom:calc\(18px \/ var\(--ui-scale,1\)\)/,
+  '抽屉的固定底距要 ÷ --ui-scale（zoom 下 fixed 的包含块是缩放后的根）');
 for(const m of [...ui.matchAll(/env\(safe-area-inset-/g)])
   assert.equal(/var\(--s(?:at|ab|al|ar),$/.test(ui.slice(m.index-13,m.index)), true,
     `插件 CSS 里第 ${ui.slice(0,m.index).split('\n').length} 行的安全区裸用了 env()，Android WebView 恒为 0`);

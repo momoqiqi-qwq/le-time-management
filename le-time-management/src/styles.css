@@ -350,10 +350,18 @@ body.rail-resizing iframe { pointer-events: none !important; }
    双路 var() 是铁律四：Android WebView 里 env() 恒为 0，桌面/iOS 又拿不到原生
    注入的 --sal/--sar，两边各留一条路。桌面两端都取到 0 ⇒ 像素不变。
    ⚠️ 不要挪到 .plugview：窄屏媒体块里有一条 .app.rail-hidden .plugview { padding: 0 }
-   把沉浸式插件页的内边距整条归零，挂那儿就会漏掉那一类视图。 */
+   把沉浸式插件页的内边距整条归零，挂那儿就会漏掉那一类视图。
+   🔴 必须 ÷ --ui-scale：界面缩放（src/uiScale.js）是挂在 documentElement 上的 CSS
+   `zoom`，它是**布局级**缩放 ⇒ 布局长度 × 系数 = 物理长度。而状态栏 / 导航栏 / 挖孔是
+   原生浮层，物理高度恒定、不随网页缩放。所以「垫掉一条原生 inset」的 padding 是唯一
+   一个不能跟着 zoom 一起缩的量：不除回来，缩放 80% 时这里只让开 0.8×inset，左右各漏出
+   inset×20% 给挖孔（v0.105.1 修的课程表顶栏压状态栏是同一个根因 —— 那一处只有 2px
+   余量，漏得最明显）。有 46px/62px 大让位的规则被这点误差吃掉一部分仍然够用，
+   那是 uiScale.js 里记着的既有取舍；这里和沉浸式那两条没有大让位，必须补。
+   系数取不到时 var() 兜底 1 ⇒ 与改前逐位相同。 */
 .view {
-  padding-left: var(--sal, env(safe-area-inset-left, 0px));
-  padding-right: var(--sar, env(safe-area-inset-right, 0px));
+  padding-left: calc(var(--sal, env(safe-area-inset-left, 0px)) / var(--ui-scale, 1));
+  padding-right: calc(var(--sar, env(safe-area-inset-right, 0px)) / var(--ui-scale, 1));
 }
 
 /* ── 通用卡片/按钮 ── */
@@ -891,14 +899,17 @@ button, .nav { touch-action: manipulation; }
   /* 沉浸式视图（插件声明 immersive:true，如课程表）：让出全局底栏。
      三条必须成对：光藏 .rail 的话，.view 那条为底栏预留的 padding-bottom 会留成一条空白。
      v0.59.0 追加：padding-top 一并收掉 46px 顶栏让位、.plugview 左右内边距清零 ——
-     这类视图自己带顶栏，需求是「内容铺满除安全区之外的整屏」。安全区原样保留，
-     只去掉额外留白；横向安全区（横屏挖孔）由基础样式里那条 .view 的 --sal/--sar 负责，
-     插件侧（课程表的 .sg.bleed）不再自补 —— 补了就是双重计算。
+     这类视图自己带顶栏，需求是「内容铺满除安全区之外的整屏」。安全区原样保留（v0.105.1
+     起还要 ÷ --ui-scale 才真的留得住），只去掉额外留白；横向安全区（横屏挖孔）由基础样式
+     里那条 .view 的 --sal/--sar 负责，插件侧（课程表的 .sg.bleed）不再自补 —— 补了就是双重计算。
      ⚠️ 下面 46px 那条必须写成 :not(.rail-hidden)，否则同为 (0,3,0) 会靠后覆盖掉这里的 top。 */
   .app.rail-hidden .rail { display: none; }
   .app.rail-hidden .view {
-    padding-top: calc(2px + var(--sat, env(safe-area-inset-top, 0px)));
-    padding-bottom: calc(4px + var(--sab, env(safe-area-inset-bottom, 0px)));
+    /* 整条括号一起 ÷ --ui-scale：inset 是原生浮层的物理高度、不能缩，那 2px/4px 是
+       刻意留的视觉缝隙、按「物理恒定」算更合理。只除 inset 会把 2px 也留在缩放后的
+       布局长度里，150% 时反而多出 1px 空隙，不如整体除来得干净（推导见上方 .view 那条）。 */
+    padding-top: calc((2px + var(--sat, env(safe-area-inset-top, 0px))) / var(--ui-scale, 1));
+    padding-bottom: calc((4px + var(--sab, env(safe-area-inset-bottom, 0px))) / var(--ui-scale, 1));
   }
   /* :root 前缀不是冗余 —— 紧凑密度那条（:root[data-ui-density="compact"] .plugview
      { padding-top:14px; padding-bottom:18px }，默认密度就是 compact）与沉浸式规则同为
